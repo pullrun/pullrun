@@ -36,6 +36,7 @@ const (
 	Runtime_PortForward_FullMethodName      = "/nimbus.runtime.Runtime/PortForward"
 	Runtime_UpdateWorkload_FullMethodName   = "/nimbus.runtime.Runtime/UpdateWorkload"
 	Runtime_GetWorkloadStats_FullMethodName = "/nimbus.runtime.Runtime/GetWorkloadStats"
+	Runtime_RunCompose_FullMethodName       = "/nimbus.runtime.Runtime/RunCompose"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -68,6 +69,12 @@ type RuntimeClient interface {
 	UpdateWorkload(ctx context.Context, in *UpdateWorkloadRequest, opts ...grpc.CallOption) (*UpdateWorkloadResponse, error)
 	// Workload statistics
 	GetWorkloadStats(ctx context.Context, in *GetWorkloadStatsRequest, opts ...grpc.CallOption) (*WorkloadStats, error)
+	// Batch-launch multiple services from a Compose project.
+	// Services are created in dependency order (depends_on).
+	// On first failure, returns the error; already-started
+	// workloads are NOT automatically stopped (the client
+	// should call StopWorkload for rollback).
+	RunCompose(ctx context.Context, in *RunComposeRequest, opts ...grpc.CallOption) (*RunComposeResponse, error)
 }
 
 type runtimeClient struct {
@@ -278,6 +285,16 @@ func (c *runtimeClient) GetWorkloadStats(ctx context.Context, in *GetWorkloadSta
 	return out, nil
 }
 
+func (c *runtimeClient) RunCompose(ctx context.Context, in *RunComposeRequest, opts ...grpc.CallOption) (*RunComposeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunComposeResponse)
+	err := c.cc.Invoke(ctx, Runtime_RunCompose_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -308,6 +325,12 @@ type RuntimeServer interface {
 	UpdateWorkload(context.Context, *UpdateWorkloadRequest) (*UpdateWorkloadResponse, error)
 	// Workload statistics
 	GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error)
+	// Batch-launch multiple services from a Compose project.
+	// Services are created in dependency order (depends_on).
+	// On first failure, returns the error; already-started
+	// workloads are NOT automatically stopped (the client
+	// should call StopWorkload for rollback).
+	RunCompose(context.Context, *RunComposeRequest) (*RunComposeResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -368,6 +391,9 @@ func (UnimplementedRuntimeServer) UpdateWorkload(context.Context, *UpdateWorkloa
 }
 func (UnimplementedRuntimeServer) GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetWorkloadStats not implemented")
+}
+func (UnimplementedRuntimeServer) RunCompose(context.Context, *RunComposeRequest) (*RunComposeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunCompose not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -664,6 +690,24 @@ func _Runtime_GetWorkloadStats_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_RunCompose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunComposeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RunCompose(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RunCompose_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RunCompose(ctx, req.(*RunComposeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -722,6 +766,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetWorkloadStats",
 			Handler:    _Runtime_GetWorkloadStats_Handler,
+		},
+		{
+			MethodName: "RunCompose",
+			Handler:    _Runtime_RunCompose_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

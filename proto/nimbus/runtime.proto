@@ -35,6 +35,51 @@ service Runtime {
 
     // Workload statistics
     rpc GetWorkloadStats(GetWorkloadStatsRequest) returns (WorkloadStats);
+
+    // --- Compose support (Phase D) ---
+
+    // Batch-launch multiple services from a Compose project.
+    // Services are created in dependency order (depends_on).
+    // On first failure, returns the error; already-started
+    // workloads are NOT automatically stopped (the client
+    // should call StopWorkload for rollback).
+    rpc RunCompose(RunComposeRequest) returns (RunComposeResponse);
+}
+
+// --- Compose messages (Phase D) ---
+
+message ComposeService {
+    string name = 1;
+    string image = 2;
+    repeated string command = 3;
+    map<string, string> environment = 4;
+    repeated ComposePort ports = 5;
+    string working_dir = 6;
+    map<string, string> labels = 7;
+    string network_mode = 8;
+    uint64 cpu_millicores = 9;
+    uint64 memory_bytes = 10;
+    // Services that must be running before this one starts.
+    repeated string depends_on = 11;
+    // Root digest of the already-pulled image (optional).
+    // If empty, the runtime will pull the image first.
+    string root_digest = 12;
+}
+
+message ComposePort {
+    uint32 container_port = 1;
+    uint32 host_port = 2;
+    string protocol = 3;  // "tcp" or "udp"
+}
+
+message RunComposeRequest {
+    string project_name = 1;
+    repeated ComposeService services = 2;
+}
+
+message RunComposeResponse {
+    repeated string workload_ids = 1;
+    map<string, string> service_to_id = 2;
 }
 
 message PullImageRequest {

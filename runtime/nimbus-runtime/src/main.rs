@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -388,13 +389,13 @@ async fn run_pull(
     store_root: &PathBuf,
     insecure_registries: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let store = MmapStore::new(store_root.clone());
+    let store = Arc::new(MmapStore::new(store_root.clone()));
     let puller = OciPuller::with_insecure_registries(
         None,
         insecure_registries.iter().cloned().collect(),
     );
     let pulled = puller.pull(image_ref, registry).await?;
-    let converter = OciToDagConverter::new(&store);
+    let converter = OciToDagConverter::new(store.clone());
     let root_digest = converter.convert(&pulled).await?;
 
     println!("Root: {root_digest}");
@@ -444,6 +445,7 @@ async fn run_workload(
         memory_bytes: None,
         network_mode: NetworkMode::Loopback,
         network_rules: vec![],
+        kernel_path: None,
     };
 
     let handle = executor.create(spec).await?;

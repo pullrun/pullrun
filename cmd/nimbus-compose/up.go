@@ -1,0 +1,112 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	runtimeapi "nimbus/protoapi/nimbus/runtime"
+)
+
+func newUpCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "up [service...]",
+		Short: "Create and start services",
+		Long:  `Create and start all services defined in the compose file. If service names are given as arguments, only those services are started.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			filePath := resolveComposeFile()
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				return fmt.Errorf("compose file not found: %s (use -f to specify)", filePath)
+			}
+
+			fmt.Printf("Reading %s...\n", filePath)
+			project, err := parseComposeYAML(filePath)
+			if err != nil {
+				return fmt.Errorf("parse compose: %w", err)
+			}
+
+			fmt.Printf("Project: %s (%d services)\n", project.Name, len(project.Services))
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			client, conn, err := connectRuntime(ctx)
+			if err != nil {
+				return fmt.Errorf("connect to nimbus runtime: %w", err)
+			}
+			defer conn.Close()
+
+			names := project.ServiceNames()
+			if len(args) > 0 {
+				names = args
+			}
+			sortServices(names, project.Services)
+
+			for _, name := range names {
+				svc, ok := project.Services[name]
+				if !ok {
+					return fmt.Errorf("service %q not found in compose file", name)
+				}
+
+				id := fmt.Sprintf("%s-%s", project.Name, name)
+				fmt.Printf("  %s (%s)... ", name, svc.Image)
+
+				pullResp, err := client.PullImage(ctx, &runtimeapi.PullImageRequest{
+					ImageRef: svc.Image,
+					Registry: "",
+				})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "\n  %s: PULL FAILED: %v\n", name, err)
+					return fmt.Errorf("pull %s: %w", svc.Image, err)
+				}
+
+				var networkRules []*runtimeapi.NetworkRule
+				for _, p := range svc.Ports {
+					proto := "tcp"
+					if p.Protocol == "udp" {
+						proto = "udp"
+					}
+					networkRules = append(networkRules, &runtimeapi.NetworkRule{
+						Direction: "inbound",
+						Protocol:  proto,
+						Port:      uint32(p.Target),
+					})
+				}
+
+				env := make(map[string]string)
+				for k, v := range svc.Environment {
+					if v != nil {
+						env[k] = *v
+					}
+				}
+
+				workingDir := svc.WorkingDir
+				if workingDir == "" {
+					workingDir = "/"
+				}
+
+				runResp, err := client.RunWorkload(ctx, &runtimeapi.RunRequest{
+					Id:           id,
+					RootDigest:   pullResp.RootDigest,
+					Backend:      "container",
+					Command:      svc.Command,
+					Env:          env,
+					NetworkRules: networkRules,
+					WorkingDir:   workingDir,
+				})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "\n  %s: START FAILED: %v\n", name, err)
+					return fmt.Errorf("run %s: %w", name, err)
+				}
+
+				fmt.Printf("OK (id=%s, ip=%s)\n", runResp.Id, runResp.InternalIp)
+			}
+
+			fmt.Println("Done.")
+			return nil
+		},
+	}
+}

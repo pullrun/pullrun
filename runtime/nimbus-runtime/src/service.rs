@@ -30,14 +30,15 @@ use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, DagNode, Event as ProtoEvent, ExecRequest, ExecResponse,
-    GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
+    AttachMessage, ComposePort, ComposeService, DagNode, Event as ProtoEvent, ExecRequest,
+    ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, NetworkRule as ProtoNetworkRule, PullImageRequest,
-    PullImageResponse, RemoveImageRequest, RemoveImageResponse, DagStoreInfoRequest,
-    DagStoreInfoResponse, RunRequest, RunResponse, StopRequest, StopResponse,
-    StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
-    WorkloadStatus, PortForwardRequest, PortForwardData, GetWorkloadStatsRequest, WorkloadStats,
+    PullImageResponse, RemoveImageRequest, RemoveImageResponse, RunComposeRequest,
+    RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse, RunRequest, RunResponse,
+    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
+    UpdateWorkloadResponse, WorkloadStatus, PortForwardRequest, PortForwardData,
+    GetWorkloadStatsRequest, WorkloadStats,
 };
 
 use crate::metrics::{
@@ -1066,7 +1067,7 @@ impl Runtime for RuntimeService {
             }
         };
 
-        let converter = OciToDagConverter::new(&self.store);
+        let converter = OciToDagConverter::new(self.store.clone());
         let convert_result = converter.convert(&pulled).await;
         let root_digest = match convert_result {
             Ok(d) => d,
@@ -1304,7 +1305,7 @@ impl Runtime for RuntimeService {
                 .read()
                 .await
                 .get(&req.kernel_image)
-                .map(|k| k.vmlinux_path())
+                .map(|k| k.vmlinux_path().to_path_buf())
         };
 
         let spec = WorkloadSpec {
@@ -1519,6 +1520,81 @@ impl Runtime for RuntimeService {
             pid: final_pid,
             backend_used: final_backend,
             internal_ip: final_ip,
+        }))
+    }
+
+    async fn run_compose(
+        &self,
+        request: tonic::Request<RunComposeRequest>,
+    ) -> Result<tonic::Response<RunComposeResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let mut workload_ids = Vec::new();
+        let mut service_to_id = HashMap::new();
+
+        for service in req.services {
+            let id = if service.name.is_empty() {
+                return Err(tonic::Status::invalid_argument("compose service name is empty"));
+            } else {
+                format!("{}-{}", req.project_name, service.name)
+            };
+
+            let root_digest = if service.root_digest.is_empty() {
+                // Pull the image first.
+                let pull_req = tonic::Request::new(PullImageRequest {
+                    image_ref: service.image.clone(),
+                    registry: String::new(),
+                });
+                let pull_resp = self.pull_image(pull_req).await?;
+                pull_resp.into_inner().root_digest
+            } else {
+                service.root_digest.clone()
+            };
+
+            // Translate ComposePort to NetworkRule (inbound only).
+            let network_rules: Vec<ProtoNetworkRule> = service
+                .ports
+                .iter()
+                .map(|p| ProtoNetworkRule {
+                    direction: "inbound".to_string(),
+                    protocol: if p.protocol.is_empty() {
+                        "tcp".to_string()
+                    } else {
+                        p.protocol.clone()
+                    },
+                    port: p.container_port,
+                    to_host: String::new(),
+                    from_cidrs: vec![],
+                })
+                .collect();
+
+            let run_req = tonic::Request::new(RunRequest {
+                id: id.clone(),
+                root_digest,
+                backend: "container".to_string(),
+                command: service.command.clone(),
+                env: service.environment.clone(),
+                cpu_millicores: service.cpu_millicores,
+                memory_bytes: service.memory_bytes,
+                network_mode: if service.network_mode.is_empty() {
+                    "bridge".to_string()
+                } else {
+                    service.network_mode.clone()
+                },
+                network_rules,
+                kernel_image: String::new(),
+                working_dir: service.working_dir.clone(),
+            });
+
+            let run_resp = self.run_workload(run_req).await?;
+            let run_id = run_resp.into_inner().id;
+
+            workload_ids.push(run_id.clone());
+            service_to_id.insert(service.name.clone(), run_id);
+        }
+
+        Ok(tonic::Response::new(RunComposeResponse {
+            workload_ids,
+            service_to_id,
         }))
     }
 
@@ -2259,7 +2335,7 @@ fn attach_error_to_status(err: &nimbus_vm::attach::AttachError) -> tonic::Status
 /// the `RuntimeService::kernel_cache` (which is `Arc<RwLock>`)
 /// so it lives for as long as the workload references it.
 fn stage_kernel_image(
-    store: &MmapStore,
+    store: &Arc<MmapStore>,
     image_ref: &str,
     insecure_registries: &std::collections::HashSet<String>,
 ) -> Result<StagedKernel, Box<dyn std::error::Error + Send + Sync>> {

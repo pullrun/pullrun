@@ -1,6 +1,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
 use nimbus_oci::OciMaterializer;
 use nimbus_store::{Digest, MmapStore};
@@ -369,7 +370,7 @@ mod tests {
 
         // 1. Pull alpine:latest and convert to DAG.
         let tmp = TempDir::new().expect("create tempdir");
-        let store = MmapStore::new(tmp.path().join("store"));
+        let store = Arc::new(MmapStore::new(tmp.path().join("store")));
 
         eprintln!("→ pulling alpine:latest from Docker Hub");
         let puller = OciPuller::new(None);
@@ -383,7 +384,7 @@ mod tests {
             pulled.layer_blobs.len()
         );
 
-        let converter = OciToDagConverter::new(&store);
+        let converter = OciToDagConverter::new(store.clone());
         let root_digest = converter.convert(&pulled).await.expect("convert to DAG");
         eprintln!("  DAG root: {root_digest}");
 

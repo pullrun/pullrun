@@ -65,12 +65,12 @@ impl MmapStore {
     /// Set the maximum cache size in bytes. When the total mmap'd
     /// data exceeds this, the store evicts the least-recently-used
     /// entries on subsequent `get()` calls.
-    pub fn set_max_cache_bytes(&self, max: u64) {
+    pub fn set_max_cache_bytes(&mut self, max: u64) {
         self.max_cache_bytes = Some(max);
     }
 
     /// Remove `max_cache_bytes` limit (unbounded cache).
-    pub fn clear_max_cache_bytes(&self) {
+    pub fn clear_max_cache_bytes(&mut self) {
         self.max_cache_bytes = None;
     }
 

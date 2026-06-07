@@ -1,8 +1,8 @@
 # Nimbus — Build Progress
 
-> **Last updated:** **Phase C implemented: file-backed persistence for CRI shim, control-plane, and Rust runtime workloads.**
-> **Active phase:** Phase C (Control Plane Persistence) complete. **Phase A 9/10 complete (A6: multi-container pod deferred — needs runtime-level multi-workload scheduling).**
-> **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish ✅ (5/5) → **[Phase C]** Control Plane Persistence ✅ (3/3) → **[Phase D]** Compose Feature → **v1 Production**.
+> **Last updated:** **Phase D started: RunCompose proto + nimbus-compose binary (3/5 complete).**
+> **Active phase:** Phase D (Compose Feature) in progress (D1-D3 complete, D4-D5 pending).
+> **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish ✅ (5/5) → **[Phase C]** Persistence ✅ (3/3) → **[Phase D]** Compose Feature 🏗️ (3/5) → **v1 Production**.
 > **Status:** All Rust and Go code compiles.
 
 ---
@@ -1082,17 +1082,17 @@ See **[Roadmap](#roadmap--prioritized-development-plan)** below for the full pri
 
 ---
 
-### Phase D: Compose Feature [P2 — 4–6 weeks, after A/B]
+### Phase D: Compose Feature [P2 — 4–6 weeks, after A/B] 🏗️ IN PROGRESS
 
 **Goal:** `nimbus compose up` reads any `compose.yaml`, boots each service as a micro-VM.
 
-| ID | Task | What | File | Depends on |
-|----|------|------|------|-----------|
-| D1 | `RunCompose` proto | Add batch-workload RPC with `services`, `networks`, `volumes`. Atomic create-all or none. | `proto/nimbus/runtime.proto` | — |
-| D2 | compose-go parser | Vendor `compose-go` library. Parse `services.*.image`, `ports`, `environment`, `volumes`, `healthcheck`, `depends_on`. | `cmd/nimbus-compose/compose.go` | D1 |
-| D3 | `nimbus-compose` binary | CLI with `up`/`down`/`ps`/`logs`. Each service → `RunWorkload` or single `RunCompose` RPC. Healthcheck uses gRPC probe over vsock. | `cmd/nimbus-compose/main.go` | D2 |
-| D4 | Per-project bridge isolation | Replace global `nimbus-br0` with per-project bridge + DNS scope. Compose `networks` → isolated L2. | Rust runtime, `network.rs` | D3, A5 |
-| D5 | `nimbus compose build` | OCI image build from Dockerfile (delegates to buildkit or `docker build`) → store in DAG. | `cmd/nimbus-compose/build.go` | D3 |
+| ID | Task | What | File | Status |
+|----|------|------|------|--------|
+| D1 | `RunCompose` proto | Batch-workload RPC (`ComposeService`, `RunComposeRequest`, `RunComposeResponse`). Rust handler iterates services sequentially, pulling images and calling `RunWorkload` for each. | `proto/nimbus/runtime.proto`, `service.rs` | ✅ |
+| D2 | compose-go parser | `parseComposeYAML()` using `github.com/compose-spec/compose-go/v2/loader`. Extracts image, command, ports, environment, volumes, depends_on, deploy resources. Topological sort for dependency ordering. | `cmd/nimbus-compose/compose.go` | ✅ |
+| D3 | `nimbus-compose` binary | CLI with `up`, `down`, `ps`, `logs`. Uses cobra. Connects to runtime via gRPC unix socket. `up` pulls image + runs workload per service. `down` stops each. `ps` lists status from runtime. `logs` tail-streams log chunks. | `cmd/nimbus-compose/main.go`, `up.go`, `down.go`, `ps.go`, `logs.go` | ✅ |
+| D4 | Per-project bridge isolation | Replace global `nimbus-br0` with per-project bridge + DNS scope. Compose `networks` → isolated L2. | Rust runtime, `network.rs` | ⬜ |
+| D5 | `nimbus compose build` | OCI image build from Dockerfile (delegates to buildkit or `docker build`) → store in DAG. | `cmd/nimbus-compose/build.go` | ⬜ |
 
 ---
 

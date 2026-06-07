@@ -44,6 +44,7 @@
 //! live as long as the pool — and no longer.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter};
 use nimbus_store::MmapStore;
@@ -136,7 +137,7 @@ impl StagedKernel {
     /// it cleans up the staged files.
     pub async fn from_image(
         image_ref: &str,
-        store: &MmapStore,
+        store: &Arc<MmapStore>,
         registry: Option<&str>,
     ) -> Result<Self, OciKernelError> {
         Self::from_image_with_insecure(image_ref, store, registry, &[]).await
@@ -148,7 +149,7 @@ impl StagedKernel {
     /// registries (the default).
     pub async fn from_image_with_insecure(
         image_ref: &str,
-        store: &MmapStore,
+        store: &Arc<MmapStore>,
         registry: Option<&str>,
         insecure_registries: &[String],
     ) -> Result<Self, OciKernelError> {
@@ -167,7 +168,7 @@ impl StagedKernel {
         // 2. Convert the OCI manifest into our content-
         //    addressed DAG. Layers are stored in `MmapStore`
         //    (zero-copy reads for the materializer).
-        let converter = OciToDagConverter::new(store);
+        let converter = OciToDagConverter::new(store.clone());
         let root_digest = converter.convert(&pulled).await?;
         debug!(%root_digest, "kernel image converted to DAG");
 

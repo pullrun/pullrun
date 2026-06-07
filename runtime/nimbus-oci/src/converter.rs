@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::sync::Arc;
 
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
@@ -84,12 +85,12 @@ pub struct ManifestData {
 }
 
 /// Convert OCI images to Nimbus DAG nodes.
-pub struct OciToDagConverter<'a> {
-    store: &'a MmapStore,
+pub struct OciToDagConverter {
+    store: Arc<MmapStore>,
 }
 
-impl<'a> OciToDagConverter<'a> {
-    pub fn new(store: &'a MmapStore) -> Self {
+impl OciToDagConverter {
+    pub fn new(store: Arc<MmapStore>) -> Self {
         Self { store }
     }
 

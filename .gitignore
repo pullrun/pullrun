@@ -10,6 +10,8 @@ target-linux/
 
 # Go
 cli/nimbusctl/nimbusctl
+cli/nimbusctl/cli
+cmd/nimbus-compose/compose
 cri/nimbus-cri/cri
 cri/test-harness/test-harness
 control-plane/nimbus-control-plane
