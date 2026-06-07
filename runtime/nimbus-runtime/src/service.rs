@@ -1101,26 +1101,30 @@ impl Runtime for RuntimeService {
             }
 
             // Materialize the workload's OCI image to a temp
-            // dir so the VM can mount it as 9p/VirtioFS. We
-            // do this even if the kernel was already cached,
-            // because the workload's image is a different
-            // image from the kernel image.
-            let store_for_rootfs = self.store.clone();
-            let root_digest_for_rootfs = req.root_digest.clone();
-            let rootfs_path = tokio::task::spawn_blocking(move || {
-                materialize_rootfs(&store_for_rootfs, &root_digest_for_rootfs)
-            })
-            .await
-            .map_err(|e| {
-                tonic::Status::internal(format!("materialize rootfs join: {e}"))
-            })?
-            .map_err(|e| {
-                tonic::Status::internal(format!("materialize rootfs: {e}"))
-            })?;
-            self.rootfs_cache
-                .write()
+            // dir so the VM can mount it as 9p/VirtioFS
+            // (macOS Apple Virt path). On Linux, the
+            // FirecrackerExecutor handles its own ext4 rootfs
+            // materialization in create(), so skip this to
+            // avoid 2x DAG walk + 2x disk space.
+            #[cfg(target_os = "macos")]
+            {
+                let store_for_rootfs = self.store.clone();
+                let root_digest_for_rootfs = req.root_digest.clone();
+                let rootfs_path = tokio::task::spawn_blocking(move || {
+                    materialize_rootfs(&store_for_rootfs, &root_digest_for_rootfs)
+                })
                 .await
-                .insert(req.id.clone(), rootfs_path);
+                .map_err(|e| {
+                    tonic::Status::internal(format!("materialize rootfs join: {e}"))
+                })?
+                .map_err(|e| {
+                    tonic::Status::internal(format!("materialize rootfs: {e}"))
+                })?;
+                self.rootfs_cache
+                    .write()
+                    .await
+                    .insert(req.id.clone(), rootfs_path);
+            }
         }
 
         let network_mode = match req.network_mode.as_str() {

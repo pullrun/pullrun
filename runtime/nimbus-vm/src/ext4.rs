@@ -1,3 +1,4 @@
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -75,11 +76,26 @@ pub async fn materialize_ext4_rootfs(
         .materialize_into(root_digest, mount_dir.path())
         .await;
 
-    let umount_result = umount(mount_dir.path());
-
     if let Err(e) = materialize_result {
         return Err(Ext4Error::Materialization(format!("{e}")));
     }
+
+    // Inject a default /init if the OCI image doesn't have one.
+    // Container images (alpine, ubuntu, etc.) have ENTRYPOINT/CMD
+    // but no /init executable. The kernel boot args pass init=/init,
+    // so we need one present for the VM to boot successfully.
+    let init_path = mount_dir.path().join("init");
+    if !init_path.exists() {
+        info!("OCI image has no /init, injecting default");
+        std::fs::write(
+            &init_path,
+            b"#!/bin/sh\nexec /bin/sh\n",
+        )?;
+        // Make it executable (S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
+        std::fs::set_permissions(&init_path, PermissionsExt::from_mode(0o755))?;
+    }
+
+    let umount_result = umount(mount_dir.path());
     umount_result?;
 
     info!(output = %output_path.display(), "ext4 rootfs ready");

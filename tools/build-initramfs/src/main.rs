@@ -278,7 +278,7 @@ fn run(args: &Args) -> Result<(), BuildError> {
     //    so the workload can use them transparently.
     for app in &[
         "cat", "sh", "mount", "umount", "ls", "echo", "env", "true", "false",
-        "mkdir", "rm", "ln", "cp", "mv", "ps", "sleep", "test",
+        "mkdir", "rm", "ln", "cp", "mv", "ps", "sleep", "test", "uname",
     ] {
         write_newc_symlink(
             &mut writer,
