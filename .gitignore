@@ -9,7 +9,8 @@ target/
 
 # Go
 cli/nimbusctl/nimbusctl
-cri/nimbus-cri/nimbus-cri
+cri/nimbus-cri/cri
+cri/test-harness/test-harness
 control-plane/nimbus-control-plane
 
 # IDE
