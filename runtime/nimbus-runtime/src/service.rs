@@ -268,7 +268,7 @@ impl RuntimeCommand {
             let _ = std::fs::create_dir_all(&cfg.vm_root);
             Arc::new(FirecrackerExecutor::new(
                 fc_cfg,
-                MmapStore::new(self.config.store_root.clone()),
+                Arc::new(MmapStore::new(self.config.store_root.clone())),
                 ipam.clone(),
                 proxy.clone(),
             ))
@@ -1178,6 +1178,19 @@ impl Runtime for RuntimeService {
             })
             .collect();
 
+        // If a kernel_image was specified, look up the staged kernel's
+        // vmlinux path so the Firecracker executor can use it instead
+        // of the default kernel_path from its config.
+        let kernel_path = if req.kernel_image.is_empty() {
+            None
+        } else {
+            self.kernel_cache
+                .read()
+                .await
+                .get(&req.kernel_image)
+                .map(|k| k.vmlinux_path())
+        };
+
         let spec = WorkloadSpec {
             id: req.id.clone(),
             image_root: req.root_digest.clone(),
@@ -1188,6 +1201,7 @@ impl Runtime for RuntimeService {
             memory_bytes: if req.memory_bytes > 0 { Some(req.memory_bytes) } else { None },
             network_mode,
             network_rules: network_rules.clone(),
+            kernel_path,
         };
 
         // Emit BackendSelected *before* we touch the executor. This

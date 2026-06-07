@@ -1,9 +1,9 @@
 # Nimbus — Build Progress
 
-> **Last updated:** **Phase A implemented: CRI Exec/Attach/PortForward, resource limits, image management, CNI network mode flag, UpdateWorkload RPC.** Direct Docker Hub pulls work without local registry. 92 Rust tests (83 lib + 9 vsock); 9 Go tests.
-> **Active phase:** Post-E2E cleanup and production hardening. **Phase A 9/10 complete (A6: multi-container pod deferred — needs runtime-level multi-workload scheduling).**
-> **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish (/init, OCI kernel, GC, iptables) → **[Phase C]** Control Plane Persistence → **[Phase D]** Compose Feature → **v1 Production**.
-> **Status:** All **92 Rust tests pass** (83 lib + 9 vsock, nimbus-vm: 16). 9 Go tests pass.
+> **Last updated:** **Phase B implemented: /init reads OCI ENTRYPOINT/CMD; OCI kernel for Firecracker; Image GC (LRU eviction in MmapStore); NAT root-required documented.** 
+> **Active phase:** Phase B (VM Polish) complete. **Phase A 9/10 complete (A6: multi-container pod deferred — needs runtime-level multi-workload scheduling).**
+> **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish ✅ (5/5) → **[Phase C]** Control Plane Persistence → **[Phase D]** Compose Feature → **v1 Production**.
+> **Status:** All Rust tests pass. 9 Go tests pass.
 
 ---
 
@@ -1056,17 +1056,17 @@ See **[Roadmap](#roadmap--prioritized-development-plan)** below for the full pri
 
 ---
 
-### Phase B: VM Polish [P1 — 3–4 weeks, parallel with A]
+### Phase B: VM Polish [P1 — 3–4 weeks, parallel with A] ✅ DONE
 
 **Goal:** Fix the three VM-specific gaps that prevent real OCI images from booting in Firecracker, and eliminate root requirements.
 
-| ID | Task | What | File | Depends on |
-|----|------|------|------|-----------|
-| B1 | `/init` wrapper for OCI images | `materialize_ext4_rootfs` currently injects `#!/bin/sh\nexec /bin/sh`. Instead, read the OCI image config's `ENTRYPOINT` + `CMD`, and write `/init` that execs the actual workload. | `runtime/nimbus-vm/src/ext4.rs` | — |
-| B2 | OCI kernel for Firecracker | Port `oci_kernel` staging (Apple Virt path) to Firecracker executor. Pull kernel from OCI image instead of requiring pre-downloaded `--vm-kernel` vmlinux. | `runtime/nimbus-vm/src/lib.rs`, `oci_kernel.rs` | — |
-| B3 | Double materialization | Skip `OciMaterializer::materialize_into()` in `run_workload()` when backend is Firecracker. The ext4 materializer already does its own DAG walk. | `runtime/nimbus-runtime/src/service.rs` | — |
-| B4 | Image GC | Add LRU eviction to `MmapStore`. Configurable `max_bytes` at construction. Prune on `put()` when threshold exceeded. | `runtime/nimbus-store/src/store.rs` | — |
-| B5 | iptables rootless | `enable_nat()` calls `iptables` via `Command::new("iptables")` which requires root or `CAP_NET_ADMIN`. Replace with `nft` or direct netlink via `rtnetlink` crate (or document as the last root requirement). | `runtime/nimbus-vm/src/network.rs` | — |
+| ID | Task | What | File | Status |
+|----|------|------|------|--------|
+| B1 | `/init` wrapper for OCI images | `materialize_ext4_rootfs` reads `ENTRYPOINT` + `CMD` from DAG manifest via `OciMaterializer::materialize_manifest()` and writes `/init` that execs the correct workload. Falls back to `/bin/sh` when both are empty. | `runtime/nimbus-vm/src/ext4.rs` | ✅ |
+| B2 | OCI kernel for Firecracker | Per-workload kernel path support: `WorkloadSpec.kernel_path` wired from `kernel_cache` → sidecar → `FirecrackerExecutor::start()`. Uses OCI-staged kernel when specified, falls back to default `--vm-kernel`. | `runtime/nimbus-vm/src/lib.rs`, `nimbus-exec/src/types.rs` | ✅ |
+| B3 | Double materialization | Already fixed — `#[cfg(target_os = "macos")]` guard skips plain-dir materialization on Linux. Firecracker's ext4 path is the sole DAG walk. | `runtime/nimbus-runtime/src/service.rs` | ✅ |
+| B4 | Image GC | LRU eviction in `MmapStore`: `max_cache_bytes` (default 512 MB), `AtomicU64` byte counter, `Mutex<VecDeque<Digest>>` access-order tracking, `evict_cache_entry()`, `new_unbounded()` for test workloads. | `runtime/nimbus-store/src/store.rs` | ✅ |
+| B5 | iptables rootless | Documented as the last root-required operation (CAP_NET_ADMIN). `enable_nat()` remains `iptables`-based. Future: userspace NAT (slirp4netns) or nftables netlink. | `runtime/nimbus-vm/src/network.rs` | ✅ |
 
 ---
 

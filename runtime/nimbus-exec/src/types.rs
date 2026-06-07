@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 
@@ -55,6 +56,10 @@ pub struct WorkloadSpec {
     pub memory_bytes: Option<u64>,
     pub network_mode: NetworkMode,
     pub network_rules: Vec<NetworkRule>,
+    /// Optional host-side kernel path override (Firecracker only).
+    /// When set, the executor uses this vmlinux instead of its
+    /// default `kernel_path` config value.
+    pub kernel_path: Option<PathBuf>,
 }
 
 impl WorkloadSpec {
@@ -69,6 +74,7 @@ impl WorkloadSpec {
             memory_bytes: None,
             network_mode: NetworkMode::Loopback,
             network_rules: vec![],
+            kernel_path: None,
         }
     }
 }
@@ -83,6 +89,7 @@ pub struct WorkloadSpecBuilder {
     memory_bytes: Option<u64>,
     network_mode: NetworkMode,
     network_rules: Vec<NetworkRule>,
+    kernel_path: Option<PathBuf>,
 }
 
 impl WorkloadSpecBuilder {
@@ -111,6 +118,11 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn kernel_path(mut self, path: PathBuf) -> Self {
+        self.kernel_path = Some(path);
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -122,6 +134,7 @@ impl WorkloadSpecBuilder {
             memory_bytes: self.memory_bytes,
             network_mode: self.network_mode,
             network_rules: self.network_rules,
+            kernel_path: self.kernel_path,
         }
     }
 }

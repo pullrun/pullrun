@@ -1,5 +1,7 @@
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
 use memmap2::Mmap;
@@ -25,10 +27,14 @@ pub enum StoreError {
     DigestMismatch { expected: Digest, actual: Digest },
 }
 
-#[derive(Clone)]
+const DEFAULT_MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024; // 512 MB
+
 pub struct MmapStore {
     root: PathBuf,
     cache: DashMap<Digest, Arc<Mmap>>,
+    max_cache_bytes: Option<u64>,
+    lru: Arc<Mutex<VecDeque<Digest>>>,
+    total_bytes: Arc<AtomicU64>,
 }
 
 impl MmapStore {
@@ -37,7 +43,39 @@ impl MmapStore {
         Self {
             root,
             cache: DashMap::new(),
+            max_cache_bytes: Some(DEFAULT_MAX_CACHE_BYTES),
+            lru: Arc::new(Mutex::new(VecDeque::new())),
+            total_bytes: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Create a store without cache size limit (in-memory cache
+    /// grows unbounded). Use for small test workloads.
+    pub fn new_unbounded(root: PathBuf) -> Self {
+        std::fs::create_dir_all(&root).ok();
+        Self {
+            root,
+            cache: DashMap::new(),
+            max_cache_bytes: None,
+            lru: Arc::new(Mutex::new(VecDeque::new())),
+            total_bytes: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// Set the maximum cache size in bytes. When the total mmap'd
+    /// data exceeds this, the store evicts the least-recently-used
+    /// entries on subsequent `get()` calls.
+    pub fn set_max_cache_bytes(&self, max: u64) {
+        self.max_cache_bytes = Some(max);
+    }
+
+    /// Remove `max_cache_bytes` limit (unbounded cache).
+    pub fn clear_max_cache_bytes(&self) {
+        self.max_cache_bytes = None;
+    }
+
+    pub fn max_cache_bytes(&self) -> Option<u64> {
+        self.max_cache_bytes
     }
 
     pub fn root_dir(&self) -> &Path {
@@ -114,10 +152,45 @@ impl MmapStore {
                 }
                 let file = std::fs::File::open(&path)?;
                 let mmap = unsafe { Mmap::map(&file)? };
+                // Track cache bytes for the LRU evictor.
+                self.total_bytes.fetch_add(mmap.len() as u64, Ordering::Relaxed);
                 Ok(Arc::new(mmap))
             })?;
 
-        Ok(entry.value().clone())
+        let result = entry.value().clone();
+
+        // Mark this digest as recently used and trigger eviction
+        // if the cache exceeds the configured limit.
+        let mut lru = self.lru.lock().unwrap();
+        // Move to back (most recently used).
+        if let Some(pos) = lru.iter().position(|d| d == digest) {
+            lru.remove(pos);
+        }
+        lru.push_back(digest.clone());
+        self.evict_lru_locked(&mut lru);
+
+        Ok(result)
+    }
+
+    /// Evict the least-recently-used entries from the cache until
+    /// total bytes are within `max_cache_bytes`. Must hold the LRU
+    /// lock. No-op when `max_cache_bytes` is `None` or zero.
+    fn evict_lru_locked(&self, lru: &mut VecDeque<Digest>) {
+        let max = match self.max_cache_bytes {
+            Some(m) if m > 0 => m,
+            _ => return,
+        };
+        while self.total_bytes.load(Ordering::Relaxed) > max {
+            let oldest = match lru.front() {
+                Some(d) => d.clone(),
+                None => break,
+            };
+            if let Some((_, evicted)) = self.cache.remove(&oldest) {
+                self.total_bytes
+                    .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
+            }
+            lru.pop_front();
+        }
     }
 
     pub fn get_archived(&self, digest: &Digest) -> Result<&ArchivedDagNode, StoreError> {
@@ -197,19 +270,22 @@ impl MmapStore {
     }
 
     /// Total bytes mmap'd across all nodes currently held in the
-    /// in-process cache. Used by the runtime's metrics periodic
-    /// updater to report `nimbus_store_bytes`.
-    ///
-    /// Note: this only counts *resident* mmap'd data — the on-disk
-    /// store may have more content that hasn't been opened yet. The
-    /// sum is `O(cache.len())` and walks the DashMap without holding
-    /// any single shard for long.
+    /// in-process cache. Uses the LRU tracker's running total,
+    /// updated atomically on each insertion/eviction.
     pub fn total_bytes(&self) -> u64 {
-        self.cache.iter().map(|e| e.value().len() as u64).sum()
+        self.total_bytes.load(Ordering::Relaxed)
     }
 
+    /// Evict a single entry from the in-memory cache. Updates the
+    /// LRU tracker and total byte count. This is a no-op if the
+    /// digest is not currently cached.
     pub fn evict_cache_entry(&self, digest: &Digest) {
-        self.cache.remove(digest);
+        if let Some((_, evicted)) = self.cache.remove(digest) {
+            self.total_bytes
+                .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
+            let mut lru = self.lru.lock().unwrap();
+            lru.retain(|d| d != digest);
+        }
     }
 }
 

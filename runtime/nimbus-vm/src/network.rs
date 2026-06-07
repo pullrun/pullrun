@@ -372,7 +372,12 @@ pub fn parse_default_route_iface(text: &str) -> Option<String> {
 /// is checked with `iptables -C` first; if absent, it's appended with
 /// `-A`. Existing rules are left untouched.
 ///
-/// Required: `iptables` on PATH, `CAP_NET_ADMIN` (or root).
+/// Requires `iptables` on PATH and `CAP_NET_ADMIN` (or root). This is
+/// the last remaining root-required operation in the Nimbus data path.
+/// Without it, VMs/containers on the bridge can communicate among
+/// themselves but cannot reach the internet. A future phase may
+/// replace this with a userspace NAT (e.g. slirp4netns or a custom
+/// nftables netlink path that can use ambient capabilities).
 ///
 /// Returns `Ok(true)` if any rule was installed, `Ok(false)` if all
 /// rules were already present.

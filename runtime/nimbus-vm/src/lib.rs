@@ -81,7 +81,7 @@ impl FirecrackerConfig {
 
 pub struct FirecrackerExecutor {
     config: FirecrackerConfig,
-    store: MmapStore,
+    store: Arc<MmapStore>,
     /// Shared IPAM with the container backend. Firecracker VMs and
     /// runc containers get IPs from the same `10.42.0.0/16` pool, so
     /// they can talk to each other over the bridge.
@@ -97,7 +97,7 @@ pub struct FirecrackerExecutor {
 impl FirecrackerExecutor {
     pub fn new(
         config: FirecrackerConfig,
-        store: MmapStore,
+        store: Arc<MmapStore>,
         ipam: Arc<Ipam>,
         proxy: Arc<ProxyNetwork>,
     ) -> Self {
@@ -215,7 +215,15 @@ impl Executor for FirecrackerExecutor {
 
         info!(id = %id, ip = %guest_ip, "ext4 rootfs ready, VM wired to bridge");
 
-        // 5. Persist the sidecar (so stop() can teardown the tap).
+        // 5. Persist the kernel path sidecar if the workload
+        //    specified a kernel_image (OCI-staged kernel).
+        if let Some(kp) = &spec.kernel_path {
+            let kernel_path_sidecar = vm_dir.join("kernel_path");
+            std::fs::write(&kernel_path_sidecar, kp.to_string_lossy().as_bytes())?;
+            info!(id = %id, kernel = %kp.display(), "per-workload kernel path saved");
+        }
+
+        // 6. Persist the network sidecar (so stop() can teardown).
         let sidecar = VmSidecar {
             vm_net: vm_net.clone(),
             endpoint: endpoint.clone(),
@@ -260,9 +268,25 @@ impl Executor for FirecrackerExecutor {
         .map_err(|e| ExecError::ExecutionFailed(format!("parse sidecar: {e}")))?;
 
         let ext4_path = ext4_path_for(&self.config.rootfs_dir, &handle.id);
+
+        // Use per-workload kernel path if available (OCI-staged kernel),
+        // otherwise fall back to the default kernel_path from config.
+        let kernel_path_sidecar = vm_dir.join("kernel_path");
+        let kernel_path = if let Ok(kp) = std::fs::read_to_string(&kernel_path_sidecar) {
+            let trimmed = kp.trim().to_string();
+            if !trimmed.is_empty() {
+                info!(path = %trimmed, "using per-workload kernel path");
+                PathBuf::from(trimmed)
+            } else {
+                self.config.kernel_path.clone()
+            }
+        } else {
+            self.config.kernel_path.clone()
+        };
+
         let config = firecracker_config(
             &handle.id,
-            &self.config.kernel_path,
+            &kernel_path,
             &ext4_path,
             Some(&sidecar.vm_net),
             self.config.vcpus,

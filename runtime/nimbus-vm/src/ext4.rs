@@ -10,6 +10,28 @@ use tracing::{debug, info, warn};
 
 use crate::network::VmNetwork;
 
+/// Shell-quote a single argument for use in `exec arg1 arg2 ...`
+/// in a shell script. Wraps in single quotes and escapes any
+/// internal single quotes via the `'\''` idiom.
+fn shell_quote(arg: &str) -> String {
+    let escaped = arg.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+/// Build the merged command from OCI Entrypoint and Cmd, following
+/// the Docker/OCI spec: if entrypoint is non-empty, it prefixes cmd.
+fn merge_command(entrypoint: &[String], cmd: &[String]) -> Vec<String> {
+    if entrypoint.is_empty() {
+        cmd.to_vec()
+    } else {
+        entrypoint
+            .iter()
+            .cloned()
+            .chain(cmd.iter().cloned())
+            .collect()
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Ext4Error {
     #[error("IO error: {0}")]
@@ -76,17 +98,45 @@ pub async fn materialize_ext4_rootfs(
         return Err(Ext4Error::Materialization(format!("{e}")));
     }
 
-    // 2. Inject a default /init if the OCI image doesn't have one.
+    // 2. Inject /init using the OCI image's ENTRYPOINT/CMD.
     //    Container images (alpine, ubuntu, etc.) have ENTRYPOINT/CMD
     //    but no /init executable. The kernel boot args pass init=/init,
     //    so we need one present for the VM to boot successfully.
+    //    We read the DAG manifest to get the entrypoint and cmd,
+    //    merge them per OCI spec, and write /init that execs them.
     let init_path = work_dir.path().join("init");
     if !init_path.exists() {
-        info!("OCI image has no /init, injecting default");
-        std::fs::write(
-            &init_path,
-            b"#!/bin/sh\nexec /bin/sh\n",
-        )?;
+        let materializer = OciMaterializer::new(store);
+        let manifest_data = materializer.materialize_manifest(root_digest);
+        let shell_args: Vec<String> = match manifest_data {
+            Ok(data) => {
+                let merged = merge_command(&data.entrypoint, &data.cmd);
+                if merged.is_empty() {
+                    info!("OCI image has no ENTRYPOINT/CMD; injecting default /bin/sh");
+                    vec!["/bin/sh".to_string()]
+                } else {
+                    info!(
+                        "injecting /init from OCI manifest: {}",
+                        merged.join(" ")
+                    );
+                    merged
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "failed to read OCI manifest for /init: {e}; falling back to /bin/sh"
+                );
+                vec!["/bin/sh".to_string()]
+            }
+        };
+        let mut init_content = String::from("#!/bin/sh\n");
+        init_content.push_str("exec");
+        for arg in &shell_args {
+            init_content.push(' ');
+            init_content.push_str(&shell_quote(arg));
+        }
+        init_content.push('\n');
+        std::fs::write(&init_path, init_content.as_bytes())?;
         std::fs::set_permissions(&init_path, PermissionsExt::from_mode(0o755))?;
     }
 
