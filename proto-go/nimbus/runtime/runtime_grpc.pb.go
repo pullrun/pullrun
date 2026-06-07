@@ -19,16 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Runtime_PullImage_FullMethodName       = "/nimbus.runtime.Runtime/PullImage"
-	Runtime_RunWorkload_FullMethodName     = "/nimbus.runtime.Runtime/RunWorkload"
-	Runtime_StopWorkload_FullMethodName    = "/nimbus.runtime.Runtime/StopWorkload"
-	Runtime_GetWorkload_FullMethodName     = "/nimbus.runtime.Runtime/GetWorkload"
-	Runtime_ListWorkloads_FullMethodName   = "/nimbus.runtime.Runtime/ListWorkloads"
-	Runtime_StreamLogs_FullMethodName      = "/nimbus.runtime.Runtime/StreamLogs"
-	Runtime_StreamEvents_FullMethodName    = "/nimbus.runtime.Runtime/StreamEvents"
-	Runtime_ExecInWorkload_FullMethodName  = "/nimbus.runtime.Runtime/ExecInWorkload"
-	Runtime_InspectWorkload_FullMethodName = "/nimbus.runtime.Runtime/InspectWorkload"
-	Runtime_AttachWorkload_FullMethodName  = "/nimbus.runtime.Runtime/AttachWorkload"
+	Runtime_PullImage_FullMethodName        = "/nimbus.runtime.Runtime/PullImage"
+	Runtime_RunWorkload_FullMethodName      = "/nimbus.runtime.Runtime/RunWorkload"
+	Runtime_StopWorkload_FullMethodName     = "/nimbus.runtime.Runtime/StopWorkload"
+	Runtime_GetWorkload_FullMethodName      = "/nimbus.runtime.Runtime/GetWorkload"
+	Runtime_ListWorkloads_FullMethodName    = "/nimbus.runtime.Runtime/ListWorkloads"
+	Runtime_StreamLogs_FullMethodName       = "/nimbus.runtime.Runtime/StreamLogs"
+	Runtime_StreamEvents_FullMethodName     = "/nimbus.runtime.Runtime/StreamEvents"
+	Runtime_ExecInWorkload_FullMethodName   = "/nimbus.runtime.Runtime/ExecInWorkload"
+	Runtime_InspectWorkload_FullMethodName  = "/nimbus.runtime.Runtime/InspectWorkload"
+	Runtime_AttachWorkload_FullMethodName   = "/nimbus.runtime.Runtime/AttachWorkload"
+	Runtime_HasImage_FullMethodName         = "/nimbus.runtime.Runtime/HasImage"
+	Runtime_ListImages_FullMethodName       = "/nimbus.runtime.Runtime/ListImages"
+	Runtime_RemoveImage_FullMethodName      = "/nimbus.runtime.Runtime/RemoveImage"
+	Runtime_DagStoreInfo_FullMethodName     = "/nimbus.runtime.Runtime/DagStoreInfo"
+	Runtime_PortForward_FullMethodName      = "/nimbus.runtime.Runtime/PortForward"
+	Runtime_UpdateWorkload_FullMethodName   = "/nimbus.runtime.Runtime/UpdateWorkload"
+	Runtime_GetWorkloadStats_FullMethodName = "/nimbus.runtime.Runtime/GetWorkloadStats"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -50,6 +57,17 @@ type RuntimeClient interface {
 	// Used by `nimbusctl workload run alpine:3.18 -- /bin/sh` and
 	// similar interactive workloads on microVM backends.
 	AttachWorkload(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AttachMessage, AttachMessage], error)
+	// Image management
+	HasImage(ctx context.Context, in *HasImageRequest, opts ...grpc.CallOption) (*HasImageResponse, error)
+	ListImages(ctx context.Context, in *ListImagesRequest, opts ...grpc.CallOption) (*ListImagesResponse, error)
+	RemoveImage(ctx context.Context, in *RemoveImageRequest, opts ...grpc.CallOption) (*RemoveImageResponse, error)
+	DagStoreInfo(ctx context.Context, in *DagStoreInfoRequest, opts ...grpc.CallOption) (*DagStoreInfoResponse, error)
+	// Port forwarding
+	PortForward(ctx context.Context, in *PortForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[PortForwardData], error)
+	// Workload resource updates
+	UpdateWorkload(ctx context.Context, in *UpdateWorkloadRequest, opts ...grpc.CallOption) (*UpdateWorkloadResponse, error)
+	// Workload statistics
+	GetWorkloadStats(ctx context.Context, in *GetWorkloadStatsRequest, opts ...grpc.CallOption) (*WorkloadStats, error)
 }
 
 type runtimeClient struct {
@@ -181,6 +199,85 @@ func (c *runtimeClient) AttachWorkload(ctx context.Context, opts ...grpc.CallOpt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Runtime_AttachWorkloadClient = grpc.BidiStreamingClient[AttachMessage, AttachMessage]
 
+func (c *runtimeClient) HasImage(ctx context.Context, in *HasImageRequest, opts ...grpc.CallOption) (*HasImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HasImageResponse)
+	err := c.cc.Invoke(ctx, Runtime_HasImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListImages(ctx context.Context, in *ListImagesRequest, opts ...grpc.CallOption) (*ListImagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListImagesResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListImages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveImage(ctx context.Context, in *RemoveImageRequest, opts ...grpc.CallOption) (*RemoveImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveImageResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) DagStoreInfo(ctx context.Context, in *DagStoreInfoRequest, opts ...grpc.CallOption) (*DagStoreInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DagStoreInfoResponse)
+	err := c.cc.Invoke(ctx, Runtime_DagStoreInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) PortForward(ctx context.Context, in *PortForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[PortForwardData], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Runtime_ServiceDesc.Streams[3], Runtime_PortForward_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[PortForwardRequest, PortForwardData]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_PortForwardClient = grpc.ServerStreamingClient[PortForwardData]
+
+func (c *runtimeClient) UpdateWorkload(ctx context.Context, in *UpdateWorkloadRequest, opts ...grpc.CallOption) (*UpdateWorkloadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateWorkloadResponse)
+	err := c.cc.Invoke(ctx, Runtime_UpdateWorkload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) GetWorkloadStats(ctx context.Context, in *GetWorkloadStatsRequest, opts ...grpc.CallOption) (*WorkloadStats, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkloadStats)
+	err := c.cc.Invoke(ctx, Runtime_GetWorkloadStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -200,6 +297,17 @@ type RuntimeServer interface {
 	// Used by `nimbusctl workload run alpine:3.18 -- /bin/sh` and
 	// similar interactive workloads on microVM backends.
 	AttachWorkload(grpc.BidiStreamingServer[AttachMessage, AttachMessage]) error
+	// Image management
+	HasImage(context.Context, *HasImageRequest) (*HasImageResponse, error)
+	ListImages(context.Context, *ListImagesRequest) (*ListImagesResponse, error)
+	RemoveImage(context.Context, *RemoveImageRequest) (*RemoveImageResponse, error)
+	DagStoreInfo(context.Context, *DagStoreInfoRequest) (*DagStoreInfoResponse, error)
+	// Port forwarding
+	PortForward(*PortForwardRequest, grpc.ServerStreamingServer[PortForwardData]) error
+	// Workload resource updates
+	UpdateWorkload(context.Context, *UpdateWorkloadRequest) (*UpdateWorkloadResponse, error)
+	// Workload statistics
+	GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -239,6 +347,27 @@ func (UnimplementedRuntimeServer) InspectWorkload(context.Context, *InspectReque
 }
 func (UnimplementedRuntimeServer) AttachWorkload(grpc.BidiStreamingServer[AttachMessage, AttachMessage]) error {
 	return status.Error(codes.Unimplemented, "method AttachWorkload not implemented")
+}
+func (UnimplementedRuntimeServer) HasImage(context.Context, *HasImageRequest) (*HasImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method HasImage not implemented")
+}
+func (UnimplementedRuntimeServer) ListImages(context.Context, *ListImagesRequest) (*ListImagesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListImages not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveImage(context.Context, *RemoveImageRequest) (*RemoveImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveImage not implemented")
+}
+func (UnimplementedRuntimeServer) DagStoreInfo(context.Context, *DagStoreInfoRequest) (*DagStoreInfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DagStoreInfo not implemented")
+}
+func (UnimplementedRuntimeServer) PortForward(*PortForwardRequest, grpc.ServerStreamingServer[PortForwardData]) error {
+	return status.Error(codes.Unimplemented, "method PortForward not implemented")
+}
+func (UnimplementedRuntimeServer) UpdateWorkload(context.Context, *UpdateWorkloadRequest) (*UpdateWorkloadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateWorkload not implemented")
+}
+func (UnimplementedRuntimeServer) GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetWorkloadStats not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -416,6 +545,125 @@ func _Runtime_AttachWorkload_Handler(srv interface{}, stream grpc.ServerStream) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Runtime_AttachWorkloadServer = grpc.BidiStreamingServer[AttachMessage, AttachMessage]
 
+func _Runtime_HasImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HasImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).HasImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_HasImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).HasImage(ctx, req.(*HasImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListImages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListImagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListImages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListImages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListImages(ctx, req.(*ListImagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveImage(ctx, req.(*RemoveImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_DagStoreInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DagStoreInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).DagStoreInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_DagStoreInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).DagStoreInfo(ctx, req.(*DagStoreInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_PortForward_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(PortForwardRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(RuntimeServer).PortForward(m, &grpc.GenericServerStream[PortForwardRequest, PortForwardData]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_PortForwardServer = grpc.ServerStreamingServer[PortForwardData]
+
+func _Runtime_UpdateWorkload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateWorkloadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).UpdateWorkload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_UpdateWorkload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).UpdateWorkload(ctx, req.(*UpdateWorkloadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_GetWorkloadStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWorkloadStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetWorkloadStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetWorkloadStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetWorkloadStats(ctx, req.(*GetWorkloadStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -451,6 +699,30 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "InspectWorkload",
 			Handler:    _Runtime_InspectWorkload_Handler,
 		},
+		{
+			MethodName: "HasImage",
+			Handler:    _Runtime_HasImage_Handler,
+		},
+		{
+			MethodName: "ListImages",
+			Handler:    _Runtime_ListImages_Handler,
+		},
+		{
+			MethodName: "RemoveImage",
+			Handler:    _Runtime_RemoveImage_Handler,
+		},
+		{
+			MethodName: "DagStoreInfo",
+			Handler:    _Runtime_DagStoreInfo_Handler,
+		},
+		{
+			MethodName: "UpdateWorkload",
+			Handler:    _Runtime_UpdateWorkload_Handler,
+		},
+		{
+			MethodName: "GetWorkloadStats",
+			Handler:    _Runtime_GetWorkloadStats_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -468,6 +740,11 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _Runtime_AttachWorkload_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "PortForward",
+			Handler:       _Runtime_PortForward_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "nimbus/runtime.proto",

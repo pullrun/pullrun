@@ -128,15 +128,50 @@ func (c *criServer) ListContainers(ctx context.Context, req *runtimeapi.ListCont
 }
 
 func (c *criServer) UpdateContainerResources(ctx context.Context, req *runtimeapi.UpdateContainerResourcesRequest) (*runtimeapi.UpdateContainerResourcesResponse, error) {
-	// v0: resources are pinned at workload creation. A real implementation
-	// would push cgroup/vm updates through the runtime.
-	log.Printf("UpdateContainerResources id=%s (no-op in v0)", req.ContainerId)
+	rec, ok := c.sandboxStore.getContainer(req.ContainerId)
+	if !ok {
+		return nil, fmt.Errorf("UpdateContainerResources: container %q not found", req.ContainerId)
+	}
+
+	cpu := uint64(0)
+	mem := uint64(0)
+	if req.Linux != nil {
+		if req.Linux.CpuPeriod > 0 && req.Linux.CpuQuota > 0 {
+			cpu = uint64(float64(req.Linux.CpuQuota) / float64(req.Linux.CpuPeriod) * 1000)
+		}
+		if req.Linux.MemoryLimitInBytes > 0 {
+			mem = uint64(req.Linux.MemoryLimitInBytes)
+		}
+	}
+
+	updCtx, cancel := context.WithTimeout(ctx, 10*1e9)
+	_, err := c.runtimeClient.UpdateWorkload(updCtx, &nimbusruntime.UpdateWorkloadRequest{
+		Id:           rec.nimbusID,
+		CpuMillicores: cpu,
+		MemoryBytes:  mem,
+	})
+	cancel()
+
+	if err != nil {
+		log.Printf("UpdateContainerResources id=%s (runtime error: %v)", req.ContainerId, err)
+	} else {
+		log.Printf("UpdateContainerResources id=%s cpu=%d mem=%d", req.ContainerId, cpu, mem)
+	}
 	return &runtimeapi.UpdateContainerResourcesResponse{}, nil
 }
 
 func (c *criServer) ReopenContainerLog(ctx context.Context, req *runtimeapi.ReopenContainerLogRequest) (*runtimeapi.ReopenContainerLogResponse, error) {
-	// v0: logs are streamed on demand; reopen is a no-op.
 	return &runtimeapi.ReopenContainerLogResponse{}, nil
+}
+
+func (c *criServer) PortForward(ctx context.Context, req *runtimeapi.PortForwardRequest) (*runtimeapi.PortForwardResponse, error) {
+	// In v0, the sandbox's workload is the same as the container's.
+	// We use the PodSandboxId to find the workload.
+	nimbusID := req.PodSandboxId
+
+	_, url := c.streaming.newSession(nimbusID, nil, nil, "", false)
+	log.Printf("PortForward sandbox=%s ports=%v url=%s", req.PodSandboxId, req.Port, url)
+	return &runtimeapi.PortForwardResponse{Url: url}, nil
 }
 
 // ============================================================
@@ -186,8 +221,4 @@ func (c *criServer) Attach(ctx context.Context, req *runtimeapi.AttachRequest) (
 	_, url := c.streaming.newSession(rec.nimbusID, nil, nil, "", true)
 	log.Printf("Attach id=%s url=%s", req.ContainerId, url)
 	return &runtimeapi.AttachResponse{Url: url}, nil
-}
-
-func (c *criServer) PortForward(ctx context.Context, req *runtimeapi.PortForwardRequest) (*runtimeapi.PortForwardResponse, error) {
-	return nil, fmt.Errorf("PortForward not implemented in v0")
 }

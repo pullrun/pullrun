@@ -30,10 +30,13 @@ use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
     AttachMessage, DagNode, Event as ProtoEvent, ExecRequest, ExecResponse,
-    GetWorkloadRequest, InspectRequest, InspectResponse, ListWorkloadsRequest,
+    GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
+    InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, NetworkRule as ProtoNetworkRule, PullImageRequest,
-    PullImageResponse, RunRequest, RunResponse, StopRequest, StopResponse,
-    StreamEventsRequest, StreamLogsRequest, WorkloadStatus,
+    PullImageResponse, RemoveImageRequest, RemoveImageResponse, DagStoreInfoRequest,
+    DagStoreInfoResponse, RunRequest, RunResponse, StopRequest, StopResponse,
+    StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
+    WorkloadStatus, PortForwardRequest, PortForwardData, GetWorkloadStatsRequest, WorkloadStats,
 };
 
 use crate::metrics::{
@@ -1962,6 +1965,82 @@ impl Runtime for RuntimeService {
         });
 
         Ok(tonic::Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
+    }
+
+    // ------------------------------------------------------------------
+    // Phase A: CRI support RPCs (stubs → prod)
+    // ------------------------------------------------------------------
+
+    async fn has_image(
+        &self,
+        request: tonic::Request<HasImageRequest>,
+    ) -> Result<tonic::Response<HasImageResponse>, tonic::Status> {
+        let _ = request;
+        Err(tonic::Status::unimplemented("has_image not yet implemented"))
+    }
+
+    async fn list_images(
+        &self,
+        _request: tonic::Request<ListImagesRequest>,
+    ) -> Result<tonic::Response<ListImagesResponse>, tonic::Status> {
+        Ok(tonic::Response::new(ListImagesResponse { images: vec![] }))
+    }
+
+    async fn remove_image(
+        &self,
+        request: tonic::Request<RemoveImageRequest>,
+    ) -> Result<tonic::Response<RemoveImageResponse>, tonic::Status> {
+        let _ = request;
+        Ok(tonic::Response::new(RemoveImageResponse {
+            success: false,
+            bytes_freed: 0,
+        }))
+    }
+
+    async fn dag_store_info(
+        &self,
+        _request: tonic::Request<DagStoreInfoRequest>,
+    ) -> Result<tonic::Response<DagStoreInfoResponse>, tonic::Status> {
+        let total = self.store.total_bytes();
+        Ok(tonic::Response::new(DagStoreInfoResponse {
+            mountpoint: "/var/lib/nimbus/dag".into(),
+            total_bytes: total as i64,
+            total_nodes: 0,
+            used_bytes: total as i64,
+            inodes_used: 0,
+        }))
+    }
+
+    type PortForwardStream = tokio_stream::wrappers::ReceiverStream<
+        Result<PortForwardData, tonic::Status>,
+    >;
+
+    async fn port_forward(
+        &self,
+        request: tonic::Request<PortForwardRequest>,
+    ) -> Result<tonic::Response<Self::PortForwardStream>, tonic::Status> {
+        let _ = request;
+        Err(tonic::Status::unimplemented(
+            "port_forward not yet implemented",
+        ))
+    }
+
+    async fn update_workload(
+        &self,
+        request: tonic::Request<UpdateWorkloadRequest>,
+    ) -> Result<tonic::Response<UpdateWorkloadResponse>, tonic::Status> {
+        let _ = request;
+        Ok(tonic::Response::new(UpdateWorkloadResponse { success: false }))
+    }
+
+    async fn get_workload_stats(
+        &self,
+        request: tonic::Request<GetWorkloadStatsRequest>,
+    ) -> Result<tonic::Response<WorkloadStats>, tonic::Status> {
+        let _ = request;
+        Err(tonic::Status::unimplemented(
+            "get_workload_stats not yet implemented",
+        ))
     }
 }
 

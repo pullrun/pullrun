@@ -18,6 +18,23 @@ service Runtime {
     // Used by `nimbusctl workload run alpine:3.18 -- /bin/sh` and
     // similar interactive workloads on microVM backends.
     rpc AttachWorkload(stream AttachMessage) returns (stream AttachMessage);
+
+    // --- CRI support RPCs (Phase A) ---
+
+    // Image management
+    rpc HasImage(HasImageRequest) returns (HasImageResponse);
+    rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+    rpc RemoveImage(RemoveImageRequest) returns (RemoveImageResponse);
+    rpc DagStoreInfo(DagStoreInfoRequest) returns (DagStoreInfoResponse);
+
+    // Port forwarding
+    rpc PortForward(PortForwardRequest) returns (stream PortForwardData);
+
+    // Workload resource updates
+    rpc UpdateWorkload(UpdateWorkloadRequest) returns (UpdateWorkloadResponse);
+
+    // Workload statistics
+    rpc GetWorkloadStats(GetWorkloadStatsRequest) returns (WorkloadStats);
 }
 
 message PullImageRequest {
@@ -201,6 +218,82 @@ message AttachExit {
 // found", "policy denied"). The stream is terminated after this.
 message AttachError {
     string message = 1;
+}
+
+// --- CRI support messages (Phase A) ---
+
+message HasImageRequest {
+    string image_ref = 1;  // e.g. "alpine:latest" or "sha256:<digest>"
+}
+
+message HasImageResponse {
+    bool exists = 1;
+    string root_digest = 2;
+}
+
+message ListImagesRequest {}
+
+message ListImagesResponse {
+    repeated ImageInfo images = 1;
+}
+
+message ImageInfo {
+    string image_ref = 1;
+    string root_digest = 2;
+    int64 size_bytes = 3;
+    int64 created_at = 4;  // unix seconds
+}
+
+message RemoveImageRequest {
+    string root_digest = 1;
+}
+
+message RemoveImageResponse {
+    bool success = 1;
+    int64 bytes_freed = 2;
+}
+
+message DagStoreInfoRequest {}
+
+message DagStoreInfoResponse {
+    string mountpoint = 1;
+    int64 total_bytes = 2;
+    int64 total_nodes = 3;
+    int64 used_bytes = 4;     // approximate; best-effort
+    int64 inodes_used = 5;    // approximate; best-effort
+}
+
+message PortForwardRequest {
+    string workload_id = 1;
+    string protocol = 2;       // "tcp" or "udp"
+    uint32 port = 3;
+}
+
+message PortForwardData {
+    bytes data = 1;
+}
+
+message UpdateWorkloadRequest {
+    string id = 1;
+    uint64 cpu_millicores = 2;
+    uint64 memory_bytes = 3;
+}
+
+message UpdateWorkloadResponse {
+    bool success = 1;
+}
+
+message GetWorkloadStatsRequest {
+    string id = 1;
+}
+
+message WorkloadStats {
+    string id = 1;
+    double cpu_usage_percent = 2;
+    uint64 memory_bytes = 3;
+    uint64 disk_bytes = 4;
+    uint64 network_rx_bytes = 5;
+    uint64 network_tx_bytes = 6;
 }
 
 // Deep inspection of a workload. The DAG path is the ordered list of

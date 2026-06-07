@@ -47,34 +47,83 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 		return nil, fmt.Errorf("ImageStatus: missing image spec")
 	}
 
-	// v0: we don't maintain a separate image index. Anything that's been
-	// pulled lives in the DAG store. We can probe the store by attempting
-	// to look up the digest. For now, return unknown — kubelet will retry
-	// with PullImage if needed.
-	log.Printf("ImageStatus image=%s (v0: returns unknown)", req.Image.Image)
-	return &runtimeapi.ImageStatusResponse{}, nil
+	hasCtx, cancel := context.WithTimeout(ctx, 5*1e9)
+	resp, err := c.runtimeClient.HasImage(hasCtx, &nimbusruntime.HasImageRequest{
+		ImageRef: req.Image.Image,
+	})
+	cancel()
+
+	if err != nil {
+		log.Printf("ImageStatus image=%s (runtime error: %v)", req.Image.Image, err)
+		return &runtimeapi.ImageStatusResponse{}, nil
+	}
+
+	if !resp.Exists {
+		log.Printf("ImageStatus image=%s (not found)", req.Image.Image)
+		return &runtimeapi.ImageStatusResponse{}, nil
+	}
+
+	return &runtimeapi.ImageStatusResponse{
+		Image: &runtimeapi.Image{
+			Id:       resp.RootDigest,
+			RepoTags: []string{req.Image.Image},
+		},
+	}, nil
 }
 
 func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRequest) (*runtimeapi.ListImagesResponse, error) {
-	// v0: we don't index images in the CRI shim. A real implementation would
-	// walk the DAG store and return one entry per unique root digest.
-	log.Printf("ListImages (v0: returns empty)")
-	return &runtimeapi.ListImagesResponse{}, nil
+	listCtx, cancel := context.WithTimeout(ctx, 5*1e9)
+	resp, err := c.runtimeClient.ListImages(listCtx, &nimbusruntime.ListImagesRequest{})
+	cancel()
+
+	if err != nil {
+		log.Printf("ListImages (runtime error: %v)", err)
+		return &runtimeapi.ListImagesResponse{}, nil
+	}
+
+	images := make([]*runtimeapi.Image, 0, len(resp.Images))
+	for _, img := range resp.Images {
+		var size uint64
+		if img.SizeBytes > 0 {
+			size = uint64(img.SizeBytes)
+		}
+		images = append(images, &runtimeapi.Image{
+			Id:       img.RootDigest,
+			RepoTags: []string{img.ImageRef},
+			Size_:    size,
+		})
+	}
+	return &runtimeapi.ListImagesResponse{Images: images}, nil
 }
 
 func (c *criServer) RemoveImage(ctx context.Context, req *runtimeapi.RemoveImageRequest) (*runtimeapi.RemoveImageResponse, error) {
-	// v0: images are content-addressed; we don't remove them (other workloads
-	// may still reference them). A real implementation would mark the root
-	// digest as garbage.
-	log.Printf("RemoveImage image=%s (v0: no-op, content-addressed)", req.Image.Image)
+	removeCtx, cancel := context.WithTimeout(ctx, 10*1e9)
+	resp, err := c.runtimeClient.RemoveImage(removeCtx, &nimbusruntime.RemoveImageRequest{
+		RootDigest: req.Image.Image,
+	})
+	cancel()
+
+	if err != nil {
+		log.Printf("RemoveImage image=%s (runtime error: %v)", req.Image.Image, err)
+		return &runtimeapi.RemoveImageResponse{}, nil
+	}
+
+	log.Printf("RemoveImage image=%s freed=%d bytes", req.Image.Image, resp.BytesFreed)
 	return &runtimeapi.RemoveImageResponse{}, nil
 }
 
 func (c *criServer) ImageFsInfo(ctx context.Context, req *runtimeapi.ImageFsInfoRequest) (*runtimeapi.ImageFsInfoResponse, error) {
-	// v0: report the DAG store path as the image filesystem. A real
-	// implementation would report overlayfs/extract paths used by the
-	// runtime.
-	log.Printf("ImageFsInfo (v0: stub)")
+	infoCtx, cancel := context.WithTimeout(ctx, 5*1e9)
+	resp, err := c.runtimeClient.DagStoreInfo(infoCtx, &nimbusruntime.DagStoreInfoRequest{})
+	cancel()
+
+	if err != nil {
+		log.Printf("ImageFsInfo (runtime error: %v)", err)
+	} else {
+		log.Printf("ImageFsInfo mount=%s total=%d used=%d nodes=%d",
+			resp.Mountpoint, resp.TotalBytes, resp.UsedBytes, resp.TotalNodes)
+	}
+
 	return &runtimeapi.ImageFsInfoResponse{
 		ImageFilesystems: []*runtimeapi.FilesystemUsage{
 			{
