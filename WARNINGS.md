@@ -1242,3 +1242,60 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   a real `tty: true` option that asks the runtime
   to allocate a pty.
 
+---
+
+## Phase 7: Codebase audit findings
+
+### `brctl` is NOT required
+
+- The code uses `ip link add type bridge` (modern iproute2), not the legacy
+  `brctl` from `bridge-utils`. Only `ip` (iproute2) and `iptables` are needed.
+- `bridge-utils` was listed in older next-steps checklists but is not a
+  runtime dependency. Remove it from server install instructions.
+
+### Root required for loop device mount
+
+- `materialize_ext4_rootfs()` in `runtime/nimbus-vm/src/ext4.rs` calls
+  `Command::new("mount")` with `-o loop` to mount the ext4 image before
+  populating it via `OciMaterializer::materialize_into()`.
+- This requires either root or `CAP_SYS_ADMIN`. The runtime daemon must run
+  as root (or with appropriate capabilities).
+- No workaround planned for v0 (we need `mount -o loop` for ext4 image
+  creation; `e2tools` was considered but deferred).
+
+### Double materialization for Firecracker
+
+- `runtime/nimbus-runtime/src/service.rs:run_workload()` unconditionally
+  calls `materialize_rootfs()` (plain directory → `rootfs_cache`) BEFORE
+  calling `executor.create()`.
+- For Firecracker VMs, `FirecrackerExecutor::create()` then re-materializes
+  the same DAG root as an ext4 image via `materialize_ext4_rootfs()`.
+- This means: **2x DAG traversal, 2x disk space** (temp dir + ext4 image).
+  The plain-dir materialization and its `rootfs_cache` entry are completely
+  unused for Firecracker.
+- Fix: skip the plain-dir materialization in `run_workload()` when the
+  backend is `FirecrackerExecutor`. See `service.rs` around line 1042-1124.
+
+### Missing `/init` wrapper for OCI images booted as VMs
+
+- Firecracker boot args pass `init=/init`. The rootfs produced by
+  `materialize_ext4_rootfs()` contains the OCI image's files verbatim.
+- OCI container images (e.g. `alpine:latest`) have `ENTRYPOINT`/`CMD` but
+  no `/init` executable. The kernel would panic when it cannot find `/init`.
+- The `build-initramfs` tool creates a proper `/init` that execs
+  `/sbin/nimbus-init`, but that's only for the initramfs — the runtime's
+  `materialize_ext4_rootfs()` path doesn't inject any `/init`.
+- Fix: inject a `/init` shim script (or nimbus-init binary) into the ext4
+  rootfs that reads the image's ENTRYPOINT/CMD from the DAG manifest and
+  execs it.
+
+### Firecracker has no OCI-based kernel path
+
+- `oci_kernel.rs` in `nimbus-vm` provides `StagedKernel::from_image()`:
+  pulls an OCI kernel image, extracts `/boot/vmlinux`, stores in
+  `MmapStore`. This is **only used by the Apple Virt path**.
+- Firecracker still requires `--vm-kernel` pointing to a pre-downloaded
+  vmlinux file on the host filesystem.
+- Fix: call `StagedKernel::from_image()` in the Firecracker code path too,
+  or at minimum document that `--vm-kernel` is required.
+

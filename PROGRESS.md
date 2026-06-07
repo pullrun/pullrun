@@ -930,3 +930,47 @@ from `cargo build --release -p nimbus-runtime` (12 MB binary).
    `materialize_ext4_rootfs` from `nimbus-vm`
 5. Update README.md and PROGRESS.md with Linux architecture details and benchmarks
 6. Commit current working state and plan Firecracker+DAG integration sprint
+
+---
+
+## Phase 7: Codebase audit — what's already done vs real gaps
+
+### Audit methodology
+
+Deep codebase analysis of all 9 Rust crates + tools to determine what
+Firecracker+DAG integration, server networking, and nimbus-init features
+actually need code changes vs what's already implemented.
+
+### Findings: already implemented (no code changes needed)
+
+| Claimed gap | Reality | Evidence |
+|---|---|---|
+| "Wire FirecrackerExecutor with DAG store" | **Already wired.** `FirecrackerExecutor::create()` receives `MmapStore` in constructor, calls `materialize_ext4_rootfs(&store, &root_digest, &ext4_path, options)` to produce bootable ext4 from DAG | `lib.rs:80-90` (struct fields), `lib.rs:186-207` (materialize call) |
+| "Install bridge-utils (brctl)" | **Not needed.** Code uses `ip link add type bridge` (modern iproute2), not `brctl`. Only `ip` from iproute2 and `iptables` are needed. | `network.rs:ensure_bridge()` |
+| "VM networking is a stub" | **Fully implemented.** TAP create, bridge attach, iptables MASQUERADE, outbound interface auto-detect, IP forwarding enable, teardown. 757 lines of production code + 2 standalone smoke tests. | `network.rs` (full file), `vm-network-smoke`, `vm-outbound-smoke` |
+| "IPAM needs work for VMs" | **Already shared.** Single `Arc<Ipam>` from `ProxyNetwork.ipam_handle()` passed to both `LinuxContainerExecutor` and `FirecrackerExecutor`. | `service.rs:211-272` |
+| "nimbus-init needs busybox config" | **No dependency.** nimbus-init has zero busybox awareness. It spawns whatever `WorkloadSpec.command` the host sends. The applets are in `build-initramfs` only. | `nimbus-init/src/main.rs`, `build-initramfs/src/main.rs:279-282` |
+| "Cross-compile from macOS" | **Docker approach works.** Previous session built on server with `docker run rust:1.90-bookworm`. macOS→Linux musl blocked by reqwest's default `openssl-sys` TLS. | Established workflow |
+
+### Real gaps (need code changes)
+
+| Gap | Impact | Fix location |
+|---|---|---|
+| **Double materialization for Firecracker** | `run_workload()` unconditionally materializes rootfs as plain dir (Apple Virt path, stored in `rootfs_cache`), then `FirecrackerExecutor::create()` re-materializes same DAG root as ext4. 2x DAG walk, 2x disk. | `service.rs:run_workload()` — skip OciMaterializer::materialize_into when backend is Firecracker |
+| **Missing `/init` wrapper for OCI images** | Firecracker boot args pass `init=/init`. OCI container images have `ENTRYPOINT`/`CMD` but no `/init`. Booting `alpine:latest` would panic at missing `/init`. | `materialize_ext4_rootfs` (or FirecrackerExecutor.create) — inject `/init` shim that execs the image's entrypoint |
+| **No OCI-based kernel for Firecracker** | `--vm-kernel` must point to pre-downloaded vmlinux file. `oci_kernel.rs` only runs on Apple Virt path. Firecracker can't pull kernel from OCI image. | Port `oci_kernel`-style OCI pull + StagedKernel to Firecracker path |
+| **Root required for loop mount** | `materialize_ext4_rootfs` calls `mount -o loop` via `Command::new("mount")`. Needs root or `CAP_SYS_ADMIN`. | Document as operational requirement |
+| **Missing busybox applets** | 18 symlinks currently. Common workloads may need `uname`, `grep`, `ping`, etc. | `tools/build-initramfs/src/main.rs:279-282` |
+
+### Updated next steps (corrected)
+
+1. **Quick win**: Add `uname` busybox applet to `build-initramfs` (2 lines)
+2. **Server prep**: SSH to Scaleway server, verify `ip` (iproute2) and `iptables` exist, ensure `/dev/kvm` accessible, prepare vmlinux kernel
+3. **Double materialization fix**: Skip plain-dir materialization in `run_workload()` when backend is Firecracker
+4. **Missing `/init` fix**: Inject `/init` shim into ext4 rootfs that execs the OCI image's ENTRYPOINT/CMD
+5. **End-to-end test**: Run `nimbus-runtime daemon --vm-firecracker /usr/local/bin/firecracker --vm-kernel /tmp/vmlinux-extracted` on server, verify boot + workload exec
+
+### Key documentation updates from audit
+- `README.md`: Updated "Stubs / partial" — removed bridge-utils, networking stub claims
+- `WARNINGS.md`: Added notes on: no brctl needed, root for loop mount, double materialization, missing /init
+- `PROGRESS.md`: This section — corrected next steps based on audit

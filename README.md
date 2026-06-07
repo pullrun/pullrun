@@ -234,13 +234,14 @@ reason to optimize them (real load + a real eBPF implementation).
 
 **Stubs / partial:**
 
-- Firecracker executor wired to DAG store (kernel pulled via OCI, rootfs from DAG materialize)
+- OCI-based kernel for Firecracker (currently requires pre-downloaded `--vm-kernel` vmlinux file)
+- `/init` wrapper injection for OCI container images booted as VMs (no `init=/init` shim yet)
+- Double materialization cleanup (rootfs materialized twice for Firecracker: once as plain dir, once as ext4)
 - Control plane persistence (currently in-memory; etcd integration deferred to v1)
 - Cross-node service discovery (`.nimbus.local` DNS across cluster)
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
-- bridge-utils + iptables TAP networking on Linux server
 
 **Test coverage: 92 Rust tests pass** (83 lib + 9 vsock). **9 Go tests pass**
 (`go test ./...` from `cli/nimbusctl`).
