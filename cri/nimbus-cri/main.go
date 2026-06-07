@@ -46,7 +46,7 @@ type criServer struct {
 	runtimeapi.UnimplementedImageServiceServer
 
 	runtimeClient nimbusruntime.RuntimeClient
-	sandboxStore  *sandboxStore
+	sandboxStore  *fileStore
 	streaming     *streamingServer
 	networkMode   string
 }
@@ -232,7 +232,7 @@ func main() {
 
 	server := &criServer{
 		runtimeClient: runtimeClient,
-		sandboxStore:  newSandboxStore(),
+		sandboxStore:  newFileStore(filepath.Join(filepath.Dir(*socketPath), "store")),
 		streaming:     streaming,
 		networkMode:   *networkMode,
 	}

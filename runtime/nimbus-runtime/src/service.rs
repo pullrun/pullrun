@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tonic::Status;
 use tracing::{debug, info, warn};
@@ -62,6 +63,7 @@ pub struct VmBackendConfig {
 pub struct ServiceConfig {
     pub store_root: PathBuf,
     pub bundle_root: PathBuf,
+    pub checkpoints_dir: PathBuf,
     pub policy: Option<Policy>,
     pub trusted_keys: Vec<CosignKey>,
     pub vm_backend: Option<VmBackendConfig>,
@@ -74,9 +76,11 @@ pub struct ServiceConfig {
 impl ServiceConfig {
     pub fn new(store_root: PathBuf) -> Self {
         let bundle_root = store_root.join("bundles");
+        let checkpoints_dir = store_root.join("checkpoints");
         Self {
             store_root,
             bundle_root,
+            checkpoints_dir,
             policy: None,
             trusted_keys: Vec::new(),
             vm_backend: None,
@@ -287,8 +291,33 @@ impl RuntimeCommand {
         });
 
         let event_bus = Arc::new(EventBus::default());
+        // Load persisted workload checkpoints so the runtime survives
+        // restarts without losing tracked state. Any workload that was
+        // "running" at crash time is conservatively marked "exited" —
+        // the executor can't be relied on to still own the process.
+        let mut recovered = load_workload_checkpoints(&self.config.checkpoints_dir);
+        for state in recovered.values_mut() {
+            if state.status == "running" {
+                info!(
+                    "workload running at last checkpoint; marking as exited (post-crash recovery)"
+                );
+                state.status = "exited".to_string();
+                state.exit_code = state.exit_code.or(Some(137));
+                if state.exit_time == 0 {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    state.exit_time = now;
+                }
+            }
+            info!(
+                status = %state.status,
+                "recovered workload state"
+            );
+        }
         let workloads: Arc<RwLock<HashMap<String, WorkloadState>>> =
-            Arc::new(RwLock::new(HashMap::new()));
+            Arc::new(RwLock::new(recovered));
         let image_tags: Arc<RwLock<HashMap<String, String>>> =
             Arc::new(RwLock::new(HashMap::new()));
 
@@ -305,6 +334,7 @@ impl RuntimeCommand {
         let watcher_bus = event_bus.clone();
         let watcher_executor = executor.clone();
         let watcher_workloads = workloads.clone();
+        let watcher_checkpoints_dir = self.config.checkpoints_dir.clone();
         tokio::spawn(async move {
             use std::collections::HashSet;
             use std::time::Duration;
@@ -354,6 +384,17 @@ impl RuntimeCommand {
                                     state.status = "exited".to_string();
                                     state.exit_time = now;
                                     state.exit_code = exit_code;
+                                    let checkpoint = state.clone();
+                                    // Drop the lock before writing to disk.
+                                    drop(map);
+                                    write_workload_checkpoint(
+                                        &watcher_checkpoints_dir,
+                                        &id,
+                                        &checkpoint,
+                                    );
+                                } else {
+                                    // No state to checkpoint if the workload
+                                    // was already removed from the map.
                                 }
                             }
                             record_workload_exit(
@@ -394,6 +435,13 @@ impl RuntimeCommand {
                                     state.status = "exited".to_string();
                                     state.exit_time = now;
                                     state.exit_code = Some(137); // assume killed
+                                    let checkpoint = state.clone();
+                                    drop(map);
+                                    write_workload_checkpoint(
+                                        &watcher_checkpoints_dir,
+                                        &id,
+                                        &checkpoint,
+                                    );
                                 }
                             }
                             record_workload_exit(&backend, Some(137));
@@ -654,7 +702,70 @@ mod parse_exit_code_tests {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Write a single workload's state to the checkpoints directory as a
+/// JSON file. Called on every state transition (run, stop, exit).
+/// Idempotent: subsequent writes replace the previous checkpoint.
+fn write_workload_checkpoint(
+    dir: &std::path::Path,
+    id: &str,
+    state: &WorkloadState,
+) {
+    let path = dir.join(format!("{id}.json"));
+    match serde_json::to_string_pretty(state) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&path, &json) {
+                warn!(%id, error = %e, "failed to write workload checkpoint");
+            }
+        }
+        Err(e) => {
+            warn!(%id, error = %e, "failed to serialize workload checkpoint");
+        }
+    }
+}
+
+/// Load all workload checkpoints from the checkpoints directory.
+/// Returns a map of workload id → WorkloadState. Skips files that
+/// cannot be parsed.
+fn load_workload_checkpoints(dir: &std::path::Path) -> HashMap<String, WorkloadState> {
+    let mut workloads = HashMap::new();
+    if !dir.exists() {
+        return workloads;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!(error = %e, "failed to read checkpoints directory");
+            return workloads;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map(|e| e == "json").unwrap_or(false) {
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string());
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            match serde_json::from_str::<WorkloadState>(&content) {
+                Ok(state) => {
+                    if let Some(ref id_str) = id {
+                        info!(%id_str, status = %state.status, "recovered workload checkpoint");
+                        workloads.insert(id_str.clone(), state);
+                    }
+                }
+                Err(e) => {
+                    warn!(path = %path.display(), error = %e, "ignoring invalid checkpoint");
+                }
+            }
+        }
+    }
+    workloads
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadState {
     pub status: String,
     pub start_time: i64,
@@ -869,7 +980,7 @@ impl RuntimeService {
             None
         };
         let _ = backend; // reserved for future exec dispatch
-        workloads.insert(final_id.clone(), WorkloadState {
+        let state = WorkloadState {
             status: "running".to_string(),
             start_time: now,
             exit_time: 0,
@@ -884,8 +995,13 @@ impl RuntimeService {
             kernel_image_ref: final_kernel_image_ref.clone(),
             working_dir: final_working_dir.clone(),
             rootfs_dir,
-        });
+        };
+        workloads.insert(final_id.clone(), state.clone());
         drop(workloads);
+
+        // Persist checkpoint immediately so the workload state
+        // survives a runtime restart.
+        write_workload_checkpoint(&self.config.checkpoints_dir, &final_id, &state);
 
         record_workload_started(&backend_label);
 
@@ -1364,7 +1480,7 @@ impl Runtime for RuntimeService {
         } else {
             None
         };
-        workloads.insert(final_id.clone(), WorkloadState {
+        let state = WorkloadState {
             status: "running".to_string(),
             start_time: now,
             exit_time: 0,
@@ -1379,8 +1495,13 @@ impl Runtime for RuntimeService {
             kernel_image_ref: final_kernel_image_ref.clone(),
             working_dir: final_working_dir.clone(),
             rootfs_dir,
-        });
+        };
+        workloads.insert(final_id.clone(), state.clone());
         drop(workloads);
+
+        // Persist checkpoint immediately so the workload state
+        // survives a runtime restart.
+        write_workload_checkpoint(&self.config.checkpoints_dir, &final_id, &state);
 
         record_workload_started(&backend_label);
 
@@ -1429,6 +1550,7 @@ impl Runtime for RuntimeService {
         // `announced` HashSet to ensure it only fires
         // `WorkloadExited` once per id.)
         let mut was_running = false;
+        let mut state_copy: Option<WorkloadState> = None;
         {
             let mut workloads = self.workloads.write().await;
             if let Some(state) = workloads.get_mut(&id) {
@@ -1441,8 +1563,13 @@ impl Runtime for RuntimeService {
                         .unwrap_or(0);
                     state.exit_time = now;
                     was_running = true;
+                    state_copy = Some(state.clone());
                 }
             }
+        }
+        // Persist checkpoint after stopping.
+        if let Some(s) = &state_copy {
+            write_workload_checkpoint(&self.config.checkpoints_dir, &id, s);
         }
 
         if was_running {

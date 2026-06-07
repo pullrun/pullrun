@@ -77,13 +77,7 @@ func (c *criServer) StopContainer(ctx context.Context, req *runtimeapi.StopConta
 
 func (c *criServer) RemoveContainer(ctx context.Context, req *runtimeapi.RemoveContainerRequest) (*runtimeapi.RemoveContainerResponse, error) {
 	// v0: removing a container doesn't tear down the sandbox.
-	rec, ok := c.sandboxStore.getContainer(req.ContainerId)
-	if !ok {
-		return nil, fmt.Errorf("RemoveContainer: container %q not found", req.ContainerId)
-	}
-	c.sandboxStore.mu.Lock()
-	delete(c.sandboxStore.containers, rec.id)
-	c.sandboxStore.mu.Unlock()
+	c.sandboxStore.removeContainer(req.ContainerId)
 	log.Printf("RemoveContainer id=%s", req.ContainerId)
 	return &runtimeapi.RemoveContainerResponse{}, nil
 }

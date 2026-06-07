@@ -10,7 +10,7 @@ pub use ipam::{IpRange, Ipam};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Direction {
     Inbound,
     Outbound,
@@ -25,7 +25,7 @@ impl Direction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Protocol {
     Tcp,
     Udp,
@@ -40,7 +40,7 @@ impl Protocol {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkRule {
     pub direction: Direction,
     pub protocol: Protocol,
