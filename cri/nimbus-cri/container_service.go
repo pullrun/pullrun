@@ -167,11 +167,25 @@ func (c *criServer) ExecSync(ctx context.Context, req *runtimeapi.ExecSyncReques
 }
 
 func (c *criServer) Exec(ctx context.Context, req *runtimeapi.ExecRequest) (*runtimeapi.ExecResponse, error) {
-	return nil, fmt.Errorf("Exec (streaming) not implemented in v0; use ExecSync")
+	rec, ok := c.sandboxStore.getContainer(req.ContainerId)
+	if !ok {
+		return nil, fmt.Errorf("Exec: container %q not found", req.ContainerId)
+	}
+
+	_, url := c.streaming.newSession(rec.nimbusID, req.Cmd, nil, "", false)
+	log.Printf("Exec id=%s cmd=%v url=%s", req.ContainerId, req.Cmd, url)
+	return &runtimeapi.ExecResponse{Url: url}, nil
 }
 
 func (c *criServer) Attach(ctx context.Context, req *runtimeapi.AttachRequest) (*runtimeapi.AttachResponse, error) {
-	return nil, fmt.Errorf("Attach not implemented in v0")
+	rec, ok := c.sandboxStore.getContainer(req.ContainerId)
+	if !ok {
+		return nil, fmt.Errorf("Attach: container %q not found", req.ContainerId)
+	}
+
+	_, url := c.streaming.newSession(rec.nimbusID, nil, nil, "", true)
+	log.Printf("Attach id=%s url=%s", req.ContainerId, url)
+	return &runtimeapi.AttachResponse{Url: url}, nil
 }
 
 func (c *criServer) PortForward(ctx context.Context, req *runtimeapi.PortForwardRequest) (*runtimeapi.PortForwardResponse, error) {

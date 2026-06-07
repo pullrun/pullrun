@@ -9,7 +9,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -35,6 +34,10 @@ const (
 	DefaultPauseImage = "registry.k8s.io/pause:3.9"
 	// AnnotationNimbusImage overrides the image to run in a pod sandbox.
 	AnnotationNimbusImage = "nimbus.io/image"
+	// AnnotationNimbusCPUMillicores overrides the CPU resource limit.
+	AnnotationNimbusCPUMillicores = "nimbus.io/cpu-millicores"
+	// AnnotationNimbusMemoryBytes overrides the memory resource limit.
+	AnnotationNimbusMemoryBytes = "nimbus.io/memory-bytes"
 )
 
 // criServer is the gRPC server implementation that bridges CRI to nimbus-runtime.
@@ -44,6 +47,7 @@ type criServer struct {
 
 	runtimeClient nimbusruntime.RuntimeClient
 	sandboxStore  *sandboxStore
+	streaming     *streamingServer
 }
 
 // sandboxStore is a small in-memory index of pod sandboxes -> nimbus workload IDs.
@@ -217,9 +221,17 @@ func main() {
 	log.Printf("connected to nimbus-runtime at %s", *runtimeSock)
 
 	runtimeClient := nimbusruntime.NewRuntimeClient(conn)
+
+	// Start the SPDY streaming server for Exec/Attach/PortForward.
+	streaming, err := newStreamingServer(runtimeClient)
+	if err != nil {
+		log.Fatalf("failed to start streaming server: %v", err)
+	}
+
 	server := &criServer{
 		runtimeClient: runtimeClient,
 		sandboxStore:  newSandboxStore(),
+		streaming:     streaming,
 	}
 
 	// Listen on the CRI socket
@@ -240,6 +252,4 @@ func main() {
 	if err := gs.Serve(lis); err != nil {
 		log.Fatalf("CRI server error: %v", err)
 	}
-
-	_ = fmt.Sprintf // keep import
 }

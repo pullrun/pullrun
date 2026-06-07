@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -38,6 +39,24 @@ func runWorkloadImageFromAnnotations(annotations map[string]string) string {
 	return DefaultPauseImage
 }
 
+// parseResourceAnnotations extracts optional resource limits from pod annotations.
+func parseResourceAnnotations(annotations map[string]string) (cpu uint64, mem uint64) {
+	if annotations == nil {
+		return 0, 0
+	}
+	if v, ok := annotations[AnnotationNimbusCPUMillicores]; ok && v != "" {
+		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cpu = n
+		}
+	}
+	if v, ok := annotations[AnnotationNimbusMemoryBytes]; ok && v != "" {
+		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+			mem = n
+		}
+	}
+	return
+}
+
 // ============================================================
 // Critical path: RunPodSandbox / StopPodSandbox / PodSandboxStatus
 // / ListPodSandbox / Version
@@ -53,12 +72,13 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 	image := runWorkloadImageFromAnnotations(req.Config.Annotations)
 	backend := backendForRuntimeHandler(req.RuntimeHandler)
 	netMode := "isolated" // CRI v1 uses CNI; v0 default is isolated per-namespace
+	cpu, mem := parseResourceAnnotations(req.Config.Annotations)
 
-	log.Printf("RunPodSandbox id=%s ns=%s name=%s image=%s backend=%s net=%s",
+	log.Printf("RunPodSandbox id=%s ns=%s name=%s image=%s backend=%s net=%s cpu=%d mem=%d",
 		req.Config.Metadata.Uid,
 		req.Config.Metadata.Namespace,
 		req.Config.Metadata.Name,
-		image, backend, netMode)
+		image, backend, netMode, cpu, mem)
 
 	// 2. Pull the image into the DAG store.
 	pullCtx, cancel := context.WithTimeout(ctx, 10*60*1e9) // 10 min
@@ -76,10 +96,12 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 	// podSandboxId maps 1:1 to workloadId.
 	runCtx, cancel := context.WithTimeout(ctx, 60*1e9) // 60s
 	runResp, err := c.runtimeClient.RunWorkload(runCtx, &nimbusruntime.RunRequest{
-		Id:          req.Config.Metadata.Uid,
-		RootDigest:  pullResp.RootDigest,
-		Backend:     backend,
-		NetworkMode: netMode,
+		Id:           req.Config.Metadata.Uid,
+		RootDigest:   pullResp.RootDigest,
+		Backend:      backend,
+		NetworkMode:  netMode,
+		CpuMillicores: cpu,
+		MemoryBytes:  mem,
 	})
 	cancel()
 	if err != nil {
