@@ -144,7 +144,7 @@ impl FirecrackerExecutor {
         use sha2::{Digest, Sha256};
         let h = Sha256::digest(id.as_bytes());
         let suffix = format!("{:02x}{:02x}{:02x}{:02x}", h[0], h[1], h[2], h[3]);
-        format!("tap-{}", &suffix[..12])
+        format!("tap-{suffix}")
     }
 }
 

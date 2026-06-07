@@ -1039,15 +1039,20 @@ impl Runtime for RuntimeService {
         // If the backend is "vm", stage the kernel OCI image and
         // stash it in the kernel cache so a later AttachWorkload
         // can boot the same VM.
+        // On Linux/Firecracker, the daemon has a pre-configured
+        // kernel path (--vm-kernel), so kernel_image is optional.
         if backend_label == "vm" {
-            if req.kernel_image.is_empty() {
+            let has_local_kernel = self.config.vm_backend.is_some();
+            if req.kernel_image.is_empty() && !has_local_kernel {
                 return Err(tonic::Status::invalid_argument(
                     "backend=vm requires kernel_image (e.g. 'nimbus/kernel-asahi:6.19.14')",
                 ));
             }
-            // Stage the kernel unless it's already in the cache.
-            // We use a separate lock scope so we don't hold the
-            // kernel cache write lock across the network pull.
+            // When kernel_image is non-empty, stage the kernel from
+            // OCI for Apple Virt (macOS). For Firecracker (Linux),
+            // the daemon's VmBackendConfig.kernel_path is used
+            // directly, so skip OCI staging.
+            if !req.kernel_image.is_empty() {
             let already_staged = self
                 .kernel_cache
                 .read()
@@ -1075,10 +1080,6 @@ impl Runtime for RuntimeService {
                                     &kernel.vmlinux_size().to_string(),
                                 ),
                         );
-                        // Cache the staged kernel so the
-                        // `AttachWorkload` handler can
-                        // reconstruct it via `from_paths`
-                        // and boot the Apple Virt VM.
                         self.kernel_cache
                             .write()
                             .await
@@ -1098,6 +1099,7 @@ impl Runtime for RuntimeService {
                         )));
                     }
                 }
+            }
             }
 
             // Materialize the workload's OCI image to a temp

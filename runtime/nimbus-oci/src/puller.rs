@@ -237,7 +237,7 @@ impl OciPuller {
         registry: &str,
         repository: &str,
     ) -> Result<Option<String>, OciError> {
-        let url = if registry == "registry-1.docker.io" {
+        let url = if registry == "registry-1.docker.io" || registry == "docker.io" {
             format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repository}:pull")
         } else {
             format!("{}//{registry}/token?scope=repository:{repository}:pull", self.scheme(registry))
@@ -499,7 +499,7 @@ fn decode_body(encoding: &str, data: Vec<u8>) -> Result<Vec<u8>, OciError> {
 }
 
 fn manifest_url(puller: &OciPuller, registry: &str, repository: &str, reference: &str) -> String {
-    if registry == "registry-1.docker.io" {
+    if registry == "registry-1.docker.io" || registry == "docker.io" {
         format!("https://index.docker.io/v2/{repository}/manifests/{reference}")
     } else {
         format!("{}//{registry}/v2/{repository}/manifests/{reference}", puller.scheme(registry))
@@ -507,7 +507,7 @@ fn manifest_url(puller: &OciPuller, registry: &str, repository: &str, reference:
 }
 
 fn blob_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) -> String {
-    if registry == "registry-1.docker.io" {
+    if registry == "registry-1.docker.io" || registry == "docker.io" {
         format!("https://index.docker.io/v2/{repository}/blobs/{digest}")
     } else {
         format!("{}//{registry}/v2/{repository}/blobs/{digest}", puller.scheme(registry))
