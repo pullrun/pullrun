@@ -45,7 +45,9 @@
 //! `iptables`. On macOS the constructors return `NotLinux` and
 //! `FirecrackerExecutor` surfaces a clear error.
 
+use std::fs::File;
 use std::net::Ipv4Addr;
+use std::os::fd::AsRawFd;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
@@ -104,6 +106,77 @@ impl VmNetwork {
             self.guest_ip, self.gateway, self.netmask
         )
     }
+}
+
+/// Add a TAP device to the system using direct `ioctl` on `/dev/net/tun`.
+///
+/// This avoids spawning `ip tuntap add` as a child process, which would
+/// require ambient capabilities to pass the `CAP_NET_ADMIN` check in the
+/// child. Instead, the `ioctl` is performed by our own process, which
+/// has `cap_net_admin` in its effective set (via `setcap` on the binary).
+///
+/// The tap device is created with `IFF_TAP | IFF_NO_PI` (layer-2 tap,
+/// no packet info header), then attached to the bridge and brought up
+/// by the caller.
+///
+/// Returns the open fd on `/dev/net/tun`. The TAP device lives only as
+/// long as this fd is open — dropping it destroys the device.
+#[cfg(target_os = "linux")]
+fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
+    const TUNSETIFF: std::os::raw::c_ulong = 0x4004_54CA;
+    const IFF_TAP: std::os::raw::c_short = 0x0002;
+    const IFF_NO_PI: std::os::raw::c_short = 0x1000;
+
+    // ifreq structure for TUNSETIFF
+    // Must be sizeof(struct ifreq) = 40 bytes. The kernel reads the full
+    // size via copy_from_user — an undersized struct causes buffer overread.
+    #[repr(C)]
+    struct IfReq {
+        ifr_name: [u8; 16],
+        ifr_flags: std::os::raw::c_short,
+        _pad: [u8; 22],
+    }
+
+    let tun = File::options()
+        .read(true)
+        .write(true)
+        .open("/dev/net/tun")
+        .map_err(|e| {
+            VmNetError::IpCommand(format!("open /dev/net/tun: {e}"))
+        })?;
+
+    let mut req = IfReq {
+        ifr_name: {
+            let mut buf = [0u8; 16];
+            let name_bytes = name.as_bytes();
+            let len = name_bytes.len().min(15);
+            buf[..len].copy_from_slice(&name_bytes[..len]);
+            buf
+        },
+        ifr_flags: IFF_TAP | IFF_NO_PI,
+        _pad: [0u8; 22],
+    };
+
+    extern "C" {
+        fn ioctl(fd: std::os::raw::c_int, request: std::os::raw::c_ulong, ...) -> std::os::raw::c_int;
+    }
+
+    let ret = unsafe { ioctl(tun.as_raw_fd(), TUNSETIFF, &mut req as *mut _ as *mut std::ffi::c_void) };
+    if ret < 0 {
+        let err = std::io::Error::last_os_error();
+        return Err(VmNetError::IpCommand(format!(
+            "ioctl(TUNSETIFF) for {name}: {err}"
+        )));
+    }
+
+    debug!(tap = name, "TAP device created via ioctl");
+    Ok(tun)
+}
+
+/// Stub for non-Linux platforms.
+#[cfg(not(target_os = "linux"))]
+fn create_tap_ioctl(_name: &str) -> Result<(), VmNetError> {
+    Err(VmNetError::NotLinux)
 }
 
 /// Create the `nimbus-br0` bridge if it does not exist. Idempotent.
@@ -180,7 +253,10 @@ pub fn ensure_bridge() -> Result<(), VmNetError> {
 /// Create a tap device and attach it to the shared bridge. The returned
 /// `VmNetwork` holds the deterministic MAC and the IP it should be
 /// configured with in the guest (via kernel `ip=` boot arg).
-pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<VmNetwork, VmNetError> {
+/// Returns `(VmNetwork, File)` — the caller must keep the `File` alive
+/// for as long as the TAP device is needed (the kernel destroys it when
+/// the fd is closed). Drop the `File` to release the device.
+pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<(VmNetwork, File), VmNetError> {
     if !cfg!(target_os = "linux") {
         return Err(VmNetError::NotLinux);
     }
@@ -196,33 +272,44 @@ pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<VmNetwork, VmNet
 
     info!(tap = tap_name, %guest_ip, "creating VM tap device");
 
-    run_ip(&["tuntap", "add", tap_name, "mode", "tap"])?;
+    let tap_fd = create_tap_ioctl(tap_name)?;
+
     run_ip(&["link", "set", tap_name, "master", BRIDGE_NAME])?;
     run_ip(&["link", "set", tap_name, "up"])?;
 
     let guest_mac = mac_from_ip(guest_ip);
 
-    Ok(VmNetwork {
+    let vm_net = VmNetwork {
         tap_name: tap_name.to_string(),
         bridge_name: BRIDGE_NAME.to_string(),
         guest_ip,
         guest_mac,
         netmask: NETMASK,
         gateway: GATEWAY_IP,
-    })
+    };
+
+    Ok((vm_net, tap_fd))
 }
 
-/// Remove a tap device. Safe to call multiple times. Leaves the bridge
-/// intact (other workloads may still be using it).
-pub fn teardown_tap(tap_name: &str) -> Result<(), VmNetError> {
+/// Remove a tap device. Drops the fd (which destroys the TAP in the
+/// kernel) and also runs `ip link del` as a safety-net.
+///
+/// Safe to call multiple times. Leaves the bridge intact (other
+/// workloads may still be using it).
+pub fn teardown_tap(tap_name: &str, tap_fd: Option<File>) -> Result<(), VmNetError> {
     if !cfg!(target_os = "linux") {
         return Err(VmNetError::NotLinux);
     }
+
+    // Drop the fd first — this closes /dev/net/tun, which causes the
+    // kernel to destroy the TAP device.
+    drop(tap_fd);
+
     if !link_exists(tap_name)? {
         debug!(tap = tap_name, "tap already gone, nothing to do");
         return Ok(());
     }
-    info!(tap = tap_name, "removing VM tap device");
+    info!(tap = tap_name, "removing VM tap device via ip link del");
     run_ip(&["link", "del", tap_name])?;
     Ok(())
 }
@@ -530,25 +617,15 @@ mod tests {
     #[test]
     fn integration_bridge_and_tap_lifecycle() {
         // Skip if we don't have permission to manipulate the bridge.
-        // `ip tuntap add` returns EPERM in unprivileged containers.
-        let probe = Command::new("ip")
-            .args(["tuntap", "add", "tap-probe", "mode", "tap"])
-            .output();
+        let probe = create_tap_ioctl("tap-probe");
         match probe {
-            Ok(o) if o.status.success() => {
+            Ok(()) => {
                 let _ = Command::new("ip")
                     .args(["link", "del", "tap-probe"])
                     .output();
             }
-            Ok(o) => {
-                eprintln!(
-                    "skipping: cannot create tap ({})",
-                    String::from_utf8_lossy(&o.stderr)
-                );
-                return;
-            }
             Err(e) => {
-                eprintln!("skipping: ip not available: {e}");
+                eprintln!("skipping: cannot create tap ({e})");
                 return;
             }
         }
@@ -558,7 +635,7 @@ mod tests {
 
         let tap = "tap-vm-test";
         let ip = Ipv4Addr::new(10, 42, 99, 42);
-        let vm_net = create_tap(tap, ip).expect("create_tap");
+        let (vm_net, tap_fd) = create_tap(tap, ip).expect("create_tap");
 
         assert!(link_exists(tap).unwrap());
         assert_eq!(vm_net.guest_ip, ip);
@@ -575,7 +652,7 @@ mod tests {
             "tap must be a port of the bridge, got: {stdout}"
         );
 
-        teardown_tap(tap).expect("teardown_tap");
+        teardown_tap(tap, Some(tap_fd)).expect("teardown_tap");
         assert!(!link_exists(tap).unwrap(), "tap should be gone");
 
         // Bridge should still be there.
@@ -622,24 +699,15 @@ mod tests {
     fn integration_enable_nat_is_idempotent() {
         // Skip if we can't even create a tap (no privs) — same gate
         // the bridge test uses.
-        let probe = Command::new("ip")
-            .args(["tuntap", "add", "tap-probe", "mode", "tap"])
-            .output();
+        let probe = create_tap_ioctl("tap-probe");
         match probe {
-            Ok(o) if o.status.success() => {
+            Ok(()) => {
                 let _ = Command::new("ip")
                     .args(["link", "del", "tap-probe"])
                     .output();
             }
-            Ok(o) => {
-                eprintln!(
-                    "skipping: cannot create tap ({})",
-                    String::from_utf8_lossy(&o.stderr)
-                );
-                return;
-            }
             Err(e) => {
-                eprintln!("skipping: ip not available: {e}");
+                eprintln!("skipping: cannot create tap ({e})");
                 return;
             }
         }

@@ -87,6 +87,26 @@ microVM. The CRI shim handles the translation.
   monotonically; the `NimbusStoreGrowingFast` alert fires
   before it fills the disk.
 
+### Rootless operation
+
+Nimbus can run most VM operations without root:
+
+| Operation | Rootless? | How |
+|---|---|---|
+| OCI pull → DAG store | ✅ Always | Filesystem writes only |
+| ext4 rootfs build | ✅ Always | `mkfs.ext4 -d` (no loop-mount) |
+| TAP device creation | ✅ With setcap | `ioctl(TUNSETIFF)` on `/dev/net/tun`; binary needs `setcap cap_net_admin=eip` |
+| Bridge creation + `ip link` | ⚠️ Needs `CAP_NET_ADMIN` | `ip link add type bridge` via subprocess |
+| iptables NAT rules | ❌ Needs root | `iptables` subprocess |
+| Firecracker VM boot | ⚠️ Needs `/dev/kvm` access | kvm group or privileged |
+
+To enable rootless TAP creation:
+```bash
+sudo setcap cap_net_admin=eip /usr/local/bin/nimbus-runtime
+getcap /usr/local/bin/nimbus-runtime
+# Expected: /usr/local/bin/nimbus-runtime cap_net_admin=eip
+```
+
 ## Configuration
 
 ### CLI flags (runtime daemon)

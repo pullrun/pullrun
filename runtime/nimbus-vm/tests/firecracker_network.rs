@@ -279,7 +279,7 @@ async fn firecracker_network_smoke() {
     ensure_bridge().expect("ensure_bridge");
     let tap_name = "tap-nimbus-net";
     let guest_ip = Ipv4Addr::new(10, 42, 88, 88);
-    let vm_net = create_tap(tap_name, guest_ip).expect("create_tap");
+    let (vm_net, _tap_fd) = create_tap(tap_name, guest_ip).expect("create_tap");
     eprintln!(
         "[firecracker_network] tap={} ip={} mac={}",
         vm_net.tap_name, vm_net.guest_ip, vm_net.guest_mac
@@ -408,7 +408,7 @@ async fn firecracker_network_smoke() {
     let _ = tokio::time::timeout(Duration::from_secs(2), pump_err).await;
 
     // 6. Tear down host-side network.
-    teardown_tap(tap_name).ok();
+    teardown_tap(tap_name, Some(_tap_fd)).ok();
 
     eprintln!(
         "[firecracker_network] body_seen={} elapsed={:?} last_err={}",

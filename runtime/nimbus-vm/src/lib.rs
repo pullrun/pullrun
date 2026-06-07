@@ -23,10 +23,12 @@ pub use network::{
     GATEWAY_IP, NETMASK,
 };
 
+use std::collections::HashMap;
+use std::fs::File;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -87,6 +89,9 @@ pub struct FirecrackerExecutor {
     /// Used to start inbound TCP proxy listeners (`0.0.0.0:port` →
     /// `vm_ip:port`) for declared inbound rules.
     proxy: Arc<ProxyNetwork>,
+    /// Open fds on `/dev/net/tun`, keyed by workload id. Kept alive to
+    /// prevent the kernel from destroying the TAP devices.
+    tap_fds: Mutex<HashMap<String, File>>,
 }
 
 impl FirecrackerExecutor {
@@ -101,6 +106,7 @@ impl FirecrackerExecutor {
             store,
             ipam,
             proxy,
+            tap_fds: Mutex::new(HashMap::new()),
         }
     }
 
@@ -166,8 +172,9 @@ impl Executor for FirecrackerExecutor {
 
         // 2. Plumb the host-side network: bridge (idempotent) + tap.
         let tap_name = self.tap_name_for(&spec.id);
-        let vm_net = create_tap(&tap_name, guest_ip)
+        let (vm_net, tap_fd) = create_tap(&tap_name, guest_ip)
             .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?;
+        self.tap_fds.lock().unwrap().insert(spec.id.clone(), tap_fd);
 
         // 3. Start the inbound proxy listeners (for any declared rules).
         //    The listeners bind on 0.0.0.0:host_port and forward into
@@ -324,7 +331,10 @@ impl Executor for FirecrackerExecutor {
         let sidecar_path = vm_dir.join("network.json");
         if let Ok(json) = std::fs::read_to_string(&sidecar_path) {
             if let Ok(sidecar) = serde_json::from_str::<VmSidecar>(&json) {
-                if let Err(e) = teardown_tap(&sidecar.tap_name) {
+                // Extract the TAP fd for this workload and drop it
+                // (which destroys the device), also run ip link del.
+                let tap_fd = self.tap_fds.lock().unwrap().remove(id);
+                if let Err(e) = teardown_tap(&sidecar.tap_name, tap_fd) {
                     warn!(tap = %sidecar.tap_name, "tap teardown warning: {e}");
                 }
                 // Inbound listeners for this workload id are owned by

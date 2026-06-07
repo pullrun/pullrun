@@ -172,16 +172,25 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   the bare `u32` (0 if the OS hasn't reported the pid yet). Don't
   `if let Some(pid) = child.id()` — it won't compile.
 
-### `ip tuntap add` syntax on iproute2 ≥ 6.x
+### TAP device creation via `ioctl(TUNSETIFF)` (replaces `ip tuntap add`)
 
+- Nimbus creates TAP devices via direct `ioctl(TUNSETIFF)` on `/dev/net/tun`,
+  NOT via the `ip tuntap add` subprocess. This eliminates the need for
+  ambient capabilities.
+- The binary must have `setcap cap_net_admin=eip` for rootless operation.
+- **The TAP device lives only as long as the `/dev/net/tun` file descriptor
+  is open.** Closing the fd destroys the device. Hold the fd in the caller
+  for the VM's lifetime. `FirecrackerExecutor::tap_fds` is the canonical
+  pattern.
+- The `ifreq` struct passed to the kernel MUST be `sizeof(struct ifreq) = 40`
+  bytes. An undersized struct (e.g. 18 bytes) causes the kernel to read
+  garbage past the boundary; the ioctl returns 0 but the device never
+  appears. Include a `_pad: [u8; 22]` field after `ifr_flags`.
+- `TUNSETIFF` = `_IOW('T', 202, int)` = `0x400454CA` on x86_64 Linux.
 - The legacy `ip tuntap add dev <name> mode tap` and `ip tuntap add name
-  <name> mode tap` are both **rejected** by modern iproute2 (Ubuntu 24.04,
-  Debian 12+) with `"dev"/"name" not a valid ifname`.
-- The correct modern syntax is positional:
-  `ip tuntap add <name> mode tap` (no `dev` or `name` keyword).
-- The ifname is the first non-keyword argument after `add`.
-- All Nimbus tap creation uses this form. To probe, run:
-  `ip tuntap add tap-nimbus-probe mode tap && ip link del tap-nimbus-probe`.
+  <name> mode tap` syntax is **no longer used by Nimbus**. The iproute2
+  note below is kept for reference in case manual TAP creation is needed
+  during debugging.
 
 ### Linux bridge kernel dataplane: `ip link add type bridge` needs no special perms
 

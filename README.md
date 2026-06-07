@@ -231,6 +231,8 @@ reason to optimize them (real load + a real eBPF implementation).
 - Linux build: `nimbus-vm` + `nimbus-runtime` compile on x86_64 (musl target ready)
 - Architectural moat: per-VM kernel isolation eliminates overlayfs CVEs (CVE-2026-31431, CVE-2023-0386, CVE-2023-32629)
 - DAG store advantages: file-level dedup across images, zero-copy mmap across N VMs, instant snapshots via 32-byte root digest, no decompress-on-pull overhead
+- Rootless ext4 creation via `mkfs.ext4 -d` (no loop-mount, no root)
+- Rootless TAP device creation via `ioctl(TUNSETIFF)` on `/dev/net/tun` (no `ip tuntap add`; requires `setcap cap_net_admin=eip`)
 
 **Stubs / partial:**
 
@@ -242,6 +244,7 @@ reason to optimize them (real load + a real eBPF implementation).
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
+- iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP creation and ext4 build are rootless)
 
 **Test coverage: 92 Rust tests pass** (83 lib + 9 vsock). **9 Go tests pass**
 (`go test ./...` from `cli/nimbusctl`).

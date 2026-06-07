@@ -1,6 +1,6 @@
 # Nimbus — Build Progress
 
-> **Last updated:** **Docker Hub gzip bug fixed; 2nd-boot ECONNRESET resolved by per-VM attach.** Direct Docker Hub pulls work without local registry. 92 Rust tests (83 lib + 9 vsock); 9 Go tests.
+> **Last updated:** **Rootless ext4 + TAP ioctl; first daemon-booted Firecracker VM.** Direct Docker Hub pulls work without local registry. 92 Rust tests (83 lib + 9 vsock); 9 Go tests.
 > **Active phase:** Post-E2E cleanup and production hardening.
 > **Status:** All **92 Rust tests pass** (83 lib + 9 vsock, nimbus-vm: 16). 9 Go tests pass.
 
@@ -228,6 +228,7 @@ make run-cli ARGS="pull nginx:latest"
 
 ### Pending Phase 2 work
 - [x] **Firecracker boot validation on a real Linux host with KVM** — ✅ DONE on Scaleway AMD EPYC instance (Ubuntu 24.04). Test passes: `firecracker v1.10.1` boots a 128MB alpine-based ext4 rootfs; kernel mounts root via virtio_blk; custom `/init` writes `nimbus-firecracker-smoke OK` to serial console; kernel cleanly powers down in 4.36s. `nimbus-vm`'s `firecracker_config()` updated to include `root=/dev/vda rw init=/init` in `boot_args` (the previous `console=ttyS0 reboot=k panic=1 pci=off` alone caused the kernel to fail to mount root).
+- [x] **Root required for loop mount** — **RESOLVED:** `materialize_ext4_rootfs` uses `mkfs.ext4 -d <dir>` (e2fsprogs ≥1.47), no loop-mount needed.
 - [x] **tap device + bridge integration with ProxyNetwork — ✅ DONE end-to-end on real Linux+KVM**
   - `nimbus-vm::network::VmNetworkSetup`: shared `nimbus-br0` bridge (10.42.0.1/16) + per-VM tap device + deterministic MAC from IP + kernel `ip=` boot arg
   - `FirecrackerExecutor` now takes `Arc<Ipam>` + `Arc<ProxyNetwork>`; allocates from shared IPAM, plumbs tap, calls `proxy.register_endpoint()` to start inbound listeners
@@ -365,11 +366,13 @@ make run-cli ARGS="pull nginx:latest"
 - [x] Store path: `~/.local/share/nimbus/` for rootless (or `/var/lib/nimbus/` for root)
 - [x] `MmapStore::new(root)` accepts any PathBuf
 - [x] CLI auto-detects store root
+- [x] **Rootless ext4 creation** — `mkfs.ext4 -d <dir>` (no loop-mount, no root)
+- [x] **Rootless TAP device creation** — `ioctl(TUNSETIFF)` directly on `/dev/net/tun` (binary needs `setcap cap_net_admin=eip`; no `ip tuntap add` child process)
 
 ### Pending Phase 5 work
 - [ ] Real macOS Apple Virtualization Framework bindings (requires `objc`/`objc2` crates + Xcode)
 - [ ] Windows WSL2 forwarding
-- [ ] Verify rootless end-to-end on Linux (requires runc + newuidmap in CI)
+- [ ] iptables NAT rules still require `CAP_NET_ADMIN` (TAP + ext4 are rootless; iptables is the remaining blocker)
 
 ---
 
@@ -959,7 +962,7 @@ actually need code changes vs what's already implemented.
 | **Double materialization for Firecracker** | `run_workload()` unconditionally materializes rootfs as plain dir (Apple Virt path, stored in `rootfs_cache`), then `FirecrackerExecutor::create()` re-materializes same DAG root as ext4. 2x DAG walk, 2x disk. | `service.rs:run_workload()` — skip OciMaterializer::materialize_into when backend is Firecracker |
 | **Missing `/init` wrapper for OCI images** | Firecracker boot args pass `init=/init`. OCI container images have `ENTRYPOINT`/`CMD` but no `/init`. Booting `alpine:latest` would panic at missing `/init`. | `materialize_ext4_rootfs` (or FirecrackerExecutor.create) — inject `/init` shim that execs the image's entrypoint |
 | **No OCI-based kernel for Firecracker** | `--vm-kernel` must point to pre-downloaded vmlinux file. `oci_kernel.rs` only runs on Apple Virt path. Firecracker can't pull kernel from OCI image. | Port `oci_kernel`-style OCI pull + StagedKernel to Firecracker path |
-| **Root required for loop mount** | `materialize_ext4_rootfs` calls `mount -o loop` via `Command::new("mount")`. Needs root or `CAP_SYS_ADMIN`. | Document as operational requirement |
+| **Root required for loop mount** | **RESOLVED:** `materialize_ext4_rootfs` now uses `mkfs.ext4 -d <dir>` (e2fsprogs ≥1.47), no loop-mount needed. | `runtime/nimbus-vm/src/ext4.rs` — removed mount_loop/umount paths |
 | **Missing busybox applets** | 18 symlinks currently. Common workloads may need `uname`, `grep`, `ping`, etc. | `tools/build-initramfs/src/main.rs:279-282` |
 
 ### Updated next steps (corrected)
@@ -974,3 +977,51 @@ actually need code changes vs what's already implemented.
 - `README.md`: Updated "Stubs / partial" — removed bridge-utils, networking stub claims
 - `WARNINGS.md`: Added notes on: no brctl needed, root for loop mount, double materialization, missing /init
 - `PROGRESS.md`: This section — corrected next steps based on audit
+
+---
+
+## Session: 2026-06-07 (continued) — Rootless ext4 + TAP ioctl + first daemon-booted Firecracker VM
+
+### Achievements
+
+1. **Daemon pull fix (docker.io alias)** — Go CLI sends `--registry docker.io` (default), but the Rust puller's `manifest_url()`, `blob_url()`, and `get_token()` only checked for `registry-1.docker.io`. Added `|| registry == "docker.io"` to all three. Also fixed `get_token()` URL construction.
+
+2. **TAP name panic fix** — `runtime/nimbus-vm/src/lib.rs:147` had `&suffix[..12]` on an 8-char hex string, causing an index-out-of-bounds panic. Fixed to `format!("tap-{suffix}")`.
+
+3. **`kernel_image` made optional for Firecracker** — `service.rs` had a hard requirement for `kernel_image` (OCI ref) for ALL `vm` backends. Skipped OCI kernel staging when `kernel_image` is empty and the daemon has a VM backend configured.
+
+4. **First Firecracker VM boot via daemon** — After the three fixes above, `nimbusctl run --backend firecracker ...` successfully boots a Firecracker VM, creates TAP device, allocates IP, mounts rootfs, and runs the workload. VM exits because `/init` (our injected `exec /bin/sh`) reads EOF on serial console — but the VM creation, networking, and rootfs materialization all work.
+
+5. **Rootless ext4 creation** — Replaced loop+mount ext4 rootfs creation with `mkfs.ext4 -d <dir>` which uses the `-d` flag (e2fsprogs 1.47+) to populate the filesystem directly from a directory — no root required. Removed the entire `mount_loop`/`umount` code path and associated error variants.
+
+6. **Rootless TAP creation via ioctl** — Replaced `ip tuntap add` (child process that needs `CAP_NET_ADMIN` to survive through exec) with direct `ioctl(TUNSETIFF)` on `/dev/net/tun`. The TAP fd is held in `FirecrackerExecutor::tap_fds: Mutex<HashMap<String, File>>` — the kernel destroys the TAP device when the fd closes, so the fd must be kept alive for the VM's lifetime.
+
+   **Rootless verified on all three paths:**
+   - root (CapEff `ffffffffffffffff`): ✅
+   - `runuser -u nimbus /home/nimbus/bin/test_caps` (setcap cap_net_admin=eip): ✅
+   - `su - nimbus -c /home/nimbus/bin/test_caps`: ✅
+
+   Removed `promote_cap_net_admin()` ambient-capability approach entirely — it was unreliable because `su` strips inheritable caps. The direct ioctl approach works through all exec chains because the calling process itself has `cap_net_admin` in its effective set.
+
+7. **Fixed 40-byte `ifreq` struct alignment** — The `IfReq` struct was 18 bytes (16 for name + 2 for flags) but the kernel reads `sizeof(struct ifreq) = 40` bytes via `copy_from_user`. Added `_pad: [u8; 22]`. This is why the ioctl returned 0 (success) but the device was never visible — the kernel read garbage flags data past the struct boundary.
+
+8. **FUTURE_IDEAS.md** — Created with 10 future directions: hybrid multi-instance VM, macOS borrow environment, Docker Compose compatibility, DAG-powered apps (9 sub-ideas), block-level DAG for Tart, block-level file transfer, DAG as Git LFS backend, immutable system images, P2P registry, cross-platform remote execution.
+
+### Test counts
+- Rust: 92 (83 lib + 9 vsock) — unchanged; no new tests added, but two integration tests now pass on real hardware that were previously `#[ignore]`d or never exercised.
+- Go: 9 — unchanged.
+
+### Files changed
+- `runtime/nimbus-runtime/src/service.rs` — kernel_image optional for Firecracker, removed promote_cap_net_admin call
+- `runtime/nimbus-oci/src/puller.rs` — docker.io alias in manifest_url/blob_url/get_token
+- `runtime/nimbus-vm/src/lib.rs` — TAP name fix; added tap_fds HashMap to FirecrackerExecutor
+- `runtime/nimbus-vm/src/network.rs` — create_tap_ioctl, removed promote_cap_net_admin, 40-byte IfReq fix
+- `runtime/nimbus-vm/src/ext4.rs` — rootless ext4 via mkfs.ext4 -d, removed mount_loop/umount
+- `FUTURE_IDEAS.md` — new file
+
+### Next Steps
+1. Resolve the `/init` wrapper issue for OCI container images booted as VMs (Firecracker boot args use `init=/init` but OCI images don't have it)
+2. Port `oci_kernel` OCI pull for Firecracker (currently requires pre-downloaded vmlinux on the host)
+3. Make `iptables` calls rootless too (or document them as the remaining root requirement)
+4. Double materialization cleanup (DAG → plain dir → ext4 is wasteful)
+5. Wire `nimbus-runtime` end-to-end from the daemon attach path on macOS (vsock ↔ gRPC) — all the building blocks exist but the daemon path hasn't been exercised since the `dispatch_main()` restructure
