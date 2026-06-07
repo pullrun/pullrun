@@ -1,0 +1,45 @@
+[package]
+name = "nimbus-init"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Guest-side init daemon for Nimbus microVMs. Runs as PID 1 inside the VM, connects to the host over vsock, execs the workload, and streams I/O."
+
+# This binary is statically linked into the initramfs. It has
+# no runtime dependencies on the host filesystem beyond the
+# rootfs share (which is mounted by the kernel/early userspace
+# before nimbus-init runs).
+#
+# The crate is structured so the binary is the only thing in
+# the initramfs; it depends on `nimbus-vsock` for the wire
+# protocol and the bare minimum of `std` (process spawning,
+# file descriptors).
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "nimbus-init"
+path = "src/main.rs"
+
+[dependencies]
+nimbus-vsock = { path = "../nimbus-vsock" }
+bytes = "1"
+thiserror = "1"
+libc = "0.2"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "process", "io-util", "net", "sync", "fs", "time"] }
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+serial_test = "3"
+
+[profile.release]
+# Static binary, so the size matters for the initramfs.
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"

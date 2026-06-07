@@ -1,0 +1,17 @@
+[package]
+name = "vm-network-smoke"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "vm-network-smoke"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread", "net"] }
+flate2 = "1"
+tar = "0.4"
+ureq = { version = "2", default-features = false, features = ["tls"] }

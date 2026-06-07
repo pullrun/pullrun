@@ -1,0 +1,86 @@
+[package]
+name = "nimbus-vm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nimbus-store = { path = "../nimbus-store" }
+nimbus-oci = { path = "../nimbus-oci" }
+nimbus-net = { path = "../nimbus-net" }
+nimbus-exec = { path = "../nimbus-exec" }
+nimbus-vsock = { path = "../nimbus-vsock" }
+tonic = "0.11"
+tokio.workspace = true
+serde.workspace = true
+serde_json = "1.0"
+thiserror.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+tempfile = "3.10"
+sha2 = "0.10"
+hex = "0.4"
+rkyv = { version = "0.7", features = ["validation"] }
+
+# macOS-only: Apple Virtualization framework bindings via the
+# `objc2` ecosystem. The dependency block is gated by target OS
+# so Linux and Windows builds (the production target) don't pull
+# in the FFI crates.
+#
+# The feature list is the minimum needed for `AppleVirtPool`
+# in `src/apple.rs`. `default` is *not* enabled to keep the
+# build small and to make it obvious which Apple Virt classes
+# we actually use.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+    "NSArray",
+    "NSString",
+    "NSURL",
+    "NSData",
+    "NSError",
+    "NSObject",
+    "NSFileHandle",
+    "NSFileManager",
+] }
+dispatch2 = "0.3"
+objc2-virtualization = { version = "0.3", features = [
+    "VZVirtualMachine",
+    "VZVirtualMachineConfiguration",
+    "VZLinuxBootLoader",
+    "VZEFIBootLoader",
+    "VZEFIVariableStore",
+    "dispatch2",
+    "VZVirtioFileSystemDeviceConfiguration",
+    "VZSingleDirectoryShare",
+    "VZVirtioNetworkDeviceConfiguration",
+    "VZNATNetworkDeviceAttachment",
+    "VZVirtualMachineDelegate",
+    "VZVirtioSocketDevice",
+    "VZVirtioSocketDeviceConfiguration",
+    "VZVirtioSocketConnection",
+    "VZVirtioSocketListener",
+    "VZSocketDevice",
+    "VZSocketDeviceConfiguration",
+    "VZVirtioConsoleDeviceConfiguration",
+    "VZVirtioConsolePortConfiguration",
+    "VZConsoleDeviceConfiguration",
+    "VZConsolePortConfiguration",
+    "VZVirtioConsolePortConfigurationArray",
+    "VZSerialPortAttachment",
+    "VZFileHandleSerialPortAttachment",
+    "VZFileSerialPortAttachment",
+    "VZError",
+] }
+libc = "0.2"
+
+[target.aarch64-apple-darwin.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3.10"
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread"] }
+flate2 = "1"
+tar = "0.4"
+ureq = { version = "2", default-features = false, features = ["tls"] }

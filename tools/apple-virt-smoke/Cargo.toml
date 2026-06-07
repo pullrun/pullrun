@@ -1,0 +1,64 @@
+[package]
+name = "apple-virt-smoke"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone tool: not part of the workspace. Has its own target
+# dir and own dep tree beyond the nimbus-vm path dep. The path
+# dep on nimbus-vm pulls in only the macOS-gated `apple` module
+# (and the bare minimum of nimbus-store/nimbus-oci/nimbus-net
+# that nimbus-vm needs to compile). On macOS this is a few
+# seconds of incremental; on Linux the apple module is not
+# compiled and the tool fails to build (by design — this is a
+# macOS-only validator).
+[workspace]
+
+[[bin]]
+name = "apple-virt-smoke"
+path = "src/main.rs"
+
+[dependencies]
+# Pull in the FFI module. On macOS this brings the objc2 stack.
+# On Linux the apple module is cfg-gated out, so this dep is
+# inert — but the tool still requires the rest of nimbus-vm to
+# build (firecracker deps), so a Linux build will fail. We
+# document this in src/main.rs.
+nimbus-vm = { path = "../../runtime/nimbus-vm" }
+
+# MmapStore is the OCI materializer's backing store. We need
+# it directly so we can build one for the OCI kernel pull.
+nimbus-store = { path = "../../runtime/nimbus-store" }
+
+# CLI parsing.
+clap = { version = "4", features = ["derive"] }
+
+# Async runtime for the pool's acquire/release calls.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# Logging.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Libdispatch binding used to pump the main queue from the
+# main thread (`dispatch2::dispatch_main`). Required because
+# the Apple Virtualization framework submits its async
+# completion handlers to the main queue by default; without
+# an active runloop, the handlers never fire and our
+# start/pause/resume calls would time out.
+dispatch2 = "0.3"
+
+# Used by the panic hook to call `_exit(1)` when the body
+# thread panics. The main thread is blocked in
+# `dispatch_main()` and can't observe the panic, so we exit
+# the process directly.
+libc = "0.2"
+
+# macOS code signing: the smoke binary must be signed with
+# `com.apple.security.virtualization` or the Apple
+# Virtualization framework will refuse to create VMs. The
+# `make apple-sign-smoke` target does this with the
+# ad-hoc identity (`codesign -s -`).
+[package.metadata.macos-entitlements]
+com.apple.security.virtualization = true
+

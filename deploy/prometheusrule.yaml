@@ -1,0 +1,122 @@
+# PrometheusRule — alerting rules for Nimbus runtime anomalies.
+#
+# The Prometheus Operator loads these into the Prometheus instance
+# automatically. Each rule has a `for:` duration so that transient
+# blips (e.g. a single failed pull) don't page anyone.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nimbus-runtime-alerts
+  namespace: nimbus
+  labels:
+    app: nimbus-runtime
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: nimbus.runtime.availability
+      interval: 30s
+      rules:
+        # The runtime is alive (responding to /healthz is implicit in
+        # the scrape itself succeeding). If a node's runtime stops
+        # being scraped for 2 minutes, the operator should investigate.
+        - alert: NimbusRuntimeDown
+          expr: up{job="nimbus-runtime"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: nimbus
+          annotations:
+            summary: "Nimbus runtime down on {{ $labels.node }}"
+            description: |
+              The nimbus-runtime pod on node {{ $labels.node }} has
+              not been successfully scraped for 2 minutes. The
+              runtime may have crashed, the node may be unhealthy,
+              or the metrics endpoint may be saturated.
+            runbook_url: "https://wiki.example.com/runbooks/nimbus-runtime-down"
+
+    - name: nimbus.runtime.pulls
+      interval: 30s
+      rules:
+        # Pull failure rate above 25% over 5 minutes.
+        - alert: NimbusPullFailureRate
+          expr: |
+            (
+              sum by (registry) (rate(nimbus_pulls_total{status="failed"}[5m]))
+              /
+              sum by (registry) (rate(nimbus_pulls_total[5m]))
+            ) > 0.25
+          for: 5m
+          labels:
+            severity: warning
+            team: nimbus
+          annotations:
+            summary: "Nimbus pull failure rate >25% from {{ $labels.registry }}"
+            description: |
+              More than 25% of image pulls from {{ $labels.registry }}
+              have been failing over the last 5 minutes. Check the
+              registry's status and the runtime's logs for OCI
+              errors.
+
+    - name: nimbus.runtime.workloads
+      interval: 30s
+      rules:
+        # Workloads are exiting with non-zero codes frequently.
+        # Suggests a broken image or a policy bug. We exclude exit
+        # code "0" (clean stop) and "137" (operator-initiated kill)
+        # to avoid noise from normal operations.
+        - alert: NimbusWorkloadCrashLoop
+          expr: |
+            (
+              sum by (backend) (rate(nimbus_workloads_exited_total{exit_code!~"0|137|unknown"}[10m]))
+            ) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            team: nimbus
+          annotations:
+            summary: "Workloads crashing on {{ $labels.backend }} (>0.1/s for 10m)"
+            description: |
+              More than 0.1 non-clean workload exits per second over
+              the last 10 minutes on backend {{ $labels.backend }}.
+              This is consistent with a crash loop; check the
+              workload's logs and the runtime's logs.
+
+        # Latency: 95th percentile of pull duration >30s for 10m.
+        # Most pulls should be sub-second (local store) or a few
+        # seconds (small image); 30s is a strong signal of either
+        # a slow registry or a network issue.
+        - alert: NimbusPullLatencyHigh
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(nimbus_pull_duration_seconds_bucket[10m]))) > 30
+          for: 10m
+          labels:
+            severity: warning
+            team: nimbus
+          annotations:
+            summary: "Nimbus pull p95 latency >30s"
+            description: |
+              95th percentile of image pull duration has been over
+              30 seconds for 10 minutes. Inspect the registry
+              network path and consider pre-pulling critical images.
+
+    - name: nimbus.runtime.storage
+      interval: 60s
+      rules:
+        # Store growing unboundedly. 80% of node disk is the
+        # rough threshold. We don't have node-disk-size in scope
+        # from the runtime itself, so we use a simple growth-rate
+        # check as a proxy.
+        - alert: NimbusStoreGrowingFast
+          expr: |
+            deriv(nimbus_store_bytes[1h]) > 1073741824
+          for: 30m
+          labels:
+            severity: info
+            team: nimbus
+          annotations:
+            summary: "Nimbus store growing >1GB/hour"
+            description: |
+              The DAG store is growing by more than 1 GB per hour.
+              Check that `nimbusctl prune` (Phase 6 follow-up) is
+              being run on a schedule, or that image pulls are
+              targeting the right store root.

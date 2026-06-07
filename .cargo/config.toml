@@ -1,0 +1,9 @@
+[build]
+# Allow `UnixStream::from_std` and other conversions of blocking
+# sockets into tokio. This is needed by `nimbus-init` which
+# builds tokio streams from dup'd blocking Unix fds. Tokio
+# normally rejects this (see tokio-rs/tokio#7172) because the
+# socket is registered synchronously with the reactor, which
+# can deadlock if the fd isn't actually non-blocking. We do
+# this in tests where deadlock isn't a concern.
+rustflags = ["--cfg", "tokio_allow_from_blocking_fd"]

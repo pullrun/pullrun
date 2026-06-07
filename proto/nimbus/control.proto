@@ -1,0 +1,77 @@
+syntax = "proto3";
+package nimbus.control;
+option go_package = "nimbus/protoapi/nimbus/control;control";
+
+import "nimbus/runtime.proto";
+
+service ControlPlane {
+    rpc SubmitWorkload(WorkloadSpec) returns (nimbus.runtime.WorkloadStatus);
+    rpc GetWorkload(GetRequest) returns (nimbus.runtime.WorkloadStatus);
+    rpc ListWorkloads(ListRequest) returns (WorkloadList);
+    rpc DeleteWorkload(DeleteRequest) returns (DeleteResponse);
+    rpc StreamEvents(Empty) returns (stream nimbus.runtime.Event);
+    rpc RegisterNode(NodeRegistration) returns (RegisterResponse);
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message WorkloadSpec {
+    string name = 1;
+    string image_ref = 2;
+    string backend = 3;
+    Resources resources = 4;
+    repeated nimbus.runtime.NetworkRule network_rules = 5;
+    map<string, string> labels = 6;
+}
+
+message Resources {
+    uint64 cpu_millicores = 1;
+    uint64 memory_bytes = 2;
+}
+
+message GetRequest {
+    string id = 1;
+}
+
+message ListRequest {
+    map<string, string> label_filter = 1;
+}
+
+message WorkloadList {
+    repeated nimbus.runtime.WorkloadStatus items = 1;
+}
+
+message DeleteRequest {
+    string id = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+}
+
+message Empty {}
+
+message NodeRegistration {
+    string node_id = 1;
+    string address = 2;
+    uint64 cpu_cores = 3;
+    uint64 memory_bytes = 4;
+    string host_platform = 5;
+    repeated string available_backends = 6;
+}
+
+message RegisterResponse {
+    string assigned_id = 1;
+    int64 heartbeat_interval_ms = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    uint64 running_workloads = 2;
+    uint64 available_cpu_millicores = 3;
+    uint64 available_memory_bytes = 4;
+}
+
+message HeartbeatResponse {
+    bool ok = 1;
+    repeated WorkloadSpec pending_workloads = 2;
+}

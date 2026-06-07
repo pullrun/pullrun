@@ -1,0 +1,24 @@
+[package]
+name = "build-initramfs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Assemble a Nimbus microVM initramfs (cpio+gzip) from a busybox static binary + nimbus-init static binary."
+
+[workspace]
+
+[[bin]]
+name = "build-initramfs"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+flate2 = "1"
+thiserror = "1"
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

@@ -1,0 +1,31 @@
+# Rust
+target/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Go
+cli/nimbusctl/nimbusctl
+cri/nimbus-cri/nimbus-cri
+control-plane/nimbus-control-plane
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Environment
+.env
+.env.local
+
+# Built binaries
+bin/
+
+# Generated
+proto-go/*/go.sum
+
+# Tools
+tools/*/target/

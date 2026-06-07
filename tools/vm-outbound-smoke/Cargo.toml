@@ -1,0 +1,21 @@
+[package]
+name = "vm-outbound-smoke"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone tool: not part of the workspace. Has its own dep tree
+# (no nimbus deps) so it builds in seconds on disk-constrained CI
+# hosts where the full nimbus workspace won't fit.
+[workspace]
+
+[[bin]]
+name = "vm-outbound-smoke"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt-multi-thread", "net", "sync"] }
+flate2 = "1"
+tar = "0.4"
+ureq = { version = "2", default-features = false, features = ["tls"] }

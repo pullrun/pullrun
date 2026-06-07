@@ -1,0 +1,45 @@
+[package]
+name = "nimbus-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nimbus-runtime"
+path = "src/main.rs"
+
+[dependencies]
+nimbus-store = { path = "../nimbus-store" }
+nimbus-oci = { path = "../nimbus-oci" }
+nimbus-exec = { path = "../nimbus-exec" }
+nimbus-net = { path = "../nimbus-net" }
+nimbus-vm = { path = "../nimbus-vm" }
+nimbus-vsock = { path = "../nimbus-vsock" }
+nimbus-policy = { path = "../nimbus-policy" }
+bytes = "1"
+tokio.workspace = true
+tonic.workspace = true
+prost.workspace = true
+serde.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { version = "4.5", features = ["derive"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures = "0.3"
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+axum.workspace = true
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[dev-dependencies]
+ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
+rand = "0.8"
+base64 = "0.22"
+rkyv = { version = "0.7", features = ["validation"] }

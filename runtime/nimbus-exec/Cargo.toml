@@ -1,0 +1,18 @@
+[package]
+name = "nimbus-exec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nimbus-store = { path = "../nimbus-store" }
+nimbus-oci = { path = "../nimbus-oci" }
+nimbus-net = { path = "../nimbus-net" }
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+libc.workspace = true
+nix.workspace = true
+serde_json = "1.0"

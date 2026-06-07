@@ -1,0 +1,241 @@
+syntax = "proto3";
+package nimbus.runtime;
+option go_package = "nimbus/protoapi/nimbus/runtime;runtime";
+
+service Runtime {
+    rpc PullImage(PullImageRequest) returns (PullImageResponse);
+    rpc RunWorkload(RunRequest) returns (RunResponse);
+    rpc StopWorkload(StopRequest) returns (StopResponse);
+    rpc GetWorkload(GetWorkloadRequest) returns (WorkloadStatus);
+    rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
+    rpc StreamLogs(StreamLogsRequest) returns (stream LogChunk);
+    rpc StreamEvents(StreamEventsRequest) returns (stream Event);
+    rpc ExecInWorkload(ExecRequest) returns (ExecResponse);
+    rpc InspectWorkload(InspectRequest) returns (InspectResponse);
+    // Interactive attach to a workload's stdio. The first request
+    // opens the stream; subsequent messages carry stdin/eof
+    // (client -> server) and stdout/stderr/exit (server -> client).
+    // Used by `nimbusctl workload run alpine:3.18 -- /bin/sh` and
+    // similar interactive workloads on microVM backends.
+    rpc AttachWorkload(stream AttachMessage) returns (stream AttachMessage);
+}
+
+message PullImageRequest {
+    string image_ref = 1;
+    string registry = 2;
+}
+
+message PullImageResponse {
+    string root_digest = 1;
+    int64 bytes_stored = 2;
+    int64 bytes_deduplicated = 3;
+}
+
+message RunRequest {
+    string id = 1;
+    string root_digest = 2;
+    string backend = 3;
+    repeated string command = 4;
+    map<string, string> env = 5;
+    uint64 cpu_millicores = 6;
+    uint64 memory_bytes = 7;
+    string network_mode = 8;
+    repeated NetworkRule network_rules = 9;
+    // OCI image ref for the kernel. Required when
+    // backend="vm". The runtime stages the kernel via the
+    // standard OCI pipeline and stores it in an in-memory
+    // kernel cache so the subsequent AttachWorkload RPC
+    // can boot the same VM.
+    //
+    // Format: "registry/repo:tag" (e.g.
+    // "nimbus/kernel-asahi:6.19.14" or
+    // "ghcr.io/nimbus/kernel:6.19.14"). The image MUST
+    // have the label "org.nimbus.image.kind=kernel" and
+    // contain /boot/vmlinux (and optionally
+    // /boot/initramfs.cpio.gz).
+    string kernel_image = 10;
+    // Working directory inside the workload. Defaults to
+    // "/" if empty. The guest's nimbus-init changes to
+    // this directory before exec'ing the command.
+    string working_dir = 11;
+}
+
+message NetworkRule {
+    string direction = 1;
+    string protocol = 2;
+    uint32 port = 3;
+    string to_host = 4;
+    repeated string from_cidrs = 5;
+}
+
+message RunResponse {
+    string id = 1;
+    uint32 pid = 2;
+    string backend_used = 3;
+    string internal_ip = 4;
+}
+
+message StopRequest {
+    string id = 1;
+}
+
+message StopResponse {
+    bool success = 1;
+}
+
+message GetWorkloadRequest {
+    string id = 1;
+}
+
+message WorkloadStatus {
+    string id = 1;
+    string state = 2;
+    string backend = 3;
+    uint32 exit_code = 4;
+    int64 start_time = 5;
+    string internal_ip = 6;
+    bool network_isolated = 7;
+}
+
+message ListWorkloadsRequest {}
+
+message ListWorkloadsResponse {
+    repeated WorkloadStatus workloads = 1;
+}
+
+message StreamLogsRequest {
+    string id = 1;
+    bool follow = 2;
+    int64 tail = 3;
+    int64 since = 4;
+}
+
+message LogChunk {
+    bytes data = 1;
+    bool stderr = 2;
+    int64 timestamp = 3;
+}
+
+message StreamEventsRequest {
+    repeated string event_types = 1;
+}
+
+message Event {
+    string id = 1;
+    string kind = 2;
+    int64 timestamp = 3;
+    map<string, string> metadata = 4;
+}
+
+message ExecRequest {
+    string id = 1;
+    repeated string command = 2;
+}
+
+message ExecResponse {
+    int32 exit_code = 1;
+    bytes stdout = 2;
+    bytes stderr = 3;
+}
+
+// One message in the bidirectional AttachWorkload stream. The
+// first message from the client MUST be AttachOpen. After that,
+// the client may send AttachStdin/AttachStdinEof, and the server
+// will send AttachStdout/AttachStderr/AttachExit.
+//
+// This is the gRPC projection of the in-VM vsock protocol
+// (see runtime/nimbus-vsock/src/lib.rs). The wire shape is
+// identical except that one stream of bytes is split into
+// repeated bytes messages, which is what gRPC wants.
+message AttachMessage {
+    // Exactly one of these is set per message.
+    oneof body {
+        AttachOpen open = 1;
+        AttachStdin stdin = 2;
+        AttachStdinEof stdin_eof = 3;
+        AttachStdout stdout = 4;
+        AttachStderr stderr = 5;
+        AttachExit exit = 6;
+        AttachError error = 7;
+    }
+}
+
+// Open the stream. Tells the runtime which workload to attach to
+// and what command to run (overrides the workload's default
+// command, if any). Sent exactly once, as the first message.
+message AttachOpen {
+    string workload_id = 1;
+    repeated string command = 2;
+    map<string, string> env = 3;
+    string working_dir = 4;
+}
+
+// Bytes to feed into the workload's stdin.
+message AttachStdin {
+    bytes data = 1;
+}
+
+// Signals that no more stdin will arrive. The runtime will close
+// the workload's stdin pipe and the workload will see EOF.
+message AttachStdinEof {}
+
+// Bytes from the workload's stdout.
+message AttachStdout {
+    bytes data = 1;
+}
+
+// Bytes from the workload's stderr.
+message AttachStderr {
+    bytes data = 1;
+}
+
+// The workload exited.
+message AttachExit {
+    int32 exit_code = 1;   // 0 if exited normally with code 0
+    int32 signal = 2;      // 0 if not killed by signal
+    bool has_exit_code = 3;
+    bool has_signal = 4;
+}
+
+// Hard error from the runtime (e.g. "VM died", "workload not
+// found", "policy denied"). The stream is terminated after this.
+message AttachError {
+    string message = 1;
+}
+
+// Deep inspection of a workload. The DAG path is the ordered list of
+// `digest:kind` nodes from the root manifest down to the leaf blobs,
+// so operators can see the image's exact composition at a glance.
+message InspectRequest {
+    string id = 1;
+}
+
+message DagNode {
+    string digest = 1;
+    string kind = 2;        // "manifest" | "tree" | "layer" | "blob"
+    int64 size_bytes = 3;   // best-effort; 0 if unknown
+}
+
+message InspectResponse {
+    string id = 1;
+    string state = 2;        // "running" | "stopped" | "exited" | "failed"
+    string backend = 3;
+    string image_root = 4;
+    string internal_ip = 5;
+    uint32 pid = 6;
+    int64 start_time = 7;    // unix seconds
+    int64 exit_time = 8;     // unix seconds; 0 if still running
+    uint32 exit_code = 9;    // 0 if still running
+    repeated string command = 10;
+    repeated NetworkRule network_rules = 11;
+    // DAG traversal: ordered list of `digest:kind` from root manifest
+    // down to the leaf blobs. BFS, so the manifest is always first.
+    repeated DagNode dag_path = 12;
+    // Per-policy decision log: rule -> "allow" | "deny: <reason>".
+    // Populated at pull and at run time. v0 only writes a single
+    // entry per decision.
+    map<string, string> policy_decisions = 13;
+    // Whether the workload is currently in the runtime's view of
+    // the workloads map. False iff the workload has been GC'd.
+    bool found = 14;
+}

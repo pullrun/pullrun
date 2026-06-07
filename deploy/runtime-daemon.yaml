@@ -1,0 +1,155 @@
+# Nimbus runtime DaemonSet — one pod per node.
+#
+# This is the production-grade deployment. For a single-host dev
+# environment, the same image can be run as a Deployment with
+# replicas: 1.
+#
+# The container runs as root because:
+#   1. It manages the `nimbus-br0` Linux bridge and tap devices
+#      (CAP_NET_ADMIN, no namespace restriction).
+#   2. It uses runc (CAP_SYS_ADMIN) to spawn container workloads.
+#   3. It uses KVM (/dev/kvm, 0666 mode) to spawn Firecracker VMs.
+#
+# For rootless mode (Phase 5), the securityContext would switch to
+# runAsUser: 1000 with allowPrivilegeEscalation: false and only the
+# /dev/kvm device granted. v0 always runs privileged.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nimbus-runtime
+  namespace: nimbus
+  labels:
+    app: nimbus-runtime
+spec:
+  selector:
+    matchLabels:
+      app: nimbus-runtime
+  template:
+    metadata:
+      labels:
+        app: nimbus-runtime
+      annotations:
+        # Prometheus Operator discovers pods by these annotations
+        # (or by the ServiceMonitor below — both work).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: nimbus-runtime
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: nimbus-runtime
+          image: ghcr.io/nimbus/nimbus-runtime:v0.1.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - daemon
+            - --socket=/var/run/nimbus/nimbus.sock
+            - --store-root=/var/lib/nimbus
+            - --metrics-addr=0.0.0.0:9090
+            # VM backend (uncomment if /dev/kvm is available on the node)
+            # - --vm-firecracker=/usr/local/bin/firecracker
+            # - --vm-kernel=/var/lib/nimbus/vmlinux
+          ports:
+            - name: metrics
+              containerPort: 9090
+              hostPort: 9090
+              protocol: TCP
+            - name: gRPC
+              # The gRPC server is on a Unix Domain Socket inside
+              # the pod, so this is informational; in-process
+              # callers use the UDS path mounted below.
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: RUST_LOG
+              value: info
+            - name: NIMBUS_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NIMBUS_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          volumeMounts:
+            - name: store
+              mountPath: /var/lib/nimbus
+            - name: run
+              mountPath: /var/run/nimbus
+            - name: dev-kvm
+              mountPath: /dev/kvm
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+            - name: modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: rootfs
+              mountPath: /var/lib/nimbus/vm
+      volumes:
+        - name: store
+          hostPath:
+            path: /var/lib/nimbus
+            type: DirectoryOrCreate
+        - name: run
+          hostPath:
+            path: /var/run/nimbus
+            type: DirectoryOrCreate
+        - name: dev-kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+        - name: modules
+          hostPath:
+            path: /lib/modules
+        - name: rootfs
+          hostPath:
+            path: /var/lib/nimbus/vm
+            type: DirectoryOrCreate
+      tolerations:
+        # Allow scheduling on nodes tainted for system workloads.
+        - operator: Exists
+---
+# Headless Service for the DaemonSet. ServiceMonitor scrapes this.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nimbus-runtime
+  namespace: nimbus
+  labels:
+    app: nimbus-runtime
+spec:
+  # headless: we want one endpoint per pod, not a cluster IP.
+  clusterIP: None
+  selector:
+    app: nimbus-runtime
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics

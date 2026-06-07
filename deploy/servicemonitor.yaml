@@ -1,0 +1,54 @@
+# ServiceMonitor for Prometheus Operator. The Operator creates
+# scrape configs from this resource and adds them to the Prometheus
+# instance.
+#
+# `selector.matchLabels` must match the Service's labels. The
+# headless Service in runtime-daemon.yaml carries `app: nimbus-runtime`
+# so this is the right selector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nimbus-runtime
+  namespace: nimbus
+  labels:
+    app: nimbus-runtime
+    release: kube-prometheus-stack   # match the Operator's Helm release
+spec:
+  # Scrape every 30s. Most production Prometheus deployments scrape
+  # at 15-30s; 30s is a good balance between cardinality and
+  # time-to-detect for our short-lived workload events.
+  interval: 30s
+  scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app: nimbus-runtime
+  # Match the `metrics` named port on the headless Service. Endpoints
+  # from a headless Service are one-per-pod, which is what we want
+  # for a DaemonSet (we want to alert on *node*-level anomalies,
+  # not aggregated cluster totals).
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: http
+      # Honor the `prometheus.io/path` annotation if a pod overrides
+      # the default. Useful for canary / shadow deployments.
+      honorLabels: false
+      relabelings:
+        # Keep the pod name and node name as labels so dashboards
+        # can drill down by pod or by node.
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+      metricRelabelings:
+        # Drop the `go_*` and `process_*` metrics that some
+        # exporters add by default — we don't need them and they
+        # bloat the time-series count.
+        - sourceLabels: [__name__]
+          regex: "(go_|process_).*"
+          action: drop
+  namespaceSelector:
+    matchNames:
+      - nimbus
