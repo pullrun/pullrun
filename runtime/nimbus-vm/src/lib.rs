@@ -19,8 +19,8 @@ pub use attach::{
 pub use oci_kernel::{OciKernelError, StagedKernel, KERNEL_VMLINUX_PATH, KERNEL_INITRAMFS_PATH};
 
 pub use network::{
-    create_tap, ensure_bridge, mac_from_ip, teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME,
-    GATEWAY_IP, NETMASK,
+    create_tap, create_tap_on_bridge, derive_cidr, ensure_bridge, ensure_bridge_named,
+    mac_from_ip, teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME, GATEWAY_IP, NETMASK,
 };
 
 use std::collections::HashMap;
@@ -161,19 +161,44 @@ impl Executor for FirecrackerExecutor {
 
         info!(id = %spec.id, "creating Firecracker VM");
 
-        // 1. Allocate an IP from the shared pool. The same IPAM the
-        //    container backend uses, so VMs and containers coexist on
-        //    the same bridge.
-        let ip_u32 = self
-            .ipam
-            .allocate()
-            .ok_or_else(|| ExecError::ExecutionFailed("no IPs available in shared IPAM".into()))?;
-        let guest_ip = Ipv4Addr::from(ip_u32);
+        // 1. Allocate an IP. Use a per-project IPAM if bridge_name
+        //    is set (per-project isolation), otherwise the global pool.
+        let (bridge_name, netmask, gateway, guest_ip, ipam_owned) =
+            if let Some(ref bn) = spec.bridge_name {
+                let (gateway, netmask, project_ipam) =
+                    crate::network::derive_cidr(bn);
+                let ip_u32 = project_ipam
+                    .allocate()
+                    .ok_or_else(|| ExecError::ExecutionFailed("no IPs in project subnet".into()))?;
+                let guest_ip = Ipv4Addr::from(ip_u32);
+                (bn.clone(), netmask, gateway, guest_ip, Some(project_ipam))
+            } else {
+                let ip_u32 = self
+                    .ipam
+                    .allocate()
+                    .ok_or_else(|| ExecError::ExecutionFailed("no IPs available in shared IPAM".into()))?;
+                let guest_ip = Ipv4Addr::from(ip_u32);
+                (crate::network::BRIDGE_NAME.to_string(),
+                 crate::network::NETMASK,
+                 crate::network::GATEWAY_IP,
+                 guest_ip,
+                 None)
+            };
 
         // 2. Plumb the host-side network: bridge (idempotent) + tap.
         let tap_name = self.tap_name_for(&spec.id);
-        let (vm_net, tap_fd) = create_tap(&tap_name, guest_ip)
-            .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?;
+        let (vm_net, tap_fd) = if let Some(ref bn) = spec.bridge_name {
+            let (gw, nm, _) = crate::network::derive_cidr(bn);
+            let cidr = format!("10.{}.{}.0/24",
+                gw.octets()[1], gw.octets()[2]);
+            crate::network::ensure_bridge_named(bn, &cidr, gw)
+                .map_err(|e| ExecError::ExecutionFailed(format!("bridge setup: {e}")))?;
+            create_tap_on_bridge(&tap_name, guest_ip, bn, nm, gw)
+                .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
+        } else {
+            create_tap(&tap_name, guest_ip)
+                .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
+        };
         self.tap_fds.lock().unwrap().insert(spec.id.clone(), tap_fd);
 
         // 3. Start the inbound proxy listeners (for any declared rules).

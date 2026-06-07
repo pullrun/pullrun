@@ -30,7 +30,7 @@ use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, ComposePort, ComposeService, DagNode, Event as ProtoEvent, ExecRequest,
+    AttachMessage, DagNode, Event as ProtoEvent, ExecRequest,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, NetworkRule as ProtoNetworkRule, PullImageRequest,
@@ -1319,6 +1319,11 @@ impl Runtime for RuntimeService {
             network_mode,
             network_rules: network_rules.clone(),
             kernel_path,
+            bridge_name: if req.bridge_name.is_empty() {
+                None
+            } else {
+                Some(req.bridge_name.clone())
+            },
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -1583,6 +1588,7 @@ impl Runtime for RuntimeService {
                 network_rules,
                 kernel_image: String::new(),
                 working_dir: service.working_dir.clone(),
+                bridge_name: service.bridge_name.clone(),
             });
 
             let run_resp = self.run_workload(run_req).await?;

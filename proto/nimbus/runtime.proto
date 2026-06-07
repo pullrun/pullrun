@@ -64,6 +64,9 @@ message ComposeService {
     // Root digest of the already-pulled image (optional).
     // If empty, the runtime will pull the image first.
     string root_digest = 12;
+    // Per-project bridge for network isolation.
+    // Defaults to the global bridge when empty.
+    string bridge_name = 13;
 }
 
 message ComposePort {
@@ -120,6 +123,12 @@ message RunRequest {
     // "/" if empty. The guest's nimbus-init changes to
     // this directory before exec'ing the command.
     string working_dir = 11;
+    // Custom bridge name for per-project network isolation.
+    // When set, the runtime creates a bridge with this name
+    // (and a deterministic /24 subnet derived from the name)
+    // instead of using the default global "nimbus-br0".
+    // Compose projects set this to isolate workload traffic.
+    string bridge_name = 12;
 }
 
 message NetworkRule {

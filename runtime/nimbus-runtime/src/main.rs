@@ -446,6 +446,7 @@ async fn run_workload(
         network_mode: NetworkMode::Loopback,
         network_rules: vec![],
         kernel_path: None,
+        bridge_name: None,
     };
 
     let handle = executor.create(spec).await?;

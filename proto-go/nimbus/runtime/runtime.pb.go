@@ -37,7 +37,10 @@ type ComposeService struct {
 	DependsOn []string `protobuf:"bytes,11,rep,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
 	// Root digest of the already-pulled image (optional).
 	// If empty, the runtime will pull the image first.
-	RootDigest    string `protobuf:"bytes,12,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
+	RootDigest string `protobuf:"bytes,12,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
+	// Per-project bridge for network isolation.
+	// Defaults to the global bridge when empty.
+	BridgeName    string `protobuf:"bytes,13,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -152,6 +155,13 @@ func (x *ComposeService) GetDependsOn() []string {
 func (x *ComposeService) GetRootDigest() string {
 	if x != nil {
 		return x.RootDigest
+	}
+	return ""
+}
+
+func (x *ComposeService) GetBridgeName() string {
+	if x != nil {
+		return x.BridgeName
 	}
 	return ""
 }
@@ -459,7 +469,13 @@ type RunRequest struct {
 	// Working directory inside the workload. Defaults to
 	// "/" if empty. The guest's nimbus-init changes to
 	// this directory before exec'ing the command.
-	WorkingDir    string `protobuf:"bytes,11,opt,name=working_dir,json=workingDir,proto3" json:"working_dir,omitempty"`
+	WorkingDir string `protobuf:"bytes,11,opt,name=working_dir,json=workingDir,proto3" json:"working_dir,omitempty"`
+	// Custom bridge name for per-project network isolation.
+	// When set, the runtime creates a bridge with this name
+	// (and a deterministic /24 subnet derived from the name)
+	// instead of using the default global "nimbus-br0".
+	// Compose projects set this to isolate workload traffic.
+	BridgeName    string `protobuf:"bytes,12,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -567,6 +583,13 @@ func (x *RunRequest) GetKernelImage() string {
 func (x *RunRequest) GetWorkingDir() string {
 	if x != nil {
 		return x.WorkingDir
+	}
+	return ""
+}
+
+func (x *RunRequest) GetBridgeName() string {
+	if x != nil {
+		return x.BridgeName
 	}
 	return ""
 }
@@ -2957,7 +2980,7 @@ var File_nimbus_runtime_proto protoreflect.FileDescriptor
 
 const file_nimbus_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\x14nimbus/runtime.proto\x12\x0enimbus.runtime\"\xe7\x04\n" +
+	"\x14nimbus/runtime.proto\x12\x0enimbus.runtime\"\x88\x05\n" +
 	"\x0eComposeService\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x18\n" +
@@ -2974,7 +2997,9 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\n" +
 	"depends_on\x18\v \x03(\tR\tdependsOn\x12\x1f\n" +
 	"\vroot_digest\x18\f \x01(\tR\n" +
-	"rootDigest\x1a>\n" +
+	"rootDigest\x12\x1f\n" +
+	"\vbridge_name\x18\r \x01(\tR\n" +
+	"bridgeName\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
@@ -3001,7 +3026,7 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
 	"\fbytes_stored\x18\x02 \x01(\x03R\vbytesStored\x12-\n" +
-	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xd3\x03\n" +
+	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xf4\x03\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -3017,7 +3042,9 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\fkernel_image\x18\n" +
 	" \x01(\tR\vkernelImage\x12\x1f\n" +
 	"\vworking_dir\x18\v \x01(\tR\n" +
-	"workingDir\x1a6\n" +
+	"workingDir\x12\x1f\n" +
+	"\vbridge_name\x18\f \x01(\tR\n" +
+	"bridgeName\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x93\x01\n" +

@@ -50,7 +50,9 @@ use std::net::Ipv4Addr;
 use std::os::fd::AsRawFd;
 use std::process::Command;
 
+use nimbus_net::Ipam;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
@@ -65,6 +67,22 @@ pub const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(10, 42, 0, 1);
 
 /// Netmask of the shared workload network.
 pub const NETMASK: Ipv4Addr = Ipv4Addr::new(255, 255, 0, 0);
+
+/// Derive a deterministic /24 CIDR from a bridge name using SHA-256.
+/// Returns `(gateway, netmask)` for the derived subnet.
+/// Projects with different bridge names get non-overlapping /24s
+/// within `10.0.0.0/16`. Collision probability for <1000 projects
+/// is negligible (~1 in 65).
+pub fn derive_cidr(bridge_name: &str) -> (Ipv4Addr, Ipv4Addr, Ipam) {
+    let h = Sha256::digest(bridge_name.as_bytes());
+    let a = h[0];
+    let b = h[1];
+    let gateway = Ipv4Addr::new(10, a, b, 1);
+    let netmask = Ipv4Addr::new(255, 255, 255, 0);
+    let cidr = format!("10.{a}.{b}.0/24");
+    let ipam = Ipam::from_cidr(&cidr).expect("valid /24 CIDR");
+    (gateway, netmask, ipam)
+}
 
 #[derive(Debug, Error)]
 pub enum VmNetError {
@@ -179,8 +197,14 @@ fn create_tap_ioctl(_name: &str) -> Result<File, VmNetError> {
     Err(VmNetError::NotLinux)
 }
 
-/// Create the `nimbus-br0` bridge if it does not exist. Idempotent.
-/// Returns silently if the bridge is already configured.
+/// Create the default `nimbus-br0` bridge if it does not exist. Idempotent.
+/// Delegates to [`ensure_bridge_named`] with the default bridge name and CIDR.
+pub fn ensure_bridge() -> Result<(), VmNetError> {
+    ensure_bridge_named(BRIDGE_NAME, "10.42.0.0/16", GATEWAY_IP)
+}
+
+/// Create a bridge with the given name and CIDR if it does not exist.
+/// Idempotent — returns silently if the bridge is already configured.
 ///
 /// On a *fresh* bridge, this also installs the outbound NAT rules
 /// (MASQUERADE + FORWARD) for the detected outbound interface. On a
@@ -189,51 +213,50 @@ fn create_tap_ioctl(_name: &str) -> Result<File, VmNetError> {
 /// (iptables-persistent was not installed), but the bridge itself
 /// survived. Both the bridge creation and the NAT installation are
 /// idempotent and cheap on the no-op path.
-pub fn ensure_bridge() -> Result<(), VmNetError> {
+pub fn ensure_bridge_named(
+    bridge_name: &str,
+    cidr: &str,
+    gateway: Ipv4Addr,
+) -> Result<(), VmNetError> {
     if !cfg!(target_os = "linux") {
         return Err(VmNetError::NotLinux);
     }
 
-    let bridge_already_existed = link_exists(BRIDGE_NAME)?;
+    let bridge_already_existed = link_exists(bridge_name)?;
     if bridge_already_existed {
-        debug!(bridge = BRIDGE_NAME, "bridge already exists");
+        debug!(bridge = bridge_name, "bridge already exists");
     } else {
-        info!(bridge = BRIDGE_NAME, "creating shared workload bridge");
-        run_ip(&["link", "add", BRIDGE_NAME, "type", "bridge"])?;
-        run_ip(&["link", "set", BRIDGE_NAME, "up"])?;
+        // Extract prefix length from CIDR (e.g. "10.0.1.0/24" -> 24)
+        let prefix = cidr.split('/').nth(1).unwrap_or("16");
+        info!(bridge = bridge_name, cidr = cidr, "creating bridge");
+        run_ip(&["link", "add", bridge_name, "type", "bridge"])?;
+        run_ip(&["link", "set", bridge_name, "up"])?;
         run_ip(&[
             "addr",
             "add",
-            &format!("{}/16", GATEWAY_IP),
+            &format!("{gateway}/{prefix}"),
             "dev",
-            BRIDGE_NAME,
+            bridge_name,
         ])?;
     }
 
-    // Best-effort: enable IPv4 forwarding. Required for the bridge to
-    // route traffic to/from the outside world. Skip on failure (some
-    // sandboxes disallow writing to /proc/sys).
+    // Best-effort: enable IPv4 forwarding.
     if let Err(e) = std::fs::write("/proc/sys/net/ipv4/ip_forward", b"1") {
         warn!(
             error = %e,
-            "could not enable /proc/sys/net/ipv4/ip_forward (continuing — may already be set)"
+            "could not enable /proc/sys/net/ipv4/ip_forward (continuing)"
         );
     } else {
         debug!("enabled /proc/sys/net/ipv4/ip_forward");
     }
 
-    // Outbound NAT. We *want* this on every boot, even when the bridge
-    // already exists, so we don't gate it on `!bridge_already_existed`.
-    // Outbound interface detection is the only thing that can fail
-    // here: if the host genuinely has no default route (e.g. behind a
-    // captive portal or in a test env without a default gateway), we
-    // log and continue. Inbound networking still works.
+    // Outbound NAT.
     match detect_outbound_iface() {
         Ok(iface) => {
-            if let Err(e) = enable_nat(BRIDGE_NAME, &iface) {
+            if let Err(e) = enable_nat(bridge_name, &iface) {
                 warn!(
                     error = %e,
-                    bridge = BRIDGE_NAME,
+                    bridge = bridge_name,
                     outbound = iface.as_str(),
                     "could not install outbound NAT (inbound still works)"
                 );
@@ -242,7 +265,7 @@ pub fn ensure_bridge() -> Result<(), VmNetError> {
         Err(e) => {
             warn!(
                 error = %e,
-                "could not detect default outbound iface — outbound NAT skipped (inbound still works)"
+                "could not detect default outbound iface — outbound NAT skipped"
             );
         }
     }
@@ -250,45 +273,53 @@ pub fn ensure_bridge() -> Result<(), VmNetError> {
     Ok(())
 }
 
-/// Create a tap device and attach it to the shared bridge. The returned
-/// `VmNetwork` holds the deterministic MAC and the IP it should be
-/// configured with in the guest (via kernel `ip=` boot arg).
+/// Create a tap device and attach it to a bridge. The returned
+/// `VmNetwork` holds the deterministic MAC and the guest IP.
 /// Returns `(VmNetwork, File)` — the caller must keep the `File` alive
-/// for as long as the TAP device is needed (the kernel destroys it when
-/// the fd is closed). Drop the `File` to release the device.
-pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<(VmNetwork, File), VmNetError> {
+/// for as long as the TAP device is needed.
+pub fn create_tap_on_bridge(
+    tap_name: &str,
+    guest_ip: Ipv4Addr,
+    bridge_name: &str,
+    netmask: Ipv4Addr,
+    gateway: Ipv4Addr,
+) -> Result<(VmNetwork, File), VmNetError> {
     if !cfg!(target_os = "linux") {
         return Err(VmNetError::NotLinux);
     }
 
-    ensure_bridge()?;
-
     if link_exists(tap_name)? {
-        // Be defensive: a stale tap from a previous run can prevent us
-        // from attaching. Delete and recreate.
         warn!(tap = tap_name, "tap device already exists, removing");
         run_ip(&["link", "del", tap_name])?;
     }
 
-    info!(tap = tap_name, %guest_ip, "creating VM tap device");
+    info!(tap = tap_name, %guest_ip, bridge = bridge_name, "creating VM tap device");
 
     let tap_fd = create_tap_ioctl(tap_name)?;
 
-    run_ip(&["link", "set", tap_name, "master", BRIDGE_NAME])?;
+    run_ip(&["link", "set", tap_name, "master", bridge_name])?;
     run_ip(&["link", "set", tap_name, "up"])?;
 
     let guest_mac = mac_from_ip(guest_ip);
 
     let vm_net = VmNetwork {
         tap_name: tap_name.to_string(),
-        bridge_name: BRIDGE_NAME.to_string(),
+        bridge_name: bridge_name.to_string(),
         guest_ip,
         guest_mac,
-        netmask: NETMASK,
-        gateway: GATEWAY_IP,
+        netmask,
+        gateway,
     };
 
     Ok((vm_net, tap_fd))
+}
+
+/// Create a tap device on the default `nimbus-br0` bridge.
+/// Convenience wrapper that calls [`create_tap_on_bridge`] with the
+/// default bridge, netmask, and gateway.
+pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<(VmNetwork, File), VmNetError> {
+    ensure_bridge()?;
+    create_tap_on_bridge(tap_name, guest_ip, BRIDGE_NAME, NETMASK, GATEWAY_IP)
 }
 
 /// Remove a tap device. Drops the fd (which destroys the TAP in the

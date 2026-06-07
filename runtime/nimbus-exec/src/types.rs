@@ -60,6 +60,10 @@ pub struct WorkloadSpec {
     /// When set, the executor uses this vmlinux instead of its
     /// default `kernel_path` config value.
     pub kernel_path: Option<PathBuf>,
+    /// Per-project bridge name for network isolation.
+    /// When set, the runtime creates a dedicated bridge
+    /// instead of using the default "nimbus-br0".
+    pub bridge_name: Option<String>,
 }
 
 impl WorkloadSpec {
@@ -75,6 +79,7 @@ impl WorkloadSpec {
             network_mode: NetworkMode::Loopback,
             network_rules: vec![],
             kernel_path: None,
+            bridge_name: None,
         }
     }
 }
@@ -90,6 +95,7 @@ pub struct WorkloadSpecBuilder {
     network_mode: NetworkMode,
     network_rules: Vec<NetworkRule>,
     kernel_path: Option<PathBuf>,
+    bridge_name: Option<String>,
 }
 
 impl WorkloadSpecBuilder {
@@ -123,6 +129,11 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn bridge_name(mut self, name: String) -> Self {
+        self.bridge_name = Some(name);
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -135,6 +146,7 @@ impl WorkloadSpecBuilder {
             network_mode: self.network_mode,
             network_rules: self.network_rules,
             kernel_path: self.kernel_path,
+            bridge_name: self.bridge_name,
         }
     }
 }

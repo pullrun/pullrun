@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"time"
@@ -10,6 +11,12 @@ import (
 
 	runtimeapi "nimbus/protoapi/nimbus/runtime"
 )
+
+// bridgeNameForProject derives a deterministic bridge name from the project name.
+func bridgeNameForProject(projectName string) string {
+	h := sha256.Sum256([]byte(projectName))
+	return fmt.Sprintf("nimbus-%x", h[:4])
+}
 
 func newUpCommand() *cobra.Command {
 	return &cobra.Command{
@@ -29,6 +36,12 @@ func newUpCommand() *cobra.Command {
 			}
 
 			fmt.Printf("Project: %s (%d services)\n", project.Name, len(project.Services))
+
+			// Derive per-project bridge for network isolation (D4).
+			bridgeName := bridgeNameForProject(project.Name)
+			if verbose {
+				fmt.Fprintf(os.Stderr, "  bridge: %s (per-project isolation)\n", bridgeName)
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
@@ -96,6 +109,7 @@ func newUpCommand() *cobra.Command {
 					Env:          env,
 					NetworkRules: networkRules,
 					WorkingDir:   workingDir,
+					BridgeName:   bridgeName,
 				})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "\n  %s: START FAILED: %v\n", name, err)
