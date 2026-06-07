@@ -48,6 +48,7 @@ type criServer struct {
 	runtimeClient nimbusruntime.RuntimeClient
 	sandboxStore  *sandboxStore
 	streaming     *streamingServer
+	networkMode   string
 }
 
 // sandboxStore is a small in-memory index of pod sandboxes -> nimbus workload IDs.
@@ -193,8 +194,9 @@ func containerToAPI(rec *containerRecord) *runtimeapi.Container {
 
 func main() {
 	var (
-		socketPath = flag.String("socket", "/var/run/nimbus/nimbus-cri.sock", "CRI socket path")
-		runtimeSock = flag.String("runtime-socket", "/var/run/nimbus/runtime.sock", "nimbus-runtime gRPC UDS")
+		socketPath   = flag.String("socket", "/var/run/nimbus/nimbus-cri.sock", "CRI socket path")
+		runtimeSock  = flag.String("runtime-socket", "/var/run/nimbus/runtime.sock", "nimbus-runtime gRPC UDS")
+		networkMode  = flag.String("network-mode", "bridge", "Network mode for workloads: 'isolated' (no cluster IP) or 'bridge' (shared nimbus-br0)")
 	)
 	flag.Parse()
 
@@ -232,6 +234,7 @@ func main() {
 		runtimeClient: runtimeClient,
 		sandboxStore:  newSandboxStore(),
 		streaming:     streaming,
+		networkMode:   *networkMode,
 	}
 
 	// Listen on the CRI socket

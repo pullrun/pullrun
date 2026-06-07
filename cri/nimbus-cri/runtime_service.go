@@ -71,7 +71,10 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 	// the pause image. Users override via `nimbus.io/image` annotation.
 	image := runWorkloadImageFromAnnotations(req.Config.Annotations)
 	backend := backendForRuntimeHandler(req.RuntimeHandler)
-	netMode := "isolated" // CRI v1 uses CNI; v0 default is isolated per-namespace
+	netMode := c.networkMode
+	if netMode == "" {
+		netMode = "isolated"
+	}
 	cpu, mem := parseResourceAnnotations(req.Config.Annotations)
 
 	log.Printf("RunPodSandbox id=%s ns=%s name=%s image=%s backend=%s net=%s cpu=%d mem=%d",
