@@ -1,8 +1,8 @@
 # Nimbus — Build Progress
 
-> **Last updated:** **Rootless ext4 + TAP ioctl; first daemon-booted Firecracker VM.** Direct Docker Hub pulls work without local registry. 92 Rust tests (83 lib + 9 vsock); 9 Go tests.
-> **Active phase:** Post-E2E cleanup and production hardening. **Roadmap defined.**
-> **Roadmap:** **[Phase A]** CRI Completeness (Exec/Attach/PortForward, CNI, multi-container, metrics) → **[Phase B]** VM Polish (/init, OCI kernel, GC, iptables) → **[Phase C]** Control Plane Persistence → **[Phase D]** Compose Feature → **v1 Production**.
+> **Last updated:** **Phase A implemented: CRI Exec/Attach/PortForward, resource limits, image management, CNI network mode flag, UpdateWorkload RPC.** Direct Docker Hub pulls work without local registry. 92 Rust tests (83 lib + 9 vsock); 9 Go tests.
+> **Active phase:** Post-E2E cleanup and production hardening. **Phase A 9/10 complete (A6: multi-container pod deferred — needs runtime-level multi-workload scheduling).**
+> **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish (/init, OCI kernel, GC, iptables) → **[Phase C]** Control Plane Persistence → **[Phase D]** Compose Feature → **v1 Production**.
 > **Status:** All **92 Rust tests pass** (83 lib + 9 vsock, nimbus-vm: 16). 9 Go tests pass.
 
 ---

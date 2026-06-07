@@ -175,7 +175,7 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
 
 /// Stub for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
-fn create_tap_ioctl(_name: &str) -> Result<(), VmNetError> {
+fn create_tap_ioctl(_name: &str) -> Result<File, VmNetError> {
     Err(VmNetError::NotLinux)
 }
 
