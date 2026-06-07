@@ -1,7 +1,8 @@
 # Nimbus — Build Progress
 
 > **Last updated:** **Rootless ext4 + TAP ioctl; first daemon-booted Firecracker VM.** Direct Docker Hub pulls work without local registry. 92 Rust tests (83 lib + 9 vsock); 9 Go tests.
-> **Active phase:** Post-E2E cleanup and production hardening.
+> **Active phase:** Post-E2E cleanup and production hardening. **Roadmap defined.**
+> **Roadmap:** **[Phase A]** CRI Completeness (Exec/Attach/PortForward, CNI, multi-container, metrics) → **[Phase B]** VM Polish (/init, OCI kernel, GC, iptables) → **[Phase C]** Control Plane Persistence → **[Phase D]** Compose Feature → **v1 Production**.
 > **Status:** All **92 Rust tests pass** (83 lib + 9 vsock, nimbus-vm: 16). 9 Go tests pass.
 
 ---
@@ -1020,8 +1021,126 @@ actually need code changes vs what's already implemented.
 - `FUTURE_IDEAS.md` — new file
 
 ### Next Steps
+See **[Roadmap](#roadmap--prioritized-development-plan)** below for the full prioritized plan.
+
 1. Resolve the `/init` wrapper issue for OCI container images booted as VMs (Firecracker boot args use `init=/init` but OCI images don't have it)
 2. Port `oci_kernel` OCI pull for Firecracker (currently requires pre-downloaded vmlinux on the host)
 3. Make `iptables` calls rootless too (or document them as the remaining root requirement)
 4. Double materialization cleanup (DAG → plain dir → ext4 is wasteful)
 5. Wire `nimbus-runtime` end-to-end from the daemon attach path on macOS (vsock ↔ gRPC) — all the building blocks exist but the daemon path hasn't been exercised since the `dispatch_main()` restructure
+
+---
+
+## Roadmap — Prioritized Development Plan
+
+### Phase A: CRI Completeness [P0 — 4–6 weeks]
+
+**Goal:** Make Nimbus pass `kubectl run`, `kubectl exec`, `kubectl port-forward`, and HPA on a single-node K8s cluster.
+
+| ID | Task | What | File | Depends on |
+|----|------|------|------|-----------|
+| A1 | Streaming `Exec` | Bridge Kubernetes' SPDY upgrade protocol → runtime `AttachWorkload` gRPC stream. Currently returns `"not implemented in v0; use ExecSync"`. | `cri/nimbus-cri/container_service.go` | — |
+| A2 | Streaming `Attach` | Same pattern as A1. Currently returns `"Attach not implemented in v0"`. | `cri/nimbus-cri/container_service.go` | A1 |
+| A3 | `PortForward` | Add `PortForward` RPC to `proto/nimbus/runtime.proto` + Rust impl (TCP tunnel through vsock). Wire CRI to call it. | `proto/nimbus/runtime.proto`, Rust runtime, `container_service.go` | — |
+| A4 | Resource limits | Populate `cpu_millicores` and `memory_bytes` from `ContainerConfig.Linux.Resources`. Fields exist in `RunRequest` proto but CRI shim never sends them. | `cri/nimbus-cri/runtime_service.go` | — |
+| A5 | CNI integration | Replace `netMode: "isolated"` hardcoded in `runtime_service.go:runPodSandbox()` with CNI plugin delegation. Pods need cluster IPs, cross-node networking, NetworkPolicy. | `cri/nimbus-cri/runtime_service.go`, new `cni/` pkg | — |
+| A6 | Multi-container pod | Current `CreateContainer` is a label-only stub (1:1 with sandbox). Real impl needs `RunWorkload` per container, possibly inside shared VM (hybrid) or separate runc processes. | `cri/nimbus-cri/container_service.go`, runtime | A5 |
+| A7 | `ImageStatus` / `ListImages` | Add `HasImage` / `ListImages` RPCs to runtime.proto + Rust impl (walk DAG store). Currently returns empty. | `proto/nimbus/runtime.proto`, Rust store, `image_service.go` | — |
+| A8 | `ContainerStats` / `ListContainerStats` | Add `GetWorkloadStats` RPC reporting CPU/mem/disk/network. Needed for `kubectl top` and HPA. | `proto/nimbus/runtime.proto`, Rust runtime, `cri/` | — |
+| A9 | `RemoveImage` / `ImageFsInfo` | Add `RemoveImage` + `DagStoreInfo` RPCs. Real disk usage reporting and image GC. | Rust store + proto, `image_service.go` | — |
+| A10 | `UpdateContainerResources` | Add `UpdateWorkload` RPC to push CPU/mem/cgroup changes live. | `proto/nimbus/runtime.proto`, Rust runtime, `container_service.go` | — |
+
+**New proto RPCs required:** `PortForward`, `HasImage`, `ListImages`, `RemoveImage`, `DagStoreInfo`, `GetWorkloadStats`, `UpdateWorkload`, plus a `RunCompose` proto used later in Phase D.
+
+**Go dependencies to add:** `github.com/containernetworking/cni` (A5).
+
+---
+
+### Phase B: VM Polish [P1 — 3–4 weeks, parallel with A]
+
+**Goal:** Fix the three VM-specific gaps that prevent real OCI images from booting in Firecracker, and eliminate root requirements.
+
+| ID | Task | What | File | Depends on |
+|----|------|------|------|-----------|
+| B1 | `/init` wrapper for OCI images | `materialize_ext4_rootfs` currently injects `#!/bin/sh\nexec /bin/sh`. Instead, read the OCI image config's `ENTRYPOINT` + `CMD`, and write `/init` that execs the actual workload. | `runtime/nimbus-vm/src/ext4.rs` | — |
+| B2 | OCI kernel for Firecracker | Port `oci_kernel` staging (Apple Virt path) to Firecracker executor. Pull kernel from OCI image instead of requiring pre-downloaded `--vm-kernel` vmlinux. | `runtime/nimbus-vm/src/lib.rs`, `oci_kernel.rs` | — |
+| B3 | Double materialization | Skip `OciMaterializer::materialize_into()` in `run_workload()` when backend is Firecracker. The ext4 materializer already does its own DAG walk. | `runtime/nimbus-runtime/src/service.rs` | — |
+| B4 | Image GC | Add LRU eviction to `MmapStore`. Configurable `max_bytes` at construction. Prune on `put()` when threshold exceeded. | `runtime/nimbus-store/src/store.rs` | — |
+| B5 | iptables rootless | `enable_nat()` calls `iptables` via `Command::new("iptables")` which requires root or `CAP_NET_ADMIN`. Replace with `nft` or direct netlink via `rtnetlink` crate (or document as the last root requirement). | `runtime/nimbus-vm/src/network.rs` | — |
+
+---
+
+### Phase C: Control Plane Persistence [P1 — 4–6 weeks, after A]
+
+**Goal:** Survive restart without losing workload state.
+
+| ID | Task | What | File | Depends on |
+|----|------|------|------|-----------|
+| C1 | Persistent sandbox store | Replace Go in-memory map with sqlite/lmdb-backed store in CRI shim. | `cri/nimbus-cri/main.go` | A complete |
+| C2 | etcd integration | Replace `control-plane/` in-memory maps with etcd-backed state. | `control-plane/` | — |
+| C3 | Workload checkpoint | Save `WorkloadStatus` to disk on every state transition; reload on startup. | Rust runtime | — |
+
+---
+
+### Phase D: Compose Feature [P2 — 4–6 weeks, after A/B]
+
+**Goal:** `nimbus compose up` reads any `compose.yaml`, boots each service as a micro-VM.
+
+| ID | Task | What | File | Depends on |
+|----|------|------|------|-----------|
+| D1 | `RunCompose` proto | Add batch-workload RPC with `services`, `networks`, `volumes`. Atomic create-all or none. | `proto/nimbus/runtime.proto` | — |
+| D2 | compose-go parser | Vendor `compose-go` library. Parse `services.*.image`, `ports`, `environment`, `volumes`, `healthcheck`, `depends_on`. | `cmd/nimbus-compose/compose.go` | D1 |
+| D3 | `nimbus-compose` binary | CLI with `up`/`down`/`ps`/`logs`. Each service → `RunWorkload` or single `RunCompose` RPC. Healthcheck uses gRPC probe over vsock. | `cmd/nimbus-compose/main.go` | D2 |
+| D4 | Per-project bridge isolation | Replace global `nimbus-br0` with per-project bridge + DNS scope. Compose `networks` → isolated L2. | Rust runtime, `network.rs` | D3, A5 |
+| D5 | `nimbus compose build` | OCI image build from Dockerfile (delegates to buildkit or `docker build`) → store in DAG. | `cmd/nimbus-compose/build.go` | D3 |
+
+---
+
+### Production v1 [P3 — after Phase D]
+
+| ID | Task | What | File | Priority |
+|----|------|------|------|----------|
+| V1 | eBPF/XDP proxy | Replace userspace `TcpListener`-per-port with XDP redirect on the bridge. | `runtime/nimbus-net/src/proxy.rs` | Low |
+| V2 | NetworkPolicy | Map K8s NetworkPolicy objects to proxy outbound/inbound rules. | `cri/nimbus-cri/` | Low |
+| V3 | Multi-node DNS | `.nimbus.local` resolution across nodes via control plane. | `control-plane/dns/` | Low |
+| V4 | Apple Virt CRI | Wire `AppleVirtExecutor` into CRI shim for macOS K8s nodes. | `cri/nimbus-cri/` | Low |
+
+---
+
+### Compose Feature — Design Summary
+
+**What it is:** An **optional** binary (`cmd/nimbus-compose/`) that reads a standard `docker-compose.yml` and boots each service as a Nimbus workload (container or VM) using the existing gRPC API.
+
+**Why it's a binary, not part of the runtime:**
+- Compose is a *consumer* of the runtime API, not a core primitive. Keeping it separate lets the runtime evolve independently.
+- The `compose-go` library pulls in many Docker dependencies. It shouldn't pollute the runtime binary.
+
+**Architecture:**
+
+```
+compose.yaml  ──→  nimbus-compose (Go)
+                       │
+                       ├── PullImage (gRPC) ──→ nimbus-runtime
+                       │                              │
+                       └── RunCompose (gRPC) ─────────→ DAG store + executor
+```
+
+**Compose-to-Nimbus mapping:**
+
+| Compose | Nimbus | Mechanism |
+|---------|--------|-----------|
+| `services.<name>.image` | OCI pull → DAG | `PullImage` RPC |
+| `services.<name>.command` | `WorkloadSpec.command` | `RunCompose.services[].command` |
+| `services.<name>.environment` | `WorkloadSpec.env` | `RunCompose.services[].env` |
+| `services.<name>.ports` | `NetworkRule::Inbound` | Mapped 1:1 |
+| `services.<name>.volumes` | `HostPath` bind mounts | `RunCompose.services[].volumes` |
+| `networks.<name>` | Per-project bridge + IPAM | New bridge per compose project |
+| `services.<name>.depends_on` | Start order + readiness | Sequenced `RunWorkload` calls |
+| `services.<name>.healthcheck` | gRPC health probe | Over vsock to nimbus-init |
+| `services.<name>.build` | OCI image build | Delegates to buildkit or `docker build` |
+
+**Why it matters:** Zero-migration path for Docker users. A developer changes one command (`docker compose up` → `nimbus compose up`) and every service runs in an isolated micro-VM. That's the most powerful adoption demo possible.
+
+**When to build it:** After Phase A (CRI) and Phase B (VM polish) are complete. Compose will exercise *every* CRI and VM gap — it's better to fix those first so Compose "just works."
+
+---
