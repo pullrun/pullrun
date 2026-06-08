@@ -3905,6 +3905,251 @@ func (x *CopyFileResponse) GetSize() uint64 {
 	return 0
 }
 
+type CommitImageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Workload ID to commit from.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional tag for the new image (e.g. "myapp:latest").
+	// If empty, only the root digest is returned.
+	Tag string `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
+	// Optional message/annotation describing this commit.
+	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	// Optional author of this commit.
+	Author        string `protobuf:"bytes,4,opt,name=author,proto3" json:"author,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitImageRequest) Reset() {
+	*x = CommitImageRequest{}
+	mi := &file_nimbus_runtime_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitImageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitImageRequest) ProtoMessage() {}
+
+func (x *CommitImageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nimbus_runtime_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitImageRequest.ProtoReflect.Descriptor instead.
+func (*CommitImageRequest) Descriptor() ([]byte, []int) {
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *CommitImageRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CommitImageRequest) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
+func (x *CommitImageRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CommitImageRequest) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+type CommitImageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Root digest of the new committed image (sha256:...).
+	RootDigest string `protobuf:"bytes,1,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
+	// Tag assigned (same as request.tag, if provided).
+	Tag string `protobuf:"bytes,2,opt,name=tag,proto3" json:"tag,omitempty"`
+	// Number of new nodes stored in the DAG (may be 0 if no changes
+	// detected and dedup covered everything).
+	NewNodes      uint64 `protobuf:"varint,3,opt,name=new_nodes,json=newNodes,proto3" json:"new_nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommitImageResponse) Reset() {
+	*x = CommitImageResponse{}
+	mi := &file_nimbus_runtime_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommitImageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommitImageResponse) ProtoMessage() {}
+
+func (x *CommitImageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nimbus_runtime_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommitImageResponse.ProtoReflect.Descriptor instead.
+func (*CommitImageResponse) Descriptor() ([]byte, []int) {
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *CommitImageResponse) GetRootDigest() string {
+	if x != nil {
+		return x.RootDigest
+	}
+	return ""
+}
+
+func (x *CommitImageResponse) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
+func (x *CommitImageResponse) GetNewNodes() uint64 {
+	if x != nil {
+		return x.NewNodes
+	}
+	return 0
+}
+
+type DiffRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Workload ID to diff.
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiffRequest) Reset() {
+	*x = DiffRequest{}
+	mi := &file_nimbus_runtime_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiffRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiffRequest) ProtoMessage() {}
+
+func (x *DiffRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nimbus_runtime_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiffRequest.ProtoReflect.Descriptor instead.
+func (*DiffRequest) Descriptor() ([]byte, []int) {
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *DiffRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DiffResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Files that exist in the container but not in the original image.
+	Added []string `protobuf:"bytes,1,rep,name=added,proto3" json:"added,omitempty"`
+	// Files that exist in the original image but not in the container.
+	Deleted []string `protobuf:"bytes,2,rep,name=deleted,proto3" json:"deleted,omitempty"`
+	// Files that exist in both but have different content.
+	Modified      []string `protobuf:"bytes,3,rep,name=modified,proto3" json:"modified,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiffResponse) Reset() {
+	*x = DiffResponse{}
+	mi := &file_nimbus_runtime_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiffResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiffResponse) ProtoMessage() {}
+
+func (x *DiffResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nimbus_runtime_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiffResponse.ProtoReflect.Descriptor instead.
+func (*DiffResponse) Descriptor() ([]byte, []int) {
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *DiffResponse) GetAdded() []string {
+	if x != nil {
+		return x.Added
+	}
+	return nil
+}
+
+func (x *DiffResponse) GetDeleted() []string {
+	if x != nil {
+		return x.Deleted
+	}
+	return nil
+}
+
+func (x *DiffResponse) GetModified() []string {
+	if x != nil {
+		return x.Modified
+	}
+	return nil
+}
+
 var File_nimbus_runtime_proto protoreflect.FileDescriptor
 
 const file_nimbus_runtime_proto_rawDesc = "" +
@@ -4237,14 +4482,30 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\x0econtainer_path\x18\x02 \x01(\tR\rcontainerPath\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\fR\acontent\x12\x12\n" +
 	"\x04mode\x18\x04 \x01(\rR\x04mode\x12\x12\n" +
-	"\x04size\x18\x05 \x01(\x04R\x04size*\x80\x01\n" +
+	"\x04size\x18\x05 \x01(\x04R\x04size\"h\n" +
+	"\x12CommitImageRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03tag\x18\x02 \x01(\tR\x03tag\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x16\n" +
+	"\x06author\x18\x04 \x01(\tR\x06author\"e\n" +
+	"\x13CommitImageResponse\x12\x1f\n" +
+	"\vroot_digest\x18\x01 \x01(\tR\n" +
+	"rootDigest\x12\x10\n" +
+	"\x03tag\x18\x02 \x01(\tR\x03tag\x12\x1b\n" +
+	"\tnew_nodes\x18\x03 \x01(\x04R\bnewNodes\"\x1d\n" +
+	"\vDiffRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"Z\n" +
+	"\fDiffResponse\x12\x14\n" +
+	"\x05added\x18\x01 \x03(\tR\x05added\x12\x18\n" +
+	"\adeleted\x18\x02 \x03(\tR\adeleted\x12\x1a\n" +
+	"\bmodified\x18\x03 \x03(\tR\bmodified*\x80\x01\n" +
 	"\rRestartPolicy\x12\x17\n" +
 	"\x13RESTART_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"RESTART_NO\x10\x01\x12\x16\n" +
 	"\x12RESTART_ON_FAILURE\x10\x02\x12\x12\n" +
 	"\x0eRESTART_ALWAYS\x10\x03\x12\x1a\n" +
-	"\x16RESTART_UNLESS_STOPPED\x10\x042\x93\x0f\n" +
+	"\x16RESTART_UNLESS_STOPPED\x10\x042\xb6\x10\n" +
 	"\aRuntime\x12P\n" +
 	"\tPullImage\x12 .nimbus.runtime.PullImageRequest\x1a!.nimbus.runtime.PullImageResponse\x12F\n" +
 	"\vRunWorkload\x12\x1a.nimbus.runtime.RunRequest\x1a\x1b.nimbus.runtime.RunResponse\x12I\n" +
@@ -4272,7 +4533,9 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\vImportImage\x12 .nimbus.runtime.ImportImageChunk\x1a#.nimbus.runtime.ImportImageResponse(\x01\x12S\n" +
 	"\n" +
 	"RunCompose\x12!.nimbus.runtime.RunComposeRequest\x1a\".nimbus.runtime.RunComposeResponse\x12M\n" +
-	"\bCopyFile\x12\x1f.nimbus.runtime.CopyFileRequest\x1a .nimbus.runtime.CopyFileResponseB(Z&nimbus/protoapi/nimbus/runtime;runtimeb\x06proto3"
+	"\bCopyFile\x12\x1f.nimbus.runtime.CopyFileRequest\x1a .nimbus.runtime.CopyFileResponse\x12V\n" +
+	"\vCommitImage\x12\".nimbus.runtime.CommitImageRequest\x1a#.nimbus.runtime.CommitImageResponse\x12I\n" +
+	"\fDiffWorkload\x12\x1b.nimbus.runtime.DiffRequest\x1a\x1c.nimbus.runtime.DiffResponseB(Z&nimbus/protoapi/nimbus/runtime;runtimeb\x06proto3"
 
 var (
 	file_nimbus_runtime_proto_rawDescOnce sync.Once
@@ -4287,7 +4550,7 @@ func file_nimbus_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_nimbus_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_nimbus_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
+var file_nimbus_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_nimbus_runtime_proto_goTypes = []any{
 	(RestartPolicy)(0),              // 0: nimbus.runtime.RestartPolicy
 	(*Mount)(nil),                   // 1: nimbus.runtime.Mount
@@ -4349,31 +4612,35 @@ var file_nimbus_runtime_proto_goTypes = []any{
 	(*InspectResponse)(nil),         // 57: nimbus.runtime.InspectResponse
 	(*CopyFileRequest)(nil),         // 58: nimbus.runtime.CopyFileRequest
 	(*CopyFileResponse)(nil),        // 59: nimbus.runtime.CopyFileResponse
-	nil,                             // 60: nimbus.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 61: nimbus.runtime.ComposeService.LabelsEntry
-	nil,                             // 62: nimbus.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 63: nimbus.runtime.RunRequest.EnvEntry
-	nil,                             // 64: nimbus.runtime.Event.MetadataEntry
-	nil,                             // 65: nimbus.runtime.AttachOpen.EnvEntry
-	nil,                             // 66: nimbus.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 67: nimbus.runtime.InspectResponse.PolicyDecisionsEntry
+	(*CommitImageRequest)(nil),      // 60: nimbus.runtime.CommitImageRequest
+	(*CommitImageResponse)(nil),     // 61: nimbus.runtime.CommitImageResponse
+	(*DiffRequest)(nil),             // 62: nimbus.runtime.DiffRequest
+	(*DiffResponse)(nil),            // 63: nimbus.runtime.DiffResponse
+	nil,                             // 64: nimbus.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 65: nimbus.runtime.ComposeService.LabelsEntry
+	nil,                             // 66: nimbus.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 67: nimbus.runtime.RunRequest.EnvEntry
+	nil,                             // 68: nimbus.runtime.Event.MetadataEntry
+	nil,                             // 69: nimbus.runtime.AttachOpen.EnvEntry
+	nil,                             // 70: nimbus.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 71: nimbus.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_nimbus_runtime_proto_depIdxs = []int32{
-	60, // 0: nimbus.runtime.ComposeService.environment:type_name -> nimbus.runtime.ComposeService.EnvironmentEntry
+	64, // 0: nimbus.runtime.ComposeService.environment:type_name -> nimbus.runtime.ComposeService.EnvironmentEntry
 	3,  // 1: nimbus.runtime.ComposeService.ports:type_name -> nimbus.runtime.ComposePort
-	61, // 2: nimbus.runtime.ComposeService.labels:type_name -> nimbus.runtime.ComposeService.LabelsEntry
+	65, // 2: nimbus.runtime.ComposeService.labels:type_name -> nimbus.runtime.ComposeService.LabelsEntry
 	1,  // 3: nimbus.runtime.ComposeService.mounts:type_name -> nimbus.runtime.Mount
 	42, // 4: nimbus.runtime.ComposeService.health_check:type_name -> nimbus.runtime.HealthCheck
 	2,  // 5: nimbus.runtime.RunComposeRequest.services:type_name -> nimbus.runtime.ComposeService
-	62, // 6: nimbus.runtime.RunComposeResponse.service_to_id:type_name -> nimbus.runtime.RunComposeResponse.ServiceToIdEntry
-	63, // 7: nimbus.runtime.RunRequest.env:type_name -> nimbus.runtime.RunRequest.EnvEntry
+	66, // 6: nimbus.runtime.RunComposeResponse.service_to_id:type_name -> nimbus.runtime.RunComposeResponse.ServiceToIdEntry
+	67, // 7: nimbus.runtime.RunRequest.env:type_name -> nimbus.runtime.RunRequest.EnvEntry
 	9,  // 8: nimbus.runtime.RunRequest.network_rules:type_name -> nimbus.runtime.NetworkRule
 	1,  // 9: nimbus.runtime.RunRequest.mounts:type_name -> nimbus.runtime.Mount
 	42, // 10: nimbus.runtime.RunRequest.health_check:type_name -> nimbus.runtime.HealthCheck
 	0,  // 11: nimbus.runtime.RunRequest.restart_policy:type_name -> nimbus.runtime.RestartPolicy
 	0,  // 12: nimbus.runtime.WorkloadStatus.restart_policy:type_name -> nimbus.runtime.RestartPolicy
 	14, // 13: nimbus.runtime.ListWorkloadsResponse.workloads:type_name -> nimbus.runtime.WorkloadStatus
-	64, // 14: nimbus.runtime.Event.metadata:type_name -> nimbus.runtime.Event.MetadataEntry
+	68, // 14: nimbus.runtime.Event.metadata:type_name -> nimbus.runtime.Event.MetadataEntry
 	24, // 15: nimbus.runtime.AttachMessage.open:type_name -> nimbus.runtime.AttachOpen
 	25, // 16: nimbus.runtime.AttachMessage.stdin:type_name -> nimbus.runtime.AttachStdin
 	26, // 17: nimbus.runtime.AttachMessage.stdin_eof:type_name -> nimbus.runtime.AttachStdinEof
@@ -4381,12 +4648,12 @@ var file_nimbus_runtime_proto_depIdxs = []int32{
 	28, // 19: nimbus.runtime.AttachMessage.stderr:type_name -> nimbus.runtime.AttachStderr
 	29, // 20: nimbus.runtime.AttachMessage.exit:type_name -> nimbus.runtime.AttachExit
 	30, // 21: nimbus.runtime.AttachMessage.error:type_name -> nimbus.runtime.AttachError
-	65, // 22: nimbus.runtime.AttachOpen.env:type_name -> nimbus.runtime.AttachOpen.EnvEntry
+	69, // 22: nimbus.runtime.AttachOpen.env:type_name -> nimbus.runtime.AttachOpen.EnvEntry
 	35, // 23: nimbus.runtime.ListImagesResponse.images:type_name -> nimbus.runtime.ImageInfo
-	66, // 24: nimbus.runtime.BuildImageRequest.build_args:type_name -> nimbus.runtime.BuildImageRequest.BuildArgsEntry
+	70, // 24: nimbus.runtime.BuildImageRequest.build_args:type_name -> nimbus.runtime.BuildImageRequest.BuildArgsEntry
 	9,  // 25: nimbus.runtime.InspectResponse.network_rules:type_name -> nimbus.runtime.NetworkRule
 	56, // 26: nimbus.runtime.InspectResponse.dag_path:type_name -> nimbus.runtime.DagNode
-	67, // 27: nimbus.runtime.InspectResponse.policy_decisions:type_name -> nimbus.runtime.InspectResponse.PolicyDecisionsEntry
+	71, // 27: nimbus.runtime.InspectResponse.policy_decisions:type_name -> nimbus.runtime.InspectResponse.PolicyDecisionsEntry
 	0,  // 28: nimbus.runtime.InspectResponse.restart_policy:type_name -> nimbus.runtime.RestartPolicy
 	6,  // 29: nimbus.runtime.Runtime.PullImage:input_type -> nimbus.runtime.PullImageRequest
 	8,  // 30: nimbus.runtime.Runtime.RunWorkload:input_type -> nimbus.runtime.RunRequest
@@ -4411,31 +4678,35 @@ var file_nimbus_runtime_proto_depIdxs = []int32{
 	53, // 49: nimbus.runtime.Runtime.ImportImage:input_type -> nimbus.runtime.ImportImageChunk
 	4,  // 50: nimbus.runtime.Runtime.RunCompose:input_type -> nimbus.runtime.RunComposeRequest
 	58, // 51: nimbus.runtime.Runtime.CopyFile:input_type -> nimbus.runtime.CopyFileRequest
-	7,  // 52: nimbus.runtime.Runtime.PullImage:output_type -> nimbus.runtime.PullImageResponse
-	10, // 53: nimbus.runtime.Runtime.RunWorkload:output_type -> nimbus.runtime.RunResponse
-	12, // 54: nimbus.runtime.Runtime.StopWorkload:output_type -> nimbus.runtime.StopResponse
-	14, // 55: nimbus.runtime.Runtime.GetWorkload:output_type -> nimbus.runtime.WorkloadStatus
-	16, // 56: nimbus.runtime.Runtime.ListWorkloads:output_type -> nimbus.runtime.ListWorkloadsResponse
-	18, // 57: nimbus.runtime.Runtime.StreamLogs:output_type -> nimbus.runtime.LogChunk
-	20, // 58: nimbus.runtime.Runtime.StreamEvents:output_type -> nimbus.runtime.Event
-	22, // 59: nimbus.runtime.Runtime.ExecInWorkload:output_type -> nimbus.runtime.ExecResponse
-	57, // 60: nimbus.runtime.Runtime.InspectWorkload:output_type -> nimbus.runtime.InspectResponse
-	23, // 61: nimbus.runtime.Runtime.AttachWorkload:output_type -> nimbus.runtime.AttachMessage
-	32, // 62: nimbus.runtime.Runtime.HasImage:output_type -> nimbus.runtime.HasImageResponse
-	34, // 63: nimbus.runtime.Runtime.ListImages:output_type -> nimbus.runtime.ListImagesResponse
-	37, // 64: nimbus.runtime.Runtime.RemoveImage:output_type -> nimbus.runtime.RemoveImageResponse
-	39, // 65: nimbus.runtime.Runtime.DagStoreInfo:output_type -> nimbus.runtime.DagStoreInfoResponse
-	41, // 66: nimbus.runtime.Runtime.PortForward:output_type -> nimbus.runtime.PortForwardData
-	44, // 67: nimbus.runtime.Runtime.UpdateWorkload:output_type -> nimbus.runtime.UpdateWorkloadResponse
-	46, // 68: nimbus.runtime.Runtime.GetWorkloadStats:output_type -> nimbus.runtime.WorkloadStats
-	48, // 69: nimbus.runtime.Runtime.BuildImage:output_type -> nimbus.runtime.BuildImageResponse
-	50, // 70: nimbus.runtime.Runtime.PushImage:output_type -> nimbus.runtime.PushImageResponse
-	52, // 71: nimbus.runtime.Runtime.ExportImage:output_type -> nimbus.runtime.ExportImageChunk
-	54, // 72: nimbus.runtime.Runtime.ImportImage:output_type -> nimbus.runtime.ImportImageResponse
-	5,  // 73: nimbus.runtime.Runtime.RunCompose:output_type -> nimbus.runtime.RunComposeResponse
-	59, // 74: nimbus.runtime.Runtime.CopyFile:output_type -> nimbus.runtime.CopyFileResponse
-	52, // [52:75] is the sub-list for method output_type
-	29, // [29:52] is the sub-list for method input_type
+	60, // 52: nimbus.runtime.Runtime.CommitImage:input_type -> nimbus.runtime.CommitImageRequest
+	62, // 53: nimbus.runtime.Runtime.DiffWorkload:input_type -> nimbus.runtime.DiffRequest
+	7,  // 54: nimbus.runtime.Runtime.PullImage:output_type -> nimbus.runtime.PullImageResponse
+	10, // 55: nimbus.runtime.Runtime.RunWorkload:output_type -> nimbus.runtime.RunResponse
+	12, // 56: nimbus.runtime.Runtime.StopWorkload:output_type -> nimbus.runtime.StopResponse
+	14, // 57: nimbus.runtime.Runtime.GetWorkload:output_type -> nimbus.runtime.WorkloadStatus
+	16, // 58: nimbus.runtime.Runtime.ListWorkloads:output_type -> nimbus.runtime.ListWorkloadsResponse
+	18, // 59: nimbus.runtime.Runtime.StreamLogs:output_type -> nimbus.runtime.LogChunk
+	20, // 60: nimbus.runtime.Runtime.StreamEvents:output_type -> nimbus.runtime.Event
+	22, // 61: nimbus.runtime.Runtime.ExecInWorkload:output_type -> nimbus.runtime.ExecResponse
+	57, // 62: nimbus.runtime.Runtime.InspectWorkload:output_type -> nimbus.runtime.InspectResponse
+	23, // 63: nimbus.runtime.Runtime.AttachWorkload:output_type -> nimbus.runtime.AttachMessage
+	32, // 64: nimbus.runtime.Runtime.HasImage:output_type -> nimbus.runtime.HasImageResponse
+	34, // 65: nimbus.runtime.Runtime.ListImages:output_type -> nimbus.runtime.ListImagesResponse
+	37, // 66: nimbus.runtime.Runtime.RemoveImage:output_type -> nimbus.runtime.RemoveImageResponse
+	39, // 67: nimbus.runtime.Runtime.DagStoreInfo:output_type -> nimbus.runtime.DagStoreInfoResponse
+	41, // 68: nimbus.runtime.Runtime.PortForward:output_type -> nimbus.runtime.PortForwardData
+	44, // 69: nimbus.runtime.Runtime.UpdateWorkload:output_type -> nimbus.runtime.UpdateWorkloadResponse
+	46, // 70: nimbus.runtime.Runtime.GetWorkloadStats:output_type -> nimbus.runtime.WorkloadStats
+	48, // 71: nimbus.runtime.Runtime.BuildImage:output_type -> nimbus.runtime.BuildImageResponse
+	50, // 72: nimbus.runtime.Runtime.PushImage:output_type -> nimbus.runtime.PushImageResponse
+	52, // 73: nimbus.runtime.Runtime.ExportImage:output_type -> nimbus.runtime.ExportImageChunk
+	54, // 74: nimbus.runtime.Runtime.ImportImage:output_type -> nimbus.runtime.ImportImageResponse
+	5,  // 75: nimbus.runtime.Runtime.RunCompose:output_type -> nimbus.runtime.RunComposeResponse
+	59, // 76: nimbus.runtime.Runtime.CopyFile:output_type -> nimbus.runtime.CopyFileResponse
+	61, // 77: nimbus.runtime.Runtime.CommitImage:output_type -> nimbus.runtime.CommitImageResponse
+	63, // 78: nimbus.runtime.Runtime.DiffWorkload:output_type -> nimbus.runtime.DiffResponse
+	54, // [54:79] is the sub-list for method output_type
+	29, // [29:54] is the sub-list for method input_type
 	29, // [29:29] is the sub-list for extension type_name
 	29, // [29:29] is the sub-list for extension extendee
 	0,  // [0:29] is the sub-list for field type_name
@@ -4461,7 +4732,7 @@ func file_nimbus_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nimbus_runtime_proto_rawDesc), len(file_nimbus_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   67,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

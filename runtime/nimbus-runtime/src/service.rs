@@ -23,7 +23,7 @@ use nimbus_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
 use nimbus_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use nimbus_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use nimbus_net::{Ipam, ProxyNetwork};
-use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar};
+use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory, DagDirectory, DirectoryEntry};
 use nimbus_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use nimbus_store::MmapStore;
 use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
@@ -31,7 +31,8 @@ use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, CopyFileRequest, CopyFileResponse, DagNode, Event as ProtoEvent, ExecRequest,
+    AttachMessage, CopyFileRequest, CopyFileResponse, CommitImageRequest, CommitImageResponse,
+    DagNode, DiffRequest, DiffResponse, Event as ProtoEvent, ExecRequest,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
@@ -3062,6 +3063,130 @@ impl Runtime for RuntimeService {
             ))),
         }
     }
+
+    async fn commit_image(
+        &self,
+        request: tonic::Request<CommitImageRequest>,
+    ) -> Result<tonic::Response<CommitImageResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.id.is_empty() {
+            return Err(Status::invalid_argument("id is required"));
+        }
+
+        // Get the rootfs path for this workload.
+        let rootfs_path = {
+            let workloads = self.workloads.read().await;
+            let state = workloads
+                .get(&req.id)
+                .ok_or_else(|| Status::not_found(format!("workload {} not found", req.id)))?;
+
+            if state.backend == "vm" || state.backend == "sandbox" {
+                let cache = self.rootfs_cache.read().await;
+                cache
+                    .get(&req.id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Status::failed_precondition(
+                            format!("rootfs not materialized for workload {}", req.id),
+                        )
+                    })?
+            } else {
+                self.config.bundle_root.join(&req.id).join("rootfs")
+            }
+        };
+
+        // Scan the container rootfs into new DAG nodes.
+        let DagDirectory {
+            manifest_digest,
+            node_count,
+            blob_bytes: _,
+        } = build_dag_from_directory(&self.store, &rootfs_path)
+            .await
+            .map_err(|e| Status::internal(format!("commit failed: {e}")))?;
+
+        // If a tag was provided, record it in the image tag map.
+        if !req.tag.is_empty() {
+            let mut tags = self.image_tags.write().await;
+            tags.insert(manifest_digest.clone(), req.tag.clone());
+        }
+
+        Ok(tonic::Response::new(CommitImageResponse {
+            root_digest: manifest_digest,
+            tag: req.tag,
+            new_nodes: node_count as u64,
+        }))
+    }
+
+    async fn diff_workload(
+        &self,
+        request: tonic::Request<DiffRequest>,
+    ) -> Result<tonic::Response<DiffResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.id.is_empty() {
+            return Err(Status::invalid_argument("id is required"));
+        }
+
+        // Get the rootfs path and the image root digest.
+        let (rootfs_path, image_root) = {
+            let workloads = self.workloads.read().await;
+            let state = workloads
+                .get(&req.id)
+                .ok_or_else(|| Status::not_found(format!("workload {} not found", req.id)))?;
+
+            let rootfs = if state.backend == "vm" || state.backend == "sandbox" {
+                let cache = self.rootfs_cache.read().await;
+                cache
+                    .get(&req.id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Status::failed_precondition(
+                            format!("rootfs not materialized for workload {}", req.id),
+                        )
+                    })?
+            } else {
+                self.config.bundle_root.join(&req.id).join("rootfs")
+            };
+
+            (rootfs, state.image_root.clone())
+        };
+
+        // Walk the container rootfs, computing SHA256 digests.
+        let container_files = walk_rootfs_for_diff(&rootfs_path)
+            .map_err(|e| Status::internal(format!("walk rootfs: {e}")))?;
+
+        // Walk the original image DAG tree to get the original file map.
+        let original_files = walk_dag_tree(&self.store, &image_root)
+            .map_err(|e| Status::internal(format!("walk image DAG: {e}")))?;
+
+        // Compare the two maps.
+        let mut added = Vec::new();
+        let mut deleted = Vec::new();
+        let mut modified = Vec::new();
+
+        for (path, digest) in &container_files {
+            match original_files.get(path) {
+                Some(orig_digest) if orig_digest == digest => {}
+                Some(_) => modified.push(path.clone()),
+                None => added.push(path.clone()),
+            }
+        }
+
+        for (path, _) in &original_files {
+            if !container_files.contains_key(path) {
+                deleted.push(path.clone());
+            }
+        }
+
+        added.sort();
+        deleted.sort();
+        modified.sort();
+
+        Ok(tonic::Response::new(DiffResponse {
+            added,
+            deleted,
+            modified,
+        }))
+    }
 }
 
 /// Translate a `nimbus_vsock::Frame` from the blocking
@@ -3203,4 +3328,118 @@ fn build_auth(username: &str, password: &str, token: &str) -> Option<OciAuth> {
         password: if password.is_empty() { None } else { Some(password.to_string()) },
         registry_token: if token.is_empty() { None } else { Some(token.to_string()) },
     })
+}
+
+/// Walk a rootfs directory and return a map of relative paths to SHA256 digests.
+fn walk_rootfs_for_diff(root: &std::path::Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut files = HashMap::new();
+    let root = std::fs::canonicalize(root)?;
+    walk_dir_recursive(&root, &root, &mut files)?;
+    Ok(files)
+}
+
+fn walk_dir_recursive(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    files: &mut HashMap<String, String>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use sha2::{Digest, Sha256};
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let ft = entry.file_type()?;
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|_| "path outside root")?
+            .to_string_lossy()
+            .to_string();
+        if relative.is_empty() {
+            continue;
+        }
+        if ft.is_dir() {
+            walk_dir_recursive(root, &path, files)?;
+        } else if ft.is_file() {
+            let content = std::fs::read(&path)?;
+            let mut hasher = Sha256::new();
+            hasher.update(&content);
+            let digest = hex::encode(hasher.finalize());
+            files.insert(relative, digest);
+        } else if ft.is_symlink() {
+            let target = std::fs::read_link(&path)?;
+            let target_str = target.to_string_lossy().to_string();
+            let mut hasher = Sha256::new();
+            hasher.update(target_str.as_bytes());
+            let digest = hex::encode(hasher.finalize());
+            files.insert(relative, digest);
+        }
+    }
+    Ok(())
+}
+
+/// Walk the DAG tree starting from a manifest digest, collecting file path -> digest map.
+fn walk_dag_tree(
+    store: &MmapStore,
+    manifest_digest: &str,
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
+    use nimbus_store::{NodeKind, Digest as DagDigest};
+    let mut files = HashMap::new();
+    let digest: DagDigest = manifest_digest
+        .parse()
+        .map_err(|e| format!("parse digest {manifest_digest}: {e}"))?;
+    let manifest_node = store
+        .get_deserialized(&digest)
+        .map_err(|e| format!("failed to read manifest {manifest_digest}: {e}"))?;
+    if manifest_node.kind != NodeKind::Manifest {
+        return Err("not a manifest node".into());
+    }
+    for layer_digest in &manifest_node.edges {
+        let layer_digest: DagDigest = layer_digest
+            .parse()
+            .map_err(|e| format!("parse layer digest: {e}"))?;
+        let layer_node = store
+            .get_deserialized(&layer_digest)
+            .map_err(|e| format!("failed to read layer: {e}"))?;
+        if layer_node.kind != NodeKind::Layer {
+            continue;
+        }
+        if let Some(tree_digest_str) = layer_node.edges.first() {
+            let tree_digest: DagDigest = tree_digest_str
+                .parse()
+                .map_err(|e| format!("parse tree digest: {e}"))?;
+            walk_tree_node(store, &tree_digest, "", &mut files)?;
+        }
+    }
+    Ok(files)
+}
+
+fn walk_tree_node(
+    store: &MmapStore,
+    tree_digest: &nimbus_store::Digest,
+    prefix: &str,
+    files: &mut HashMap<String, String>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use nimbus_store::NodeKind;
+    let tree_node = store
+        .get_deserialized(tree_digest)
+        .map_err(|e| format!("failed to read tree: {e}"))?;
+    if tree_node.kind != NodeKind::Tree {
+        return Ok(());
+    }
+    let entries = DirectoryEntry::from_inline_bytes(&tree_node.inline_data);
+    for entry in &entries {
+        let child_path = if prefix.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{}/{}", prefix, entry.name)
+        };
+        if entry.is_dir {
+            let child_digest: nimbus_store::Digest = entry.digest
+                .parse()
+                .map_err(|e| format!("parse child digest: {e}"))?;
+            walk_tree_node(store, &child_digest, &child_path, files)?;
+        } else {
+            files.insert(child_path, entry.digest.clone());
+        }
+    }
+    Ok(())
 }

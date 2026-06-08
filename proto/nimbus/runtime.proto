@@ -72,6 +72,18 @@ service Runtime {
     // Direction "out": reads a file from the container's rootfs and returns
     // its content. Direction "in": writes content into the container's rootfs.
     rpc CopyFile(CopyFileRequest) returns (CopyFileResponse);
+
+    // --- Commit / Diff (Gap 2) ---
+
+    // Commit a running workload as a new image layer (docker commit equivalent).
+    // Walks the container rootfs, creates new DAG tree/layer/manifest nodes,
+    // and stores the result in the DAG store. The new image inherits the
+    // original image's entrypoint, cmd, env, and working dir.
+    rpc CommitImage(CommitImageRequest) returns (CommitImageResponse);
+
+    // Diff a running workload against its original image (docker diff equivalent).
+    // Returns lists of files that were added, modified, or deleted.
+    rpc DiffWorkload(DiffRequest) returns (DiffResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -539,4 +551,44 @@ message CopyFileResponse {
     bytes content = 3;                    // File content for "out" direction
     uint32 mode = 4;                      // Detected file mode
     uint64 size = 5;                      // File size in bytes
+}
+
+// --- Commit (docker commit equivalent) ---
+
+message CommitImageRequest {
+    // Workload ID to commit from.
+    string id = 1;
+    // Optional tag for the new image (e.g. "myapp:latest").
+    // If empty, only the root digest is returned.
+    string tag = 2;
+    // Optional message/annotation describing this commit.
+    string message = 3;
+    // Optional author of this commit.
+    string author = 4;
+}
+
+message CommitImageResponse {
+    // Root digest of the new committed image (sha256:...).
+    string root_digest = 1;
+    // Tag assigned (same as request.tag, if provided).
+    string tag = 2;
+    // Number of new nodes stored in the DAG (may be 0 if no changes
+    // detected and dedup covered everything).
+    uint64 new_nodes = 3;
+}
+
+// --- Diff (docker diff equivalent) ---
+
+message DiffRequest {
+    // Workload ID to diff.
+    string id = 1;
+}
+
+message DiffResponse {
+    // Files that exist in the container but not in the original image.
+    repeated string added = 1;
+    // Files that exist in the original image but not in the container.
+    repeated string deleted = 2;
+    // Files that exist in both but have different content.
+    repeated string modified = 3;
 }

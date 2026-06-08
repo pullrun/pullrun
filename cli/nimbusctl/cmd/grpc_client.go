@@ -170,3 +170,13 @@ func (c *GRPCClient) AttachWorkload(ctx context.Context) (runtimepb.Runtime_Atta
 func (c *GRPCClient) CopyFile(ctx context.Context, req *runtimepb.CopyFileRequest) (*runtimepb.CopyFileResponse, error) {
 	return c.client.CopyFile(ctx, req)
 }
+
+// CommitImage commits a running workload as a new image layer.
+func (c *GRPCClient) CommitImage(ctx context.Context, req *runtimepb.CommitImageRequest) (*runtimepb.CommitImageResponse, error) {
+	return c.client.CommitImage(ctx, req)
+}
+
+// DiffWorkload diffs a running workload against its original image.
+func (c *GRPCClient) DiffWorkload(ctx context.Context, req *runtimepb.DiffRequest) (*runtimepb.DiffResponse, error) {
+	return c.client.DiffWorkload(ctx, req)
+}

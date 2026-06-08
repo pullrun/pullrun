@@ -6,7 +6,7 @@ pub mod dag_import;
 pub mod push;
 pub mod dockerfile;
 
-pub use converter::{OciToDagConverter, ManifestData};
+pub use converter::{OciToDagConverter, ManifestData, DirectoryEntry};
 pub use dag_export::export_dag_to_tar;
 pub use dag_import::import_dag_from_tar;
 pub use dockerfile::{Dockerfile, BuildStage, Instruction, build_dag_from_directory, DagDirectory};

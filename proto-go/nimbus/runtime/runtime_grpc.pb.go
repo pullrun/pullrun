@@ -42,6 +42,8 @@ const (
 	Runtime_ImportImage_FullMethodName      = "/nimbus.runtime.Runtime/ImportImage"
 	Runtime_RunCompose_FullMethodName       = "/nimbus.runtime.Runtime/RunCompose"
 	Runtime_CopyFile_FullMethodName         = "/nimbus.runtime.Runtime/CopyFile"
+	Runtime_CommitImage_FullMethodName      = "/nimbus.runtime.Runtime/CommitImage"
+	Runtime_DiffWorkload_FullMethodName     = "/nimbus.runtime.Runtime/DiffWorkload"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -101,6 +103,14 @@ type RuntimeClient interface {
 	// Direction "out": reads a file from the container's rootfs and returns
 	// its content. Direction "in": writes content into the container's rootfs.
 	CopyFile(ctx context.Context, in *CopyFileRequest, opts ...grpc.CallOption) (*CopyFileResponse, error)
+	// Commit a running workload as a new image layer (docker commit equivalent).
+	// Walks the container rootfs, creates new DAG tree/layer/manifest nodes,
+	// and stores the result in the DAG store. The new image inherits the
+	// original image's entrypoint, cmd, env, and working dir.
+	CommitImage(ctx context.Context, in *CommitImageRequest, opts ...grpc.CallOption) (*CommitImageResponse, error)
+	// Diff a running workload against its original image (docker diff equivalent).
+	// Returns lists of files that were added, modified, or deleted.
+	DiffWorkload(ctx context.Context, in *DiffRequest, opts ...grpc.CallOption) (*DiffResponse, error)
 }
 
 type runtimeClient struct {
@@ -383,6 +393,26 @@ func (c *runtimeClient) CopyFile(ctx context.Context, in *CopyFileRequest, opts 
 	return out, nil
 }
 
+func (c *runtimeClient) CommitImage(ctx context.Context, in *CommitImageRequest, opts ...grpc.CallOption) (*CommitImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommitImageResponse)
+	err := c.cc.Invoke(ctx, Runtime_CommitImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) DiffWorkload(ctx context.Context, in *DiffRequest, opts ...grpc.CallOption) (*DiffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DiffResponse)
+	err := c.cc.Invoke(ctx, Runtime_DiffWorkload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -440,6 +470,14 @@ type RuntimeServer interface {
 	// Direction "out": reads a file from the container's rootfs and returns
 	// its content. Direction "in": writes content into the container's rootfs.
 	CopyFile(context.Context, *CopyFileRequest) (*CopyFileResponse, error)
+	// Commit a running workload as a new image layer (docker commit equivalent).
+	// Walks the container rootfs, creates new DAG tree/layer/manifest nodes,
+	// and stores the result in the DAG store. The new image inherits the
+	// original image's entrypoint, cmd, env, and working dir.
+	CommitImage(context.Context, *CommitImageRequest) (*CommitImageResponse, error)
+	// Diff a running workload against its original image (docker diff equivalent).
+	// Returns lists of files that were added, modified, or deleted.
+	DiffWorkload(context.Context, *DiffRequest) (*DiffResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -518,6 +556,12 @@ func (UnimplementedRuntimeServer) RunCompose(context.Context, *RunComposeRequest
 }
 func (UnimplementedRuntimeServer) CopyFile(context.Context, *CopyFileRequest) (*CopyFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CopyFile not implemented")
+}
+func (UnimplementedRuntimeServer) CommitImage(context.Context, *CommitImageRequest) (*CommitImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CommitImage not implemented")
+}
+func (UnimplementedRuntimeServer) DiffWorkload(context.Context, *DiffRequest) (*DiffResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DiffWorkload not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -904,6 +948,42 @@ func _Runtime_CopyFile_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_CommitImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CommitImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CommitImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CommitImage(ctx, req.(*CommitImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_DiffWorkload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DiffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).DiffWorkload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_DiffWorkload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).DiffWorkload(ctx, req.(*DiffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -978,6 +1058,14 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CopyFile",
 			Handler:    _Runtime_CopyFile_Handler,
+		},
+		{
+			MethodName: "CommitImage",
+			Handler:    _Runtime_CommitImage_Handler,
+		},
+		{
+			MethodName: "DiffWorkload",
+			Handler:    _Runtime_DiffWorkload_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
