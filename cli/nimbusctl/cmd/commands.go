@@ -66,7 +66,8 @@ func NewPullCommand(opts *RootOptions) *cobra.Command {
 			defer closeFn()
 
 			imageRef := args[0]
-			resp, err := client.PullImage(ctx, imageRef, registry)
+			auth, _ := GetRegistryAuth(NormalizeRegistry(registry))
+			resp, err := client.PullImage(ctx, imageRef, registry, auth)
 			if err != nil {
 				return fmt.Errorf("pull %s: %w", imageRef, err)
 			}
@@ -128,7 +129,8 @@ DAG store if not already present.`,
 				if pullRegistry == "" {
 					pullRegistry = "docker.io"
 				}
-				pullResp, err := client.PullImage(ctx, rootDigest, pullRegistry)
+				auth, _ := GetRegistryAuth(NormalizeRegistry(pullRegistry))
+				pullResp, err := client.PullImage(ctx, rootDigest, pullRegistry, auth)
 				if err != nil {
 					return fmt.Errorf("pull %s: %w", rootDigest, err)
 				}

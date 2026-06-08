@@ -48,11 +48,18 @@ func (c *GRPCClient) Close() error {
 }
 
 // PullImage fetches an OCI image and stores it in the local DAG.
-func (c *GRPCClient) PullImage(ctx context.Context, imageRef, registry string) (*runtimepb.PullImageResponse, error) {
-	return c.client.PullImage(ctx, &runtimepb.PullImageRequest{
+// If auth is nil, no credentials are sent.
+func (c *GRPCClient) PullImage(ctx context.Context, imageRef, registry string, auth *RegistryAuth) (*runtimepb.PullImageResponse, error) {
+	req := &runtimepb.PullImageRequest{
 		ImageRef: imageRef,
 		Registry: registry,
-	})
+	}
+	if auth != nil {
+		req.RegistryUsername = auth.Username
+		req.RegistryPassword = auth.Password
+		req.RegistryToken = auth.Token
+	}
+	return c.client.PullImage(ctx, req)
 }
 
 // RunWorkload executes a workload from a DAG root digest.
@@ -112,7 +119,17 @@ func (c *GRPCClient) InspectWorkload(ctx context.Context, id string) (*runtimepb
 	}
 
 	// PushImage pushes a DAG image to an OCI registry.
-	func (c *GRPCClient) PushImage(ctx context.Context, req *runtimepb.PushImageRequest) (*runtimepb.PushImageResponse, error) {
+	// If auth is nil, no credentials are sent.
+	func (c *GRPCClient) PushImage(ctx context.Context, rootDigest, targetRef string, auth *RegistryAuth) (*runtimepb.PushImageResponse, error) {
+		req := &runtimepb.PushImageRequest{
+			RootDigest: rootDigest,
+			TargetRef:  targetRef,
+		}
+		if auth != nil {
+			req.RegistryUsername = auth.Username
+			req.RegistryPassword = auth.Password
+			req.RegistryToken = auth.Token
+		}
 		return c.client.PushImage(ctx, req)
 	}
 

@@ -40,6 +40,8 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewPushCommand(opts))
 	cmd.AddCommand(NewSaveCommand(opts))
 	cmd.AddCommand(NewLoadCommand(opts))
+	cmd.AddCommand(NewLoginCommand(opts))
+	cmd.AddCommand(NewLogoutCommand(opts))
 
 	return cmd
 }

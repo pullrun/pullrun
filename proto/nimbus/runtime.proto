@@ -111,6 +111,9 @@ message RunComposeResponse {
 message PullImageRequest {
     string image_ref = 1;
     string registry = 2;
+    string registry_username = 3;
+    string registry_password = 4;
+    string registry_token = 5;
 }
 
 message PullImageResponse {
@@ -390,6 +393,9 @@ message BuildImageResponse {
 message PushImageRequest {
     string root_digest = 1;
     string target_ref = 2;        // e.g. "registry.example.com/myapp:latest"
+    string registry_username = 3;
+    string registry_password = 4;
+    string registry_token = 5;
 }
 
 message PushImageResponse {

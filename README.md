@@ -235,6 +235,7 @@ reason to optimize them (real load + a real eBPF implementation).
 - Prometheus metrics + Grafana dashboard + 5 alert rules
 - K8s deployment manifests (DaemonSet, ServiceMonitor, PrometheusRule)
 - `nimbusctl inspect`, `nimbusctl events`, `nimbusctl workload run` (attach)
+- `nimbusctl login`, `nimbusctl logout` (registry auth stored in `~/.nimbus/auth.json`, 0600)
 - `--kernel-image` and `--registry` flags for VM backends
 - Control plane: gRPC API server, network-aware scheduling, file-backed persistence
 - Cross-OS development (macOS + Linux workspaces)
@@ -253,7 +254,7 @@ reason to optimize them (real load + a real eBPF implementation).
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
 - iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
-- Registry auth/login (DagPusher accepts `OciAuth` but CLI has no `login` command)
+- `nimbusctl login/logout` with `--password-stdin` for CI usage
 - Volume / bind mounts (compose volumes field exists but not wired through executors)
 - `docker cp` equivalent (no copy to/from container)
 - `docker stats` equivalent (live CPU/mem reporting)

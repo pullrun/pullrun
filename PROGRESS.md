@@ -3,6 +3,7 @@
 **Last updated:** 2026-06-08
 **Status:** Fully independent of Docker. Phase D (Compose + Build/Push/Save/Load) complete.
 **Tests:** 92 Rust (83 lib + 9 vsock) + 9 Go — all passing.
+**New:** Registry auth (`nimbusctl login/logout`) — credentials stored in `~/.nimbus/auth.json`, wired through to `OciPuller` and `DagPusher`.
 
 ---
 
@@ -15,6 +16,7 @@
 - `load` — Tar import with content-addressed dedup
 - `list` — List images in store
 - `inspect` — Inspect DAG nodes, image config, layers
+- `login/logout` — Registry auth stored in `~/.nimbus/auth.json` (0600 perms), auto-attached to pull/push
 - **Docker-independent** — No Docker daemon, `docker` CLI, containerd, or overlayfs anywhere
 
 ### Running workloads
@@ -88,7 +90,7 @@
 | **Diff** | `docker diff` | ❌ | No filesystem diff |
 | **Volume** | `docker volume` | ❌ | Bind mounts work via compose volumes field |
 | **Network create** | `docker network` | ❌ | Single bridge; user-defined networks not supported |
-| **Login** | `docker login` | ❌ | `DagPusher` accepts `OciAuth` but CLI has no login |
+| **Login** | `docker login` | ✅ | `nimbusctl login` stores in `~/.nimbus/auth.json`, auto-used by pull/push |
 | **CP** | `docker cp` | ❌ | No copy to/from container |
 | **Stats** | `docker stats` | ❌ | Stub only; no live CPU/mem/network reporting |
 | **Export/Import** | `docker export/import` | Different | Nimbus has `save`/`load` in DAG-native format |
@@ -130,12 +132,12 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 ## Next steps (in priority order)
 
 1. **Native DAG-aware build** — Parse Dockerfile, execute RUN commands via nimbus containers, snapshot layers to DAG. Eliminate the `docker build` delegation entirely.
-2. **Registry auth** — Add `nimbusctl login` / `--registry-username --registry-password` flags for `DagPusher`.
-3. **Nginx entrypoint fix** — Debug `/docker-entrypoint.sh` failure in minimal runc environment.
-4. **Resource limits** — Wire CPU/memory cgroup constraints through executors.
-5. **Health check enforcement** — Periodically probe workload health, auto-restart on failure.
-6. **Volume / bind mount support** — Wire `HostPath` through executors (OCI bind mounts in config.json).
-7. **`docker cp` equivalent** — Add copy to/from workload (via DAG store paths).
-8. **Live stats** — Report CPU/mem/network per workload.
-9. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane.
-10. **Push auth test** — Deploy local `registry:2` container on server, verify `push` + `pull` round-trip with auth.
+2. **Nginx entrypoint fix** — Debug `/docker-entrypoint.sh` failure in minimal runc environment.
+3. **Resource limits** — Wire CPU/memory cgroup constraints through executors.
+4. **Health check enforcement** — Periodically probe workload health, auto-restart on failure.
+5. **Volume / bind mount support** — Wire `HostPath` through executors (OCI bind mounts in config.json).
+6. **`docker cp` equivalent** — Add copy to/from workload (via DAG store paths).
+7. **Live stats** — Report CPU/mem/network per workload.
+8. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane.
+9. **Push auth test** — Deploy local `registry:2` container on server, verify `push` + `pull` round-trip with auth.
+10. **Compose auth** — Propagate stored credentials through compose binary's PullImage calls.

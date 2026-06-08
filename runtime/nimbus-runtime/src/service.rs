@@ -1118,8 +1118,13 @@ impl Runtime for RuntimeService {
         let _timer = register_pull_timer();
         record_pull(&registry_label, "started");
 
+        let auth = build_auth(
+            &req.registry_username,
+            &req.registry_password,
+            &req.registry_token,
+        );
         let puller =
-            OciPuller::with_insecure_registries(None, self.config.insecure_registries.clone());
+            OciPuller::with_insecure_registries(auth, self.config.insecure_registries.clone());
         let pull_result = puller.pull(&image_ref, registry).await;
         let pulled = match pull_result {
             Ok(p) => p,
@@ -1616,6 +1621,9 @@ impl Runtime for RuntimeService {
                 let pull_req = tonic::Request::new(PullImageRequest {
                     image_ref: service.image.clone(),
                     registry: String::new(),
+                    registry_username: String::new(),
+                    registry_password: String::new(),
+                    registry_token: String::new(),
                 });
                 let pull_resp = self.pull_image(pull_req).await?;
                 pull_resp.into_inner().root_digest
@@ -2356,9 +2364,14 @@ impl Runtime for RuntimeService {
         request: tonic::Request<PushImageRequest>,
     ) -> Result<tonic::Response<PushImageResponse>, tonic::Status> {
         let req = request.into_inner();
+        let auth = build_auth(
+            &req.registry_username,
+            &req.registry_password,
+            &req.registry_token,
+        );
         let pusher = DagPusher::new(
             self.store.clone(),
-            None, // no auth for v0
+            auth,
             self.config.insecure_registries.clone(),
         );
         let (manifest_digest, bytes_pushed) = pusher
@@ -2573,4 +2586,17 @@ fn materialize_rootfs(
     let materializer = OciMaterializer::new(store);
     rt.block_on(materializer.materialize_into(&digest, &target))?;
     Ok(target)
+}
+
+/// Build an `OciAuth` from optional protobuf string fields.
+/// Returns `None` when all fields are empty.
+fn build_auth(username: &str, password: &str, token: &str) -> Option<OciAuth> {
+    if username.is_empty() && password.is_empty() && token.is_empty() {
+        return None;
+    }
+    Some(OciAuth {
+        username: if username.is_empty() { None } else { Some(username.to_string()) },
+        password: if password.is_empty() { None } else { Some(password.to_string()) },
+        registry_token: if token.is_empty() { None } else { Some(token.to_string()) },
+    })
 }

@@ -331,11 +331,14 @@ func (x *RunComposeResponse) GetServiceToId() map[string]string {
 }
 
 type PullImageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ImageRef      string                 `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
-	Registry      string                 `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ImageRef         string                 `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
+	Registry         string                 `protobuf:"bytes,2,opt,name=registry,proto3" json:"registry,omitempty"`
+	RegistryUsername string                 `protobuf:"bytes,3,opt,name=registry_username,json=registryUsername,proto3" json:"registry_username,omitempty"`
+	RegistryPassword string                 `protobuf:"bytes,4,opt,name=registry_password,json=registryPassword,proto3" json:"registry_password,omitempty"`
+	RegistryToken    string                 `protobuf:"bytes,5,opt,name=registry_token,json=registryToken,proto3" json:"registry_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PullImageRequest) Reset() {
@@ -378,6 +381,27 @@ func (x *PullImageRequest) GetImageRef() string {
 func (x *PullImageRequest) GetRegistry() string {
 	if x != nil {
 		return x.Registry
+	}
+	return ""
+}
+
+func (x *PullImageRequest) GetRegistryUsername() string {
+	if x != nil {
+		return x.RegistryUsername
+	}
+	return ""
+}
+
+func (x *PullImageRequest) GetRegistryPassword() string {
+	if x != nil {
+		return x.RegistryPassword
+	}
+	return ""
+}
+
+func (x *PullImageRequest) GetRegistryToken() string {
+	if x != nil {
+		return x.RegistryToken
 	}
 	return ""
 }
@@ -2835,11 +2859,14 @@ func (x *BuildImageResponse) GetTag() string {
 }
 
 type PushImageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RootDigest    string                 `protobuf:"bytes,1,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
-	TargetRef     string                 `protobuf:"bytes,2,opt,name=target_ref,json=targetRef,proto3" json:"target_ref,omitempty"` // e.g. "registry.example.com/myapp:latest"
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RootDigest       string                 `protobuf:"bytes,1,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
+	TargetRef        string                 `protobuf:"bytes,2,opt,name=target_ref,json=targetRef,proto3" json:"target_ref,omitempty"` // e.g. "registry.example.com/myapp:latest"
+	RegistryUsername string                 `protobuf:"bytes,3,opt,name=registry_username,json=registryUsername,proto3" json:"registry_username,omitempty"`
+	RegistryPassword string                 `protobuf:"bytes,4,opt,name=registry_password,json=registryPassword,proto3" json:"registry_password,omitempty"`
+	RegistryToken    string                 `protobuf:"bytes,5,opt,name=registry_token,json=registryToken,proto3" json:"registry_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PushImageRequest) Reset() {
@@ -2882,6 +2909,27 @@ func (x *PushImageRequest) GetRootDigest() string {
 func (x *PushImageRequest) GetTargetRef() string {
 	if x != nil {
 		return x.TargetRef
+	}
+	return ""
+}
+
+func (x *PushImageRequest) GetRegistryUsername() string {
+	if x != nil {
+		return x.RegistryUsername
+	}
+	return ""
+}
+
+func (x *PushImageRequest) GetRegistryPassword() string {
+	if x != nil {
+		return x.RegistryPassword
+	}
+	return ""
+}
+
+func (x *PushImageRequest) GetRegistryToken() string {
+	if x != nil {
+		return x.RegistryToken
 	}
 	return ""
 }
@@ -3445,10 +3493,13 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\rservice_to_id\x18\x02 \x03(\v23.nimbus.runtime.RunComposeResponse.ServiceToIdEntryR\vserviceToId\x1a>\n" +
 	"\x10ServiceToIdEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"K\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcc\x01\n" +
 	"\x10PullImageRequest\x12\x1b\n" +
 	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12\x1a\n" +
-	"\bregistry\x18\x02 \x01(\tR\bregistry\"\x86\x01\n" +
+	"\bregistry\x18\x02 \x01(\tR\bregistry\x12+\n" +
+	"\x11registry_username\x18\x03 \x01(\tR\x10registryUsername\x12+\n" +
+	"\x11registry_password\x18\x04 \x01(\tR\x10registryPassword\x12%\n" +
+	"\x0eregistry_token\x18\x05 \x01(\tR\rregistryToken\"\x86\x01\n" +
 	"\x11PullImageResponse\x12\x1f\n" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
@@ -3645,12 +3696,15 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\x12BuildImageResponse\x12\x1f\n" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12\x10\n" +
-	"\x03tag\x18\x02 \x01(\tR\x03tag\"R\n" +
+	"\x03tag\x18\x02 \x01(\tR\x03tag\"\xd3\x01\n" +
 	"\x10PushImageRequest\x12\x1f\n" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12\x1d\n" +
 	"\n" +
-	"target_ref\x18\x02 \x01(\tR\ttargetRef\"_\n" +
+	"target_ref\x18\x02 \x01(\tR\ttargetRef\x12+\n" +
+	"\x11registry_username\x18\x03 \x01(\tR\x10registryUsername\x12+\n" +
+	"\x11registry_password\x18\x04 \x01(\tR\x10registryPassword\x12%\n" +
+	"\x0eregistry_token\x18\x05 \x01(\tR\rregistryToken\"_\n" +
 	"\x11PushImageResponse\x12'\n" +
 	"\x0fmanifest_digest\x18\x01 \x01(\tR\x0emanifestDigest\x12!\n" +
 	"\fbytes_pushed\x18\x02 \x01(\x03R\vbytesPushed\"M\n" +

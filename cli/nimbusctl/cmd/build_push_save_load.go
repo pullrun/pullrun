@@ -46,10 +46,11 @@ func NewPushCommand(opts *RootOptions) *cobra.Command {
 			}
 			defer closeFn()
 
-			resp, err := client.PushImage(ctx, &runtimepb.PushImageRequest{
-				RootDigest: args[0],
-				TargetRef:  args[1],
-			})
+			// Extract registry host from target ref for credential lookup.
+			registry := extractRegistryFromRef(args[1])
+			auth, _ := GetRegistryAuth(NormalizeRegistry(registry))
+
+			resp, err := client.PushImage(ctx, args[0], args[1], auth)
 			if err != nil {
 				return fmt.Errorf("push: %w", err)
 			}
