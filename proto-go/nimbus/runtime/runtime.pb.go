@@ -21,6 +21,74 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Mount struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`               // "bind", "volume", "tmpfs"
+	Source        string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`           // host path or volume name
+	Destination   string                 `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"` // container path
+	Options       []string               `protobuf:"bytes,4,rep,name=options,proto3" json:"options,omitempty"`         // e.g. ["rbind", "ro", "nosuid"]
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Mount) Reset() {
+	*x = Mount{}
+	mi := &file_nimbus_runtime_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Mount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Mount) ProtoMessage() {}
+
+func (x *Mount) ProtoReflect() protoreflect.Message {
+	mi := &file_nimbus_runtime_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Mount.ProtoReflect.Descriptor instead.
+func (*Mount) Descriptor() ([]byte, []int) {
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Mount) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *Mount) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *Mount) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+func (x *Mount) GetOptions() []string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
 type ComposeService struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -40,14 +108,16 @@ type ComposeService struct {
 	RootDigest string `protobuf:"bytes,12,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
 	// Per-project bridge for network isolation.
 	// Defaults to the global bridge when empty.
-	BridgeName    string `protobuf:"bytes,13,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
+	BridgeName string `protobuf:"bytes,13,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
+	// Volume/bind mount specifications for this service.
+	Mounts        []*Mount `protobuf:"bytes,14,rep,name=mounts,proto3" json:"mounts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ComposeService) Reset() {
 	*x = ComposeService{}
-	mi := &file_nimbus_runtime_proto_msgTypes[0]
+	mi := &file_nimbus_runtime_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -59,7 +129,7 @@ func (x *ComposeService) String() string {
 func (*ComposeService) ProtoMessage() {}
 
 func (x *ComposeService) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[0]
+	mi := &file_nimbus_runtime_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -72,7 +142,7 @@ func (x *ComposeService) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComposeService.ProtoReflect.Descriptor instead.
 func (*ComposeService) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{0}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ComposeService) GetName() string {
@@ -166,6 +236,13 @@ func (x *ComposeService) GetBridgeName() string {
 	return ""
 }
 
+func (x *ComposeService) GetMounts() []*Mount {
+	if x != nil {
+		return x.Mounts
+	}
+	return nil
+}
+
 type ComposePort struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ContainerPort uint32                 `protobuf:"varint,1,opt,name=container_port,json=containerPort,proto3" json:"container_port,omitempty"`
@@ -177,7 +254,7 @@ type ComposePort struct {
 
 func (x *ComposePort) Reset() {
 	*x = ComposePort{}
-	mi := &file_nimbus_runtime_proto_msgTypes[1]
+	mi := &file_nimbus_runtime_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -189,7 +266,7 @@ func (x *ComposePort) String() string {
 func (*ComposePort) ProtoMessage() {}
 
 func (x *ComposePort) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[1]
+	mi := &file_nimbus_runtime_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -202,7 +279,7 @@ func (x *ComposePort) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComposePort.ProtoReflect.Descriptor instead.
 func (*ComposePort) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{1}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ComposePort) GetContainerPort() uint32 {
@@ -236,7 +313,7 @@ type RunComposeRequest struct {
 
 func (x *RunComposeRequest) Reset() {
 	*x = RunComposeRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[2]
+	mi := &file_nimbus_runtime_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -248,7 +325,7 @@ func (x *RunComposeRequest) String() string {
 func (*RunComposeRequest) ProtoMessage() {}
 
 func (x *RunComposeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[2]
+	mi := &file_nimbus_runtime_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -261,7 +338,7 @@ func (x *RunComposeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunComposeRequest.ProtoReflect.Descriptor instead.
 func (*RunComposeRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{2}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RunComposeRequest) GetProjectName() string {
@@ -288,7 +365,7 @@ type RunComposeResponse struct {
 
 func (x *RunComposeResponse) Reset() {
 	*x = RunComposeResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[3]
+	mi := &file_nimbus_runtime_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -300,7 +377,7 @@ func (x *RunComposeResponse) String() string {
 func (*RunComposeResponse) ProtoMessage() {}
 
 func (x *RunComposeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[3]
+	mi := &file_nimbus_runtime_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -313,7 +390,7 @@ func (x *RunComposeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunComposeResponse.ProtoReflect.Descriptor instead.
 func (*RunComposeResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{3}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RunComposeResponse) GetWorkloadIds() []string {
@@ -343,7 +420,7 @@ type PullImageRequest struct {
 
 func (x *PullImageRequest) Reset() {
 	*x = PullImageRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[4]
+	mi := &file_nimbus_runtime_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -355,7 +432,7 @@ func (x *PullImageRequest) String() string {
 func (*PullImageRequest) ProtoMessage() {}
 
 func (x *PullImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[4]
+	mi := &file_nimbus_runtime_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -368,7 +445,7 @@ func (x *PullImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullImageRequest.ProtoReflect.Descriptor instead.
 func (*PullImageRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{4}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PullImageRequest) GetImageRef() string {
@@ -417,7 +494,7 @@ type PullImageResponse struct {
 
 func (x *PullImageResponse) Reset() {
 	*x = PullImageResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[5]
+	mi := &file_nimbus_runtime_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -429,7 +506,7 @@ func (x *PullImageResponse) String() string {
 func (*PullImageResponse) ProtoMessage() {}
 
 func (x *PullImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[5]
+	mi := &file_nimbus_runtime_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -442,7 +519,7 @@ func (x *PullImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullImageResponse.ProtoReflect.Descriptor instead.
 func (*PullImageResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{5}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PullImageResponse) GetRootDigest() string {
@@ -499,14 +576,17 @@ type RunRequest struct {
 	// (and a deterministic /24 subnet derived from the name)
 	// instead of using the default global "nimbus-br0".
 	// Compose projects set this to isolate workload traffic.
-	BridgeName    string `protobuf:"bytes,12,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
+	BridgeName string `protobuf:"bytes,12,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
+	// Volume/bind mount specifications. These are added to the
+	// OCI config.json 'mounts' array at container creation time.
+	Mounts        []*Mount `protobuf:"bytes,13,rep,name=mounts,proto3" json:"mounts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RunRequest) Reset() {
 	*x = RunRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[6]
+	mi := &file_nimbus_runtime_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -518,7 +598,7 @@ func (x *RunRequest) String() string {
 func (*RunRequest) ProtoMessage() {}
 
 func (x *RunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[6]
+	mi := &file_nimbus_runtime_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -531,7 +611,7 @@ func (x *RunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunRequest.ProtoReflect.Descriptor instead.
 func (*RunRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{6}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RunRequest) GetId() string {
@@ -618,6 +698,13 @@ func (x *RunRequest) GetBridgeName() string {
 	return ""
 }
 
+func (x *RunRequest) GetMounts() []*Mount {
+	if x != nil {
+		return x.Mounts
+	}
+	return nil
+}
+
 type NetworkRule struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Direction     string                 `protobuf:"bytes,1,opt,name=direction,proto3" json:"direction,omitempty"`
@@ -631,7 +718,7 @@ type NetworkRule struct {
 
 func (x *NetworkRule) Reset() {
 	*x = NetworkRule{}
-	mi := &file_nimbus_runtime_proto_msgTypes[7]
+	mi := &file_nimbus_runtime_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -643,7 +730,7 @@ func (x *NetworkRule) String() string {
 func (*NetworkRule) ProtoMessage() {}
 
 func (x *NetworkRule) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[7]
+	mi := &file_nimbus_runtime_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -656,7 +743,7 @@ func (x *NetworkRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkRule.ProtoReflect.Descriptor instead.
 func (*NetworkRule) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{7}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *NetworkRule) GetDirection() string {
@@ -706,7 +793,7 @@ type RunResponse struct {
 
 func (x *RunResponse) Reset() {
 	*x = RunResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[8]
+	mi := &file_nimbus_runtime_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -718,7 +805,7 @@ func (x *RunResponse) String() string {
 func (*RunResponse) ProtoMessage() {}
 
 func (x *RunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[8]
+	mi := &file_nimbus_runtime_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -731,7 +818,7 @@ func (x *RunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunResponse.ProtoReflect.Descriptor instead.
 func (*RunResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{8}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RunResponse) GetId() string {
@@ -771,7 +858,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[9]
+	mi := &file_nimbus_runtime_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +870,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[9]
+	mi := &file_nimbus_runtime_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +883,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{9}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StopRequest) GetId() string {
@@ -815,7 +902,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[10]
+	mi := &file_nimbus_runtime_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -827,7 +914,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[10]
+	mi := &file_nimbus_runtime_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -840,7 +927,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{10}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StopResponse) GetSuccess() bool {
@@ -859,7 +946,7 @@ type GetWorkloadRequest struct {
 
 func (x *GetWorkloadRequest) Reset() {
 	*x = GetWorkloadRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[11]
+	mi := &file_nimbus_runtime_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +958,7 @@ func (x *GetWorkloadRequest) String() string {
 func (*GetWorkloadRequest) ProtoMessage() {}
 
 func (x *GetWorkloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[11]
+	mi := &file_nimbus_runtime_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +971,7 @@ func (x *GetWorkloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkloadRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkloadRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{11}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetWorkloadRequest) GetId() string {
@@ -909,7 +996,7 @@ type WorkloadStatus struct {
 
 func (x *WorkloadStatus) Reset() {
 	*x = WorkloadStatus{}
-	mi := &file_nimbus_runtime_proto_msgTypes[12]
+	mi := &file_nimbus_runtime_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -921,7 +1008,7 @@ func (x *WorkloadStatus) String() string {
 func (*WorkloadStatus) ProtoMessage() {}
 
 func (x *WorkloadStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[12]
+	mi := &file_nimbus_runtime_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -934,7 +1021,7 @@ func (x *WorkloadStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadStatus.ProtoReflect.Descriptor instead.
 func (*WorkloadStatus) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{12}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WorkloadStatus) GetId() string {
@@ -994,7 +1081,7 @@ type ListWorkloadsRequest struct {
 
 func (x *ListWorkloadsRequest) Reset() {
 	*x = ListWorkloadsRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[13]
+	mi := &file_nimbus_runtime_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +1093,7 @@ func (x *ListWorkloadsRequest) String() string {
 func (*ListWorkloadsRequest) ProtoMessage() {}
 
 func (x *ListWorkloadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[13]
+	mi := &file_nimbus_runtime_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +1106,7 @@ func (x *ListWorkloadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkloadsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkloadsRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{13}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{14}
 }
 
 type ListWorkloadsResponse struct {
@@ -1031,7 +1118,7 @@ type ListWorkloadsResponse struct {
 
 func (x *ListWorkloadsResponse) Reset() {
 	*x = ListWorkloadsResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[14]
+	mi := &file_nimbus_runtime_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1043,7 +1130,7 @@ func (x *ListWorkloadsResponse) String() string {
 func (*ListWorkloadsResponse) ProtoMessage() {}
 
 func (x *ListWorkloadsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[14]
+	mi := &file_nimbus_runtime_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1056,7 +1143,7 @@ func (x *ListWorkloadsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkloadsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkloadsResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{14}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListWorkloadsResponse) GetWorkloads() []*WorkloadStatus {
@@ -1078,7 +1165,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[15]
+	mi := &file_nimbus_runtime_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1090,7 +1177,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[15]
+	mi := &file_nimbus_runtime_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1103,7 +1190,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{15}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StreamLogsRequest) GetId() string {
@@ -1145,7 +1232,7 @@ type LogChunk struct {
 
 func (x *LogChunk) Reset() {
 	*x = LogChunk{}
-	mi := &file_nimbus_runtime_proto_msgTypes[16]
+	mi := &file_nimbus_runtime_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1157,7 +1244,7 @@ func (x *LogChunk) String() string {
 func (*LogChunk) ProtoMessage() {}
 
 func (x *LogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[16]
+	mi := &file_nimbus_runtime_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1170,7 +1257,7 @@ func (x *LogChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
 func (*LogChunk) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{16}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *LogChunk) GetData() []byte {
@@ -1203,7 +1290,7 @@ type StreamEventsRequest struct {
 
 func (x *StreamEventsRequest) Reset() {
 	*x = StreamEventsRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[17]
+	mi := &file_nimbus_runtime_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1302,7 @@ func (x *StreamEventsRequest) String() string {
 func (*StreamEventsRequest) ProtoMessage() {}
 
 func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[17]
+	mi := &file_nimbus_runtime_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1315,7 @@ func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{17}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StreamEventsRequest) GetEventTypes() []string {
@@ -1250,7 +1337,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_nimbus_runtime_proto_msgTypes[18]
+	mi := &file_nimbus_runtime_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1262,7 +1349,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[18]
+	mi := &file_nimbus_runtime_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1275,7 +1362,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{18}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Event) GetId() string {
@@ -1316,7 +1403,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[19]
+	mi := &file_nimbus_runtime_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1328,7 +1415,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[19]
+	mi := &file_nimbus_runtime_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1341,7 +1428,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{19}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ExecRequest) GetId() string {
@@ -1369,7 +1456,7 @@ type ExecResponse struct {
 
 func (x *ExecResponse) Reset() {
 	*x = ExecResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[20]
+	mi := &file_nimbus_runtime_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1381,7 +1468,7 @@ func (x *ExecResponse) String() string {
 func (*ExecResponse) ProtoMessage() {}
 
 func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[20]
+	mi := &file_nimbus_runtime_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1394,7 +1481,7 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
 func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{20}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ExecResponse) GetExitCode() int32 {
@@ -1447,7 +1534,7 @@ type AttachMessage struct {
 
 func (x *AttachMessage) Reset() {
 	*x = AttachMessage{}
-	mi := &file_nimbus_runtime_proto_msgTypes[21]
+	mi := &file_nimbus_runtime_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1459,7 +1546,7 @@ func (x *AttachMessage) String() string {
 func (*AttachMessage) ProtoMessage() {}
 
 func (x *AttachMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[21]
+	mi := &file_nimbus_runtime_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1472,7 +1559,7 @@ func (x *AttachMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachMessage.ProtoReflect.Descriptor instead.
 func (*AttachMessage) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{21}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AttachMessage) GetBody() isAttachMessage_Body {
@@ -1606,7 +1693,7 @@ type AttachOpen struct {
 
 func (x *AttachOpen) Reset() {
 	*x = AttachOpen{}
-	mi := &file_nimbus_runtime_proto_msgTypes[22]
+	mi := &file_nimbus_runtime_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1618,7 +1705,7 @@ func (x *AttachOpen) String() string {
 func (*AttachOpen) ProtoMessage() {}
 
 func (x *AttachOpen) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[22]
+	mi := &file_nimbus_runtime_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1631,7 +1718,7 @@ func (x *AttachOpen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachOpen.ProtoReflect.Descriptor instead.
 func (*AttachOpen) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{22}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AttachOpen) GetWorkloadId() string {
@@ -1672,7 +1759,7 @@ type AttachStdin struct {
 
 func (x *AttachStdin) Reset() {
 	*x = AttachStdin{}
-	mi := &file_nimbus_runtime_proto_msgTypes[23]
+	mi := &file_nimbus_runtime_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1684,7 +1771,7 @@ func (x *AttachStdin) String() string {
 func (*AttachStdin) ProtoMessage() {}
 
 func (x *AttachStdin) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[23]
+	mi := &file_nimbus_runtime_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1697,7 +1784,7 @@ func (x *AttachStdin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStdin.ProtoReflect.Descriptor instead.
 func (*AttachStdin) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{23}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AttachStdin) GetData() []byte {
@@ -1717,7 +1804,7 @@ type AttachStdinEof struct {
 
 func (x *AttachStdinEof) Reset() {
 	*x = AttachStdinEof{}
-	mi := &file_nimbus_runtime_proto_msgTypes[24]
+	mi := &file_nimbus_runtime_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1729,7 +1816,7 @@ func (x *AttachStdinEof) String() string {
 func (*AttachStdinEof) ProtoMessage() {}
 
 func (x *AttachStdinEof) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[24]
+	mi := &file_nimbus_runtime_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1742,7 +1829,7 @@ func (x *AttachStdinEof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStdinEof.ProtoReflect.Descriptor instead.
 func (*AttachStdinEof) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{24}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{25}
 }
 
 // Bytes from the workload's stdout.
@@ -1755,7 +1842,7 @@ type AttachStdout struct {
 
 func (x *AttachStdout) Reset() {
 	*x = AttachStdout{}
-	mi := &file_nimbus_runtime_proto_msgTypes[25]
+	mi := &file_nimbus_runtime_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1767,7 +1854,7 @@ func (x *AttachStdout) String() string {
 func (*AttachStdout) ProtoMessage() {}
 
 func (x *AttachStdout) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[25]
+	mi := &file_nimbus_runtime_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1780,7 +1867,7 @@ func (x *AttachStdout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStdout.ProtoReflect.Descriptor instead.
 func (*AttachStdout) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{25}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AttachStdout) GetData() []byte {
@@ -1800,7 +1887,7 @@ type AttachStderr struct {
 
 func (x *AttachStderr) Reset() {
 	*x = AttachStderr{}
-	mi := &file_nimbus_runtime_proto_msgTypes[26]
+	mi := &file_nimbus_runtime_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1812,7 +1899,7 @@ func (x *AttachStderr) String() string {
 func (*AttachStderr) ProtoMessage() {}
 
 func (x *AttachStderr) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[26]
+	mi := &file_nimbus_runtime_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1825,7 +1912,7 @@ func (x *AttachStderr) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStderr.ProtoReflect.Descriptor instead.
 func (*AttachStderr) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{26}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AttachStderr) GetData() []byte {
@@ -1848,7 +1935,7 @@ type AttachExit struct {
 
 func (x *AttachExit) Reset() {
 	*x = AttachExit{}
-	mi := &file_nimbus_runtime_proto_msgTypes[27]
+	mi := &file_nimbus_runtime_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1860,7 +1947,7 @@ func (x *AttachExit) String() string {
 func (*AttachExit) ProtoMessage() {}
 
 func (x *AttachExit) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[27]
+	mi := &file_nimbus_runtime_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1873,7 +1960,7 @@ func (x *AttachExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachExit.ProtoReflect.Descriptor instead.
 func (*AttachExit) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{27}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AttachExit) GetExitCode() int32 {
@@ -1915,7 +2002,7 @@ type AttachError struct {
 
 func (x *AttachError) Reset() {
 	*x = AttachError{}
-	mi := &file_nimbus_runtime_proto_msgTypes[28]
+	mi := &file_nimbus_runtime_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1927,7 +2014,7 @@ func (x *AttachError) String() string {
 func (*AttachError) ProtoMessage() {}
 
 func (x *AttachError) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[28]
+	mi := &file_nimbus_runtime_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1940,7 +2027,7 @@ func (x *AttachError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachError.ProtoReflect.Descriptor instead.
 func (*AttachError) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{28}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AttachError) GetMessage() string {
@@ -1959,7 +2046,7 @@ type HasImageRequest struct {
 
 func (x *HasImageRequest) Reset() {
 	*x = HasImageRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[29]
+	mi := &file_nimbus_runtime_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1971,7 +2058,7 @@ func (x *HasImageRequest) String() string {
 func (*HasImageRequest) ProtoMessage() {}
 
 func (x *HasImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[29]
+	mi := &file_nimbus_runtime_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1984,7 +2071,7 @@ func (x *HasImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HasImageRequest.ProtoReflect.Descriptor instead.
 func (*HasImageRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{29}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *HasImageRequest) GetImageRef() string {
@@ -2004,7 +2091,7 @@ type HasImageResponse struct {
 
 func (x *HasImageResponse) Reset() {
 	*x = HasImageResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[30]
+	mi := &file_nimbus_runtime_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2016,7 +2103,7 @@ func (x *HasImageResponse) String() string {
 func (*HasImageResponse) ProtoMessage() {}
 
 func (x *HasImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[30]
+	mi := &file_nimbus_runtime_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2029,7 +2116,7 @@ func (x *HasImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HasImageResponse.ProtoReflect.Descriptor instead.
 func (*HasImageResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{30}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *HasImageResponse) GetExists() bool {
@@ -2054,7 +2141,7 @@ type ListImagesRequest struct {
 
 func (x *ListImagesRequest) Reset() {
 	*x = ListImagesRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[31]
+	mi := &file_nimbus_runtime_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2066,7 +2153,7 @@ func (x *ListImagesRequest) String() string {
 func (*ListImagesRequest) ProtoMessage() {}
 
 func (x *ListImagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[31]
+	mi := &file_nimbus_runtime_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2079,7 +2166,7 @@ func (x *ListImagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListImagesRequest.ProtoReflect.Descriptor instead.
 func (*ListImagesRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{31}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{32}
 }
 
 type ListImagesResponse struct {
@@ -2091,7 +2178,7 @@ type ListImagesResponse struct {
 
 func (x *ListImagesResponse) Reset() {
 	*x = ListImagesResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[32]
+	mi := &file_nimbus_runtime_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2103,7 +2190,7 @@ func (x *ListImagesResponse) String() string {
 func (*ListImagesResponse) ProtoMessage() {}
 
 func (x *ListImagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[32]
+	mi := &file_nimbus_runtime_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2116,7 +2203,7 @@ func (x *ListImagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListImagesResponse.ProtoReflect.Descriptor instead.
 func (*ListImagesResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{32}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListImagesResponse) GetImages() []*ImageInfo {
@@ -2138,7 +2225,7 @@ type ImageInfo struct {
 
 func (x *ImageInfo) Reset() {
 	*x = ImageInfo{}
-	mi := &file_nimbus_runtime_proto_msgTypes[33]
+	mi := &file_nimbus_runtime_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2150,7 +2237,7 @@ func (x *ImageInfo) String() string {
 func (*ImageInfo) ProtoMessage() {}
 
 func (x *ImageInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[33]
+	mi := &file_nimbus_runtime_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2163,7 +2250,7 @@ func (x *ImageInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageInfo.ProtoReflect.Descriptor instead.
 func (*ImageInfo) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{33}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ImageInfo) GetImageRef() string {
@@ -2203,7 +2290,7 @@ type RemoveImageRequest struct {
 
 func (x *RemoveImageRequest) Reset() {
 	*x = RemoveImageRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[34]
+	mi := &file_nimbus_runtime_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2215,7 +2302,7 @@ func (x *RemoveImageRequest) String() string {
 func (*RemoveImageRequest) ProtoMessage() {}
 
 func (x *RemoveImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[34]
+	mi := &file_nimbus_runtime_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2228,7 +2315,7 @@ func (x *RemoveImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveImageRequest.ProtoReflect.Descriptor instead.
 func (*RemoveImageRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{34}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RemoveImageRequest) GetRootDigest() string {
@@ -2248,7 +2335,7 @@ type RemoveImageResponse struct {
 
 func (x *RemoveImageResponse) Reset() {
 	*x = RemoveImageResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[35]
+	mi := &file_nimbus_runtime_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2260,7 +2347,7 @@ func (x *RemoveImageResponse) String() string {
 func (*RemoveImageResponse) ProtoMessage() {}
 
 func (x *RemoveImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[35]
+	mi := &file_nimbus_runtime_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2273,7 +2360,7 @@ func (x *RemoveImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveImageResponse.ProtoReflect.Descriptor instead.
 func (*RemoveImageResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{35}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *RemoveImageResponse) GetSuccess() bool {
@@ -2298,7 +2385,7 @@ type DagStoreInfoRequest struct {
 
 func (x *DagStoreInfoRequest) Reset() {
 	*x = DagStoreInfoRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[36]
+	mi := &file_nimbus_runtime_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2310,7 +2397,7 @@ func (x *DagStoreInfoRequest) String() string {
 func (*DagStoreInfoRequest) ProtoMessage() {}
 
 func (x *DagStoreInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[36]
+	mi := &file_nimbus_runtime_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2323,7 +2410,7 @@ func (x *DagStoreInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DagStoreInfoRequest.ProtoReflect.Descriptor instead.
 func (*DagStoreInfoRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{36}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{37}
 }
 
 type DagStoreInfoResponse struct {
@@ -2339,7 +2426,7 @@ type DagStoreInfoResponse struct {
 
 func (x *DagStoreInfoResponse) Reset() {
 	*x = DagStoreInfoResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[37]
+	mi := &file_nimbus_runtime_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2351,7 +2438,7 @@ func (x *DagStoreInfoResponse) String() string {
 func (*DagStoreInfoResponse) ProtoMessage() {}
 
 func (x *DagStoreInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[37]
+	mi := &file_nimbus_runtime_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2364,7 +2451,7 @@ func (x *DagStoreInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DagStoreInfoResponse.ProtoReflect.Descriptor instead.
 func (*DagStoreInfoResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{37}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DagStoreInfoResponse) GetMountpoint() string {
@@ -2413,7 +2500,7 @@ type PortForwardRequest struct {
 
 func (x *PortForwardRequest) Reset() {
 	*x = PortForwardRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[38]
+	mi := &file_nimbus_runtime_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2425,7 +2512,7 @@ func (x *PortForwardRequest) String() string {
 func (*PortForwardRequest) ProtoMessage() {}
 
 func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[38]
+	mi := &file_nimbus_runtime_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2438,7 +2525,7 @@ func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortForwardRequest.ProtoReflect.Descriptor instead.
 func (*PortForwardRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{38}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PortForwardRequest) GetWorkloadId() string {
@@ -2471,7 +2558,7 @@ type PortForwardData struct {
 
 func (x *PortForwardData) Reset() {
 	*x = PortForwardData{}
-	mi := &file_nimbus_runtime_proto_msgTypes[39]
+	mi := &file_nimbus_runtime_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2483,7 +2570,7 @@ func (x *PortForwardData) String() string {
 func (*PortForwardData) ProtoMessage() {}
 
 func (x *PortForwardData) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[39]
+	mi := &file_nimbus_runtime_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2496,7 +2583,7 @@ func (x *PortForwardData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortForwardData.ProtoReflect.Descriptor instead.
 func (*PortForwardData) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{39}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PortForwardData) GetData() []byte {
@@ -2517,7 +2604,7 @@ type UpdateWorkloadRequest struct {
 
 func (x *UpdateWorkloadRequest) Reset() {
 	*x = UpdateWorkloadRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[40]
+	mi := &file_nimbus_runtime_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2529,7 +2616,7 @@ func (x *UpdateWorkloadRequest) String() string {
 func (*UpdateWorkloadRequest) ProtoMessage() {}
 
 func (x *UpdateWorkloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[40]
+	mi := &file_nimbus_runtime_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2542,7 +2629,7 @@ func (x *UpdateWorkloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkloadRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWorkloadRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{40}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *UpdateWorkloadRequest) GetId() string {
@@ -2575,7 +2662,7 @@ type UpdateWorkloadResponse struct {
 
 func (x *UpdateWorkloadResponse) Reset() {
 	*x = UpdateWorkloadResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[41]
+	mi := &file_nimbus_runtime_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2587,7 +2674,7 @@ func (x *UpdateWorkloadResponse) String() string {
 func (*UpdateWorkloadResponse) ProtoMessage() {}
 
 func (x *UpdateWorkloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[41]
+	mi := &file_nimbus_runtime_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2600,7 +2687,7 @@ func (x *UpdateWorkloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkloadResponse.ProtoReflect.Descriptor instead.
 func (*UpdateWorkloadResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{41}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *UpdateWorkloadResponse) GetSuccess() bool {
@@ -2619,7 +2706,7 @@ type GetWorkloadStatsRequest struct {
 
 func (x *GetWorkloadStatsRequest) Reset() {
 	*x = GetWorkloadStatsRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[42]
+	mi := &file_nimbus_runtime_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2631,7 +2718,7 @@ func (x *GetWorkloadStatsRequest) String() string {
 func (*GetWorkloadStatsRequest) ProtoMessage() {}
 
 func (x *GetWorkloadStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[42]
+	mi := &file_nimbus_runtime_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2644,7 +2731,7 @@ func (x *GetWorkloadStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkloadStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkloadStatsRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{42}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetWorkloadStatsRequest) GetId() string {
@@ -2668,7 +2755,7 @@ type WorkloadStats struct {
 
 func (x *WorkloadStats) Reset() {
 	*x = WorkloadStats{}
-	mi := &file_nimbus_runtime_proto_msgTypes[43]
+	mi := &file_nimbus_runtime_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2680,7 +2767,7 @@ func (x *WorkloadStats) String() string {
 func (*WorkloadStats) ProtoMessage() {}
 
 func (x *WorkloadStats) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[43]
+	mi := &file_nimbus_runtime_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2693,7 +2780,7 @@ func (x *WorkloadStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadStats.ProtoReflect.Descriptor instead.
 func (*WorkloadStats) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{43}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *WorkloadStats) GetId() string {
@@ -2750,7 +2837,7 @@ type BuildImageRequest struct {
 
 func (x *BuildImageRequest) Reset() {
 	*x = BuildImageRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[44]
+	mi := &file_nimbus_runtime_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2762,7 +2849,7 @@ func (x *BuildImageRequest) String() string {
 func (*BuildImageRequest) ProtoMessage() {}
 
 func (x *BuildImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[44]
+	mi := &file_nimbus_runtime_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2775,7 +2862,7 @@ func (x *BuildImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildImageRequest.ProtoReflect.Descriptor instead.
 func (*BuildImageRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{44}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *BuildImageRequest) GetDockerfile() string {
@@ -2816,7 +2903,7 @@ type BuildImageResponse struct {
 
 func (x *BuildImageResponse) Reset() {
 	*x = BuildImageResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[45]
+	mi := &file_nimbus_runtime_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2828,7 +2915,7 @@ func (x *BuildImageResponse) String() string {
 func (*BuildImageResponse) ProtoMessage() {}
 
 func (x *BuildImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[45]
+	mi := &file_nimbus_runtime_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2841,7 +2928,7 @@ func (x *BuildImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildImageResponse.ProtoReflect.Descriptor instead.
 func (*BuildImageResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{45}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *BuildImageResponse) GetRootDigest() string {
@@ -2871,7 +2958,7 @@ type PushImageRequest struct {
 
 func (x *PushImageRequest) Reset() {
 	*x = PushImageRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[46]
+	mi := &file_nimbus_runtime_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2883,7 +2970,7 @@ func (x *PushImageRequest) String() string {
 func (*PushImageRequest) ProtoMessage() {}
 
 func (x *PushImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[46]
+	mi := &file_nimbus_runtime_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2896,7 +2983,7 @@ func (x *PushImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushImageRequest.ProtoReflect.Descriptor instead.
 func (*PushImageRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{46}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *PushImageRequest) GetRootDigest() string {
@@ -2944,7 +3031,7 @@ type PushImageResponse struct {
 
 func (x *PushImageResponse) Reset() {
 	*x = PushImageResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[47]
+	mi := &file_nimbus_runtime_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2956,7 +3043,7 @@ func (x *PushImageResponse) String() string {
 func (*PushImageResponse) ProtoMessage() {}
 
 func (x *PushImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[47]
+	mi := &file_nimbus_runtime_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2969,7 +3056,7 @@ func (x *PushImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushImageResponse.ProtoReflect.Descriptor instead.
 func (*PushImageResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{47}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *PushImageResponse) GetManifestDigest() string {
@@ -2999,7 +3086,7 @@ type ExportImageRequest struct {
 
 func (x *ExportImageRequest) Reset() {
 	*x = ExportImageRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[48]
+	mi := &file_nimbus_runtime_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3011,7 +3098,7 @@ func (x *ExportImageRequest) String() string {
 func (*ExportImageRequest) ProtoMessage() {}
 
 func (x *ExportImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[48]
+	mi := &file_nimbus_runtime_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3024,7 +3111,7 @@ func (x *ExportImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportImageRequest.ProtoReflect.Descriptor instead.
 func (*ExportImageRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{48}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ExportImageRequest) GetRootDigest() string {
@@ -3050,7 +3137,7 @@ type ExportImageChunk struct {
 
 func (x *ExportImageChunk) Reset() {
 	*x = ExportImageChunk{}
-	mi := &file_nimbus_runtime_proto_msgTypes[49]
+	mi := &file_nimbus_runtime_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3062,7 +3149,7 @@ func (x *ExportImageChunk) String() string {
 func (*ExportImageChunk) ProtoMessage() {}
 
 func (x *ExportImageChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[49]
+	mi := &file_nimbus_runtime_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3075,7 +3162,7 @@ func (x *ExportImageChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportImageChunk.ProtoReflect.Descriptor instead.
 func (*ExportImageChunk) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{49}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ExportImageChunk) GetData() []byte {
@@ -3094,7 +3181,7 @@ type ImportImageChunk struct {
 
 func (x *ImportImageChunk) Reset() {
 	*x = ImportImageChunk{}
-	mi := &file_nimbus_runtime_proto_msgTypes[50]
+	mi := &file_nimbus_runtime_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3106,7 +3193,7 @@ func (x *ImportImageChunk) String() string {
 func (*ImportImageChunk) ProtoMessage() {}
 
 func (x *ImportImageChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[50]
+	mi := &file_nimbus_runtime_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3119,7 +3206,7 @@ func (x *ImportImageChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportImageChunk.ProtoReflect.Descriptor instead.
 func (*ImportImageChunk) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{50}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ImportImageChunk) GetData() []byte {
@@ -3140,7 +3227,7 @@ type ImportImageResponse struct {
 
 func (x *ImportImageResponse) Reset() {
 	*x = ImportImageResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[51]
+	mi := &file_nimbus_runtime_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3152,7 +3239,7 @@ func (x *ImportImageResponse) String() string {
 func (*ImportImageResponse) ProtoMessage() {}
 
 func (x *ImportImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[51]
+	mi := &file_nimbus_runtime_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3165,7 +3252,7 @@ func (x *ImportImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportImageResponse.ProtoReflect.Descriptor instead.
 func (*ImportImageResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{51}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ImportImageResponse) GetRootDigest() string {
@@ -3201,7 +3288,7 @@ type InspectRequest struct {
 
 func (x *InspectRequest) Reset() {
 	*x = InspectRequest{}
-	mi := &file_nimbus_runtime_proto_msgTypes[52]
+	mi := &file_nimbus_runtime_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3213,7 +3300,7 @@ func (x *InspectRequest) String() string {
 func (*InspectRequest) ProtoMessage() {}
 
 func (x *InspectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[52]
+	mi := &file_nimbus_runtime_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3226,7 +3313,7 @@ func (x *InspectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRequest.ProtoReflect.Descriptor instead.
 func (*InspectRequest) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{52}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *InspectRequest) GetId() string {
@@ -3247,7 +3334,7 @@ type DagNode struct {
 
 func (x *DagNode) Reset() {
 	*x = DagNode{}
-	mi := &file_nimbus_runtime_proto_msgTypes[53]
+	mi := &file_nimbus_runtime_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3259,7 +3346,7 @@ func (x *DagNode) String() string {
 func (*DagNode) ProtoMessage() {}
 
 func (x *DagNode) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[53]
+	mi := &file_nimbus_runtime_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3272,7 +3359,7 @@ func (x *DagNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DagNode.ProtoReflect.Descriptor instead.
 func (*DagNode) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{53}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *DagNode) GetDigest() string {
@@ -3325,7 +3412,7 @@ type InspectResponse struct {
 
 func (x *InspectResponse) Reset() {
 	*x = InspectResponse{}
-	mi := &file_nimbus_runtime_proto_msgTypes[54]
+	mi := &file_nimbus_runtime_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3337,7 +3424,7 @@ func (x *InspectResponse) String() string {
 func (*InspectResponse) ProtoMessage() {}
 
 func (x *InspectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nimbus_runtime_proto_msgTypes[54]
+	mi := &file_nimbus_runtime_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3350,7 +3437,7 @@ func (x *InspectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectResponse.ProtoReflect.Descriptor instead.
 func (*InspectResponse) Descriptor() ([]byte, []int) {
-	return file_nimbus_runtime_proto_rawDescGZIP(), []int{54}
+	return file_nimbus_runtime_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *InspectResponse) GetId() string {
@@ -3455,7 +3542,12 @@ var File_nimbus_runtime_proto protoreflect.FileDescriptor
 
 const file_nimbus_runtime_proto_rawDesc = "" +
 	"\n" +
-	"\x14nimbus/runtime.proto\x12\x0enimbus.runtime\"\x88\x05\n" +
+	"\x14nimbus/runtime.proto\x12\x0enimbus.runtime\"o\n" +
+	"\x05Mount\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12 \n" +
+	"\vdestination\x18\x03 \x01(\tR\vdestination\x12\x18\n" +
+	"\aoptions\x18\x04 \x03(\tR\aoptions\"\xb7\x05\n" +
 	"\x0eComposeService\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x18\n" +
@@ -3474,7 +3566,8 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\vroot_digest\x18\f \x01(\tR\n" +
 	"rootDigest\x12\x1f\n" +
 	"\vbridge_name\x18\r \x01(\tR\n" +
-	"bridgeName\x1a>\n" +
+	"bridgeName\x12-\n" +
+	"\x06mounts\x18\x0e \x03(\v2\x15.nimbus.runtime.MountR\x06mounts\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
@@ -3504,7 +3597,7 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
 	"\fbytes_stored\x18\x02 \x01(\x03R\vbytesStored\x12-\n" +
-	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xf4\x03\n" +
+	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xa3\x04\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -3522,7 +3615,8 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\vworking_dir\x18\v \x01(\tR\n" +
 	"workingDir\x12\x1f\n" +
 	"\vbridge_name\x18\f \x01(\tR\n" +
-	"bridgeName\x1a6\n" +
+	"bridgeName\x12-\n" +
+	"\x06mounts\x18\r \x03(\v2\x15.nimbus.runtime.MountR\x06mounts\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x93\x01\n" +
@@ -3790,144 +3884,147 @@ func file_nimbus_runtime_proto_rawDescGZIP() []byte {
 	return file_nimbus_runtime_proto_rawDescData
 }
 
-var file_nimbus_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 63)
+var file_nimbus_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_nimbus_runtime_proto_goTypes = []any{
-	(*ComposeService)(nil),          // 0: nimbus.runtime.ComposeService
-	(*ComposePort)(nil),             // 1: nimbus.runtime.ComposePort
-	(*RunComposeRequest)(nil),       // 2: nimbus.runtime.RunComposeRequest
-	(*RunComposeResponse)(nil),      // 3: nimbus.runtime.RunComposeResponse
-	(*PullImageRequest)(nil),        // 4: nimbus.runtime.PullImageRequest
-	(*PullImageResponse)(nil),       // 5: nimbus.runtime.PullImageResponse
-	(*RunRequest)(nil),              // 6: nimbus.runtime.RunRequest
-	(*NetworkRule)(nil),             // 7: nimbus.runtime.NetworkRule
-	(*RunResponse)(nil),             // 8: nimbus.runtime.RunResponse
-	(*StopRequest)(nil),             // 9: nimbus.runtime.StopRequest
-	(*StopResponse)(nil),            // 10: nimbus.runtime.StopResponse
-	(*GetWorkloadRequest)(nil),      // 11: nimbus.runtime.GetWorkloadRequest
-	(*WorkloadStatus)(nil),          // 12: nimbus.runtime.WorkloadStatus
-	(*ListWorkloadsRequest)(nil),    // 13: nimbus.runtime.ListWorkloadsRequest
-	(*ListWorkloadsResponse)(nil),   // 14: nimbus.runtime.ListWorkloadsResponse
-	(*StreamLogsRequest)(nil),       // 15: nimbus.runtime.StreamLogsRequest
-	(*LogChunk)(nil),                // 16: nimbus.runtime.LogChunk
-	(*StreamEventsRequest)(nil),     // 17: nimbus.runtime.StreamEventsRequest
-	(*Event)(nil),                   // 18: nimbus.runtime.Event
-	(*ExecRequest)(nil),             // 19: nimbus.runtime.ExecRequest
-	(*ExecResponse)(nil),            // 20: nimbus.runtime.ExecResponse
-	(*AttachMessage)(nil),           // 21: nimbus.runtime.AttachMessage
-	(*AttachOpen)(nil),              // 22: nimbus.runtime.AttachOpen
-	(*AttachStdin)(nil),             // 23: nimbus.runtime.AttachStdin
-	(*AttachStdinEof)(nil),          // 24: nimbus.runtime.AttachStdinEof
-	(*AttachStdout)(nil),            // 25: nimbus.runtime.AttachStdout
-	(*AttachStderr)(nil),            // 26: nimbus.runtime.AttachStderr
-	(*AttachExit)(nil),              // 27: nimbus.runtime.AttachExit
-	(*AttachError)(nil),             // 28: nimbus.runtime.AttachError
-	(*HasImageRequest)(nil),         // 29: nimbus.runtime.HasImageRequest
-	(*HasImageResponse)(nil),        // 30: nimbus.runtime.HasImageResponse
-	(*ListImagesRequest)(nil),       // 31: nimbus.runtime.ListImagesRequest
-	(*ListImagesResponse)(nil),      // 32: nimbus.runtime.ListImagesResponse
-	(*ImageInfo)(nil),               // 33: nimbus.runtime.ImageInfo
-	(*RemoveImageRequest)(nil),      // 34: nimbus.runtime.RemoveImageRequest
-	(*RemoveImageResponse)(nil),     // 35: nimbus.runtime.RemoveImageResponse
-	(*DagStoreInfoRequest)(nil),     // 36: nimbus.runtime.DagStoreInfoRequest
-	(*DagStoreInfoResponse)(nil),    // 37: nimbus.runtime.DagStoreInfoResponse
-	(*PortForwardRequest)(nil),      // 38: nimbus.runtime.PortForwardRequest
-	(*PortForwardData)(nil),         // 39: nimbus.runtime.PortForwardData
-	(*UpdateWorkloadRequest)(nil),   // 40: nimbus.runtime.UpdateWorkloadRequest
-	(*UpdateWorkloadResponse)(nil),  // 41: nimbus.runtime.UpdateWorkloadResponse
-	(*GetWorkloadStatsRequest)(nil), // 42: nimbus.runtime.GetWorkloadStatsRequest
-	(*WorkloadStats)(nil),           // 43: nimbus.runtime.WorkloadStats
-	(*BuildImageRequest)(nil),       // 44: nimbus.runtime.BuildImageRequest
-	(*BuildImageResponse)(nil),      // 45: nimbus.runtime.BuildImageResponse
-	(*PushImageRequest)(nil),        // 46: nimbus.runtime.PushImageRequest
-	(*PushImageResponse)(nil),       // 47: nimbus.runtime.PushImageResponse
-	(*ExportImageRequest)(nil),      // 48: nimbus.runtime.ExportImageRequest
-	(*ExportImageChunk)(nil),        // 49: nimbus.runtime.ExportImageChunk
-	(*ImportImageChunk)(nil),        // 50: nimbus.runtime.ImportImageChunk
-	(*ImportImageResponse)(nil),     // 51: nimbus.runtime.ImportImageResponse
-	(*InspectRequest)(nil),          // 52: nimbus.runtime.InspectRequest
-	(*DagNode)(nil),                 // 53: nimbus.runtime.DagNode
-	(*InspectResponse)(nil),         // 54: nimbus.runtime.InspectResponse
-	nil,                             // 55: nimbus.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 56: nimbus.runtime.ComposeService.LabelsEntry
-	nil,                             // 57: nimbus.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 58: nimbus.runtime.RunRequest.EnvEntry
-	nil,                             // 59: nimbus.runtime.Event.MetadataEntry
-	nil,                             // 60: nimbus.runtime.AttachOpen.EnvEntry
-	nil,                             // 61: nimbus.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 62: nimbus.runtime.InspectResponse.PolicyDecisionsEntry
+	(*Mount)(nil),                   // 0: nimbus.runtime.Mount
+	(*ComposeService)(nil),          // 1: nimbus.runtime.ComposeService
+	(*ComposePort)(nil),             // 2: nimbus.runtime.ComposePort
+	(*RunComposeRequest)(nil),       // 3: nimbus.runtime.RunComposeRequest
+	(*RunComposeResponse)(nil),      // 4: nimbus.runtime.RunComposeResponse
+	(*PullImageRequest)(nil),        // 5: nimbus.runtime.PullImageRequest
+	(*PullImageResponse)(nil),       // 6: nimbus.runtime.PullImageResponse
+	(*RunRequest)(nil),              // 7: nimbus.runtime.RunRequest
+	(*NetworkRule)(nil),             // 8: nimbus.runtime.NetworkRule
+	(*RunResponse)(nil),             // 9: nimbus.runtime.RunResponse
+	(*StopRequest)(nil),             // 10: nimbus.runtime.StopRequest
+	(*StopResponse)(nil),            // 11: nimbus.runtime.StopResponse
+	(*GetWorkloadRequest)(nil),      // 12: nimbus.runtime.GetWorkloadRequest
+	(*WorkloadStatus)(nil),          // 13: nimbus.runtime.WorkloadStatus
+	(*ListWorkloadsRequest)(nil),    // 14: nimbus.runtime.ListWorkloadsRequest
+	(*ListWorkloadsResponse)(nil),   // 15: nimbus.runtime.ListWorkloadsResponse
+	(*StreamLogsRequest)(nil),       // 16: nimbus.runtime.StreamLogsRequest
+	(*LogChunk)(nil),                // 17: nimbus.runtime.LogChunk
+	(*StreamEventsRequest)(nil),     // 18: nimbus.runtime.StreamEventsRequest
+	(*Event)(nil),                   // 19: nimbus.runtime.Event
+	(*ExecRequest)(nil),             // 20: nimbus.runtime.ExecRequest
+	(*ExecResponse)(nil),            // 21: nimbus.runtime.ExecResponse
+	(*AttachMessage)(nil),           // 22: nimbus.runtime.AttachMessage
+	(*AttachOpen)(nil),              // 23: nimbus.runtime.AttachOpen
+	(*AttachStdin)(nil),             // 24: nimbus.runtime.AttachStdin
+	(*AttachStdinEof)(nil),          // 25: nimbus.runtime.AttachStdinEof
+	(*AttachStdout)(nil),            // 26: nimbus.runtime.AttachStdout
+	(*AttachStderr)(nil),            // 27: nimbus.runtime.AttachStderr
+	(*AttachExit)(nil),              // 28: nimbus.runtime.AttachExit
+	(*AttachError)(nil),             // 29: nimbus.runtime.AttachError
+	(*HasImageRequest)(nil),         // 30: nimbus.runtime.HasImageRequest
+	(*HasImageResponse)(nil),        // 31: nimbus.runtime.HasImageResponse
+	(*ListImagesRequest)(nil),       // 32: nimbus.runtime.ListImagesRequest
+	(*ListImagesResponse)(nil),      // 33: nimbus.runtime.ListImagesResponse
+	(*ImageInfo)(nil),               // 34: nimbus.runtime.ImageInfo
+	(*RemoveImageRequest)(nil),      // 35: nimbus.runtime.RemoveImageRequest
+	(*RemoveImageResponse)(nil),     // 36: nimbus.runtime.RemoveImageResponse
+	(*DagStoreInfoRequest)(nil),     // 37: nimbus.runtime.DagStoreInfoRequest
+	(*DagStoreInfoResponse)(nil),    // 38: nimbus.runtime.DagStoreInfoResponse
+	(*PortForwardRequest)(nil),      // 39: nimbus.runtime.PortForwardRequest
+	(*PortForwardData)(nil),         // 40: nimbus.runtime.PortForwardData
+	(*UpdateWorkloadRequest)(nil),   // 41: nimbus.runtime.UpdateWorkloadRequest
+	(*UpdateWorkloadResponse)(nil),  // 42: nimbus.runtime.UpdateWorkloadResponse
+	(*GetWorkloadStatsRequest)(nil), // 43: nimbus.runtime.GetWorkloadStatsRequest
+	(*WorkloadStats)(nil),           // 44: nimbus.runtime.WorkloadStats
+	(*BuildImageRequest)(nil),       // 45: nimbus.runtime.BuildImageRequest
+	(*BuildImageResponse)(nil),      // 46: nimbus.runtime.BuildImageResponse
+	(*PushImageRequest)(nil),        // 47: nimbus.runtime.PushImageRequest
+	(*PushImageResponse)(nil),       // 48: nimbus.runtime.PushImageResponse
+	(*ExportImageRequest)(nil),      // 49: nimbus.runtime.ExportImageRequest
+	(*ExportImageChunk)(nil),        // 50: nimbus.runtime.ExportImageChunk
+	(*ImportImageChunk)(nil),        // 51: nimbus.runtime.ImportImageChunk
+	(*ImportImageResponse)(nil),     // 52: nimbus.runtime.ImportImageResponse
+	(*InspectRequest)(nil),          // 53: nimbus.runtime.InspectRequest
+	(*DagNode)(nil),                 // 54: nimbus.runtime.DagNode
+	(*InspectResponse)(nil),         // 55: nimbus.runtime.InspectResponse
+	nil,                             // 56: nimbus.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 57: nimbus.runtime.ComposeService.LabelsEntry
+	nil,                             // 58: nimbus.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 59: nimbus.runtime.RunRequest.EnvEntry
+	nil,                             // 60: nimbus.runtime.Event.MetadataEntry
+	nil,                             // 61: nimbus.runtime.AttachOpen.EnvEntry
+	nil,                             // 62: nimbus.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 63: nimbus.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_nimbus_runtime_proto_depIdxs = []int32{
-	55, // 0: nimbus.runtime.ComposeService.environment:type_name -> nimbus.runtime.ComposeService.EnvironmentEntry
-	1,  // 1: nimbus.runtime.ComposeService.ports:type_name -> nimbus.runtime.ComposePort
-	56, // 2: nimbus.runtime.ComposeService.labels:type_name -> nimbus.runtime.ComposeService.LabelsEntry
-	0,  // 3: nimbus.runtime.RunComposeRequest.services:type_name -> nimbus.runtime.ComposeService
-	57, // 4: nimbus.runtime.RunComposeResponse.service_to_id:type_name -> nimbus.runtime.RunComposeResponse.ServiceToIdEntry
-	58, // 5: nimbus.runtime.RunRequest.env:type_name -> nimbus.runtime.RunRequest.EnvEntry
-	7,  // 6: nimbus.runtime.RunRequest.network_rules:type_name -> nimbus.runtime.NetworkRule
-	12, // 7: nimbus.runtime.ListWorkloadsResponse.workloads:type_name -> nimbus.runtime.WorkloadStatus
-	59, // 8: nimbus.runtime.Event.metadata:type_name -> nimbus.runtime.Event.MetadataEntry
-	22, // 9: nimbus.runtime.AttachMessage.open:type_name -> nimbus.runtime.AttachOpen
-	23, // 10: nimbus.runtime.AttachMessage.stdin:type_name -> nimbus.runtime.AttachStdin
-	24, // 11: nimbus.runtime.AttachMessage.stdin_eof:type_name -> nimbus.runtime.AttachStdinEof
-	25, // 12: nimbus.runtime.AttachMessage.stdout:type_name -> nimbus.runtime.AttachStdout
-	26, // 13: nimbus.runtime.AttachMessage.stderr:type_name -> nimbus.runtime.AttachStderr
-	27, // 14: nimbus.runtime.AttachMessage.exit:type_name -> nimbus.runtime.AttachExit
-	28, // 15: nimbus.runtime.AttachMessage.error:type_name -> nimbus.runtime.AttachError
-	60, // 16: nimbus.runtime.AttachOpen.env:type_name -> nimbus.runtime.AttachOpen.EnvEntry
-	33, // 17: nimbus.runtime.ListImagesResponse.images:type_name -> nimbus.runtime.ImageInfo
-	61, // 18: nimbus.runtime.BuildImageRequest.build_args:type_name -> nimbus.runtime.BuildImageRequest.BuildArgsEntry
-	7,  // 19: nimbus.runtime.InspectResponse.network_rules:type_name -> nimbus.runtime.NetworkRule
-	53, // 20: nimbus.runtime.InspectResponse.dag_path:type_name -> nimbus.runtime.DagNode
-	62, // 21: nimbus.runtime.InspectResponse.policy_decisions:type_name -> nimbus.runtime.InspectResponse.PolicyDecisionsEntry
-	4,  // 22: nimbus.runtime.Runtime.PullImage:input_type -> nimbus.runtime.PullImageRequest
-	6,  // 23: nimbus.runtime.Runtime.RunWorkload:input_type -> nimbus.runtime.RunRequest
-	9,  // 24: nimbus.runtime.Runtime.StopWorkload:input_type -> nimbus.runtime.StopRequest
-	11, // 25: nimbus.runtime.Runtime.GetWorkload:input_type -> nimbus.runtime.GetWorkloadRequest
-	13, // 26: nimbus.runtime.Runtime.ListWorkloads:input_type -> nimbus.runtime.ListWorkloadsRequest
-	15, // 27: nimbus.runtime.Runtime.StreamLogs:input_type -> nimbus.runtime.StreamLogsRequest
-	17, // 28: nimbus.runtime.Runtime.StreamEvents:input_type -> nimbus.runtime.StreamEventsRequest
-	19, // 29: nimbus.runtime.Runtime.ExecInWorkload:input_type -> nimbus.runtime.ExecRequest
-	52, // 30: nimbus.runtime.Runtime.InspectWorkload:input_type -> nimbus.runtime.InspectRequest
-	21, // 31: nimbus.runtime.Runtime.AttachWorkload:input_type -> nimbus.runtime.AttachMessage
-	29, // 32: nimbus.runtime.Runtime.HasImage:input_type -> nimbus.runtime.HasImageRequest
-	31, // 33: nimbus.runtime.Runtime.ListImages:input_type -> nimbus.runtime.ListImagesRequest
-	34, // 34: nimbus.runtime.Runtime.RemoveImage:input_type -> nimbus.runtime.RemoveImageRequest
-	36, // 35: nimbus.runtime.Runtime.DagStoreInfo:input_type -> nimbus.runtime.DagStoreInfoRequest
-	38, // 36: nimbus.runtime.Runtime.PortForward:input_type -> nimbus.runtime.PortForwardRequest
-	40, // 37: nimbus.runtime.Runtime.UpdateWorkload:input_type -> nimbus.runtime.UpdateWorkloadRequest
-	42, // 38: nimbus.runtime.Runtime.GetWorkloadStats:input_type -> nimbus.runtime.GetWorkloadStatsRequest
-	44, // 39: nimbus.runtime.Runtime.BuildImage:input_type -> nimbus.runtime.BuildImageRequest
-	46, // 40: nimbus.runtime.Runtime.PushImage:input_type -> nimbus.runtime.PushImageRequest
-	48, // 41: nimbus.runtime.Runtime.ExportImage:input_type -> nimbus.runtime.ExportImageRequest
-	50, // 42: nimbus.runtime.Runtime.ImportImage:input_type -> nimbus.runtime.ImportImageChunk
-	2,  // 43: nimbus.runtime.Runtime.RunCompose:input_type -> nimbus.runtime.RunComposeRequest
-	5,  // 44: nimbus.runtime.Runtime.PullImage:output_type -> nimbus.runtime.PullImageResponse
-	8,  // 45: nimbus.runtime.Runtime.RunWorkload:output_type -> nimbus.runtime.RunResponse
-	10, // 46: nimbus.runtime.Runtime.StopWorkload:output_type -> nimbus.runtime.StopResponse
-	12, // 47: nimbus.runtime.Runtime.GetWorkload:output_type -> nimbus.runtime.WorkloadStatus
-	14, // 48: nimbus.runtime.Runtime.ListWorkloads:output_type -> nimbus.runtime.ListWorkloadsResponse
-	16, // 49: nimbus.runtime.Runtime.StreamLogs:output_type -> nimbus.runtime.LogChunk
-	18, // 50: nimbus.runtime.Runtime.StreamEvents:output_type -> nimbus.runtime.Event
-	20, // 51: nimbus.runtime.Runtime.ExecInWorkload:output_type -> nimbus.runtime.ExecResponse
-	54, // 52: nimbus.runtime.Runtime.InspectWorkload:output_type -> nimbus.runtime.InspectResponse
-	21, // 53: nimbus.runtime.Runtime.AttachWorkload:output_type -> nimbus.runtime.AttachMessage
-	30, // 54: nimbus.runtime.Runtime.HasImage:output_type -> nimbus.runtime.HasImageResponse
-	32, // 55: nimbus.runtime.Runtime.ListImages:output_type -> nimbus.runtime.ListImagesResponse
-	35, // 56: nimbus.runtime.Runtime.RemoveImage:output_type -> nimbus.runtime.RemoveImageResponse
-	37, // 57: nimbus.runtime.Runtime.DagStoreInfo:output_type -> nimbus.runtime.DagStoreInfoResponse
-	39, // 58: nimbus.runtime.Runtime.PortForward:output_type -> nimbus.runtime.PortForwardData
-	41, // 59: nimbus.runtime.Runtime.UpdateWorkload:output_type -> nimbus.runtime.UpdateWorkloadResponse
-	43, // 60: nimbus.runtime.Runtime.GetWorkloadStats:output_type -> nimbus.runtime.WorkloadStats
-	45, // 61: nimbus.runtime.Runtime.BuildImage:output_type -> nimbus.runtime.BuildImageResponse
-	47, // 62: nimbus.runtime.Runtime.PushImage:output_type -> nimbus.runtime.PushImageResponse
-	49, // 63: nimbus.runtime.Runtime.ExportImage:output_type -> nimbus.runtime.ExportImageChunk
-	51, // 64: nimbus.runtime.Runtime.ImportImage:output_type -> nimbus.runtime.ImportImageResponse
-	3,  // 65: nimbus.runtime.Runtime.RunCompose:output_type -> nimbus.runtime.RunComposeResponse
-	44, // [44:66] is the sub-list for method output_type
-	22, // [22:44] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	56, // 0: nimbus.runtime.ComposeService.environment:type_name -> nimbus.runtime.ComposeService.EnvironmentEntry
+	2,  // 1: nimbus.runtime.ComposeService.ports:type_name -> nimbus.runtime.ComposePort
+	57, // 2: nimbus.runtime.ComposeService.labels:type_name -> nimbus.runtime.ComposeService.LabelsEntry
+	0,  // 3: nimbus.runtime.ComposeService.mounts:type_name -> nimbus.runtime.Mount
+	1,  // 4: nimbus.runtime.RunComposeRequest.services:type_name -> nimbus.runtime.ComposeService
+	58, // 5: nimbus.runtime.RunComposeResponse.service_to_id:type_name -> nimbus.runtime.RunComposeResponse.ServiceToIdEntry
+	59, // 6: nimbus.runtime.RunRequest.env:type_name -> nimbus.runtime.RunRequest.EnvEntry
+	8,  // 7: nimbus.runtime.RunRequest.network_rules:type_name -> nimbus.runtime.NetworkRule
+	0,  // 8: nimbus.runtime.RunRequest.mounts:type_name -> nimbus.runtime.Mount
+	13, // 9: nimbus.runtime.ListWorkloadsResponse.workloads:type_name -> nimbus.runtime.WorkloadStatus
+	60, // 10: nimbus.runtime.Event.metadata:type_name -> nimbus.runtime.Event.MetadataEntry
+	23, // 11: nimbus.runtime.AttachMessage.open:type_name -> nimbus.runtime.AttachOpen
+	24, // 12: nimbus.runtime.AttachMessage.stdin:type_name -> nimbus.runtime.AttachStdin
+	25, // 13: nimbus.runtime.AttachMessage.stdin_eof:type_name -> nimbus.runtime.AttachStdinEof
+	26, // 14: nimbus.runtime.AttachMessage.stdout:type_name -> nimbus.runtime.AttachStdout
+	27, // 15: nimbus.runtime.AttachMessage.stderr:type_name -> nimbus.runtime.AttachStderr
+	28, // 16: nimbus.runtime.AttachMessage.exit:type_name -> nimbus.runtime.AttachExit
+	29, // 17: nimbus.runtime.AttachMessage.error:type_name -> nimbus.runtime.AttachError
+	61, // 18: nimbus.runtime.AttachOpen.env:type_name -> nimbus.runtime.AttachOpen.EnvEntry
+	34, // 19: nimbus.runtime.ListImagesResponse.images:type_name -> nimbus.runtime.ImageInfo
+	62, // 20: nimbus.runtime.BuildImageRequest.build_args:type_name -> nimbus.runtime.BuildImageRequest.BuildArgsEntry
+	8,  // 21: nimbus.runtime.InspectResponse.network_rules:type_name -> nimbus.runtime.NetworkRule
+	54, // 22: nimbus.runtime.InspectResponse.dag_path:type_name -> nimbus.runtime.DagNode
+	63, // 23: nimbus.runtime.InspectResponse.policy_decisions:type_name -> nimbus.runtime.InspectResponse.PolicyDecisionsEntry
+	5,  // 24: nimbus.runtime.Runtime.PullImage:input_type -> nimbus.runtime.PullImageRequest
+	7,  // 25: nimbus.runtime.Runtime.RunWorkload:input_type -> nimbus.runtime.RunRequest
+	10, // 26: nimbus.runtime.Runtime.StopWorkload:input_type -> nimbus.runtime.StopRequest
+	12, // 27: nimbus.runtime.Runtime.GetWorkload:input_type -> nimbus.runtime.GetWorkloadRequest
+	14, // 28: nimbus.runtime.Runtime.ListWorkloads:input_type -> nimbus.runtime.ListWorkloadsRequest
+	16, // 29: nimbus.runtime.Runtime.StreamLogs:input_type -> nimbus.runtime.StreamLogsRequest
+	18, // 30: nimbus.runtime.Runtime.StreamEvents:input_type -> nimbus.runtime.StreamEventsRequest
+	20, // 31: nimbus.runtime.Runtime.ExecInWorkload:input_type -> nimbus.runtime.ExecRequest
+	53, // 32: nimbus.runtime.Runtime.InspectWorkload:input_type -> nimbus.runtime.InspectRequest
+	22, // 33: nimbus.runtime.Runtime.AttachWorkload:input_type -> nimbus.runtime.AttachMessage
+	30, // 34: nimbus.runtime.Runtime.HasImage:input_type -> nimbus.runtime.HasImageRequest
+	32, // 35: nimbus.runtime.Runtime.ListImages:input_type -> nimbus.runtime.ListImagesRequest
+	35, // 36: nimbus.runtime.Runtime.RemoveImage:input_type -> nimbus.runtime.RemoveImageRequest
+	37, // 37: nimbus.runtime.Runtime.DagStoreInfo:input_type -> nimbus.runtime.DagStoreInfoRequest
+	39, // 38: nimbus.runtime.Runtime.PortForward:input_type -> nimbus.runtime.PortForwardRequest
+	41, // 39: nimbus.runtime.Runtime.UpdateWorkload:input_type -> nimbus.runtime.UpdateWorkloadRequest
+	43, // 40: nimbus.runtime.Runtime.GetWorkloadStats:input_type -> nimbus.runtime.GetWorkloadStatsRequest
+	45, // 41: nimbus.runtime.Runtime.BuildImage:input_type -> nimbus.runtime.BuildImageRequest
+	47, // 42: nimbus.runtime.Runtime.PushImage:input_type -> nimbus.runtime.PushImageRequest
+	49, // 43: nimbus.runtime.Runtime.ExportImage:input_type -> nimbus.runtime.ExportImageRequest
+	51, // 44: nimbus.runtime.Runtime.ImportImage:input_type -> nimbus.runtime.ImportImageChunk
+	3,  // 45: nimbus.runtime.Runtime.RunCompose:input_type -> nimbus.runtime.RunComposeRequest
+	6,  // 46: nimbus.runtime.Runtime.PullImage:output_type -> nimbus.runtime.PullImageResponse
+	9,  // 47: nimbus.runtime.Runtime.RunWorkload:output_type -> nimbus.runtime.RunResponse
+	11, // 48: nimbus.runtime.Runtime.StopWorkload:output_type -> nimbus.runtime.StopResponse
+	13, // 49: nimbus.runtime.Runtime.GetWorkload:output_type -> nimbus.runtime.WorkloadStatus
+	15, // 50: nimbus.runtime.Runtime.ListWorkloads:output_type -> nimbus.runtime.ListWorkloadsResponse
+	17, // 51: nimbus.runtime.Runtime.StreamLogs:output_type -> nimbus.runtime.LogChunk
+	19, // 52: nimbus.runtime.Runtime.StreamEvents:output_type -> nimbus.runtime.Event
+	21, // 53: nimbus.runtime.Runtime.ExecInWorkload:output_type -> nimbus.runtime.ExecResponse
+	55, // 54: nimbus.runtime.Runtime.InspectWorkload:output_type -> nimbus.runtime.InspectResponse
+	22, // 55: nimbus.runtime.Runtime.AttachWorkload:output_type -> nimbus.runtime.AttachMessage
+	31, // 56: nimbus.runtime.Runtime.HasImage:output_type -> nimbus.runtime.HasImageResponse
+	33, // 57: nimbus.runtime.Runtime.ListImages:output_type -> nimbus.runtime.ListImagesResponse
+	36, // 58: nimbus.runtime.Runtime.RemoveImage:output_type -> nimbus.runtime.RemoveImageResponse
+	38, // 59: nimbus.runtime.Runtime.DagStoreInfo:output_type -> nimbus.runtime.DagStoreInfoResponse
+	40, // 60: nimbus.runtime.Runtime.PortForward:output_type -> nimbus.runtime.PortForwardData
+	42, // 61: nimbus.runtime.Runtime.UpdateWorkload:output_type -> nimbus.runtime.UpdateWorkloadResponse
+	44, // 62: nimbus.runtime.Runtime.GetWorkloadStats:output_type -> nimbus.runtime.WorkloadStats
+	46, // 63: nimbus.runtime.Runtime.BuildImage:output_type -> nimbus.runtime.BuildImageResponse
+	48, // 64: nimbus.runtime.Runtime.PushImage:output_type -> nimbus.runtime.PushImageResponse
+	50, // 65: nimbus.runtime.Runtime.ExportImage:output_type -> nimbus.runtime.ExportImageChunk
+	52, // 66: nimbus.runtime.Runtime.ImportImage:output_type -> nimbus.runtime.ImportImageResponse
+	4,  // 67: nimbus.runtime.Runtime.RunCompose:output_type -> nimbus.runtime.RunComposeResponse
+	46, // [46:68] is the sub-list for method output_type
+	24, // [24:46] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_nimbus_runtime_proto_init() }
@@ -3935,7 +4032,7 @@ func file_nimbus_runtime_proto_init() {
 	if File_nimbus_runtime_proto != nil {
 		return
 	}
-	file_nimbus_runtime_proto_msgTypes[21].OneofWrappers = []any{
+	file_nimbus_runtime_proto_msgTypes[22].OneofWrappers = []any{
 		(*AttachMessage_Open)(nil),
 		(*AttachMessage_Stdin)(nil),
 		(*AttachMessage_StdinEof)(nil),
@@ -3950,7 +4047,7 @@ func file_nimbus_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nimbus_runtime_proto_rawDesc), len(file_nimbus_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   63,
+			NumMessages:   64,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

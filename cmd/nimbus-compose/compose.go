@@ -82,6 +82,24 @@ func toProtoService(name string, svc types.ServiceConfig) *runtimeapi.ComposeSer
 		workingDir = "/"
 	}
 
+	// Convert volumes
+	var mounts []*runtimeapi.Mount
+	for _, v := range svc.Volumes {
+		var opts []string
+		if v.Type == "bind" {
+			opts = append(opts, "rbind", "rprivate")
+			if v.ReadOnly {
+				opts = append(opts, "ro")
+			}
+		}
+		mounts = append(mounts, &runtimeapi.Mount{
+			Type:        v.Type,
+			Source:      v.Source,
+			Destination: v.Target,
+			Options:     opts,
+		})
+	}
+
 	return &runtimeapi.ComposeService{
 		Name:          name,
 		Image:         svc.Image,
@@ -94,6 +112,7 @@ func toProtoService(name string, svc types.ServiceConfig) *runtimeapi.ComposeSer
 		CpuMillicores: cpuMillis,
 		MemoryBytes:   memBytes,
 		DependsOn:     dependsOn,
+		Mounts:        mounts,
 	}
 }
 

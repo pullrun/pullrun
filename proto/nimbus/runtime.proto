@@ -71,6 +71,13 @@ service Runtime {
 
 // --- Compose messages (Phase D) ---
 
+message Mount {
+    string type = 1;     // "bind", "volume", "tmpfs"
+    string source = 2;   // host path or volume name
+    string destination = 3; // container path
+    repeated string options = 4; // e.g. ["rbind", "ro", "nosuid"]
+}
+
 message ComposeService {
     string name = 1;
     string image = 2;
@@ -90,6 +97,8 @@ message ComposeService {
     // Per-project bridge for network isolation.
     // Defaults to the global bridge when empty.
     string bridge_name = 13;
+    // Volume/bind mount specifications for this service.
+    repeated Mount mounts = 14;
 }
 
 message ComposePort {
@@ -155,6 +164,9 @@ message RunRequest {
     // instead of using the default global "nimbus-br0".
     // Compose projects set this to isolate workload traffic.
     string bridge_name = 12;
+    // Volume/bind mount specifications. These are added to the
+    // OCI config.json 'mounts' array at container creation time.
+    repeated Mount mounts = 13;
 }
 
 message NetworkRule {

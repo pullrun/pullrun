@@ -447,6 +447,7 @@ async fn run_workload(
         network_rules: vec![],
         kernel_path: None,
         bridge_name: None,
+        mounts: vec![],
     };
 
     let handle = executor.create(spec).await?;

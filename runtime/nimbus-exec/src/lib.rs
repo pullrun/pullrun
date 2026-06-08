@@ -8,4 +8,4 @@ pub use rootless::{
     rootless_oci_config, rootless_runc_command, setup_rootless_network, NetworkHandle,
     RootlessConfig,
 };
-pub use types::{ExecError, Executor, NetworkRule, ProcessHandle, WorkloadSpec};
+pub use types::{ExecError, Executor, Mount, NetworkRule, ProcessHandle, WorkloadSpec};

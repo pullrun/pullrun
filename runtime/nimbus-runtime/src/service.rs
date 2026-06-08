@@ -34,12 +34,12 @@ use crate::proto::{
     AttachMessage, DagNode, Event as ProtoEvent, ExecRequest,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
-    ListWorkloadsResponse, LogChunk, NetworkRule as ProtoNetworkRule, PullImageRequest,
-    PullImageResponse, RemoveImageRequest, RemoveImageResponse, RunComposeRequest,
-    RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse, RunRequest, RunResponse,
-    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
-    UpdateWorkloadResponse, WorkloadStatus, PortForwardRequest, PortForwardData,
-    GetWorkloadStatsRequest, WorkloadStats,
+    ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
+    PullImageRequest, PullImageResponse, RemoveImageRequest, RemoveImageResponse,
+    RunComposeRequest, RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse,
+    RunRequest, RunResponse, StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest,
+    UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStatus, PortForwardRequest,
+    PortForwardData, GetWorkloadStatsRequest, WorkloadStats,
     BuildImageRequest, BuildImageResponse,
     PushImageRequest, PushImageResponse,
     ExportImageRequest, ExportImageChunk,
@@ -1404,6 +1404,13 @@ impl Runtime for RuntimeService {
                 .map(|k| k.vmlinux_path().to_path_buf())
         };
 
+        let mounts: Vec<nimbus_exec::Mount> = req.mounts.iter().map(|m| nimbus_exec::Mount {
+            type_: m.r#type.clone(),
+            source: m.source.clone(),
+            destination: m.destination.clone(),
+            options: m.options.clone(),
+        }).collect();
+
         let spec = WorkloadSpec {
             id: req.id.clone(),
             image_root: req.root_digest.clone(),
@@ -1420,6 +1427,7 @@ impl Runtime for RuntimeService {
             } else {
                 Some(req.bridge_name.clone())
             },
+            mounts,
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -1688,6 +1696,7 @@ impl Runtime for RuntimeService {
                 kernel_image: String::new(),
                 working_dir: service.working_dir.clone(),
                 bridge_name: service.bridge_name.clone(),
+                mounts: service.mounts.clone(),
             });
 
             let run_resp = self.run_workload(run_req).await?;

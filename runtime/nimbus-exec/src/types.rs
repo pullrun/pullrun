@@ -7,6 +7,35 @@ pub use nimbus_net::NetworkRule;
 use nimbus_store::Digest;
 
 #[derive(Debug, Clone)]
+pub struct Mount {
+    pub type_: String,      // "bind", "volume", "tmpfs"
+    pub source: String,     // host path or volume name
+    pub destination: String, // container path
+    pub options: Vec<String>, // e.g. ["rbind", "ro", "nosuid"]
+}
+
+impl Mount {
+    pub fn bind(source: impl Into<String>, destination: impl Into<String>) -> Self {
+        Self {
+            type_: "bind".to_string(),
+            source: source.into(),
+            destination: destination.into(),
+            options: vec!["rbind".to_string(), "rprivate".to_string()],
+        }
+    }
+
+    pub fn with_option(mut self, opt: impl Into<String>) -> Self {
+        self.options.push(opt.into());
+        self
+    }
+
+    pub fn read_only(mut self) -> Self {
+        self.options.push("ro".to_string());
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum NetworkMode {
     Loopback,
     Bridge,
@@ -67,6 +96,8 @@ pub struct WorkloadSpec {
     /// When set, the runtime creates a dedicated bridge
     /// instead of using the default "nimbus-br0".
     pub bridge_name: Option<String>,
+    /// Volume/bind mount specifications.
+    pub mounts: Vec<Mount>,
 }
 
 impl WorkloadSpec {
@@ -83,6 +114,7 @@ impl WorkloadSpec {
             network_rules: vec![],
             kernel_path: None,
             bridge_name: None,
+            mounts: vec![],
         }
     }
 }
@@ -99,6 +131,7 @@ pub struct WorkloadSpecBuilder {
     network_rules: Vec<NetworkRule>,
     kernel_path: Option<PathBuf>,
     bridge_name: Option<String>,
+    mounts: Vec<Mount>,
 }
 
 impl WorkloadSpecBuilder {
@@ -137,6 +170,16 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn mounts(mut self, mounts: Vec<Mount>) -> Self {
+        self.mounts = mounts;
+        self
+    }
+
+    pub fn add_mount(mut self, mount: Mount) -> Self {
+        self.mounts.push(mount);
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -150,6 +193,7 @@ impl WorkloadSpecBuilder {
             network_rules: self.network_rules,
             kernel_path: self.kernel_path,
             bridge_name: self.bridge_name,
+            mounts: self.mounts,
         }
     }
 }

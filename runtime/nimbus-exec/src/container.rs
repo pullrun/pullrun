@@ -274,6 +274,25 @@ impl Executor for LinuxContainerExecutor {
                 .insert("resources".to_string(), serde_json::Value::Object(resources));
         }
 
+        let mut mounts = vec![
+            serde_json::json!({"destination": "/proc", "type": "proc", "source": "proc"}),
+            serde_json::json!({"destination": "/dev", "type": "tmpfs", "source": "tmpfs"}),
+            serde_json::json!({"destination": "/dev/pts", "type": "devpts", "source": "devpts"}),
+            serde_json::json!({"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"}),
+            serde_json::json!({"destination": "/sys", "type": "sysfs", "source": "sysfs"}),
+        ];
+        for m in &spec.mounts {
+            let mut mount = serde_json::Map::new();
+            mount.insert("destination".to_string(), serde_json::Value::String(m.destination.clone()));
+            mount.insert("type".to_string(), serde_json::Value::String(m.type_.clone()));
+            mount.insert("source".to_string(), serde_json::Value::String(m.source.clone()));
+            if !m.options.is_empty() {
+                mount.insert("options".to_string(),
+                    serde_json::Value::Array(m.options.iter().map(|o| serde_json::Value::String(o.clone())).collect()));
+            }
+            mounts.push(serde_json::Value::Object(mount));
+        }
+
         let oci_spec = serde_json::json!({
             "ociVersion": "1.1.0",
             "process": {
@@ -310,13 +329,7 @@ impl Executor for LinuxContainerExecutor {
                 "path": bundle.rootfs_path.to_string_lossy(),
                 "readonly": false
             },
-            "mounts": [
-                {"destination": "/proc", "type": "proc", "source": "proc"},
-                {"destination": "/dev", "type": "tmpfs", "source": "tmpfs"},
-                {"destination": "/dev/pts", "type": "devpts", "source": "devpts"},
-                {"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"},
-                {"destination": "/sys", "type": "sysfs", "source": "sysfs"}
-            ],
+            "mounts": serde_json::Value::Array(mounts),
             "linux": linux
         });
 

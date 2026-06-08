@@ -85,6 +85,23 @@ func NewPullCommand(opts *RootOptions) *cobra.Command {
 	return cmd
 }
 
+func parseVolumeSpec(spec string) (*runtimepb.Mount, error) {
+	// Format: source:destination[:options]
+	parts := strings.SplitN(spec, ":", 3)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid volume spec %q: expected source:destination[:options]", spec)
+	}
+	m := &runtimepb.Mount{
+		Type:        "bind",
+		Source:      parts[0],
+		Destination: parts[1],
+	}
+	if len(parts) == 3 {
+		m.Options = strings.Split(parts[2], ",")
+	}
+	return m, nil
+}
+
 func NewRunCommand(opts *RootOptions) *cobra.Command {
 	var (
 		backend       string
@@ -99,6 +116,7 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		name          string
 		kernelImage   string
 		registry      string
+		volumes       []string
 	)
 
 	cmd := &cobra.Command{
@@ -158,6 +176,16 @@ DAG store if not already present.`,
 				id = generateWorkloadID()
 			}
 
+			// Parse volume specs
+			var mounts []*runtimepb.Mount
+			for _, v := range volumes {
+				m, err := parseVolumeSpec(v)
+				if err != nil {
+					return err
+				}
+				mounts = append(mounts, m)
+			}
+
 			resp, err := client.RunWorkload(ctx, &runtimepb.RunRequest{
 				Id:            id,
 				RootDigest:    rootDigest,
@@ -169,6 +197,7 @@ DAG store if not already present.`,
 				NetworkMode:   networkMode,
 				NetworkRules:  rules,
 				KernelImage:   kernelImage,
+				Mounts:        mounts,
 			})
 			if err != nil {
 				return fmt.Errorf("run workload: %w", err)
@@ -195,6 +224,7 @@ DAG store if not already present.`,
 	cmd.Flags().StringVar(&networkMode, "net", "isolated", "Network mode: isolated|host|none")
 	cmd.Flags().StringVar(&kernelImage, "kernel-image", "", "OCI reference for the kernel image (required for --backend=vm, e.g. 'nimbus/kernel-asahi:6.19.14')")
 	cmd.Flags().StringVar(&registry, "registry", "", "Registry to pull the workload image from (default: docker.io; use 'localhost:5000' for local registries)")
+	cmd.Flags().StringSliceVarP(&volumes, "volume", "v", nil, "Bind mount (source:destination[:options]), e.g. /host/path:/container/path:ro")
 	return cmd
 }
 

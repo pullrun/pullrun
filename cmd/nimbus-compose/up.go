@@ -67,10 +67,18 @@ func newUpCommand() *cobra.Command {
 				id := fmt.Sprintf("%s-%s", project.Name, name)
 				fmt.Printf("  %s (%s)... ", name, svc.Image)
 
-				pullResp, err := client.PullImage(ctx, &runtimeapi.PullImageRequest{
-					ImageRef: svc.Image,
-					Registry: "",
-				})
+				registry := extractRegistryFromRef(svc.Image)
+			auth, _ := GetRegistryAuth(NormalizeRegistry(registry))
+			pullReq := &runtimeapi.PullImageRequest{
+				ImageRef: svc.Image,
+				Registry: registry,
+			}
+			if auth != nil {
+				pullReq.RegistryUsername = auth.Username
+				pullReq.RegistryPassword = auth.Password
+				pullReq.RegistryToken = auth.Token
+			}
+			pullResp, err := client.PullImage(ctx, pullReq)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "\n  %s: PULL FAILED: %v\n", name, err)
 					return fmt.Errorf("pull %s: %w", svc.Image, err)
