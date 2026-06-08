@@ -34,6 +34,13 @@ type execSession struct {
 	createdAt  time.Time
 }
 
+type portForwardSession struct {
+	workloadID string
+	targetIP   string
+	port       int32
+	createdAt  time.Time
+}
+
 type streamingServer struct {
 	port          int
 	server        *http.Server
@@ -55,6 +62,7 @@ func newStreamingServer(runtimeClient nimbusruntime.RuntimeClient) (*streamingSe
 	mux := http.NewServeMux()
 	mux.HandleFunc("/exec/", s.serveAttach)
 	mux.HandleFunc("/attach/", s.serveAttach)
+	mux.HandleFunc("/port-forward/", s.servePortForward)
 
 	s.server = &http.Server{Handler: mux}
 
@@ -88,6 +96,68 @@ func (s *streamingServer) newSession(workloadID string, command []string, env ma
 		path = "attach"
 	}
 	return token, fmt.Sprintf("http://127.0.0.1:%d/%s/%s", s.port, path, token)
+}
+
+func (s *streamingServer) newPortForwardSession(workloadID string, targetIP string, port int32) (string, string) {
+	token := generateToken()
+	s.sessions.Store(token, &portForwardSession{
+		workloadID: workloadID,
+		targetIP:   targetIP,
+		port:       port,
+		createdAt:  time.Now(),
+	})
+	time.AfterFunc(5*time.Minute, func() {
+		s.sessions.Delete(token)
+	})
+	return token, fmt.Sprintf("http://127.0.0.1:%d/port-forward/%s", s.port, token)
+}
+
+func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Request) {
+	token := extractToken(r.URL.Path)
+	if token == "" {
+		http.Error(w, "missing token", http.StatusBadRequest)
+		return
+	}
+
+	raw, ok := s.sessions.Load(token)
+	if !ok {
+		http.Error(w, "session not found or expired", http.StatusNotFound)
+		return
+	}
+	session := raw.(*portForwardSession)
+	defer s.sessions.Delete(token)
+
+	upgrader := spdy.NewResponseUpgrader()
+	conn := upgrader.UpgradeResponse(w, r, func(stream httpstream.Stream, _ <-chan struct{}) error {
+		portStr := stream.Headers().Get("port")
+		if portStr == "" {
+			portStr = fmt.Sprintf("%d", session.port)
+		}
+		targetAddr := fmt.Sprintf("%s:%s", session.targetIP, portStr)
+		tcpConn, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
+		if err != nil {
+			log.Printf("port-forward dial %s: %v", targetAddr, err)
+			return err
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			io.Copy(stream, tcpConn)
+			tcpConn.Close()
+		}()
+		go func() {
+			defer wg.Done()
+			io.Copy(tcpConn, stream)
+			stream.Close()
+		}()
+		wg.Wait()
+		return nil
+	})
+	if conn == nil {
+		log.Printf("port-forward: spdy upgrade returned nil connection")
+	}
 }
 
 func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {

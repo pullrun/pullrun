@@ -159,12 +159,18 @@ func (c *criServer) ReopenContainerLog(ctx context.Context, req *runtimeapi.Reop
 }
 
 func (c *criServer) PortForward(ctx context.Context, req *runtimeapi.PortForwardRequest) (*runtimeapi.PortForwardResponse, error) {
-	// In v0, the sandbox's workload is the same as the container's.
-	// We use the PodSandboxId to find the workload.
-	nimbusID := req.PodSandboxId
+	sandbox, ok := c.sandboxStore.getSandbox(req.PodSandboxId)
+	if !ok {
+		return nil, fmt.Errorf("PortForward: sandbox %q not found", req.PodSandboxId)
+	}
 
-	_, url := c.streaming.newSession(nimbusID, nil, nil, "", false)
-	log.Printf("PortForward sandbox=%s ports=%v url=%s", req.PodSandboxId, req.Port, url)
+	port := int32(0)
+	if len(req.Port) > 0 {
+		port = req.Port[0]
+	}
+
+	_, url := c.streaming.newPortForwardSession(sandbox.nimbusID, sandbox.internalIP, port)
+	log.Printf("PortForward sandbox=%s ip=%s port=%d url=%s", req.PodSandboxId, sandbox.internalIP, port, url)
 	return &runtimeapi.PortForwardResponse{Url: url}, nil
 }
 
