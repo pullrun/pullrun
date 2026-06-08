@@ -21,6 +21,7 @@ use tracing::{debug, info, warn};
 
 use nimbus_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
 use nimbus_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
+use nimbus_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use nimbus_net::{Ipam, ProxyNetwork};
 use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter};
 use nimbus_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
@@ -123,6 +124,7 @@ impl ServiceConfig {
 /// are on the same L2 segment.
 pub struct ExecutorRouter {
     container: Arc<LinuxContainerExecutor>,
+    rootless: Option<Arc<RootlessContainerExecutor>>,
     vm: Option<Arc<FirecrackerExecutor>>,
     proxy: Arc<ProxyNetwork>,
 }
@@ -145,7 +147,23 @@ impl ExecutorRouter {
 impl Executor for ExecutorRouter {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError> {
         match spec.backend {
-            Backend::Container => self.container.create(spec).await,
+            Backend::Container => {
+                // Auto-detect: if a rootless executor is configured and
+                // we are not running as root, use the rootless path so
+                // pasta/slirp4netns handles networking without iptables.
+                if let Some(ref rootless) = self.rootless {
+                    if !is_running_as_root() {
+                        return rootless.create(spec).await;
+                    }
+                }
+                self.container.create(spec).await
+            }
+            Backend::ContainerRootless => match &self.rootless {
+                Some(exec) => exec.create(spec).await,
+                None => Err(ExecError::BackendNotAvailable(
+                    "Rootless container backend not configured (run as non-root or configure --rootless)".into(),
+                )),
+            },
             Backend::Vm => match &self.vm {
                 Some(vm) => vm.create(spec).await,
                 None => Err(ExecError::BackendNotAvailable(
@@ -160,7 +178,13 @@ impl Executor for ExecutorRouter {
 
     async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
         match handle.backend.as_str() {
-            "container" | "container-rootless" => self.container.start(handle).await,
+            "container" => self.container.start(handle).await,
+            "container-rootless" => match &self.rootless {
+                Some(exec) => exec.start(handle).await,
+                None => Err(ExecError::BackendNotAvailable(
+                    "Rootless container backend not configured".into(),
+                )),
+            },
             "vm" => match &self.vm {
                 Some(vm) => vm.start(handle).await,
                 None => Err(ExecError::BackendNotAvailable("VM backend not configured".into())),
@@ -172,36 +196,57 @@ impl Executor for ExecutorRouter {
     }
 
     async fn stop(&self, id: &str) -> Result<(), ExecError> {
-        // The container executor's stop() is best-effort; if the id is
-        // a VM, it will fail silently and the VM executor's stop() will
-        // succeed. We don't know the backend until we look, so try both.
+        // Try rootless first (cheap — checks bundle dir, won't touch
+        // non-rootless workloads).
+        if let Some(ref rootless) = self.rootless {
+            if rootless.bundle_dir_for(id).exists() {
+                return rootless.stop(id).await;
+            }
+        }
+        // Try VM next (sidecar file check).
         if let Some(vm) = &self.vm {
-            // Inspect the sidecar to know if this id is a VM.
             let sidecar = vm.sidecar_path_for(id);
             if sidecar.exists() {
                 return vm.stop(id).await;
             }
         }
+        // Fall back to regular container.
         self.container.stop(id).await
     }
 
     async fn wait(&self, id: &str) -> Result<ExitStatus, ExecError> {
+        // Try rootless first.
+        if let Some(ref rootless) = self.rootless {
+            if rootless.bundle_dir_for(id).exists() {
+                return rootless.wait(id).await;
+            }
+        }
+        // Try VM next.
         if let Some(vm) = &self.vm {
             let sidecar = vm.sidecar_path_for(id);
             if sidecar.exists() {
                 return vm.wait(id).await;
             }
         }
+        // Fall back to regular container.
         self.container.wait(id).await
     }
 
     async fn status(&self, id: &str) -> Result<String, ExecError> {
+        // Try rootless first.
+        if let Some(ref rootless) = self.rootless {
+            if rootless.bundle_dir_for(id).exists() {
+                return rootless.status(id).await;
+            }
+        }
+        // Try VM next.
         if let Some(vm) = &self.vm {
             let sidecar = vm.sidecar_path_for(id);
             if sidecar.exists() {
                 return vm.status(id).await;
             }
         }
+        // Fall back to regular container.
         self.container.status(id).await
     }
 }
@@ -289,8 +334,23 @@ impl RuntimeCommand {
             info!("VM backend disabled");
         }
 
+        // Rootless container executor: auto-detected when running as non-root.
+        let rootless = if !is_running_as_root() {
+            let uid = current_euid();
+            info!("enabling rootless container backend (euid={})", uid);
+            Some(Arc::new(RootlessContainerExecutor::new(
+                MmapStore::new(self.config.store_root.clone()),
+                self.config.bundle_root.clone(),
+                uid,
+            )))
+        } else {
+            info!("rootless container backend disabled (running as root)");
+            None
+        };
+
         let executor = Arc::new(ExecutorRouter {
             container,
+            rootless,
             vm,
             proxy: proxy.clone(),
         });

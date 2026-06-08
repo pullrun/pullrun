@@ -280,6 +280,11 @@ pub fn is_running_as_root() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
+/// Returns the effective user ID of the current process.
+pub fn current_euid() -> u32 {
+    unsafe { libc::geteuid() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

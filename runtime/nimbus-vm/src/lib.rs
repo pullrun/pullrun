@@ -479,6 +479,7 @@ impl Executor for AppleVirtExecutor {
 pub fn select_executor_for(spec: &WorkloadSpec) -> &'static str {
     match spec.backend {
         Backend::Container => "LinuxContainerExecutor",
+        Backend::ContainerRootless => "RootlessContainerExecutor",
         Backend::Vm => "FirecrackerExecutor / AppleVirtExecutor",
         Backend::Sandbox => "SandboxExecutor (Phase 5)",
     }

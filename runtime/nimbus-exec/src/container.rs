@@ -467,6 +467,12 @@ impl RootlessContainerExecutor {
     fn bundle_dir(&self, id: &str) -> PathBuf {
         self.bundle_root.join(id)
     }
+
+    /// Public accessor so the `ExecutorRouter` can check if a workload
+    /// belongs to this executor before dispatching `stop()`/`wait()`/`status()`.
+    pub fn bundle_dir_for(&self, id: &str) -> PathBuf {
+        self.bundle_dir(id)
+    }
 }
 
 #[async_trait]

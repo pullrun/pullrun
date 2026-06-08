@@ -22,6 +22,7 @@ impl Default for NetworkMode {
 #[derive(Debug, Clone)]
 pub enum Backend {
     Container,
+    ContainerRootless,
     Vm,
     Sandbox,
 }
@@ -30,6 +31,7 @@ impl Backend {
     pub fn as_str(&self) -> &str {
         match self {
             Backend::Container => "container",
+            Backend::ContainerRootless => "container-rootless",
             Backend::Vm => "vm",
             Backend::Sandbox => "sandbox",
         }
@@ -38,6 +40,7 @@ impl Backend {
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
             "container" => Ok(Backend::Container),
+            "container-rootless" => Ok(Backend::ContainerRootless),
             "vm" | "firecracker" => Ok(Backend::Vm),
             "sandbox" => Ok(Backend::Sandbox),
             other => Err(format!("unknown backend: {other}")),

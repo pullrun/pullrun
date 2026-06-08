@@ -1,9 +1,9 @@
 # Nimbus — Build Progress
 
-> **Last updated:** **Phase D complete: per-project bridge isolation + compose build. Container bridge networking verified with compose-sleep.yaml (busybox). nginx:alpine entrypoint still exits immediately — separate issue.**
+> **Last updated:** **Deep audit completed — 3 remaining gaps identified.**
 > **Active phase:** Phase D (Compose Feature) complete (5/5).
 > **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish ✅ (5/5) → **[Phase C]** Persistence ✅ (3/3) → **[Phase D]** Compose Feature ✅ (5/5) → **v1 Production**.
-> **Status:** All Rust and Go code compiles. Container bridge networking fully wired (veth, IP, route, proxy). Compose sleep image verified working end-to-end.
+> **Status:** All Rust and Go code compiles. Container bridge networking fully wired (veth, IP, route, proxy). Compose sleep image verified working end-to-end. See **Remaining Gaps** below.
 
 ---
 
@@ -18,6 +18,23 @@
 7. Continue from the first unchecked item in the current phase
 
 ---
+
+## Remaining Gaps (as of deep audit)
+
+| Gap | Area | What's missing | Fix scope |
+|-----|------|---------------|-----------|
+| **G1: PortForward** | CRI / K8s | `kubectl port-forward` broken. Rust RPC returns `unimplemented` (`service.rs:2245`). CRI streaming server has no `/port-forward/` route handler (`streaming.go:55`). CRI `PortForward` method ignores port/IP. | Go CRI + Rust runtime |
+| **G2: Rootless executor not wired** | Runtime | `ExecutorRouter` has no `RootlessContainerExecutor` field (`service.rs:124`). Backend `"container-rootless"` routes to wrong executor. No way to launch rootless containers through gRPC API. | Rust only (types + router) |
+| **G3: VM outbound NAT requires root** | VM networking | `enable_nat()` spawns `iptables` — last root-required op. Already graceful (warns on failure, bridge-local traffic works). Future: pasta/slirp4netns for VMs. | Documented; non‑blocking |
+
+### What the audit confirmed IS done (mythbusting)
+
+- **`nimbus compose build`**: Full real implementation (`build.go`, 133 lines). Delegates to `docker build`, imports via `PullImage`.
+- **CRI Exec**: ✅ SPDY + gRPC AttachWorkload (streaming.go line 56, `serveAttach` handler)
+- **CRI Attach**: ✅ Same path as Exec
+- **CRI ExecSync**: ✅ Direct `ExecInWorkload` gRPC call
+- **Rootless container networking**: ✅ Uses pasta/slirp4netns (no iptables, no bridge). `setup_rootless_network()` in `rootless.rs:220`.
+- **VM iptables graceful failure**: ✅ `ensure_bridge_named()` already wraps `enable_nat()` error in `warn!` and continues (`network.rs:256-263`).
 
 ## Quick Reference
 
