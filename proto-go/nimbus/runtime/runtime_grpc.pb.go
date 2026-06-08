@@ -36,6 +36,10 @@ const (
 	Runtime_PortForward_FullMethodName      = "/nimbus.runtime.Runtime/PortForward"
 	Runtime_UpdateWorkload_FullMethodName   = "/nimbus.runtime.Runtime/UpdateWorkload"
 	Runtime_GetWorkloadStats_FullMethodName = "/nimbus.runtime.Runtime/GetWorkloadStats"
+	Runtime_BuildImage_FullMethodName       = "/nimbus.runtime.Runtime/BuildImage"
+	Runtime_PushImage_FullMethodName        = "/nimbus.runtime.Runtime/PushImage"
+	Runtime_ExportImage_FullMethodName      = "/nimbus.runtime.Runtime/ExportImage"
+	Runtime_ImportImage_FullMethodName      = "/nimbus.runtime.Runtime/ImportImage"
 	Runtime_RunCompose_FullMethodName       = "/nimbus.runtime.Runtime/RunCompose"
 )
 
@@ -69,6 +73,23 @@ type RuntimeClient interface {
 	UpdateWorkload(ctx context.Context, in *UpdateWorkloadRequest, opts ...grpc.CallOption) (*UpdateWorkloadResponse, error)
 	// Workload statistics
 	GetWorkloadStats(ctx context.Context, in *GetWorkloadStatsRequest, opts ...grpc.CallOption) (*WorkloadStats, error)
+	// Build an OCI image from a Dockerfile and import into the
+	// DAG store. v0 delegates to `docker build` + `PullImage`.
+	BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error)
+	// Push a DAG image to an OCI-compatible registry. Walks the
+	// DAG root, reconstructs OCI tar.gz layers from file blobs,
+	// computes OCI digests, and uploads the config + manifest.
+	PushImage(ctx context.Context, in *PushImageRequest, opts ...grpc.CallOption) (*PushImageResponse, error)
+	// Export a DAG root as a tar archive. The archive contains
+	// the serialized DAG nodes and their blob data, suitable for
+	// backup or transfer. Streamed so large images don't require
+	// a single in-memory buffer on the server.
+	ExportImage(ctx context.Context, in *ExportImageRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportImageChunk], error)
+	// Import a tar archive previously exported via ExportImage.
+	// Nodes are deduplicated against existing content in the
+	// store (content-addressed). Returns the root digest and
+	// storage statistics.
+	ImportImage(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ImportImageChunk, ImportImageResponse], error)
 	// Batch-launch multiple services from a Compose project.
 	// Services are created in dependency order (depends_on).
 	// On first failure, returns the error; already-started
@@ -285,6 +306,58 @@ func (c *runtimeClient) GetWorkloadStats(ctx context.Context, in *GetWorkloadSta
 	return out, nil
 }
 
+func (c *runtimeClient) BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BuildImageResponse)
+	err := c.cc.Invoke(ctx, Runtime_BuildImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) PushImage(ctx context.Context, in *PushImageRequest, opts ...grpc.CallOption) (*PushImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PushImageResponse)
+	err := c.cc.Invoke(ctx, Runtime_PushImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ExportImage(ctx context.Context, in *ExportImageRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportImageChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Runtime_ServiceDesc.Streams[4], Runtime_ExportImage_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ExportImageRequest, ExportImageChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_ExportImageClient = grpc.ServerStreamingClient[ExportImageChunk]
+
+func (c *runtimeClient) ImportImage(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ImportImageChunk, ImportImageResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Runtime_ServiceDesc.Streams[5], Runtime_ImportImage_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ImportImageChunk, ImportImageResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_ImportImageClient = grpc.ClientStreamingClient[ImportImageChunk, ImportImageResponse]
+
 func (c *runtimeClient) RunCompose(ctx context.Context, in *RunComposeRequest, opts ...grpc.CallOption) (*RunComposeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RunComposeResponse)
@@ -325,6 +398,23 @@ type RuntimeServer interface {
 	UpdateWorkload(context.Context, *UpdateWorkloadRequest) (*UpdateWorkloadResponse, error)
 	// Workload statistics
 	GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error)
+	// Build an OCI image from a Dockerfile and import into the
+	// DAG store. v0 delegates to `docker build` + `PullImage`.
+	BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error)
+	// Push a DAG image to an OCI-compatible registry. Walks the
+	// DAG root, reconstructs OCI tar.gz layers from file blobs,
+	// computes OCI digests, and uploads the config + manifest.
+	PushImage(context.Context, *PushImageRequest) (*PushImageResponse, error)
+	// Export a DAG root as a tar archive. The archive contains
+	// the serialized DAG nodes and their blob data, suitable for
+	// backup or transfer. Streamed so large images don't require
+	// a single in-memory buffer on the server.
+	ExportImage(*ExportImageRequest, grpc.ServerStreamingServer[ExportImageChunk]) error
+	// Import a tar archive previously exported via ExportImage.
+	// Nodes are deduplicated against existing content in the
+	// store (content-addressed). Returns the root digest and
+	// storage statistics.
+	ImportImage(grpc.ClientStreamingServer[ImportImageChunk, ImportImageResponse]) error
 	// Batch-launch multiple services from a Compose project.
 	// Services are created in dependency order (depends_on).
 	// On first failure, returns the error; already-started
@@ -391,6 +481,18 @@ func (UnimplementedRuntimeServer) UpdateWorkload(context.Context, *UpdateWorkloa
 }
 func (UnimplementedRuntimeServer) GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetWorkloadStats not implemented")
+}
+func (UnimplementedRuntimeServer) BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BuildImage not implemented")
+}
+func (UnimplementedRuntimeServer) PushImage(context.Context, *PushImageRequest) (*PushImageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PushImage not implemented")
+}
+func (UnimplementedRuntimeServer) ExportImage(*ExportImageRequest, grpc.ServerStreamingServer[ExportImageChunk]) error {
+	return status.Error(codes.Unimplemented, "method ExportImage not implemented")
+}
+func (UnimplementedRuntimeServer) ImportImage(grpc.ClientStreamingServer[ImportImageChunk, ImportImageResponse]) error {
+	return status.Error(codes.Unimplemented, "method ImportImage not implemented")
 }
 func (UnimplementedRuntimeServer) RunCompose(context.Context, *RunComposeRequest) (*RunComposeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunCompose not implemented")
@@ -690,6 +792,60 @@ func _Runtime_GetWorkloadStats_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_BuildImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BuildImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).BuildImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_BuildImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).BuildImage(ctx, req.(*BuildImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_PushImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PushImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).PushImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_PushImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).PushImage(ctx, req.(*PushImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ExportImage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ExportImageRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(RuntimeServer).ExportImage(m, &grpc.GenericServerStream[ExportImageRequest, ExportImageChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_ExportImageServer = grpc.ServerStreamingServer[ExportImageChunk]
+
+func _Runtime_ImportImage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(RuntimeServer).ImportImage(&grpc.GenericServerStream[ImportImageChunk, ImportImageResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Runtime_ImportImageServer = grpc.ClientStreamingServer[ImportImageChunk, ImportImageResponse]
+
 func _Runtime_RunCompose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RunComposeRequest)
 	if err := dec(in); err != nil {
@@ -768,6 +924,14 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Runtime_GetWorkloadStats_Handler,
 		},
 		{
+			MethodName: "BuildImage",
+			Handler:    _Runtime_BuildImage_Handler,
+		},
+		{
+			MethodName: "PushImage",
+			Handler:    _Runtime_PushImage_Handler,
+		},
+		{
 			MethodName: "RunCompose",
 			Handler:    _Runtime_RunCompose_Handler,
 		},
@@ -793,6 +957,16 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "PortForward",
 			Handler:       _Runtime_PortForward_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "ExportImage",
+			Handler:       _Runtime_ExportImage_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ImportImage",
+			Handler:       _Runtime_ImportImage_Handler,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "nimbus/runtime.proto",

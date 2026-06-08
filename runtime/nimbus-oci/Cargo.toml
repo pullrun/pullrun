@@ -20,6 +20,7 @@ tokio-util = "0.7"
 async-trait.workspace = true
 base64 = "0.22"
 rkyv.workspace = true
+bytes.workspace = true
 
 [dev-dependencies]
 tempfile = "3.10"

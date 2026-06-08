@@ -1,6 +1,6 @@
 # Nimbus
 
-> **A content-addressed workload execution system where the runtime backend is an implementation detail.**
+> **A content-addressed workload execution system where the runtime backend is an implementation detail. Fully Docker-independent.**
 
 Nimbus pulls OCI images, deduplicates them into a zero-copy on-disk DAG
 (rkyv + memmap2), and runs them in **whichever execution backend the
@@ -217,34 +217,48 @@ reason to optimize them (real load + a real eBPF implementation).
 - DAG store with rkyv + memmap2 + DashMap (zero-copy concurrent reads)
 - OCI pull → DAG conversion → content-addressed deduplication (gzip fix for Docker Hub)
 - OCI image index support (platform-aware child selection, skip attestations)
+- **Push** — DAG-to-OCI layer reconstruction + registry upload (monolithic PUT)
+- **Save/Load** — DAG-native tar export/import with content-addressed dedup
 - Container execution via runc on Linux
-- Firecracker VM boot from DAG-materialized ext4 rootfs (verified via `firecracker-smoke`)
+- Rootless container execution (user namespace + pasta/slirp4netns, auto-detected)
+- Firecracker VM boot from DAG-materialized ext4 rootfs (verified on real KVM host)
 - Apple Virt VM boot + workload exec (verified both standalone and via `nimbusctl run --backend=vm`)
-- VM networking: tap + bridge + userspace inbound proxy + iptables MASQUERADE outbound
+- VM networking: tap (`ioctl TUNSETIFF`, rootless) + bridge + userspace inbound proxy + iptables MASQUERADE outbound
+- Container networking: veth pairs, bridge IP, default route, proxy port mapping
+- Per-project bridge isolation (deterministic /24 from bridge name hash)
+- `/init` wrapper injection for OCI images booted as VMs
+- OCI kernel pull for Firecracker (via StagedKernel from OCI image)
 - Policy engine: cosign signatures, CycloneDX SBOM, CVSS / license gates
 - CRI shim + RuntimeClass mapping (`nimbus-container`, `nimbus-vm`)
+- CRI `kubectl exec`, `kubectl attach`, `kubectl port-forward` (SPDY→TCP bridge)
+- `nimbus compose up/down/ps/logs/build` with dependency ordering + per-project bridge
 - Prometheus metrics + Grafana dashboard + 5 alert rules
 - K8s deployment manifests (DaemonSet, ServiceMonitor, PrometheusRule)
 - `nimbusctl inspect`, `nimbusctl events`, `nimbusctl workload run` (attach)
 - `--kernel-image` and `--registry` flags for VM backends
+- Control plane: gRPC API server, network-aware scheduling, file-backed persistence
 - Cross-OS development (macOS + Linux workspaces)
-- Linux build: `nimbus-vm` + `nimbus-runtime` compile on x86_64 (musl target ready)
+- Linux build: `nimbus-vm` + `nimbus-runtime` compile on x86_64
 - Architectural moat: per-VM kernel isolation eliminates overlayfs CVEs (CVE-2026-31431, CVE-2023-0386, CVE-2023-32629)
 - DAG store advantages: file-level dedup across images, zero-copy mmap across N VMs, instant snapshots via 32-byte root digest, no decompress-on-pull overhead
 - Rootless ext4 creation via `mkfs.ext4 -d` (no loop-mount, no root)
-- Rootless TAP device creation via `ioctl(TUNSETIFF)` on `/dev/net/tun` (no `ip tuntap add`; requires `setcap cap_net_admin=eip`)
+- Rootless TAP via `ioctl(TUNSETIFF)` (requires `setcap cap_net_admin=eip`)
+- **Fully Docker-independent** — no Docker daemon, CLI, containerd, or overlayfs anywhere
 
 **Stubs / partial:**
 
-- OCI-based kernel for Firecracker (currently requires pre-downloaded `--vm-kernel` vmlinux file)
-- `/init` wrapper injection for OCI container images booted as VMs (no `init=/init` shim yet)
-- Double materialization cleanup (rootfs materialized twice for Firecracker: once as plain dir, once as ext4)
-- Control plane persistence (currently in-memory; etcd integration deferred to v1)
+- Native DAG-aware build (Dockerfile parser + layered RUN execution; currently delegates to `docker build`)
 - Cross-node service discovery (`.nimbus.local` DNS across cluster)
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
-- iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP creation and ext4 build are rootless)
+- iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
+- Registry auth/login (DagPusher accepts `OciAuth` but CLI has no `login` command)
+- Volume / bind mounts (compose volumes field exists but not wired through executors)
+- `docker cp` equivalent (no copy to/from container)
+- `docker stats` equivalent (live CPU/mem reporting)
+- Resource limits (CPU/memory cgroup constraints not enforced)
+- Restart policies / health checks
 
 **Test coverage: 92 Rust tests pass** (83 lib + 9 vsock). **9 Go tests pass**
 (`go test ./...` from `cli/nimbusctl`).

@@ -36,6 +36,29 @@ service Runtime {
     // Workload statistics
     rpc GetWorkloadStats(GetWorkloadStatsRequest) returns (WorkloadStats);
 
+    // --- Image build/push/save/load (Phase D) ---
+
+    // Build an OCI image from a Dockerfile and import into the
+    // DAG store. v0 delegates to `docker build` + `PullImage`.
+    rpc BuildImage(BuildImageRequest) returns (BuildImageResponse);
+
+    // Push a DAG image to an OCI-compatible registry. Walks the
+    // DAG root, reconstructs OCI tar.gz layers from file blobs,
+    // computes OCI digests, and uploads the config + manifest.
+    rpc PushImage(PushImageRequest) returns (PushImageResponse);
+
+    // Export a DAG root as a tar archive. The archive contains
+    // the serialized DAG nodes and their blob data, suitable for
+    // backup or transfer. Streamed so large images don't require
+    // a single in-memory buffer on the server.
+    rpc ExportImage(ExportImageRequest) returns (stream ExportImageChunk);
+
+    // Import a tar archive previously exported via ExportImage.
+    // Nodes are deduplicated against existing content in the
+    // store (content-addressed). Returns the root digest and
+    // storage statistics.
+    rpc ImportImage(stream ImportImageChunk) returns (ImportImageResponse);
+
     // --- Compose support (Phase D) ---
 
     // Batch-launch multiple services from a Compose project.
@@ -348,6 +371,52 @@ message WorkloadStats {
     uint64 disk_bytes = 4;
     uint64 network_rx_bytes = 5;
     uint64 network_tx_bytes = 6;
+}
+
+// --- Build/Push/Save/load messages ---
+
+message BuildImageRequest {
+    string dockerfile = 1;        // path to Dockerfile on the server
+    string context_dir = 2;       // build context directory on the server
+    string tag = 3;               // image tag (e.g. "myapp:latest")
+    map<string, string> build_args = 4;
+}
+
+message BuildImageResponse {
+    string root_digest = 1;
+    string tag = 2;
+}
+
+message PushImageRequest {
+    string root_digest = 1;
+    string target_ref = 2;        // e.g. "registry.example.com/myapp:latest"
+}
+
+message PushImageResponse {
+    string manifest_digest = 1;   // OCI manifest digest (sha256:…)
+    int64 bytes_pushed = 2;
+}
+
+message ExportImageRequest {
+    string root_digest = 1;
+    // Format: "dag" (default, preserves per-file dedup) or "oci"
+    // (standard OCI layout). DAG format is faster and smaller for
+    // round-trips through nimbus; OCI is for interop with other tools.
+    string format = 2;
+}
+
+message ExportImageChunk {
+    bytes data = 1;
+}
+
+message ImportImageChunk {
+    bytes data = 1;
+}
+
+message ImportImageResponse {
+    string root_digest = 1;
+    int64 bytes_stored = 2;
+    int64 bytes_deduplicated = 3;
 }
 
 // Deep inspection of a workload. The DAG path is the ordered list of

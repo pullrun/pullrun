@@ -23,7 +23,7 @@ use nimbus_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
 use nimbus_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use nimbus_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use nimbus_net::{Ipam, ProxyNetwork};
-use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter};
+use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar};
 use nimbus_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use nimbus_store::MmapStore;
 use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
@@ -40,6 +40,10 @@ use crate::proto::{
     StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
     UpdateWorkloadResponse, WorkloadStatus, PortForwardRequest, PortForwardData,
     GetWorkloadStatsRequest, WorkloadStats,
+    BuildImageRequest, BuildImageResponse,
+    PushImageRequest, PushImageResponse,
+    ExportImageRequest, ExportImageChunk,
+    ImportImageChunk, ImportImageResponse,
 };
 
 use crate::metrics::{
@@ -2328,6 +2332,118 @@ impl Runtime for RuntimeService {
         Err(tonic::Status::unimplemented(
             "get_workload_stats not yet implemented",
         ))
+    }
+
+    // ------------------------------------------------------------------
+    // Build/Push/Save/Load RPCs
+    // ------------------------------------------------------------------
+
+    /// v0: not yet implemented — native DAG-aware build is coming.
+    /// Nimbus does not delegate to Docker. Use `nimbusctl pull` for
+    /// pre-built images, or `nimbusctl compose build` for compose
+    /// projects (which uses PullImage internally).
+    async fn build_image(
+        &self,
+        _request: tonic::Request<BuildImageRequest>,
+    ) -> Result<tonic::Response<BuildImageResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "native DAG-aware build not yet implemented; use `nimbusctl pull` for pre-built images",
+        ))
+    }
+
+    async fn push_image(
+        &self,
+        request: tonic::Request<PushImageRequest>,
+    ) -> Result<tonic::Response<PushImageResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let pusher = DagPusher::new(
+            self.store.clone(),
+            None, // no auth for v0
+            self.config.insecure_registries.clone(),
+        );
+        let (manifest_digest, bytes_pushed) = pusher
+            .push(&req.root_digest, &req.target_ref)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("push failed: {e}")))?;
+
+        Ok(tonic::Response::new(PushImageResponse {
+            manifest_digest,
+            bytes_pushed,
+        }))
+    }
+
+    type ExportImageStream = tokio_stream::wrappers::ReceiverStream<
+        Result<ExportImageChunk, tonic::Status>,
+    >;
+
+    async fn export_image(
+        &self,
+        request: tonic::Request<ExportImageRequest>,
+    ) -> Result<tonic::Response<Self::ExportImageStream>, tonic::Status> {
+        let req = request.into_inner();
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<ExportImageChunk, tonic::Status>>(8);
+
+        let store = self.store.clone();
+        let root_digest = req.root_digest.clone();
+        tokio::spawn(async move {
+            // Write tar to a Vec, then chunk and send.
+            let mut buf = Vec::new();
+            if let Err(e) = export_dag_to_tar(&*store, &root_digest, &mut buf) {
+                let _ = tx
+                    .send(Err(tonic::Status::internal(format!("export failed: {e}"))))
+                    .await;
+                return;
+            }
+            // Chunk the buffer into 64KB pieces.
+            for chunk in buf.chunks(64 * 1024) {
+                if tx
+                    .send(Ok(ExportImageChunk {
+                        data: chunk.to_vec(),
+                    }))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+
+        Ok(tonic::Response::new(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+        ))
+    }
+
+    async fn import_image(
+        &self,
+        request: tonic::Request<tonic::Streaming<ImportImageChunk>>,
+    ) -> Result<tonic::Response<ImportImageResponse>, tonic::Status> {
+        let mut in_stream = request.into_inner();
+        let store = self.store.clone();
+
+        // Buffer all incoming chunks.
+        let mut buf = Vec::new();
+        while let Some(chunk) = in_stream
+            .message()
+            .await
+            .map_err(|e| tonic::Status::internal(format!("stream error: {e}")))?
+        {
+            buf.extend_from_slice(&chunk.data);
+        }
+
+        // Import from the buffered data.
+        let (root_digest, bytes_stored, bytes_deduplicated) = tokio::task::spawn_blocking(
+            move || import_dag_from_tar(&*store, &buf[..]),
+        )
+        .await
+        .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
+        .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
+
+        Ok(tonic::Response::new(ImportImageResponse {
+            root_digest,
+            bytes_stored,
+            bytes_deduplicated,
+        }))
     }
 }
 

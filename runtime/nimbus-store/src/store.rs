@@ -265,6 +265,11 @@ impl MmapStore {
         self.path_for_blob(digest)
     }
 
+    /// Path to the rkyv-serialized DagNode file for a given digest.
+    pub fn node_path(&self, digest: &Digest) -> PathBuf {
+        self.path_for(digest)
+    }
+
     pub fn node_count(&self) -> usize {
         self.cache.len()
     }

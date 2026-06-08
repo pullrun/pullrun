@@ -36,6 +36,10 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewEventsCommand(opts))
 	cmd.AddCommand(NewWorkloadCommand(opts))
 	cmd.AddCommand(NewKernelCommand(opts))
+	cmd.AddCommand(NewBuildCommand(opts))
+	cmd.AddCommand(NewPushCommand(opts))
+	cmd.AddCommand(NewSaveCommand(opts))
+	cmd.AddCommand(NewLoadCommand(opts))
 
 	return cmd
 }
