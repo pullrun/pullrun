@@ -139,18 +139,14 @@ impl DagPusher {
         layer_digest: &str,
     ) -> Result<(Vec<u8>, String), OciError> {
         let mut tar_buf = Vec::new();
-        {
-            // Scope ensures `tar` (which borrows `gz`) is dropped before
-            // we try_finish `gz`.
-            let mut gz =
-                flate2::write::GzEncoder::new(&mut tar_buf, flate2::Compression::default());
-            {
-                let mut tar = tar::Builder::new(&mut gz);
-                self.walk_tree_for_layer(layer_digest, "", &mut tar)?;
-                tar.finish()?;
-            }
-            gz.try_finish()?;
-        }
+        let mut gz =
+            flate2::write::GzEncoder::new(&mut tar_buf, flate2::Compression::default());
+        let mut tar = tar::Builder::new(&mut gz);
+        self.walk_tree_for_layer(layer_digest, "", &mut tar)?;
+        tar.finish()?;
+        drop(tar);
+        let _ = gz.finish()
+            .map_err(|e| OciError::Other(format!("gzip finish: {e}")))?;
 
         let digest = format!("sha256:{}", hex::encode(Sha256::digest(&tar_buf)));
         debug!(%digest, size = tar_buf.len(), "reconstructed OCI layer");
@@ -274,10 +270,11 @@ impl DagPusher {
         }
 
         // Start a monolithic upload session.
-        let session_resp = self.client.post(&base_url).header(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", token.unwrap_or("")),
-        ).send().await?;
+        let mut session_req = self.client.post(&base_url);
+        if let Some(t) = token {
+            session_req = session_req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        let session_resp = session_req.send().await?;
 
         let location = session_resp
             .headers()
@@ -299,7 +296,10 @@ impl DagPusher {
         };
 
         // PUT the blob data with digest query param.
-        let put_url = format!("{upload_url}?digest={digest}");
+        // Some registries return upload URLs with ?_state=... query
+        // parameters, so we must use & instead of ? to append.
+        let sep = if upload_url.contains('?') { '&' } else { '?' };
+        let put_url = format!("{upload_url}{sep}digest={digest}");
         let put_resp = self
             .authorized_put(&put_url, token)
             .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
