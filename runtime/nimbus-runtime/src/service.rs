@@ -2346,17 +2346,72 @@ impl Runtime for RuntimeService {
     // Build/Push/Save/Load RPCs
     // ------------------------------------------------------------------
 
-    /// v0: not yet implemented — native DAG-aware build is coming.
-    /// Nimbus does not delegate to Docker. Use `nimbusctl pull` for
-    /// pre-built images, or `nimbusctl compose build` for compose
-    /// projects (which uses PullImage internally).
+    /// Native DAG-aware build. Parses a Dockerfile, pulls the base image,
+    /// executes RUN instructions via runc, handles COPY/ADD, and snapshots
+    /// each layer into the DAG store — all without Docker.
     async fn build_image(
         &self,
-        _request: tonic::Request<BuildImageRequest>,
+        request: tonic::Request<BuildImageRequest>,
     ) -> Result<tonic::Response<BuildImageResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "native DAG-aware build not yet implemented; use `nimbusctl pull` for pre-built images",
-        ))
+        let req = request.into_inner();
+
+        // Read Dockerfile
+        let dockerfile_path = PathBuf::from(&req.dockerfile);
+        let content = tokio::fs::read_to_string(&dockerfile_path)
+            .await
+            .map_err(|e| {
+                tonic::Status::invalid_argument(format!("read Dockerfile {}: {e}", dockerfile_path.display()))
+            })?;
+
+        let dockerfile = nimbus_oci::Dockerfile::parse(&content).map_err(|e| {
+            tonic::Status::invalid_argument(format!("parse Dockerfile: {e}"))
+        })?;
+
+        // Resolve context dir
+        let context_dir = if req.context_dir.is_empty() {
+            dockerfile_path.parent().unwrap_or(&PathBuf::from(".")).to_path_buf()
+        } else {
+            PathBuf::from(&req.context_dir)
+        };
+
+        // Determine runc path
+        let runc_path = self.config.bundle_root.join("..").join("runc");
+        let runc_path = if runc_path.exists() {
+            runc_path
+        } else {
+            PathBuf::from("runc")
+        };
+
+        let builder = crate::builder::DagBuilder::new(
+            self.store.clone(),
+            runc_path,
+            self.config.bundle_root.join("build"),
+            self.config.insecure_registries.clone(),
+        );
+
+        let build_args: std::collections::HashMap<String, String> = req.build_args.clone();
+
+        let result = builder
+            .build(&dockerfile, &context_dir, &build_args)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("build failed: {e}")))?;
+
+        let tag = if req.tag.is_empty() {
+            format!("{}", &result.root_digest[..12])
+        } else {
+            req.tag.clone()
+        };
+
+        // Record the image tag -> root_digest mapping
+        {
+            let mut tags = self.image_tags.write().await;
+            tags.insert(result.root_digest.clone(), tag.clone());
+        }
+
+        Ok(tonic::Response::new(BuildImageResponse {
+            root_digest: result.root_digest,
+            tag,
+        }))
     }
 
     async fn push_image(

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -18,7 +17,7 @@ func newBuildCommand() *cobra.Command {
 		Use:   "build [service...]",
 		Short: "Build or rebuild services",
 		Long: `Build OCI images for services that have a 'build:' section in the compose file.
-Delegates to 'docker build' and then imports the image into the nimbus runtime.
+Uses nimbus's native DAG-aware builder — no Docker required.
 
 If no service names are given, all services with build sections are built.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -33,7 +32,6 @@ If no service names are given, all services with build sections are built.`,
 				return fmt.Errorf("parse compose: %w", err)
 			}
 
-			// Determine which services to build
 			names := args
 			if len(names) == 0 {
 				for name, svc := range project.Services {
@@ -57,11 +55,6 @@ If no service names are given, all services with build sections are built.`,
 			}
 			defer conn.Close()
 
-			// Check that docker is available
-			if _, err := exec.LookPath("docker"); err != nil {
-				return fmt.Errorf("docker not found in PATH (required for build): %w", err)
-			}
-
 			workingDir := filepath.Dir(filePath)
 
 			for _, name := range names {
@@ -80,7 +73,6 @@ If no service names are given, all services with build sections are built.`,
 					contextDir = filepath.Join(workingDir, contextDir)
 				}
 
-				// Determine Dockerfile path
 				dockerfile := svc.Build.Dockerfile
 				if dockerfile == "" {
 					dockerfile = filepath.Join(contextDir, "Dockerfile")
@@ -88,38 +80,27 @@ If no service names are given, all services with build sections are built.`,
 					dockerfile = filepath.Join(contextDir, dockerfile)
 				}
 
-				fmt.Printf("  %s: building (context=%s, dockerfile=%s)...\n",
+				fmt.Printf("  %s: building with native DAG builder (context=%s, dockerfile=%s)...\n",
 					name, contextDir, dockerfile)
 
-				buildArgs := []string{"build", "-t", tag, "-f", dockerfile, contextDir}
-
-				// Add build args if present
+				buildArgs := make(map[string]string)
 				for k, v := range svc.Build.Args {
 					if v != nil {
-						buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("%s=%s", k, *v))
+						buildArgs[k] = *v
 					}
 				}
 
-				buildCmd := exec.CommandContext(ctx, "docker", buildArgs...)
-				buildCmd.Stdout = os.Stdout
-				buildCmd.Stderr = os.Stderr
-
-				if err := buildCmd.Run(); err != nil {
-					return fmt.Errorf("docker build %s: %w", name, err)
-				}
-
-				fmt.Printf("  %s: importing into nimbus runtime...\n", name)
-
-				pullResp, err := client.PullImage(ctx, &runtimeapi.PullImageRequest{
-					ImageRef: tag,
-					Registry: "",
+				buildResp, err := client.BuildImage(ctx, &runtimeapi.BuildImageRequest{
+					Dockerfile: dockerfile,
+					ContextDir: contextDir,
+					Tag:        tag,
+					BuildArgs:  buildArgs,
 				})
 				if err != nil {
-					return fmt.Errorf("import %s into runtime: %w", name, err)
+					return fmt.Errorf("build %s: %w", name, err)
 				}
 
-				_ = pullResp
-				fmt.Printf("  %s: built and imported (digest=%s)\n", name, pullResp.RootDigest)
+				fmt.Printf("  %s: built and imported (digest=%s)\n", name, buildResp.RootDigest)
 
 				// Update the service's image to use the built tag
 				svc.Image = tag

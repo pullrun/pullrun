@@ -1,9 +1,9 @@
 # Nimbus — Build Progress
 
 **Last updated:** 2026-06-08
-**Status:** Fully independent of Docker. Phase D (Compose + Build/Push/Save/Load) complete.
-**Tests:** 92 Rust (83 lib + 9 vsock) + 9 Go — all passing.
-**New:** Registry auth (`nimbusctl login/logout`) — credentials stored in `~/.nimbus/auth.json`, wired through to `OciPuller` and `DagPusher`.
+**Status:** Fully independent of Docker. Native DAG-aware build implemented. Phase D complete.
+**Tests:** 101 Rust + 9 Go — all passing.
+**New:** Native DAG-aware build (`nimbusctl build` + `nimbus compose build`), registry auth.
 
 ---
 
@@ -16,6 +16,7 @@
 - `load` — Tar import with content-addressed dedup
 - `list` — List images in store
 - `inspect` — Inspect DAG nodes, image config, layers
+- `build` — Native DAG-aware builder: Dockerfile parser, RUN execution via runc, COPY/ADD, layer snapshotting
 - `login/logout` — Registry auth stored in `~/.nimbus/auth.json` (0600 perms), auto-attached to pull/push
 - **Docker-independent** — No Docker daemon, `docker` CLI, containerd, or overlayfs anywhere
 
@@ -84,7 +85,7 @@
 
 | Feature | Docker | Nimbus | Notes |
 |---------|--------|--------|-------|
-| **Build** | `docker build` | Placeholder (delegates to `docker build` + re-import) | Native DAG-aware build on roadmap |
+| **Build** | `docker build` | ✅ | Native DAG-aware builder: parses Dockerfile, executes RUN via runc, snapshots to DAG. No Docker needed. |
 | **Tag** | `docker tag` | Not needed | Content-addressed; root digest IS the tag |
 | **Commit** | `docker commit` | ❌ | No running-container snapshot yet |
 | **Diff** | `docker diff` | ❌ | No filesystem diff |
@@ -131,13 +132,13 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 ## Next steps (in priority order)
 
-1. **Native DAG-aware build** — Parse Dockerfile, execute RUN commands via nimbus containers, snapshot layers to DAG. Eliminate the `docker build` delegation entirely.
-2. **Nginx entrypoint fix** — Debug `/docker-entrypoint.sh` failure in minimal runc environment.
-3. **Resource limits** — Wire CPU/memory cgroup constraints through executors.
-4. **Health check enforcement** — Periodically probe workload health, auto-restart on failure.
-5. **Volume / bind mount support** — Wire `HostPath` through executors (OCI bind mounts in config.json).
-6. **`docker cp` equivalent** — Add copy to/from workload (via DAG store paths).
-7. **Live stats** — Report CPU/mem/network per workload.
-8. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane.
-9. **Push auth test** — Deploy local `registry:2` container on server, verify `push` + `pull` round-trip with auth.
-10. **Compose auth** — Propagate stored credentials through compose binary's PullImage calls.
+1. **Nginx entrypoint fix** — Debug `/docker-entrypoint.sh` failure in minimal runc environment.
+2. **Resource limits** — Wire CPU/memory cgroup constraints through executors.
+3. **Health check enforcement** — Periodically probe workload health, auto-restart on failure.
+4. **Volume / bind mount support** — Wire `HostPath` through executors (OCI bind mounts in config.json).
+5. **`docker cp` equivalent** — Add copy to/from workload (via DAG store paths).
+6. **Live stats** — Report CPU/mem/network per workload.
+7. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane.
+8. **Push auth test** — Deploy local `registry:2` container on server, verify `push` + `pull` round-trip with auth.
+9. **Compose auth** — Propagate stored credentials through compose binary's PullImage calls.
+10. **Build layer caching** — Cache layers based on Dockerfile instruction hash for incremental builds.

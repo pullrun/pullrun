@@ -14,20 +14,59 @@ import (
 func NewBuildCommand(opts *RootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build [DOCKERFILE] [CONTEXT] -t TAG",
-		Short: "Build an OCI image from a Dockerfile (v0: pre-built images only)",
-		Args:  cobra.ExactArgs(2),
-		Long: `Build an OCI image from a Dockerfile and import it into the DAG store.
+		Short: "Build an OCI image from a Dockerfile using native DAG builder",
+		Args:  cobra.RangeArgs(0, 2),
+		Long: `Build an OCI image from a Dockerfile using the native DAG-aware builder.
 
-v0: Use 'nimbusctl pull <image>' for pre-built images instead.
-Native DAG-aware build (parsing Dockerfiles, executing RUN steps via
-nimbus containers, layering into DAG nodes) is on the roadmap.
+Parses the Dockerfile, pulls the base image, executes RUN instructions
+directly via runc, and snapshots each layer into the DAG store — no
+Docker required.
 
-This command exists as a placeholder for the future native builder.`,
+Args:
+  DOCKERFILE   path to Dockerfile (default: "./Dockerfile")
+  CONTEXT      build context directory (default: directory of Dockerfile)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("native build not yet implemented. Use `nimbusctl pull <image>` for pre-built images, or see `nimbusctl compose build` for compose projects")
+			dockerfile := "./Dockerfile"
+			contextDir := "."
+			if len(args) >= 1 {
+				dockerfile = args[0]
+			}
+			if len(args) >= 2 {
+				contextDir = args[1]
+			}
+
+			tag, _ := cmd.Flags().GetString("tag")
+			buildArgs, _ := cmd.Flags().GetStringToString("build-arg")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			defer cancel()
+
+			client, closeFn, err := ensureGRPCClient(opts)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+
+			resp, err := client.BuildImage(ctx, &runtimepb.BuildImageRequest{
+				Dockerfile: dockerfile,
+				ContextDir: contextDir,
+				Tag:        tag,
+				BuildArgs:  buildArgs,
+			})
+			if err != nil {
+				return fmt.Errorf("build: %w", err)
+			}
+
+			fmt.Printf("✓ built %s\n", dockerfile)
+			fmt.Printf("  root digest: %s\n", resp.RootDigest)
+			if resp.Tag != "" {
+				fmt.Printf("  tag:         %s\n", resp.Tag)
+			}
+			return nil
 		},
 	}
-	cmd.Flags().StringP("tag", "t", "", "Image tag (placeholder)")
+	cmd.Flags().StringP("tag", "t", "", "Image tag")
+	cmd.Flags().StringToString("build-arg", nil, "Build arguments (KEY=VALUE)")
 	return cmd
 }
 

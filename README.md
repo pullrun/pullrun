@@ -235,6 +235,7 @@ reason to optimize them (real load + a real eBPF implementation).
 - Prometheus metrics + Grafana dashboard + 5 alert rules
 - K8s deployment manifests (DaemonSet, ServiceMonitor, PrometheusRule)
 - `nimbusctl inspect`, `nimbusctl events`, `nimbusctl workload run` (attach)
+- `nimbusctl build` (native DAG-aware builder — no Docker needed)
 - `nimbusctl login`, `nimbusctl logout` (registry auth stored in `~/.nimbus/auth.json`, 0600)
 - `--kernel-image` and `--registry` flags for VM backends
 - Control plane: gRPC API server, network-aware scheduling, file-backed persistence
@@ -248,7 +249,7 @@ reason to optimize them (real load + a real eBPF implementation).
 
 **Stubs / partial:**
 
-- Native DAG-aware build (Dockerfile parser + layered RUN execution; currently delegates to `docker build`)
+- Build layer caching (based on Dockerfile instruction hash for incremental builds)
 - Cross-node service discovery (`.nimbus.local` DNS across cluster)
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy

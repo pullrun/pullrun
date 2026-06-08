@@ -5,6 +5,7 @@ pub mod proto {
 pub mod events;
 pub mod metrics;
 pub mod service;
+pub mod builder;
 
 pub use events::{Event, EventBus, EventKind};
 pub use service::{RuntimeCommand, RuntimeService, ServiceConfig};
