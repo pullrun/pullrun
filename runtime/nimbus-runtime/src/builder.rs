@@ -66,6 +66,10 @@ pub struct DagBuilder {
     insecure_registries: std::collections::HashSet<String>,
     /// Track materialized rootfs paths per layer to reuse when possible.
     rootfs_cache: Arc<RwLock<HashMap<String, PathBuf>>>,
+    /// Build layer cache: instruction_hash -> resulting_manifest_digest.
+    /// Keyed by a content hash of the instruction + parent + inputs.
+    /// A hit avoids re-executing the instruction.
+    layer_cache: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl DagBuilder {
@@ -81,6 +85,7 @@ impl DagBuilder {
             bundle_root,
             insecure_registries,
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
+            layer_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -135,17 +140,40 @@ impl DagBuilder {
         let mut total_nodes = 0usize;
         let mut total_bytes = 0u64;
 
-        // 4. Execute each instruction
+        // 4. Execute each instruction (with layer caching)
         for instruction in &stage.instructions {
             match instruction {
                 Instruction::Run { command } => {
+                    let cache_key = self.cache_key_run(&current_manifest, command);
+                    // Check cache
+                    let cached = self.layer_cache.read().await.get(&cache_key).cloned();
+                    if let Some(cached_digest) = cached {
+                        info!("RUN {} [cached]", command.join(" "));
+                        current_manifest = cached_digest;
+                        layer_count += 1;
+                        continue;
+                    }
                     info!("RUN {}", command.join(" "));
                     current_manifest = self
                         .execute_run(&current_manifest, command, &mut manifest_data)
                         .await?;
+                    // Store in cache
+                    self.layer_cache
+                        .write()
+                        .await
+                        .insert(cache_key, current_manifest.clone());
                     layer_count += 1;
                 }
                 Instruction::Copy { sources, dest } => {
+                    let cache_key = self.cache_key_copy(&current_manifest, context_dir, sources, dest);
+                    // Check cache
+                    let cached = self.layer_cache.read().await.get(&cache_key).cloned();
+                    if let Some(cached_digest) = cached {
+                        info!("COPY {:?} {} [cached]", sources, dest);
+                        current_manifest = cached_digest;
+                        layer_count += 1;
+                        continue;
+                    }
                     info!("COPY {:?} {}", sources, dest);
                     current_manifest = self
                         .execute_copy(
@@ -156,9 +184,22 @@ impl DagBuilder {
                             &mut manifest_data,
                         )
                         .await?;
+                    // Store in cache
+                    self.layer_cache
+                        .write()
+                        .await
+                        .insert(cache_key, current_manifest.clone());
                     layer_count += 1;
                 }
                 Instruction::Add { sources, dest } => {
+                    let cache_key = self.cache_key_copy(&current_manifest, context_dir, sources, dest);
+                    let cached = self.layer_cache.read().await.get(&cache_key).cloned();
+                    if let Some(cached_digest) = cached {
+                        info!("ADD {:?} {} [cached]", sources, dest);
+                        current_manifest = cached_digest;
+                        layer_count += 1;
+                        continue;
+                    }
                     info!("ADD {:?} {} (treated as COPY)", sources, dest);
                     current_manifest = self
                         .execute_copy(
@@ -169,6 +210,10 @@ impl DagBuilder {
                             &mut manifest_data,
                         )
                         .await?;
+                    self.layer_cache
+                        .write()
+                        .await
+                        .insert(cache_key, current_manifest.clone());
                     layer_count += 1;
                 }
                 Instruction::WorkDir(wd) => {
@@ -438,11 +483,59 @@ impl DagBuilder {
             )))
         }
     }
-}
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Layer caching helpers
+    // -----------------------------------------------------------------------
+
+    /// Compute a cache key for a RUN instruction.
+    /// Includes the parent manifest digest and the full command so that
+    /// changing either invalidates the cache.
+    fn cache_key_run(&self, parent_manifest: &str, command: &[String]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"RUN:");
+        hasher.update(parent_manifest.as_bytes());
+        for arg in command {
+            hasher.update(b"\0");
+            hasher.update(arg.as_bytes());
+        }
+        hex::encode(hasher.finalize())
+    }
+
+    /// Compute a cache key for a COPY instruction.
+    /// Includes the parent manifest digest, source file paths, destination,
+    /// and the content hash of each source file. Changing any input file
+    /// content invalidates the cache.
+    fn cache_key_copy(
+        &self,
+        parent_manifest: &str,
+        context_dir: &Path,
+        sources: &[String],
+        dest: &str,
+    ) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"COPY:");
+        hasher.update(parent_manifest.as_bytes());
+        hasher.update(b":");
+        hasher.update(dest.as_bytes());
+        for src in sources {
+            hasher.update(b"\0");
+            hasher.update(src.as_bytes());
+            // Mix in the content hash of each source file.
+            let src_path = context_dir.join(src);
+            if let Ok(content) = std::fs::read(&src_path) {
+                let mut file_hasher = Sha256::new();
+                file_hasher.update(&content);
+                let file_hash = hex::encode(file_hasher.finalize());
+                hasher.update(b":");
+                hasher.update(file_hash.as_bytes());
+            }
+        }
+        hex::encode(hasher.finalize())
+    }
+}
 
 fn extract_registry(image_ref: &str) -> String {
     let parts: Vec<&str> = image_ref.splitn(2, '/').collect();

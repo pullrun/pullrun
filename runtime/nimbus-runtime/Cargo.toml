@@ -31,6 +31,8 @@ tokio-stream = { version = "0.1", features = ["net"] }
 tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
 tempfile = "3"
+hex.workspace = true
+sha2.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 axum.workspace = true
