@@ -67,6 +67,11 @@ service Runtime {
     // workloads are NOT automatically stopped (the client
     // should call StopWorkload for rollback).
     rpc RunCompose(RunComposeRequest) returns (RunComposeResponse);
+
+    // Copy a file into or out of a running workload (docker cp equivalent).
+    // Direction "out": reads a file from the container's rootfs and returns
+    // its content. Direction "in": writes content into the container's rootfs.
+    rpc CopyFile(CopyFileRequest) returns (CopyFileResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -494,4 +499,24 @@ message InspectResponse {
     // Whether the workload is currently in the runtime's view of
     // the workloads map. False iff the workload has been GC'd.
     bool found = 14;
+}
+
+// --- File copy (docker cp equivalent) ---
+
+message CopyFileRequest {
+    string id = 1;                        // Workload ID
+    string container_path = 2;            // Path inside the container
+    // Direction: "in" copies content from this request into the container;
+    // "out" reads from the container and returns content in the response.
+    string direction = 3;                 // "in" or "out"
+    bytes content = 4;                    // File content for "in" direction
+    uint32 mode = 5;                      // File mode (e.g. 0644); 0 means default
+}
+
+message CopyFileResponse {
+    string id = 1;
+    string container_path = 2;
+    bytes content = 3;                    // File content for "out" direction
+    uint32 mode = 4;                      // Detected file mode
+    uint64 size = 5;                      // File size in bytes
 }

@@ -41,6 +41,7 @@ const (
 	Runtime_ExportImage_FullMethodName      = "/nimbus.runtime.Runtime/ExportImage"
 	Runtime_ImportImage_FullMethodName      = "/nimbus.runtime.Runtime/ImportImage"
 	Runtime_RunCompose_FullMethodName       = "/nimbus.runtime.Runtime/RunCompose"
+	Runtime_CopyFile_FullMethodName         = "/nimbus.runtime.Runtime/CopyFile"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -96,6 +97,10 @@ type RuntimeClient interface {
 	// workloads are NOT automatically stopped (the client
 	// should call StopWorkload for rollback).
 	RunCompose(ctx context.Context, in *RunComposeRequest, opts ...grpc.CallOption) (*RunComposeResponse, error)
+	// Copy a file into or out of a running workload (docker cp equivalent).
+	// Direction "out": reads a file from the container's rootfs and returns
+	// its content. Direction "in": writes content into the container's rootfs.
+	CopyFile(ctx context.Context, in *CopyFileRequest, opts ...grpc.CallOption) (*CopyFileResponse, error)
 }
 
 type runtimeClient struct {
@@ -368,6 +373,16 @@ func (c *runtimeClient) RunCompose(ctx context.Context, in *RunComposeRequest, o
 	return out, nil
 }
 
+func (c *runtimeClient) CopyFile(ctx context.Context, in *CopyFileRequest, opts ...grpc.CallOption) (*CopyFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CopyFileResponse)
+	err := c.cc.Invoke(ctx, Runtime_CopyFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -421,6 +436,10 @@ type RuntimeServer interface {
 	// workloads are NOT automatically stopped (the client
 	// should call StopWorkload for rollback).
 	RunCompose(context.Context, *RunComposeRequest) (*RunComposeResponse, error)
+	// Copy a file into or out of a running workload (docker cp equivalent).
+	// Direction "out": reads a file from the container's rootfs and returns
+	// its content. Direction "in": writes content into the container's rootfs.
+	CopyFile(context.Context, *CopyFileRequest) (*CopyFileResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -496,6 +515,9 @@ func (UnimplementedRuntimeServer) ImportImage(grpc.ClientStreamingServer[ImportI
 }
 func (UnimplementedRuntimeServer) RunCompose(context.Context, *RunComposeRequest) (*RunComposeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunCompose not implemented")
+}
+func (UnimplementedRuntimeServer) CopyFile(context.Context, *CopyFileRequest) (*CopyFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CopyFile not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -864,6 +886,24 @@ func _Runtime_RunCompose_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_CopyFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CopyFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CopyFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CopyFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CopyFile(ctx, req.(*CopyFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -934,6 +974,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunCompose",
 			Handler:    _Runtime_RunCompose_Handler,
+		},
+		{
+			MethodName: "CopyFile",
+			Handler:    _Runtime_CopyFile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

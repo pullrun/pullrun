@@ -165,3 +165,8 @@ func (c *GRPCClient) GetWorkloadStats(ctx context.Context, req *runtimepb.GetWor
 func (c *GRPCClient) AttachWorkload(ctx context.Context) (runtimepb.Runtime_AttachWorkloadClient, error) {
 	return c.client.AttachWorkload(ctx)
 }
+
+// CopyFile copies a file into or out of a running workload.
+func (c *GRPCClient) CopyFile(ctx context.Context, req *runtimepb.CopyFileRequest) (*runtimepb.CopyFileResponse, error) {
+	return c.client.CopyFile(ctx, req)
+}

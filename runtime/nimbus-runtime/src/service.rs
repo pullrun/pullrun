@@ -31,7 +31,7 @@ use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, DagNode, Event as ProtoEvent, ExecRequest,
+    AttachMessage, CopyFileRequest, CopyFileResponse, DagNode, Event as ProtoEvent, ExecRequest,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
@@ -2698,6 +2698,109 @@ impl Runtime for RuntimeService {
             bytes_stored,
             bytes_deduplicated,
         }))
+    }
+
+    async fn copy_file(
+        &self,
+        request: tonic::Request<CopyFileRequest>,
+    ) -> Result<tonic::Response<CopyFileResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.id.is_empty() || req.container_path.is_empty() {
+            return Err(Status::invalid_argument("id and container_path are required"));
+        }
+
+        // Look up the workload to get the rootfs path.
+        let rootfs_path = {
+            let workloads = self.workloads.read().await;
+            let state = workloads
+                .get(&req.id)
+                .ok_or_else(|| Status::not_found(format!("workload {} not found", req.id)))?;
+
+            // For VM workloads, rootfs is tracked in the rootfs_cache.
+            // For container workloads, it's at bundle_root/{id}/rootfs.
+            let rootfs = if state.backend == "vm" || state.backend == "sandbox" {
+                let cache = self.rootfs_cache.read().await;
+                cache
+                    .get(&req.id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Status::failed_precondition(
+                            format!("rootfs not materialized for workload {}", req.id),
+                        )
+                    })?
+            } else {
+                self.config.bundle_root.join(&req.id).join("rootfs")
+            };
+
+            rootfs
+        };
+
+        let container_path = req.container_path.trim_start_matches('/');
+        let full_path = rootfs_path.join(container_path);
+
+        // Security: ensure we don't escape the rootfs via symlinks or "..".
+        let canonical = full_path
+            .canonicalize()
+            .map_err(|e| Status::internal(format!("cannot resolve path: {e}")))?;
+        if !canonical.starts_with(&rootfs_path) {
+            return Err(Status::invalid_argument(
+                "container_path escapes the root filesystem",
+            ));
+        }
+
+        match req.direction.as_str() {
+            "out" => {
+                use std::os::unix::fs::PermissionsExt;
+                // Read file from container rootfs.
+                let metadata = tokio::fs::metadata(&canonical)
+                    .await
+                    .map_err(|e| Status::not_found(format!("file not found: {e}")))?;
+                if !metadata.is_file() {
+                    return Err(Status::invalid_argument("path is not a file"));
+                }
+                let content = tokio::fs::read(&canonical)
+                    .await
+                    .map_err(|e| Status::internal(format!("read error: {e}")))?;
+                Ok(tonic::Response::new(CopyFileResponse {
+                    id: req.id.clone(),
+                    container_path: req.container_path,
+                    content,
+                    mode: metadata.permissions().mode() as u32,
+                    size: metadata.len(),
+                }))
+            }
+            "in" => {
+                use std::os::unix::fs::PermissionsExt;
+                // Write file to container rootfs. Create parent dirs.
+                if let Some(parent) = canonical.parent() {
+                    tokio::fs::create_dir_all(parent)
+                        .await
+                        .map_err(|e| Status::internal(format!("create dirs: {e}")))?;
+                }
+                tokio::fs::write(&canonical, &req.content)
+                    .await
+                    .map_err(|e| Status::internal(format!("write error: {e}")))?;
+                // Set file mode if specified.
+                if req.mode != 0 {
+                    tokio::fs::set_permissions(&canonical, std::fs::Permissions::from_mode(req.mode))
+                        .await
+                        .map_err(|e| Status::internal(format!("chmod error: {e}")))?;
+                }
+                let metadata = tokio::fs::metadata(&canonical)
+                    .await
+                    .map_err(|e| Status::internal(format!("stat error: {e}")))?;
+                Ok(tonic::Response::new(CopyFileResponse {
+                    id: req.id.clone(),
+                    container_path: req.container_path,
+                    content: Vec::new(),
+                    mode: metadata.permissions().mode() as u32,
+                    size: metadata.len(),
+                }))
+            }
+            other => Err(Status::invalid_argument(format!(
+                "invalid direction: {other:?}; expected 'in' or 'out'"
+            ))),
+        }
     }
 }
 
