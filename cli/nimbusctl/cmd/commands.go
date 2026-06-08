@@ -122,6 +122,7 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		healthTimeout   uint32
 		healthRetries   uint32
 		healthStartPeriod uint32
+		restartPolicy   string
 	)
 
 	cmd := &cobra.Command{
@@ -212,6 +213,10 @@ DAG store if not already present.`,
 				}
 			}
 
+			restartProto, err := parseRestartPolicy(restartPolicy)
+			if err != nil {
+				return err
+			}
 			resp, err := client.RunWorkload(ctx, &runtimepb.RunRequest{
 				Id:            id,
 				RootDigest:    rootDigest,
@@ -225,6 +230,7 @@ DAG store if not already present.`,
 				KernelImage:   kernelImage,
 				Mounts:        mounts,
 				HealthCheck:   healthCheck,
+				RestartPolicy: restartProto,
 			})
 			if err != nil {
 				return fmt.Errorf("run workload: %w", err)
@@ -257,7 +263,23 @@ DAG store if not already present.`,
 	cmd.Flags().Uint32Var(&healthTimeout, "health-timeout", 30, "Health check timeout (seconds)")
 	cmd.Flags().Uint32Var(&healthRetries, "health-retries", 3, "Consecutive failures before marking unhealthy")
 	cmd.Flags().Uint32Var(&healthStartPeriod, "health-start-period", 0, "Grace period before health checks start (seconds)")
+	cmd.Flags().StringVar(&restartPolicy, "restart", "no", "Restart policy: no, on-failure, always, unless-stopped")
 	return cmd
+}
+
+func parseRestartPolicy(s string) (runtimepb.RestartPolicy, error) {
+	switch strings.ToLower(s) {
+	case "no", "never":
+		return runtimepb.RestartPolicy(1), nil // RESTART_NO
+	case "on-failure":
+		return runtimepb.RestartPolicy(2), nil // RESTART_ON_FAILURE
+	case "always":
+		return runtimepb.RestartPolicy(3), nil // RESTART_ALWAYS
+	case "unless-stopped":
+		return runtimepb.RestartPolicy(4), nil // RESTART_UNLESS_STOPPED
+	default:
+		return 0, fmt.Errorf("invalid restart policy %q (valid: no, on-failure, always, unless-stopped)", s)
+	}
 }
 
 func buildNetworkRules(outbound, inbound []string) ([]*runtimepb.NetworkRule, error) {

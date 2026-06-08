@@ -92,6 +92,13 @@ mod tests {
                     health: String::new(),
                     health_failures: 0,
                     health_last_success: 0,
+                    restart_policy: Default::default(),
+                    restart_count: 0,
+                    env: Default::default(),
+                    cpu_millicores: None,
+                    memory_bytes: None,
+                    bridge_name: None,
+                    mounts: vec![],
                 },
             );
         }

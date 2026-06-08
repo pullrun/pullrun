@@ -7,7 +7,21 @@ use serde::{Deserialize, Serialize};
 pub use nimbus_net::NetworkRule;
 use nimbus_store::Digest;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RestartPolicy {
+    No,
+    OnFailure,
+    Always,
+    UnlessStopped,
+}
+
+impl Default for RestartPolicy {
+    fn default() -> Self {
+        Self::No
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mount {
     pub type_: String,      // "bind", "volume", "tmpfs"
     pub source: String,     // host path or volume name
@@ -101,6 +115,8 @@ pub struct WorkloadSpec {
     pub mounts: Vec<Mount>,
     /// Health check configuration.
     pub health_check: Option<HealthCheck>,
+    /// Restart policy for this workload.
+    pub restart_policy: RestartPolicy,
 }
 
 impl WorkloadSpec {
@@ -119,6 +135,7 @@ impl WorkloadSpec {
             bridge_name: None,
             mounts: vec![],
             health_check: None,
+            restart_policy: RestartPolicy::No,
         }
     }
 }
@@ -137,6 +154,7 @@ pub struct WorkloadSpecBuilder {
     bridge_name: Option<String>,
     mounts: Vec<Mount>,
     health_check: Option<HealthCheck>,
+    restart_policy: RestartPolicy,
 }
 
 impl WorkloadSpecBuilder {
@@ -190,6 +208,11 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn restart_policy(mut self, rp: RestartPolicy) -> Self {
+        self.restart_policy = rp;
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -205,6 +228,7 @@ impl WorkloadSpecBuilder {
             bridge_name: self.bridge_name,
             mounts: self.mounts,
             health_check: self.health_check,
+            restart_policy: self.restart_policy,
         }
     }
 }

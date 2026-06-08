@@ -177,6 +177,18 @@ message RunRequest {
     // Health check configuration. When set, the runtime periodically
     // executes the probe command and reports health status.
     HealthCheck health_check = 14;
+    // Restart policy for this workload.
+    // Controls whether the runtime automatically re-creates the workload
+    // after it exits. Defaults to RESTART_NO.
+    RestartPolicy restart_policy = 15;
+}
+
+enum RestartPolicy {
+    RESTART_UNSPECIFIED = 0;  // treated as RESTART_NO
+    RESTART_NO = 1;
+    RESTART_ON_FAILURE = 2;
+    RESTART_ALWAYS = 3;
+    RESTART_UNLESS_STOPPED = 4;
 }
 
 message NetworkRule {
@@ -216,6 +228,10 @@ message WorkloadStatus {
     bool network_isolated = 7;
     // Health status: "healthy", "unhealthy", "starting", "" (none configured).
     string health = 8;
+    // Restart policy for this workload.
+    RestartPolicy restart_policy = 9;
+    // Number of times this workload has been automatically restarted.
+    uint32 restart_count = 10;
 }
 
 message ListWorkloadsRequest {}
@@ -499,6 +515,10 @@ message InspectResponse {
     // Whether the workload is currently in the runtime's view of
     // the workloads map. False iff the workload has been GC'd.
     bool found = 14;
+    // Restart policy for this workload.
+    RestartPolicy restart_policy = 15;
+    // Number of times this workload has been automatically restarted.
+    uint32 restart_count = 16;
 }
 
 // --- File copy (docker cp equivalent) ---

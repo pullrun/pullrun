@@ -459,6 +459,7 @@ impl RuntimeCommand {
         let watcher_bus = event_bus.clone();
         let watcher_executor = executor.clone();
         let watcher_workloads = workloads.clone();
+        let watcher_store = store.clone();
         let watcher_checkpoints_dir = self.config.checkpoints_dir.clone();
         tokio::spawn(async move {
             use std::collections::HashSet;
@@ -503,12 +504,29 @@ impl RuntimeCommand {
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .map(|d| d.as_secs() as i64)
                                 .unwrap_or(0);
+                            let mut exit_code_for_restart = None;
+                            let mut should_restart = false;
                             {
                                 let mut map = watcher_workloads.write().await;
                                 if let Some(state) = map.get_mut(&id) {
+                                    // Only mark as exited if still running
+                                    // (prevents race with operator stop).
+                                    if state.status != "running" {
+                                        continue;
+                                    }
                                     state.status = "exited".to_string();
                                     state.exit_time = now;
                                     state.exit_code = exit_code;
+                                    exit_code_for_restart = exit_code;
+                                    // Check restart policy before dropping lock.
+                                    should_restart = matches!(
+                                        state.restart_policy,
+                                        nimbus_exec::types::RestartPolicy::Always
+                                            | nimbus_exec::types::RestartPolicy::UnlessStopped
+                                    ) || (matches!(
+                                        state.restart_policy,
+                                        nimbus_exec::types::RestartPolicy::OnFailure
+                                    ) && exit_code != Some(0));
                                     let checkpoint = state.clone();
                                     // Drop the lock before writing to disk.
                                     drop(map);
@@ -524,20 +542,34 @@ impl RuntimeCommand {
                             }
                             record_workload_exit(
                                 &backend,
-                                exit_code.map(|c| c as i32),
+                                exit_code_for_restart.map(|c| c as i32),
                             );
                             watcher_bus.emit(
                                 Event::new(&id, EventKind::WorkloadExited)
                                     .with_metadata("backend", &backend)
                                     .with_metadata(
                                         "exit_code",
-                                        exit_code
+                                        exit_code_for_restart
                                             .map(|c| c.to_string())
                                             .unwrap_or_else(|| "unknown".into()),
                                     )
                                     .with_metadata("source", "watcher"),
                             );
-                            announced.insert(id);
+                            // Attempt automatic restart if policy allows.
+                            if should_restart {
+                                attempt_restart(
+                                    &watcher_executor,
+                                    &watcher_workloads,
+                                    &watcher_store,
+                                    &watcher_checkpoints_dir,
+                                    &watcher_bus,
+                                    &id,
+                                    &backend,
+                                )
+                                .await;
+                            } else {
+                                announced.insert(id);
+                            }
                         }
                         Ok(_) => {
                             // Still running; do nothing.
@@ -554,12 +586,21 @@ impl RuntimeCommand {
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .map(|d| d.as_secs() as i64)
                                 .unwrap_or(0);
+                            let mut should_restart = false;
                             {
                                 let mut map = watcher_workloads.write().await;
                                 if let Some(state) = map.get_mut(&id) {
+                                    if state.status != "running" {
+                                        continue;
+                                    }
                                     state.status = "exited".to_string();
                                     state.exit_time = now;
                                     state.exit_code = Some(137); // assume killed
+                                    // Restart unless policy is No.
+                                    should_restart = !matches!(
+                                        state.restart_policy,
+                                        nimbus_exec::types::RestartPolicy::No
+                                    );
                                     let checkpoint = state.clone();
                                     drop(map);
                                     write_workload_checkpoint(
@@ -576,7 +617,20 @@ impl RuntimeCommand {
                                     .with_metadata("exit_code", "137")
                                     .with_metadata("source", "watcher_best_effort"),
                             );
-                            announced.insert(id);
+                            if should_restart {
+                                attempt_restart(
+                                    &watcher_executor,
+                                    &watcher_workloads,
+                                    &watcher_store,
+                                    &watcher_checkpoints_dir,
+                                    &watcher_bus,
+                                    &id,
+                                    &backend,
+                                )
+                                .await;
+                            } else {
+                                announced.insert(id);
+                            }
                         }
                     }
                 }
@@ -954,6 +1008,143 @@ fn load_workload_checkpoints(dir: &std::path::Path) -> HashMap<String, WorkloadS
     workloads
 }
 
+/// Parse a proto RestartPolicy enum value into the runtime type.
+/// Proto RESTART_UNSPECIFIED (0) and RESTART_NO (1) both map to No.
+fn parse_restart_policy(p: i32) -> nimbus_exec::types::RestartPolicy {
+    use nimbus_exec::types::RestartPolicy;
+    match p {
+        2 => RestartPolicy::OnFailure,
+        3 => RestartPolicy::Always,
+        4 => RestartPolicy::UnlessStopped,
+        _ => RestartPolicy::No,
+    }
+}
+
+/// Attempt to restart an exited workload according to its restart policy.
+/// Re-creates the workload from the persisted spec fields, applies
+/// exponential backoff, and emits a WorkloadStarted event on success.
+async fn attempt_restart(
+    watcher_executor: &Arc<ExecutorRouter>,
+    watcher_workloads: &Arc<RwLock<HashMap<String, WorkloadState>>>,
+    watcher_store: &Arc<MmapStore>,
+    watcher_checkpoints_dir: &std::path::Path,
+    watcher_bus: &Arc<EventBus>,
+    id: &str,
+    backend: &str,
+) {
+    use std::time::Duration;
+    use nimbus_exec::types::{Backend, RestartPolicy, WorkloadSpec};
+
+    // Read current state to get restart count and policy.
+    let (restart_count, image_root, command, env, cpu_millicores, memory_bytes,
+          network_rules, kernel_image_ref, working_dir, bridge_name, mounts,
+          health_check, network_mode_str, stopped_by_operator) = {
+        let map = watcher_workloads.read().await;
+        match map.get(id) {
+            Some(s) => {
+                // Don't restart if the operator stopped this workload.
+                let stopped = s.status != "exited";
+                let network_mode = if s.internal_ip.is_some() { "bridge" } else { "isolated" };
+                (
+                    s.restart_count,
+                    s.image_root.clone(),
+                    s.command.clone(),
+                    s.env.clone(),
+                    s.cpu_millicores,
+                    s.memory_bytes,
+                    s.network_rules.clone(),
+                    s.kernel_image_ref.clone(),
+                    s.working_dir.clone(),
+                    s.bridge_name.clone(),
+                    s.mounts.clone(),
+                    s.health_check.clone(),
+                    network_mode.to_string(),
+                    stopped,
+                )
+            }
+            None => return,
+        }
+    };
+
+    if stopped_by_operator {
+        return;
+    }
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s.
+    let backoff_secs = std::cmp::min(1u64 << restart_count, 30u64);
+    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+
+    // Reconstruct the spec.
+    let backend_enum = match Backend::from_str(backend) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let network_mode_enum = match network_mode_str.as_str() {
+        "bridge" => NetworkMode::Bridge,
+        "host" => NetworkMode::Host,
+        _ => NetworkMode::Loopback,
+    };
+    let kernel_path = if kernel_image_ref.is_empty() {
+        None
+    } else {
+        // Kernel path from staged kernel cache; best-effort.
+        // In v0 we skip this — the kernel was already cached.
+        None
+    };
+    let spec = WorkloadSpec {
+        id: id.to_string(),
+        image_root,
+        backend: backend_enum,
+        command,
+        env,
+        cpu_millicores,
+        memory_bytes,
+        network_mode: network_mode_enum,
+        network_rules,
+        kernel_path,
+        bridge_name,
+        mounts,
+        health_check,
+        restart_policy: RestartPolicy::Always, // Already decided to restart.
+    };
+
+    match watcher_executor.create(spec).await {
+        Ok(handle) => {
+            if let Err(e) = watcher_executor.start(&handle).await {
+                warn!(%id, error = %e, "restart: start failed");
+                return;
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let mut map = watcher_workloads.write().await;
+            if let Some(state) = map.get_mut(id) {
+                state.status = "running".to_string();
+                state.start_time = now;
+                state.exit_time = 0;
+                state.exit_code = None;
+                state.pid = handle.pid.unwrap_or(0);
+                state.internal_ip = handle.internal_ip.clone();
+                state.restart_count += 1;
+                let checkpoint = state.clone();
+                drop(map);
+                write_workload_checkpoint(watcher_checkpoints_dir, id, &checkpoint);
+                watcher_bus.emit(
+                    Event::new(id, crate::events::EventKind::WorkloadStarted)
+                        .with_metadata("backend", &handle.backend)
+                        .with_metadata("source", "restart_watcher")
+                        .with_metadata("restart_count", &checkpoint.restart_count.to_string()),
+                );
+                info!(%id, restart_count = checkpoint.restart_count, "workload restarted");
+            }
+        }
+        Err(e) => {
+            warn!(%id, error = %e, "restart: create failed");
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadState {
     pub status: String,
@@ -999,6 +1190,20 @@ pub struct WorkloadState {
     pub health_failures: u32,
     /// Timestamp of the last successful health check (unix seconds).
     pub health_last_success: i64,
+    /// Restart policy for this workload.
+    pub restart_policy: nimbus_exec::types::RestartPolicy,
+    /// Number of times this workload has been automatically restarted.
+    pub restart_count: u32,
+    /// Environment variables (stored for restart reconstruction).
+    pub env: HashMap<String, String>,
+    /// CPU millicores limit (stored for restart reconstruction).
+    pub cpu_millicores: Option<u64>,
+    /// Memory bytes limit (stored for restart reconstruction).
+    pub memory_bytes: Option<u64>,
+    /// Bridge name for network isolation (stored for restart reconstruction).
+    pub bridge_name: Option<String>,
+    /// Volume/bind mount specs (stored for restart reconstruction).
+    pub mounts: Vec<nimbus_exec::Mount>,
 }
 
 pub struct RuntimeService {
@@ -1177,6 +1382,7 @@ impl RuntimeService {
             None
         };
         let _ = backend; // reserved for future exec dispatch
+        let restart_policy = parse_restart_policy(req.restart_policy);
         let state = WorkloadState {
             status: "running".to_string(),
             start_time: now,
@@ -1196,6 +1402,18 @@ impl RuntimeService {
             health: String::new(),
             health_failures: 0,
             health_last_success: 0,
+            restart_policy,
+            restart_count: 0,
+            env: req.env.clone(),
+            cpu_millicores: if req.cpu_millicores > 0 { Some(req.cpu_millicores) } else { None },
+            memory_bytes: if req.memory_bytes > 0 { Some(req.memory_bytes) } else { None },
+            bridge_name: if req.bridge_name.is_empty() { None } else { Some(req.bridge_name.clone()) },
+            mounts: req.mounts.iter().map(|m| nimbus_exec::Mount {
+                type_: m.r#type.clone(),
+                source: m.source.clone(),
+                destination: m.destination.clone(),
+                options: m.options.clone(),
+            }).collect(),
         };
         workloads.insert(final_id.clone(), state.clone());
         drop(workloads);
@@ -1520,6 +1738,8 @@ impl Runtime for RuntimeService {
             options: m.options.clone(),
         }).collect();
 
+        let restart_policy = parse_restart_policy(req.restart_policy);
+
         let spec = WorkloadSpec {
             id: req.id.clone(),
             image_root: req.root_digest.clone(),
@@ -1544,6 +1764,7 @@ impl Runtime for RuntimeService {
                 retries: hc.retries,
                 start_period_seconds: hc.start_period_seconds,
             }),
+            restart_policy: restart_policy.clone(),
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -1726,6 +1947,13 @@ impl Runtime for RuntimeService {
             health: "starting".to_string(),
             health_failures: 0,
             health_last_success: 0,
+            restart_policy: restart_policy.clone(),
+            restart_count: 0,
+            env: spec.env.clone(),
+            cpu_millicores: spec.cpu_millicores,
+            memory_bytes: spec.memory_bytes,
+            bridge_name: spec.bridge_name.clone(),
+            mounts: spec.mounts.clone(),
         };
         workloads.insert(final_id.clone(), state.clone());
         drop(workloads);
@@ -1819,6 +2047,7 @@ impl Runtime for RuntimeService {
                 bridge_name: service.bridge_name.clone(),
                 mounts: service.mounts.clone(),
                 health_check: service.health_check.clone(),
+                restart_policy: 0, // default: no restart for compose
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -1911,6 +2140,13 @@ impl Runtime for RuntimeService {
         let state = workloads.get(&req.id)
             .ok_or_else(|| tonic::Status::not_found(format!("workload {} not found", req.id)))?;
 
+        use crate::proto::RestartPolicy;
+        let restart_proto = match state.restart_policy {
+            nimbus_exec::types::RestartPolicy::OnFailure => RestartPolicy::RestartOnFailure,
+            nimbus_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
+            nimbus_exec::types::RestartPolicy::UnlessStopped => RestartPolicy::RestartUnlessStopped,
+            _ => RestartPolicy::RestartNo,
+        };
         Ok(tonic::Response::new(WorkloadStatus {
             id: req.id,
             state: state.status.clone(),
@@ -1920,6 +2156,8 @@ impl Runtime for RuntimeService {
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
             network_isolated: true,
             health: state.health.clone(),
+            restart_policy: restart_proto.into(),
+            restart_count: state.restart_count,
         }))
     }
 
@@ -1928,15 +2166,26 @@ impl Runtime for RuntimeService {
         _request: tonic::Request<ListWorkloadsRequest>,
     ) -> Result<tonic::Response<ListWorkloadsResponse>, tonic::Status> {
         let workloads = self.workloads.read().await;
-        let items: Vec<WorkloadStatus> = workloads.iter().map(|(id, state)| WorkloadStatus {
-            id: id.clone(),
-            state: state.status.clone(),
-            backend: state.backend.clone(),
-            exit_code: state.exit_code.unwrap_or(0),
-            start_time: state.start_time,
-            internal_ip: state.internal_ip.clone().unwrap_or_default(),
-            network_isolated: true,
-            health: state.health.clone(),
+        let items: Vec<WorkloadStatus> = workloads.iter().map(|(id, state)| {
+            use crate::proto::RestartPolicy;
+            let restart_proto = match state.restart_policy {
+                nimbus_exec::types::RestartPolicy::OnFailure => RestartPolicy::RestartOnFailure,
+                nimbus_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
+                nimbus_exec::types::RestartPolicy::UnlessStopped => RestartPolicy::RestartUnlessStopped,
+                _ => RestartPolicy::RestartNo,
+            };
+            WorkloadStatus {
+                id: id.clone(),
+                state: state.status.clone(),
+                backend: state.backend.clone(),
+                exit_code: state.exit_code.unwrap_or(0),
+                start_time: state.start_time,
+                internal_ip: state.internal_ip.clone().unwrap_or_default(),
+                network_isolated: true,
+                health: state.health.clone(),
+                restart_policy: restart_proto.into(),
+                restart_count: state.restart_count,
+            }
         }).collect();
 
         Ok(tonic::Response::new(ListWorkloadsResponse { workloads: items }))
@@ -2050,6 +2299,8 @@ impl Runtime for RuntimeService {
                 dag_path: Vec::new(),
                 policy_decisions: std::collections::HashMap::new(),
                 found: false,
+                restart_policy: 0,
+                restart_count: 0,
             }));
         };
 
@@ -2082,6 +2333,13 @@ impl Runtime for RuntimeService {
         // if a converter ever introduces one).
         let dag_path = walk_dag(&self.store, &state.image_root);
 
+        use crate::proto::RestartPolicy;
+        let restart_proto = match state.restart_policy {
+            nimbus_exec::types::RestartPolicy::OnFailure => RestartPolicy::RestartOnFailure,
+            nimbus_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
+            nimbus_exec::types::RestartPolicy::UnlessStopped => RestartPolicy::RestartUnlessStopped,
+            _ => RestartPolicy::RestartNo,
+        };
         Ok(tonic::Response::new(InspectResponse {
             id: id.clone(),
             state: state.status.clone(),
@@ -2097,6 +2355,8 @@ impl Runtime for RuntimeService {
             dag_path,
             policy_decisions: state.policy_decisions.clone(),
             found: true,
+            restart_policy: restart_proto.into(),
+            restart_count: state.restart_count,
         }))
     }
 
