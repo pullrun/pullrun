@@ -40,6 +40,7 @@ use crate::proto::{
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
+    PruneRequest, PruneResponse,
     PullImageRequest, PullImageResponse, RemoveImageRequest, RemoveImageResponse,
     RunComposeRequest, RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse,
     RunRequest, RunResponse, StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest,
@@ -2116,6 +2117,11 @@ impl Runtime for RuntimeService {
         self.executor.stop(&id).await
             .map_err(|e| tonic::Status::internal(format!("stop failed: {e}")))?;
 
+        // Clean up any materialized rootfs for VM workloads.
+        if let Some(rootfs_path) = self.rootfs_cache.write().await.remove(&id) {
+            tokio::fs::remove_dir_all(&rootfs_path).await.ok();
+        }
+
         // Look up the backend label *before* mutating state, so the
         // metrics call sees the same label as the one that was
         // incremented in `run_workload`. `exit_code` is set to 0
@@ -3354,6 +3360,68 @@ impl Runtime for RuntimeService {
             .collect();
 
         Ok(tonic::Response::new(ListNetworksResponse { networks }))
+    }
+
+    async fn prune(
+        &self,
+        _request: tonic::Request<PruneRequest>,
+    ) -> Result<tonic::Response<PruneResponse>, tonic::Status> {
+        let store_root = &self.config.store_root;
+        let mut bundles_removed: i64 = 0;
+        let mut bytes_freed: i64 = 0;
+        let errors: Vec<String> = Vec::new();
+
+        // 1. Remove stale bundle directories (exited/stopped workloads).
+        let bundle_root = store_root.join("bundles");
+        if bundle_root.exists() {
+            if let Ok(entries) = std::fs::read_dir(&bundle_root) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_dir() { continue; }
+                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let is_active = {
+                        let workloads = self.workloads.read().await;
+                        workloads.contains_key(&name)
+                    };
+                    if !is_active {
+                        if let Ok(meta) = std::fs::metadata(&path) {
+                            bytes_freed += meta.len() as i64;
+                        }
+                        if std::fs::remove_dir_all(&path).is_ok() {
+                            bundles_removed += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Clean up any orphaned rootfs_cache entries
+        //    (workload stopped but rootfs dir still tracked).
+        let mut cache = self.rootfs_cache.write().await;
+        let active_ids: std::collections::HashSet<String> = {
+            let workloads = self.workloads.read().await;
+            workloads.keys().cloned().collect()
+        };
+        cache.retain(|id, path| {
+            if !active_ids.contains(id) {
+                let p = path.clone();
+                tokio::task::block_in_place(|| {
+                    if let Ok(meta) = std::fs::metadata(&p) {
+                        bytes_freed += meta.len() as i64;
+                    }
+                    std::fs::remove_dir_all(&p).ok();
+                });
+                false
+            } else {
+                true
+            }
+        });
+
+        Ok(tonic::Response::new(PruneResponse {
+            bundles_removed,
+            bytes_freed,
+            errors,
+        }))
     }
 }
 

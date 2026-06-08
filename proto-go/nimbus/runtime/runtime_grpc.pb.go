@@ -48,6 +48,7 @@ const (
 	Runtime_CreateNetwork_FullMethodName    = "/nimbus.runtime.Runtime/CreateNetwork"
 	Runtime_RemoveNetwork_FullMethodName    = "/nimbus.runtime.Runtime/RemoveNetwork"
 	Runtime_ListNetworks_FullMethodName     = "/nimbus.runtime.Runtime/ListNetworks"
+	Runtime_Prune_FullMethodName            = "/nimbus.runtime.Runtime/Prune"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -125,6 +126,9 @@ type RuntimeClient interface {
 	RemoveNetwork(ctx context.Context, in *RemoveNetworkRequest, opts ...grpc.CallOption) (*RemoveNetworkResponse, error)
 	// List all registered networks.
 	ListNetworks(ctx context.Context, in *ListNetworksRequest, opts ...grpc.CallOption) (*ListNetworksResponse, error)
+	// Prune removes stopped workloads, stale bundles, and temporary
+	// materialized rootfs directories to reclaim disk space.
+	Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error)
 }
 
 type runtimeClient struct {
@@ -467,6 +471,16 @@ func (c *runtimeClient) ListNetworks(ctx context.Context, in *ListNetworksReques
 	return out, nil
 }
 
+func (c *runtimeClient) Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PruneResponse)
+	err := c.cc.Invoke(ctx, Runtime_Prune_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -542,6 +556,9 @@ type RuntimeServer interface {
 	RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error)
 	// List all registered networks.
 	ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error)
+	// Prune removes stopped workloads, stale bundles, and temporary
+	// materialized rootfs directories to reclaim disk space.
+	Prune(context.Context, *PruneRequest) (*PruneResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -638,6 +655,9 @@ func (UnimplementedRuntimeServer) RemoveNetwork(context.Context, *RemoveNetworkR
 }
 func (UnimplementedRuntimeServer) ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNetworks not implemented")
+}
+func (UnimplementedRuntimeServer) Prune(context.Context, *PruneRequest) (*PruneResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Prune not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -1132,6 +1152,24 @@ func _Runtime_ListNetworks_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_Prune_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PruneRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).Prune(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_Prune_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).Prune(ctx, req.(*PruneRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1230,6 +1268,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNetworks",
 			Handler:    _Runtime_ListNetworks_Handler,
+		},
+		{
+			MethodName: "Prune",
+			Handler:    _Runtime_Prune_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

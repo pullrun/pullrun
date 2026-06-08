@@ -102,6 +102,10 @@ service Runtime {
 
     // List all registered networks.
     rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse);
+
+    // Prune removes stopped workloads, stale bundles, and temporary
+    // materialized rootfs directories to reclaim disk space.
+    rpc Prune(PruneRequest) returns (PruneResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -655,6 +659,15 @@ message InfoResponse {
     int64 store_total_nodes = 7;
     // Go runtime version string.
     string go_version = 8;
+}
+
+// --- Prune ---
+
+message PruneRequest {}
+message PruneResponse {
+    int64 bundles_removed = 1;
+    int64 bytes_freed = 2;
+    repeated string errors = 3;
 }
 
 // --- Diff (docker diff equivalent) ---

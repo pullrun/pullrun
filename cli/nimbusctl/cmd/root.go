@@ -48,6 +48,7 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewCommitCommand(opts))
 	cmd.AddCommand(NewDiffCommand(opts))
 	cmd.AddCommand(NewNetworkCommand(opts))
+	cmd.AddCommand(NewPruneCommand(opts))
 	cmd.AddCommand(NewInfoCommand(opts))
 	cmd.AddCommand(NewVersionCommand())
 

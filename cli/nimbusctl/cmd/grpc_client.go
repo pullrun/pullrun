@@ -200,3 +200,7 @@ func (c *GRPCClient) RemoveNetwork(ctx context.Context, req *runtimepb.RemoveNet
 func (c *GRPCClient) ListNetworks(ctx context.Context, req *runtimepb.ListNetworksRequest) (*runtimepb.ListNetworksResponse, error) {
 	return c.client.ListNetworks(ctx, req)
 }
+
+func (c *GRPCClient) Prune(ctx context.Context, req *runtimepb.PruneRequest) (*runtimepb.PruneResponse, error) {
+	return c.client.Prune(ctx, req)
+}
