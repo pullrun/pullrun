@@ -67,6 +67,16 @@ impl LinuxContainerExecutor {
                 .args(["link", "set", bridge_name, "up"])
                 .status()
                 .map_err(|e| ExecError::ExecutionFailed(format!("ip link set {bridge_name} up: {e}")))?;
+            // Assign the gateway IP to the bridge so the host has a
+            // route to containers. Without this, the proxy's
+            // TcpStream::connect(container_ip:port) gets no route
+            // and resets the client connection.
+            let gateway_ip = DEFAULT_GATEWAY.to_string();
+            if bridge_name == DEFAULT_BRIDGE_NAME {
+                let _ = Command::new("ip")
+                    .args(["addr", "add", &format!("{gateway_ip}/16"), "dev", bridge_name])
+                    .status();
+            }
         }
         // If status != success, the bridge already exists — that's fine.
         Ok(())

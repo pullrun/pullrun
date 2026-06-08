@@ -185,3 +185,18 @@ func (c *GRPCClient) DiffWorkload(ctx context.Context, req *runtimepb.DiffReques
 func (c *GRPCClient) RuntimeInfo(ctx context.Context, req *runtimepb.InfoRequest) (*runtimepb.InfoResponse, error) {
 	return c.client.RuntimeInfo(ctx, req)
 }
+
+// CreateNetwork creates a user-defined bridge network.
+func (c *GRPCClient) CreateNetwork(ctx context.Context, req *runtimepb.CreateNetworkRequest) (*runtimepb.CreateNetworkResponse, error) {
+	return c.client.CreateNetwork(ctx, req)
+}
+
+// RemoveNetwork removes a user-defined bridge network.
+func (c *GRPCClient) RemoveNetwork(ctx context.Context, req *runtimepb.RemoveNetworkRequest) (*runtimepb.RemoveNetworkResponse, error) {
+	return c.client.RemoveNetwork(ctx, req)
+}
+
+// ListNetworks lists all networks.
+func (c *GRPCClient) ListNetworks(ctx context.Context, req *runtimepb.ListNetworksRequest) (*runtimepb.ListNetworksResponse, error) {
+	return c.client.ListNetworks(ctx, req)
+}

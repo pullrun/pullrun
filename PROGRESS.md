@@ -1,10 +1,12 @@
 # Nimbus — Build Progress
 
 **Last updated:** 2026-06-08
-**Status:** Fully independent of Docker. Phase D/E — resource limits, volumes, health checks, live stats, docker cp, build layer caching all verified. Deployed and running on server.
-**Tests:** 101 Rust + 9 Go — all passing.
-**New:** Bridge fix deployed (`ensure_bridge_exists` now correctly creates bridges using `ip link add` with "File exists" tolerance instead of `ip link show` which never detected missing bridges).
-**Previously:** Resource limits (`--cpu`/`--memory` + `nimbusctl update`), volume/bind mounts, compose auth, live stats (`nimbusctl stats`), health checks (`--health-cmd`), docker cp (`nimbusctl cp`), build layer caching, container compatibility (/tmp, /dev/shm, /etc/hosts, /etc/resolv.conf).
+**Status:** Fully independent of Docker. Phase E — all major Docker CLI gaps closed (restart policies, commit/diff, info/version). Deployed and running on server.
+**Tests:** 101+ Rust + 9 Go — all passing.
+**New (Gap 3):** `nimbusctl info` (runtime version, uptime, store stats) + `nimbusctl version`.
+**Previously (Gap 2):** `nimbusctl commit <id> [tag]` (running-container snapshot → DAG layer) + `nimbusctl diff <id>` (added/modified/deleted file listing vs original image).
+**Previously (Gap 1):** `--restart` flag (`no`/`on-failure`/`always`/`unless-stopped`) with exponential backoff watcher, race-fixed status check.
+**Previously:** Bridge fix deployed, resource limits (`--cpu`/`--memory`), volumes, compose auth, live stats, health checks, docker cp, build layer caching.
 
 ---
 
@@ -108,18 +110,18 @@
 |---------|--------|--------|-------|
 | **Build** | `docker build` | ✅ | Native DAG-aware builder with layer caching (SHA256 instruction cache). No Docker needed. |
 | **Tag** | `docker tag` | Not needed | Content-addressed; root digest IS the tag |
-| **Commit** | `docker commit` | ❌ | No running-container snapshot yet |
-| **Diff** | `docker diff` | ❌ | No filesystem diff |
+| **Commit** | `docker commit` | ✅ | `nimbusctl commit <id>` — running-container snapshot into DAG via `build_dag_from_directory` |
+| **Diff** | `docker diff` | ✅ | `nimbusctl diff <id>` — added/modified/deleted file listing vs original image tree |
 | **Volume** | `docker volume` | ✅ | Bind mounts via `--volume`/`-v` + compose volumes translation |
-| **Network create** | `docker network` | ❌ | Single bridge; user-defined networks not supported |
+| **Network create** | `docker network` | ✅ | `nimbusctl network create/rm/ls` — user-defined bridge networks with persistent registry |
 | **Login** | `docker login` | ✅ | `nimbusctl login`/`logout` stores in `~/.nimbus/auth.json`, 0600, auto-used by pull/push/compose |
 | **CP** | `docker cp` | ✅ | `nimbusctl cp` via CopyFile RPC with path-escape validation |
 | **Stats** | `docker stats` | ✅ | `nimbusctl stats` via GetWorkloadStats RPC + cgroupfs |
 | **Export/Import** | `docker export/import` | Different | Nimbus has `save`/`load` in DAG-native format |
-| **Info / Version** | `docker info` | ❌ | No system info command |
+| **Info / Version** | `docker info` / `--version` | ✅ | `nimbusctl info` (version, uptime, store, workloads) + `nimbusctl version` |
 | **Secret / Config** | `docker secret` | ❌ | |
 | **Healthcheck** | HEALTHCHECK | ✅ | Executor::exec() watcher loop + health state machine + `--health-cmd` |
-| **Restart policy** | `--restart always` | ❌ | No auto-restart on exit |
+| **Restart policy** | `--restart` | ✅ | `--restart no|on-failure|always|unless-stopped` with exponential backoff watcher |
 | **Resource limits** | `--memory --cpus` | ✅ | CPU/memory limits + live update via `runc update` + `nimbusctl update --cpu --memory` |
 | **Native build** | Dockerfile → layer cache | ✅ | SHA256 instruction cache in DagBuilder for RUN/COPY/ADD |
 | **Multi-node** | Swarm / Compose | ❌ | Control plane stub only; no cross-node orchestration |
@@ -159,17 +161,19 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 ## Next steps (in priority order — closing remaining Docker feature gaps first)
 
-### Must-have to match Docker CLI surface (implement these next)
+### Must-have to match Docker CLI surface (implemented — remaining gaps)
 
-1. **Restart policies** — Auto-restart workloads on unexpected exit (`--restart always` equivalent). Watch exited containers, re-create on non-zero exit. This is the biggest UX gap versus Docker.
+1. ~~**Restart policies**~~ ✅ — `--restart no|on-failure|always|unless-stopped` with exponential backoff watcher.
 
-2. **Commit / diff** — `docker commit` equivalent: snapshot a running container's rootfs diff back into the DAG store. `docker diff` equivalent: enumerate files added/modified/deleted since the container started. Uses the existing materializer + OCI layer reconstruction infrastructure.
+2. ~~**Commit / diff**~~ ✅ — `nimbusctl commit <id> [tag]` + `nimbusctl diff <id>`.
 
-3. **Info / Version** — `nimbusctl info` command: daemon version, store size, uptime, backend availability, disk usage. `nimbusctl version`: binary version display.
+3. ~~**Info / Version**~~ ✅ — `nimbusctl info` (version, uptime, store stats) + `nimbusctl version`.
 
-4. **Network create** — User-defined bridge networks (Docker `docker network create` equivalent). Currently only a single flat 10.42.0.0/16 bridge. Allow named networks with custom subnets, attach workloads by name.
+4. ~~**Network create**~~ ✅ — `nimbusctl network create/rm/ls` — user-defined bridge networks with persistent registry (`{store_root}/networks.json`), deterministic /24 subnet allocation from 10.43.0.0/16.
 
-5. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane. Depends on #5 (control plane progression).
+5. ~~**Proxy TCP reset fix**~~ ✅ — Added `ip addr add 10.42.0.1/16 dev <bridge>` to `ensure_bridge_exists` so the bridge has a host-side IP and the kernel has a route to containers. The proxy's `TcpStream::connect(container_ip:port)` now works.
+
+6. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane. Depends on control plane progression.
 
 ### Performance & reliability (important, but less user-visible)
 

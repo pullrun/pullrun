@@ -269,10 +269,10 @@ reason to optimize them (real load + a real eBPF implementation).
 - Windows WSL2 forwarding
 - iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
 - `nimbusctl login/logout` with `--password-stdin` for CI usage
-- **Restart policies** — auto-restart on exit (Docker `--restart always` equivalent) — **highest-priority gap**
-- **Commit / diff** — running-container snapshot and filesystem diff — **next after restart**
-- **User-defined bridge networks** — currently single flat bridge
-- **`nimbusctl info` / `nimbusctl version`** — system info command — **quick win, next after commit/diff**
+- ~~**Restart policies**~~ ✅ — `--restart` flag implemented with exponential backoff watcher
+- ~~**Commit / diff**~~ ✅ — `nimbusctl commit` + `nimbusctl diff` implemented
+- ~~**`nimbusctl info` / `nimbusctl version`**~~ ✅ — system info commands implemented
+- ~~**User-defined bridge networks**~~ ✅ — `nimbusctl network create/rm/ls` implemented
 - **Multi-node orchestration** — control plane needs scheduler, cross-node DNS, persistence (etcd) — post-v1
 
 **Test coverage: 101 Rust tests pass** (workspace-wide). **9 Go tests pass**

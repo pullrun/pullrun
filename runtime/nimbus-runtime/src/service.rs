@@ -33,8 +33,10 @@ use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
     AttachMessage, CopyFileRequest, CopyFileResponse, CommitImageRequest, CommitImageResponse,
-    DagNode, DiffRequest, DiffResponse, Event as ProtoEvent, ExecRequest,
-    InfoRequest, InfoResponse,
+    CreateNetworkRequest, CreateNetworkResponse, DagNode, DiffRequest, DiffResponse,
+    Event as ProtoEvent, ExecRequest, InfoRequest, InfoResponse,
+    ListNetworksRequest, ListNetworksResponse, NetworkInfo,
+    RemoveNetworkRequest, RemoveNetworkResponse,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
@@ -3255,6 +3257,90 @@ impl Runtime for RuntimeService {
             go_version: String::new(),
         }))
     }
+
+    async fn create_network(
+        &self,
+        request: tonic::Request<CreateNetworkRequest>,
+    ) -> Result<tonic::Response<CreateNetworkResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.name.is_empty() {
+            return Err(Status::invalid_argument("network name is required"));
+        }
+
+        // Create the bridge device.
+        bridge_create(&req.name).map_err(|e| {
+            Status::internal(format!("create bridge: {e}"))
+        })?;
+
+        // Determine subnet. For v0, use a deterministic /24 based on the bridge name.
+        let subnet = if req.subnet.is_empty() {
+            let subnet_str = network_subnet_for(&req.name);
+            subnet_str
+        } else {
+            req.subnet.clone()
+        };
+
+        // Persist the network to the registry file.
+        persist_network(&self.config.store_root, &req.name, &subnet)
+            .map_err(|e| Status::internal(format!("persist network: {e}")))?;
+
+        Ok(tonic::Response::new(CreateNetworkResponse {
+            success: true,
+            bridge_name: req.name,
+            subnet,
+        }))
+    }
+
+    async fn remove_network(
+        &self,
+        request: tonic::Request<RemoveNetworkRequest>,
+    ) -> Result<tonic::Response<RemoveNetworkResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.name.is_empty() {
+            return Err(Status::invalid_argument("network name is required"));
+        }
+
+        // Unregister from persisted registry.
+        unpersist_network(&self.config.store_root, &req.name)
+            .map_err(|e| Status::internal(format!("unpersist network: {e}")))?;
+
+        // Delete the bridge device.
+        bridge_delete(&req.name).map_err(|e| {
+            Status::internal(format!("delete bridge: {e}"))
+        })?;
+
+        Ok(tonic::Response::new(RemoveNetworkResponse { success: true }))
+    }
+
+    async fn list_networks(
+        &self,
+        _request: tonic::Request<ListNetworksRequest>,
+    ) -> Result<tonic::Response<ListNetworksResponse>, tonic::Status> {
+        let networks = list_persisted_networks(&self.config.store_root)
+            .unwrap_or_default();
+
+        // Count attached workloads per network for the response.
+        let workloads = self.workloads.read().await;
+        let mut network_workload_counts: HashMap<String, u64> = HashMap::new();
+        for state in workloads.values() {
+            if let Some(ref bn) = state.bridge_name {
+                *network_workload_counts.entry(bn.clone()).or_default() += 1;
+            }
+        }
+        drop(workloads);
+
+        let networks: Vec<NetworkInfo> = networks
+            .into_iter()
+            .map(|(net_name, subnet)| NetworkInfo {
+                name: net_name.clone(),
+                bridge_name: net_name.clone(),
+                subnet,
+                attached_workloads: network_workload_counts.get(&net_name).copied().unwrap_or(0),
+            })
+            .collect();
+
+        Ok(tonic::Response::new(ListNetworksResponse { networks }))
+    }
 }
 
 /// Translate a `nimbus_vsock::Frame` from the blocking
@@ -3510,4 +3596,92 @@ fn walk_tree_node(
         }
     }
     Ok(())
+}
+
+// --- Network management helpers ---
+
+fn networks_registry_path(store_root: &std::path::Path) -> std::path::PathBuf {
+    store_root.join("networks.json")
+}
+
+fn bridge_create(name: &str) -> Result<(), String> {
+    let status = std::process::Command::new("ip")
+        .args(["link", "add", name, "type", "bridge"])
+        .status()
+        .map_err(|e| format!("ip link add: {e}"))?;
+    if !status.success() {
+        return Ok(());
+    }
+    std::process::Command::new("ip")
+        .args(["link", "set", name, "up"])
+        .status()
+        .map_err(|e| format!("ip link set up: {e}"))?;
+    Ok(())
+}
+
+fn bridge_delete(name: &str) -> Result<(), String> {
+    let _status = std::process::Command::new("ip")
+        .args(["link", "delete", name])
+        .status()
+        .map_err(|e| format!("ip link delete: {e}"))?;
+    Ok(())
+}
+
+/// Deterministic /24 subnet for a bridge name. Hash the name into
+/// the 10.43.0.0/16 range, yielding 10.43.X.0/24 where X ∈ [1,255].
+fn network_subnet_for(name: &str) -> String {
+    use sha2::Digest;
+    let hash = sha2::Sha256::digest(name.as_bytes());
+    let octet = (hash[0] as u16 % 255 + 1) as u8;
+    format!("10.43.{}.0/24", octet)
+}
+
+fn persist_network(store_root: &std::path::Path, name: &str, subnet: &str) -> Result<(), String> {
+    let path = networks_registry_path(store_root);
+    let mut networks: HashMap<String, String> = if path.exists() {
+        let data = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read networks.json: {e}"))?;
+        serde_json::from_str(&data).unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+    networks.insert(name.to_string(), subnet.to_string());
+    let data = serde_json::to_string_pretty(&networks)
+        .map_err(|e| format!("serialize networks: {e}"))?;
+    std::fs::write(&path, data)
+        .map_err(|e| format!("write networks.json: {e}"))?;
+    Ok(())
+}
+
+fn unpersist_network(store_root: &std::path::Path, name: &str) -> Result<(), String> {
+    let path = networks_registry_path(store_root);
+    if !path.exists() {
+        return Ok(());
+    }
+    let data = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read networks.json: {e}"))?;
+    let mut networks: HashMap<String, String> =
+        serde_json::from_str(&data).unwrap_or_default();
+    networks.remove(name);
+    let data = serde_json::to_string_pretty(&networks)
+        .map_err(|e| format!("serialize networks: {e}"))?;
+    std::fs::write(&path, data)
+        .map_err(|e| format!("write networks.json: {e}"))?;
+    Ok(())
+}
+
+fn list_persisted_networks(
+    store_root: &std::path::Path,
+) -> Result<Vec<(String, String)>, String> {
+    let path = networks_registry_path(store_root);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let data = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read networks.json: {e}"))?;
+    let networks: HashMap<String, String> =
+        serde_json::from_str(&data).unwrap_or_default();
+    let mut result: Vec<(String, String)> = networks.into_iter().collect();
+    result.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(result)
 }

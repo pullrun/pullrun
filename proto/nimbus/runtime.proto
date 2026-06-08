@@ -89,6 +89,19 @@ service Runtime {
 
     // Return runtime info: version, uptime, store statistics, workload counts.
     rpc RuntimeInfo(InfoRequest) returns (InfoResponse);
+
+    // --- Network management (Gap 4) ---
+
+    // Create a user-defined bridge network (docker network create equivalent).
+    // Creates a Linux bridge device and registers it in the runtime's network
+    // registry. Workloads can attach by setting bridge_name on RunRequest.
+    rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse);
+
+    // Remove a user-defined bridge network. Deletes the Linux bridge device.
+    rpc RemoveNetwork(RemoveNetworkRequest) returns (RemoveNetworkResponse);
+
+    // List all registered networks.
+    rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -580,6 +593,44 @@ message CommitImageResponse {
     // Number of new nodes stored in the DAG (may be 0 if no changes
     // detected and dedup covered everything).
     uint64 new_nodes = 3;
+}
+
+// --- Network management ---
+
+message CreateNetworkRequest {
+    // Name of the network (used as bridge name for device creation).
+    string name = 1;
+    // Optional custom subnet in CIDR notation (e.g. "10.43.1.0/24").
+    // If empty, a /24 subnet is auto-allocated from 10.43.0.0/16.
+    string subnet = 2;
+}
+
+message CreateNetworkResponse {
+    bool success = 1;
+    string bridge_name = 2;
+    string subnet = 3;
+}
+
+message RemoveNetworkRequest {
+    string name = 1;
+}
+
+message RemoveNetworkResponse {
+    bool success = 1;
+}
+
+message ListNetworksRequest {}
+
+message NetworkInfo {
+    string name = 1;
+    string bridge_name = 2;
+    string subnet = 3;
+    // Number of workloads currently attached to this network.
+    uint64 attached_workloads = 4;
+}
+
+message ListNetworksResponse {
+    repeated NetworkInfo networks = 1;
 }
 
 // --- Info / Version ---

@@ -45,6 +45,9 @@ const (
 	Runtime_CommitImage_FullMethodName      = "/nimbus.runtime.Runtime/CommitImage"
 	Runtime_DiffWorkload_FullMethodName     = "/nimbus.runtime.Runtime/DiffWorkload"
 	Runtime_RuntimeInfo_FullMethodName      = "/nimbus.runtime.Runtime/RuntimeInfo"
+	Runtime_CreateNetwork_FullMethodName    = "/nimbus.runtime.Runtime/CreateNetwork"
+	Runtime_RemoveNetwork_FullMethodName    = "/nimbus.runtime.Runtime/RemoveNetwork"
+	Runtime_ListNetworks_FullMethodName     = "/nimbus.runtime.Runtime/ListNetworks"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -114,6 +117,14 @@ type RuntimeClient interface {
 	DiffWorkload(ctx context.Context, in *DiffRequest, opts ...grpc.CallOption) (*DiffResponse, error)
 	// Return runtime info: version, uptime, store statistics, workload counts.
 	RuntimeInfo(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoResponse, error)
+	// Create a user-defined bridge network (docker network create equivalent).
+	// Creates a Linux bridge device and registers it in the runtime's network
+	// registry. Workloads can attach by setting bridge_name on RunRequest.
+	CreateNetwork(ctx context.Context, in *CreateNetworkRequest, opts ...grpc.CallOption) (*CreateNetworkResponse, error)
+	// Remove a user-defined bridge network. Deletes the Linux bridge device.
+	RemoveNetwork(ctx context.Context, in *RemoveNetworkRequest, opts ...grpc.CallOption) (*RemoveNetworkResponse, error)
+	// List all registered networks.
+	ListNetworks(ctx context.Context, in *ListNetworksRequest, opts ...grpc.CallOption) (*ListNetworksResponse, error)
 }
 
 type runtimeClient struct {
@@ -426,6 +437,36 @@ func (c *runtimeClient) RuntimeInfo(ctx context.Context, in *InfoRequest, opts .
 	return out, nil
 }
 
+func (c *runtimeClient) CreateNetwork(ctx context.Context, in *CreateNetworkRequest, opts ...grpc.CallOption) (*CreateNetworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateNetworkResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateNetwork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveNetwork(ctx context.Context, in *RemoveNetworkRequest, opts ...grpc.CallOption) (*RemoveNetworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveNetworkResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveNetwork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListNetworks(ctx context.Context, in *ListNetworksRequest, opts ...grpc.CallOption) (*ListNetworksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNetworksResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListNetworks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -493,6 +534,14 @@ type RuntimeServer interface {
 	DiffWorkload(context.Context, *DiffRequest) (*DiffResponse, error)
 	// Return runtime info: version, uptime, store statistics, workload counts.
 	RuntimeInfo(context.Context, *InfoRequest) (*InfoResponse, error)
+	// Create a user-defined bridge network (docker network create equivalent).
+	// Creates a Linux bridge device and registers it in the runtime's network
+	// registry. Workloads can attach by setting bridge_name on RunRequest.
+	CreateNetwork(context.Context, *CreateNetworkRequest) (*CreateNetworkResponse, error)
+	// Remove a user-defined bridge network. Deletes the Linux bridge device.
+	RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error)
+	// List all registered networks.
+	ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -580,6 +629,15 @@ func (UnimplementedRuntimeServer) DiffWorkload(context.Context, *DiffRequest) (*
 }
 func (UnimplementedRuntimeServer) RuntimeInfo(context.Context, *InfoRequest) (*InfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RuntimeInfo not implemented")
+}
+func (UnimplementedRuntimeServer) CreateNetwork(context.Context, *CreateNetworkRequest) (*CreateNetworkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateNetwork not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveNetwork(context.Context, *RemoveNetworkRequest) (*RemoveNetworkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveNetwork not implemented")
+}
+func (UnimplementedRuntimeServer) ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNetworks not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -1020,6 +1078,60 @@ func _Runtime_RuntimeInfo_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_CreateNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateNetworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateNetwork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateNetwork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateNetwork(ctx, req.(*CreateNetworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveNetworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveNetwork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveNetwork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveNetwork(ctx, req.(*RemoveNetworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListNetworks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNetworksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListNetworks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListNetworks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListNetworks(ctx, req.(*ListNetworksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1106,6 +1218,18 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RuntimeInfo",
 			Handler:    _Runtime_RuntimeInfo_Handler,
+		},
+		{
+			MethodName: "CreateNetwork",
+			Handler:    _Runtime_CreateNetwork_Handler,
+		},
+		{
+			MethodName: "RemoveNetwork",
+			Handler:    _Runtime_RemoveNetwork_Handler,
+		},
+		{
+			MethodName: "ListNetworks",
+			Handler:    _Runtime_ListNetworks_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
