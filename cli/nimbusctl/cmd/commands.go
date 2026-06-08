@@ -104,19 +104,24 @@ func parseVolumeSpec(spec string) (*runtimepb.Mount, error) {
 
 func NewRunCommand(opts *RootOptions) *cobra.Command {
 	var (
-		backend       string
-		allowOutbound []string
-		allowInbound  []string
-		envVars       []string
-		envMap        = map[string]string{}
-		command       []string
-		cpuMillicores uint64
-		memoryBytes   uint64
-		networkMode   string
-		name          string
-		kernelImage   string
-		registry      string
-		volumes       []string
+		backend         string
+		allowOutbound   []string
+		allowInbound    []string
+		envVars         []string
+		envMap          = map[string]string{}
+		command         []string
+		cpuMillicores   uint64
+		memoryBytes     uint64
+		networkMode     string
+		name            string
+		kernelImage     string
+		registry        string
+		volumes         []string
+		healthCmd       string
+		healthInterval  uint32
+		healthTimeout   uint32
+		healthRetries   uint32
+		healthStartPeriod uint32
 	)
 
 	cmd := &cobra.Command{
@@ -186,6 +191,27 @@ DAG store if not already present.`,
 				mounts = append(mounts, m)
 			}
 
+			// Health check configuration
+			var healthCheck *runtimepb.HealthCheck
+			if healthCmd != "" {
+				healthCheck = &runtimepb.HealthCheck{
+					Test:               []string{"CMD-SHELL", healthCmd},
+					IntervalSeconds:    healthInterval,
+					TimeoutSeconds:     healthTimeout,
+					Retries:            healthRetries,
+					StartPeriodSeconds: healthStartPeriod,
+				}
+				if healthCheck.IntervalSeconds == 0 {
+					healthCheck.IntervalSeconds = 30
+				}
+				if healthCheck.TimeoutSeconds == 0 {
+					healthCheck.TimeoutSeconds = 30
+				}
+				if healthCheck.Retries == 0 {
+					healthCheck.Retries = 3
+				}
+			}
+
 			resp, err := client.RunWorkload(ctx, &runtimepb.RunRequest{
 				Id:            id,
 				RootDigest:    rootDigest,
@@ -198,6 +224,7 @@ DAG store if not already present.`,
 				NetworkRules:  rules,
 				KernelImage:   kernelImage,
 				Mounts:        mounts,
+				HealthCheck:   healthCheck,
 			})
 			if err != nil {
 				return fmt.Errorf("run workload: %w", err)
@@ -225,6 +252,11 @@ DAG store if not already present.`,
 	cmd.Flags().StringVar(&kernelImage, "kernel-image", "", "OCI reference for the kernel image (required for --backend=vm, e.g. 'nimbus/kernel-asahi:6.19.14')")
 	cmd.Flags().StringVar(&registry, "registry", "", "Registry to pull the workload image from (default: docker.io; use 'localhost:5000' for local registries)")
 	cmd.Flags().StringSliceVarP(&volumes, "volume", "v", nil, "Bind mount (source:destination[:options]), e.g. /host/path:/container/path:ro")
+	cmd.Flags().StringVar(&healthCmd, "health-cmd", "", "Health check command (e.g. 'curl -f http://localhost:80' or 'ls /tmp/healthy')")
+	cmd.Flags().Uint32Var(&healthInterval, "health-interval", 30, "Health check interval (seconds)")
+	cmd.Flags().Uint32Var(&healthTimeout, "health-timeout", 30, "Health check timeout (seconds)")
+	cmd.Flags().Uint32Var(&healthRetries, "health-retries", 3, "Consecutive failures before marking unhealthy")
+	cmd.Flags().Uint32Var(&healthStartPeriod, "health-start-period", 0, "Grace period before health checks start (seconds)")
 	return cmd
 }
 

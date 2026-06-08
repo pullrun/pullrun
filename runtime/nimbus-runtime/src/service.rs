@@ -294,6 +294,21 @@ impl Executor for ExecutorRouter {
         // Fall back to regular container.
         self.container.stats(id).await
     }
+
+    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError> {
+        if let Some(ref rootless) = self.rootless {
+            if rootless.bundle_dir_for(id).exists() {
+                return rootless.exec(id, command, timeout_secs).await;
+            }
+        }
+        if let Some(vm) = &self.vm {
+            let sidecar = vm.sidecar_path_for(id);
+            if sidecar.exists() {
+                return vm.exec(id, command, timeout_secs).await;
+            }
+        }
+        self.container.exec(id, command, timeout_secs).await
+    }
 }
 
 /// Builder: call `.service()` to get the actual gRPC service.
@@ -575,6 +590,70 @@ impl RuntimeCommand {
                     map.keys().cloned().collect()
                 };
                 announced.retain(|id| live.contains(id));
+            }
+        });
+
+        // Health check watcher: runs every 10 seconds, probes workloads
+        // that have health_check configured, updates health status.
+        let hc_workloads = workloads.clone();
+        let hc_executor = executor.clone();
+        tokio::spawn(async move {
+            use std::time::Duration;
+            let mut interval = tokio::time::interval(Duration::from_secs(10));
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let probes: Vec<(String, Vec<String>, u32, u32, u32, i64)> = {
+                    let map = hc_workloads.read().await;
+                    map.iter()
+                        .filter(|(_, s)| s.status == "running")
+                        .filter_map(|(id, s)| {
+                            s.health_check.as_ref().map(|hc| {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_secs() as i64)
+                                    .unwrap_or(0);
+                                (id.clone(), hc.test.clone(), hc.interval_seconds.max(1),
+                                 hc.timeout_seconds.max(1), hc.retries.max(1),
+                                 s.start_time + hc.start_period_seconds as i64)
+                            })
+                        })
+                        .filter(|(_, _, interval, _, _, grace_end)| {
+                            let interval = *interval as u64;
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs() as u64)
+                                .unwrap_or(0);
+                            now % interval == 0 || now >= *grace_end as u64
+                        })
+                        .collect()
+                };
+                for (id, test, _, timeout, retries, grace_end) in probes {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    if now < grace_end {
+                        continue;
+                    }
+                    // Run the probe command via runc exec
+                    let healthy = hc_executor.exec(&id, &test, timeout as u64).await.map(|r| r == 0).unwrap_or(false);
+                    let mut map = hc_workloads.write().await;
+                    if let Some(state) = map.get_mut(&id) {
+                        if healthy {
+                            state.health = "healthy".to_string();
+                            state.health_failures = 0;
+                            state.health_last_success = now;
+                        } else {
+                            state.health_failures += 1;
+                            if state.health_failures >= retries {
+                                state.health = "unhealthy".to_string();
+                            } else if state.health != "unhealthy" {
+                                state.health = "starting".to_string();
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -912,6 +991,14 @@ pub struct WorkloadState {
     /// `RuntimeService::rootfs_cache`; we hold a copy of
     /// the `PathBuf` here for fast lookup.
     pub rootfs_dir: Option<std::path::PathBuf>,
+    /// Health check configuration (if any).
+    pub health_check: Option<nimbus_exec::HealthCheck>,
+    /// Current health status: "healthy", "unhealthy", "starting", "".
+    pub health: String,
+    /// Consecutive health check failures so far.
+    pub health_failures: u32,
+    /// Timestamp of the last successful health check (unix seconds).
+    pub health_last_success: i64,
 }
 
 pub struct RuntimeService {
@@ -1105,6 +1192,10 @@ impl RuntimeService {
             kernel_image_ref: final_kernel_image_ref.clone(),
             working_dir: final_working_dir.clone(),
             rootfs_dir,
+            health_check: None,
+            health: String::new(),
+            health_failures: 0,
+            health_last_success: 0,
         };
         workloads.insert(final_id.clone(), state.clone());
         drop(workloads);
@@ -1446,6 +1537,13 @@ impl Runtime for RuntimeService {
                 Some(req.bridge_name.clone())
             },
             mounts,
+            health_check: req.health_check.as_ref().map(|hc| nimbus_exec::HealthCheck {
+                test: hc.test.clone(),
+                interval_seconds: hc.interval_seconds,
+                timeout_seconds: hc.timeout_seconds,
+                retries: hc.retries,
+                start_period_seconds: hc.start_period_seconds,
+            }),
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -1608,6 +1706,7 @@ impl Runtime for RuntimeService {
         } else {
             None
         };
+        let hc = spec.health_check.clone();
         let state = WorkloadState {
             status: "running".to_string(),
             start_time: now,
@@ -1623,6 +1722,10 @@ impl Runtime for RuntimeService {
             kernel_image_ref: final_kernel_image_ref.clone(),
             working_dir: final_working_dir.clone(),
             rootfs_dir,
+            health_check: hc,
+            health: "starting".to_string(),
+            health_failures: 0,
+            health_last_success: 0,
         };
         workloads.insert(final_id.clone(), state.clone());
         drop(workloads);
@@ -1715,6 +1818,7 @@ impl Runtime for RuntimeService {
                 working_dir: service.working_dir.clone(),
                 bridge_name: service.bridge_name.clone(),
                 mounts: service.mounts.clone(),
+                health_check: service.health_check.clone(),
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -1815,6 +1919,7 @@ impl Runtime for RuntimeService {
             start_time: state.start_time,
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
             network_isolated: true,
+            health: state.health.clone(),
         }))
     }
 
@@ -1831,6 +1936,7 @@ impl Runtime for RuntimeService {
             start_time: state.start_time,
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
             network_isolated: true,
+            health: state.health.clone(),
         }).collect();
 
         Ok(tonic::Response::new(ListWorkloadsResponse { workloads: items }))

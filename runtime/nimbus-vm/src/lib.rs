@@ -444,6 +444,12 @@ impl Executor for FirecrackerExecutor {
             "FirecrackerExecutor does not support live stats yet".into(),
         ))
     }
+
+    async fn exec(&self, _id: &str, _command: &[String], _timeout_secs: u64) -> Result<i32, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "FirecrackerExecutor does not support exec yet".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -504,6 +510,12 @@ impl Executor for AppleVirtExecutor {
     }
 
     async fn stats(&self, _id: &str) -> Result<WorkloadStats, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "AppleVirtExecutor stub".into(),
+        ))
+    }
+
+    async fn exec(&self, _id: &str, _command: &[String], _timeout_secs: u64) -> Result<i32, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "AppleVirtExecutor stub".into(),
         ))

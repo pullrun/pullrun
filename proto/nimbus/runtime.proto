@@ -99,6 +99,8 @@ message ComposeService {
     string bridge_name = 13;
     // Volume/bind mount specifications for this service.
     repeated Mount mounts = 14;
+    // Health check configuration for this service.
+    HealthCheck health_check = 15;
 }
 
 message ComposePort {
@@ -167,6 +169,9 @@ message RunRequest {
     // Volume/bind mount specifications. These are added to the
     // OCI config.json 'mounts' array at container creation time.
     repeated Mount mounts = 13;
+    // Health check configuration. When set, the runtime periodically
+    // executes the probe command and reports health status.
+    HealthCheck health_check = 14;
 }
 
 message NetworkRule {
@@ -204,6 +209,8 @@ message WorkloadStatus {
     int64 start_time = 5;
     string internal_ip = 6;
     bool network_isolated = 7;
+    // Health status: "healthy", "unhealthy", "starting", "" (none configured).
+    string health = 8;
 }
 
 message ListWorkloadsRequest {}
@@ -363,6 +370,21 @@ message PortForwardRequest {
 
 message PortForwardData {
     bytes data = 1;
+}
+
+message HealthCheck {
+    // Command to run inside the container (e.g. ["CMD-SHELL", "curl -f http://localhost"]).
+    // Supports the same format as Docker HEALTHCHECK: ["CMD", "command", "arg"]
+    // or ["CMD-SHELL", "shell command"].
+    repeated string test = 1;
+    // How often to run the check (seconds). Default 30.
+    uint32 interval_seconds = 2;
+    // Maximum time for the check to complete (seconds). Default 30.
+    uint32 timeout_seconds = 3;
+    // Consecutive failures needed to mark unhealthy. Default 3.
+    uint32 retries = 4;
+    // Grace period before checks start (seconds). Default 0.
+    uint32 start_period_seconds = 5;
 }
 
 message UpdateWorkloadRequest {

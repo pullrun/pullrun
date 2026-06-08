@@ -88,6 +88,10 @@ mod tests {
                     kernel_image_ref: String::new(),
                     working_dir: String::new(),
                     rootfs_dir: None,
+                    health_check: None,
+                    health: String::new(),
+                    health_failures: 0,
+                    health_last_success: 0,
                 },
             );
         }

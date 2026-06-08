@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 pub use nimbus_net::NetworkRule;
 use nimbus_store::Digest;
@@ -98,6 +99,8 @@ pub struct WorkloadSpec {
     pub bridge_name: Option<String>,
     /// Volume/bind mount specifications.
     pub mounts: Vec<Mount>,
+    /// Health check configuration.
+    pub health_check: Option<HealthCheck>,
 }
 
 impl WorkloadSpec {
@@ -115,6 +118,7 @@ impl WorkloadSpec {
             kernel_path: None,
             bridge_name: None,
             mounts: vec![],
+            health_check: None,
         }
     }
 }
@@ -132,6 +136,7 @@ pub struct WorkloadSpecBuilder {
     kernel_path: Option<PathBuf>,
     bridge_name: Option<String>,
     mounts: Vec<Mount>,
+    health_check: Option<HealthCheck>,
 }
 
 impl WorkloadSpecBuilder {
@@ -180,6 +185,11 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn health_check(mut self, hc: HealthCheck) -> Self {
+        self.health_check = Some(hc);
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -194,6 +204,7 @@ impl WorkloadSpecBuilder {
             kernel_path: self.kernel_path,
             bridge_name: self.bridge_name,
             mounts: self.mounts,
+            health_check: self.health_check,
         }
     }
 }
@@ -219,6 +230,15 @@ pub struct WorkloadStats {
     pub disk_bytes: u64,
     pub network_rx_bytes: u64,
     pub network_tx_bytes: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HealthCheck {
+    pub test: Vec<String>,
+    pub interval_seconds: u32,
+    pub timeout_seconds: u32,
+    pub retries: u32,
+    pub start_period_seconds: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -257,4 +277,5 @@ pub trait Executor: Send + Sync {
         memory_bytes: Option<u64>,
     ) -> Result<(), ExecError>;
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError>;
+    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError>;
 }

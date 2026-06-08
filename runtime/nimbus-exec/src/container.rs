@@ -504,6 +504,19 @@ impl Executor for LinuxContainerExecutor {
         Ok(())
     }
 
+    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError> {
+        let mut args = vec!["exec".to_string(), id.to_string()];
+        args.extend(command.iter().cloned());
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            Command::new(&self.runc_path).args(&args).output(),
+        )
+        .await
+        .map_err(|_| ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s")))?
+        .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
+        Ok(output.status.code().unwrap_or(-1))
+    }
+
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {
         let output = Command::new(&self.runc_path)
             .args(["state", id])
@@ -759,6 +772,24 @@ impl Executor for RootlessContainerExecutor {
 
         info!(%id, cpu_millicores = ?cpu_millicores, memory_bytes = ?memory_bytes, "updated rootless container resources");
         Ok(())
+    }
+
+    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError> {
+        let mut args = vec![
+            "exec".to_string(),
+            "--root".to_string(),
+            self.config.state_root.to_string_lossy().to_string(),
+            id.to_string(),
+        ];
+        args.extend(command.iter().cloned());
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            Command::new(&self.config.runc_path).args(&args).output(),
+        )
+        .await
+        .map_err(|_| ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s")))?
+        .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
+        Ok(output.status.code().unwrap_or(-1))
     }
 
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {
