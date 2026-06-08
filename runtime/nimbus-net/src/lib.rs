@@ -45,6 +45,7 @@ pub struct NetworkRule {
     pub direction: Direction,
     pub protocol: Protocol,
     pub port: u16,
+    pub host_port: u16,
     pub to_host: Option<String>,
     pub from_cidrs: Option<Vec<String>>,
 }
@@ -55,6 +56,7 @@ impl NetworkRule {
             direction: Direction::Outbound,
             protocol: Protocol::Tcp,
             port,
+            host_port: 0,
             to_host: Some(to_host.into()),
             from_cidrs: None,
         }
@@ -65,6 +67,18 @@ impl NetworkRule {
             direction: Direction::Inbound,
             protocol: Protocol::Tcp,
             port,
+            host_port: 0,
+            to_host: None,
+            from_cidrs: None,
+        }
+    }
+
+    pub fn inbound_mapped(host_port: u16, container_port: u16) -> Self {
+        Self {
+            direction: Direction::Inbound,
+            protocol: Protocol::Tcp,
+            port: container_port,
+            host_port,
             to_host: None,
             from_cidrs: None,
         }

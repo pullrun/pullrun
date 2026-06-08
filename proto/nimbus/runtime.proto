@@ -227,6 +227,7 @@ message NetworkRule {
     uint32 port = 3;
     string to_host = 4;
     repeated string from_cidrs = 5;
+    uint32 host_port = 6;
 }
 
 message RunResponse {

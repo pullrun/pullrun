@@ -797,6 +797,7 @@ type NetworkRule struct {
 	Port          uint32                 `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
 	ToHost        string                 `protobuf:"bytes,4,opt,name=to_host,json=toHost,proto3" json:"to_host,omitempty"`
 	FromCidrs     []string               `protobuf:"bytes,5,rep,name=from_cidrs,json=fromCidrs,proto3" json:"from_cidrs,omitempty"`
+	HostPort      uint32                 `protobuf:"varint,6,opt,name=host_port,json=hostPort,proto3" json:"host_port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -864,6 +865,13 @@ func (x *NetworkRule) GetFromCidrs() []string {
 		return x.FromCidrs
 	}
 	return nil
+}
+
+func (x *NetworkRule) GetHostPort() uint32 {
+	if x != nil {
+		return x.HostPort
+	}
+	return 0
 }
 
 type RunResponse struct {
@@ -4730,14 +4738,15 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\x0erestart_policy\x18\x0f \x01(\x0e2\x1d.nimbus.runtime.RestartPolicyR\rrestartPolicy\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x93\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x01\n" +
 	"\vNetworkRule\x12\x1c\n" +
 	"\tdirection\x18\x01 \x01(\tR\tdirection\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x12\n" +
 	"\x04port\x18\x03 \x01(\rR\x04port\x12\x17\n" +
 	"\ato_host\x18\x04 \x01(\tR\x06toHost\x12\x1d\n" +
 	"\n" +
-	"from_cidrs\x18\x05 \x03(\tR\tfromCidrs\"s\n" +
+	"from_cidrs\x18\x05 \x03(\tR\tfromCidrs\x12\x1b\n" +
+	"\thost_port\x18\x06 \x01(\rR\bhostPort\"s\n" +
 	"\vRunResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03pid\x18\x02 \x01(\rR\x03pid\x12!\n" +

@@ -238,7 +238,7 @@ pub struct ProcessHandle {
     pub id: String,
     pub pid: Option<u32>,
     pub internal_ip: Option<String>,
-    pub host_ports: Vec<u16>,
+    pub host_ports: Vec<(u16, u16)>,
     pub backend: String,
     /// Name of the Linux bridge this workload's veth is attached to.
     /// Populated in `create()` from the spec's `bridge_name`; used in

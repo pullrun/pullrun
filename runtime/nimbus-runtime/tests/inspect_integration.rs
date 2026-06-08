@@ -63,6 +63,7 @@ mod tests {
             direction: nimbus_net::Direction::Inbound,
             protocol: nimbus_net::Protocol::Tcp,
             port: 8080,
+            host_port: 0,
             to_host: None,
             from_cidrs: Some(vec!["10.0.0.0/8".to_string()]),
         };

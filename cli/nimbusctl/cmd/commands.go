@@ -107,6 +107,7 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		backend         string
 		allowOutbound   []string
 		allowInbound    []string
+		publishPorts    []string
 		envVars         []string
 		envMap          = map[string]string{}
 		command         []string
@@ -163,7 +164,7 @@ DAG store if not already present.`,
 			}
 
 			// Build network rules
-			rules, err := buildNetworkRules(allowOutbound, allowInbound)
+			rules, err := buildNetworkRules(allowOutbound, allowInbound, publishPorts)
 			if err != nil {
 				return err
 			}
@@ -250,6 +251,7 @@ DAG store if not already present.`,
 	cmd.Flags().StringVar(&name, "name", "", "Workload name (auto-generated if empty)")
 	cmd.Flags().StringSliceVar(&allowOutbound, "allow-outbound", nil, "Allow outbound: tcp:host:port")
 	cmd.Flags().StringSliceVar(&allowInbound, "allow-inbound", nil, "Allow inbound port (e.g. 8080)")
+	cmd.Flags().StringSliceVarP(&publishPorts, "publish", "p", nil, "Publish host:container port (e.g. 8080:80, or just 8080)")
 	cmd.Flags().StringSliceVarP(&envVars, "env", "e", nil, "Environment variables (KEY=VALUE)")
 	cmd.Flags().StringSliceVar(&command, "cmd", nil, "Override entrypoint command")
 	cmd.Flags().Uint64Var(&cpuMillicores, "cpu", 1000, "CPU millicores (1000 = 1 vCPU)")
@@ -282,7 +284,7 @@ func parseRestartPolicy(s string) (runtimepb.RestartPolicy, error) {
 	}
 }
 
-func buildNetworkRules(outbound, inbound []string) ([]*runtimepb.NetworkRule, error) {
+func buildNetworkRules(outbound, inbound, publish []string) ([]*runtimepb.NetworkRule, error) {
 	var rules []*runtimepb.NetworkRule
 
 	for _, out := range outbound {
@@ -313,6 +315,40 @@ func buildNetworkRules(outbound, inbound []string) ([]*runtimepb.NetworkRule, er
 			Protocol:  "tcp",
 			Port:      uint32(port),
 		})
+	}
+
+	for _, pub := range publish {
+		// Format: "host_port:container_port" or just "port"
+		parts := strings.Split(pub, ":")
+		switch len(parts) {
+		case 1:
+			port, err := strconv.ParseUint(parts[0], 10, 16)
+			if err != nil {
+				return nil, fmt.Errorf("invalid --publish port %q: %w", pub, err)
+			}
+			rules = append(rules, &runtimepb.NetworkRule{
+				Direction: "inbound",
+				Protocol:  "tcp",
+				Port:      uint32(port),
+			})
+		case 2:
+			hostPort, err := strconv.ParseUint(parts[0], 10, 16)
+			if err != nil {
+				return nil, fmt.Errorf("invalid --publish host port %q: %w", parts[0], err)
+			}
+			containerPort, err := strconv.ParseUint(parts[1], 10, 16)
+			if err != nil {
+				return nil, fmt.Errorf("invalid --publish container port %q: %w", parts[1], err)
+			}
+			rules = append(rules, &runtimepb.NetworkRule{
+				Direction: "inbound",
+				Protocol:  "tcp",
+				Port:      uint32(containerPort),
+				HostPort:  uint32(hostPort),
+			})
+		default:
+			return nil, fmt.Errorf("invalid --publish %q (want host_port:container_port or port)", pub)
+		}
 	}
 
 	return rules, nil

@@ -1754,6 +1754,7 @@ impl Runtime for RuntimeService {
                     direction,
                     protocol,
                     port: r.port as u16,
+                    host_port: r.host_port as u16,
                     to_host,
                     from_cidrs,
                 }
@@ -2065,6 +2066,7 @@ impl Runtime for RuntimeService {
                         p.protocol.clone()
                     },
                     port: p.container_port,
+                    host_port: p.host_port,
                     to_host: String::new(),
                     from_cidrs: vec![],
                 })
@@ -2363,6 +2365,7 @@ impl Runtime for RuntimeService {
                     nimbus_net::Protocol::Udp => "udp".to_string(),
                 },
                 port: r.port as u32,
+                host_port: r.host_port as u32,
                 to_host: r.to_host.clone().unwrap_or_default(),
                 from_cidrs: r.from_cidrs.clone().unwrap_or_default(),
             })

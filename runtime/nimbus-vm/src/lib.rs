@@ -266,7 +266,7 @@ impl Executor for FirecrackerExecutor {
             host_ports: endpoint
                 .host_port_mappings
                 .iter()
-                .map(|(h, _)| *h)
+                .copied()
                 .collect(),
             backend: "vm".to_string(),
             bridge_name: None,

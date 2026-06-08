@@ -87,7 +87,7 @@ impl LinuxContainerExecutor {
         &self,
         id: &str,
         ip: Ipv4Addr,
-        host_ports: &[u16],
+        host_ports: &[(u16, u16)],
         bridge: &str,
     ) -> Result<(), ExecError> {
         use std::process::Command as SyncCommand;
@@ -149,7 +149,13 @@ impl LinuxContainerExecutor {
             if !host_ports.is_empty() {
                 let rules: Vec<NetworkRule> = host_ports
                     .iter()
-                    .map(|&port| NetworkRule::inbound(port))
+                    .map(|&(host_port, container_port)| {
+                        if host_port != container_port {
+                            NetworkRule::inbound_mapped(host_port, container_port)
+                        } else {
+                            NetworkRule::inbound(host_port)
+                        }
+                    })
                     .collect();
                 proxy.register_endpoint(id, ip.to_string(), &rules).await
                     .map_err(|e| ExecError::ExecutionFailed(format!("proxy register: {e}")))?;
@@ -371,7 +377,10 @@ impl Executor for LinuxContainerExecutor {
                 .network_rules
                 .iter()
                 .filter(|r| matches!(r.direction, Direction::Inbound))
-                .map(|r| r.port)
+                .map(|r| {
+                    let host_p = if r.host_port != 0 { r.host_port } else { r.port };
+                    (host_p, r.port)
+                })
                 .collect(),
             backend: "container".to_string(),
             bridge_name,
@@ -656,7 +665,10 @@ impl Executor for RootlessContainerExecutor {
                 .network_rules
                 .iter()
                 .filter(|r| matches!(r.direction, nimbus_net::Direction::Inbound))
-                .map(|r| r.port)
+                .map(|r| {
+                    let host_p = if r.host_port != 0 { r.host_port } else { r.port };
+                    (host_p, r.port)
+                })
                 .collect(),
             backend: "container-rootless".to_string(),
             bridge_name: None,

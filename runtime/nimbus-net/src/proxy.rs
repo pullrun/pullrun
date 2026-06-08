@@ -76,7 +76,7 @@ impl ProxyNetwork {
 
             let target_port = rule.port;
             let target_ip = internal_ip.clone();
-            let port = rule.port;
+            let port = if rule.host_port != 0 { rule.host_port } else { rule.port };
 
             match self
                 .start_inbound_proxy(workload_id, port, target_ip, target_port)
