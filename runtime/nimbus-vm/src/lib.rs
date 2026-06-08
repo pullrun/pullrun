@@ -427,6 +427,17 @@ impl Executor for FirecrackerExecutor {
             Ok("stopped".to_string())
         }
     }
+
+    async fn update(
+        &self,
+        _id: &str,
+        _cpu_millicores: Option<u64>,
+        _memory_bytes: Option<u64>,
+    ) -> Result<(), ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "FirecrackerExecutor does not support live resource updates yet".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -473,6 +484,17 @@ impl Executor for AppleVirtExecutor {
 
     async fn status(&self, _id: &str) -> Result<String, ExecError> {
         Ok("unavailable".to_string())
+    }
+
+    async fn update(
+        &self,
+        _id: &str,
+        _cpu_millicores: Option<u64>,
+        _memory_bytes: Option<u64>,
+    ) -> Result<(), ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "AppleVirtExecutor stub".into(),
+        ))
     }
 }
 

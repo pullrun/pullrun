@@ -245,6 +245,35 @@ impl Executor for LinuxContainerExecutor {
             }
         }
 
+        let mut linux = serde_json::json!({
+            "namespaces": [
+                {"type": "pid"},
+                {"type": "network"},
+                {"type": "ipc"},
+                {"type": "uts"},
+                {"type": "mount"}
+            ]
+        });
+
+        if spec.cpu_millicores.is_some() || spec.memory_bytes.is_some() {
+            let mut resources = serde_json::Map::new();
+            if let Some(cpu_millicores) = spec.cpu_millicores {
+                resources.insert("cpu".to_string(), serde_json::json!({
+                    "shares": cpu_millicores * 1024 / 1000,
+                    "quota": (cpu_millicores * 100) as i64,
+                    "period": 100000
+                }));
+            }
+            if let Some(mem_bytes) = spec.memory_bytes {
+                resources.insert("memory".to_string(), serde_json::json!({
+                    "limit": mem_bytes as i64,
+                    "swap": mem_bytes as i64
+                }));
+            }
+            linux.as_object_mut().unwrap()
+                .insert("resources".to_string(), serde_json::Value::Object(resources));
+        }
+
         let oci_spec = serde_json::json!({
             "ociVersion": "1.1.0",
             "process": {
@@ -288,15 +317,7 @@ impl Executor for LinuxContainerExecutor {
                 {"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"},
                 {"destination": "/sys", "type": "sysfs", "source": "sysfs"}
             ],
-            "linux": {
-                "namespaces": [
-                    {"type": "pid"},
-                    {"type": "network"},
-                    {"type": "ipc"},
-                    {"type": "uts"},
-                    {"type": "mount"}
-                ]
-            }
+            "linux": linux
         });
 
         std::fs::write(
@@ -433,6 +454,41 @@ impl Executor for LinuxContainerExecutor {
             });
 
         Ok(state.status)
+    }
+
+    async fn update(
+        &self,
+        id: &str,
+        cpu_millicores: Option<u64>,
+        memory_bytes: Option<u64>,
+    ) -> Result<(), ExecError> {
+        let mut args = vec!["update".to_string(), id.to_string()];
+
+        if let Some(cpu) = cpu_millicores {
+            args.push("--cpu-quota".to_string());
+            args.push((cpu * 100).to_string());
+            args.push("--cpu-period".to_string());
+            args.push("100000".to_string());
+            args.push("--cpu-shares".to_string());
+            args.push((cpu * 1024 / 1000).to_string());
+        }
+
+        if let Some(mem) = memory_bytes {
+            args.push("--memory".to_string());
+            args.push(mem.to_string());
+        }
+
+        let output = Command::new(&self.runc_path).args(&args).output().await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ExecError::ExecutionFailed(format!(
+                "runc update failed: {stderr}"
+            )));
+        }
+
+        info!(%id, cpu_millicores = ?cpu_millicores, memory_bytes = ?memory_bytes, "updated container resources");
+        Ok(())
     }
 }
 
@@ -596,5 +652,48 @@ impl Executor for RootlessContainerExecutor {
         } else {
             Ok("stopped".to_string())
         }
+    }
+
+    async fn update(
+        &self,
+        id: &str,
+        cpu_millicores: Option<u64>,
+        memory_bytes: Option<u64>,
+    ) -> Result<(), ExecError> {
+        let mut args = vec![
+            "update".to_string(),
+            "--root".to_string(),
+            self.config.state_root.to_string_lossy().to_string(),
+            id.to_string(),
+        ];
+
+        if let Some(cpu) = cpu_millicores {
+            args.push("--cpu-quota".to_string());
+            args.push((cpu * 100).to_string());
+            args.push("--cpu-period".to_string());
+            args.push("100000".to_string());
+            args.push("--cpu-shares".to_string());
+            args.push((cpu * 1024 / 1000).to_string());
+        }
+
+        if let Some(mem) = memory_bytes {
+            args.push("--memory".to_string());
+            args.push(mem.to_string());
+        }
+
+        let output = Command::new(&self.config.runc_path)
+            .args(&args)
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ExecError::ExecutionFailed(format!(
+                "runc update failed: {stderr}"
+            )));
+        }
+
+        info!(%id, cpu_millicores = ?cpu_millicores, memory_bytes = ?memory_bytes, "updated rootless container resources");
+        Ok(())
     }
 }

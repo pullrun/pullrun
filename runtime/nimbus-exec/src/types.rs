@@ -196,4 +196,10 @@ pub trait Executor: Send + Sync {
     async fn stop(&self, id: &str) -> Result<(), ExecError>;
     async fn wait(&self, id: &str) -> Result<ExitStatus, ExecError>;
     async fn status(&self, id: &str) -> Result<String, ExecError>;
+    async fn update(
+        &self,
+        id: &str,
+        cpu_millicores: Option<u64>,
+        memory_bytes: Option<u64>,
+    ) -> Result<(), ExecError>;
 }

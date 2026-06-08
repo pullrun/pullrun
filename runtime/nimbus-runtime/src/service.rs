@@ -253,6 +253,29 @@ impl Executor for ExecutorRouter {
         // Fall back to regular container.
         self.container.status(id).await
     }
+
+    async fn update(
+        &self,
+        id: &str,
+        cpu_millicores: Option<u64>,
+        memory_bytes: Option<u64>,
+    ) -> Result<(), ExecError> {
+        // Try rootless first.
+        if let Some(ref rootless) = self.rootless {
+            if rootless.bundle_dir_for(id).exists() {
+                return rootless.update(id, cpu_millicores, memory_bytes).await;
+            }
+        }
+        // Try VM next.
+        if let Some(vm) = &self.vm {
+            let sidecar = vm.sidecar_path_for(id);
+            if sidecar.exists() {
+                return vm.update(id, cpu_millicores, memory_bytes).await;
+            }
+        }
+        // Fall back to regular container.
+        self.container.update(id, cpu_millicores, memory_bytes).await
+    }
 }
 
 /// Builder: call `.service()` to get the actual gRPC service.
@@ -2328,8 +2351,30 @@ impl Runtime for RuntimeService {
         &self,
         request: tonic::Request<UpdateWorkloadRequest>,
     ) -> Result<tonic::Response<UpdateWorkloadResponse>, tonic::Status> {
-        let _ = request;
-        Ok(tonic::Response::new(UpdateWorkloadResponse { success: false }))
+        let req = request.into_inner();
+        let cpu = if req.cpu_millicores > 0 {
+            Some(req.cpu_millicores)
+        } else {
+            None
+        };
+        let mem = if req.memory_bytes > 0 {
+            Some(req.memory_bytes)
+        } else {
+            None
+        };
+        if cpu.is_none() && mem.is_none() {
+            return Ok(tonic::Response::new(UpdateWorkloadResponse { success: false }));
+        }
+        match self.executor.update(&req.id, cpu, mem).await {
+            Ok(()) => {
+                info!(id = %req.id, cpu_millicores = ?cpu, memory_bytes = ?mem, "workload resources updated");
+                Ok(tonic::Response::new(UpdateWorkloadResponse { success: true }))
+            }
+            Err(e) => {
+                warn!(id = %req.id, error = %e, "workload resource update failed");
+                Ok(tonic::Response::new(UpdateWorkloadResponse { success: false }))
+            }
+        }
     }
 
     async fn get_workload_stats(

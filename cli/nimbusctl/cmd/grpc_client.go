@@ -113,40 +113,45 @@ func (c *GRPCClient) InspectWorkload(ctx context.Context, id string) (*runtimepb
 	return c.client.InspectWorkload(ctx, &runtimepb.InspectRequest{Id: id})
 }
 
-	// BuildImage builds an OCI image and imports it into the DAG store.
-	func (c *GRPCClient) BuildImage(ctx context.Context, req *runtimepb.BuildImageRequest) (*runtimepb.BuildImageResponse, error) {
-		return c.client.BuildImage(ctx, req)
-	}
+// BuildImage builds an OCI image and imports it into the DAG store.
+func (c *GRPCClient) BuildImage(ctx context.Context, req *runtimepb.BuildImageRequest) (*runtimepb.BuildImageResponse, error) {
+	return c.client.BuildImage(ctx, req)
+}
 
-	// PushImage pushes a DAG image to an OCI registry.
-	// If auth is nil, no credentials are sent.
-	func (c *GRPCClient) PushImage(ctx context.Context, rootDigest, targetRef string, auth *RegistryAuth) (*runtimepb.PushImageResponse, error) {
-		req := &runtimepb.PushImageRequest{
-			RootDigest: rootDigest,
-			TargetRef:  targetRef,
-		}
-		if auth != nil {
-			req.RegistryUsername = auth.Username
-			req.RegistryPassword = auth.Password
-			req.RegistryToken = auth.Token
-		}
-		return c.client.PushImage(ctx, req)
+// PushImage pushes a DAG image to an OCI registry.
+// If auth is nil, no credentials are sent.
+func (c *GRPCClient) PushImage(ctx context.Context, rootDigest, targetRef string, auth *RegistryAuth) (*runtimepb.PushImageResponse, error) {
+	req := &runtimepb.PushImageRequest{
+		RootDigest: rootDigest,
+		TargetRef:  targetRef,
 	}
-
-	// ExportImage exports a DAG image as a tar archive (streaming).
-	func (c *GRPCClient) ExportImage(ctx context.Context, rootDigest string, format string) (runtimepb.Runtime_ExportImageClient, error) {
-		return c.client.ExportImage(ctx, &runtimepb.ExportImageRequest{
-			RootDigest: rootDigest,
-			Format:     format,
-		})
+	if auth != nil {
+		req.RegistryUsername = auth.Username
+		req.RegistryPassword = auth.Password
+		req.RegistryToken = auth.Token
 	}
+	return c.client.PushImage(ctx, req)
+}
 
-	// ImportImage imports a DAG image from a tar archive (streaming).
-	func (c *GRPCClient) ImportImage(ctx context.Context) (runtimepb.Runtime_ImportImageClient, error) {
-		return c.client.ImportImage(ctx)
-	}
+// ExportImage exports a DAG image as a tar archive (streaming).
+func (c *GRPCClient) ExportImage(ctx context.Context, rootDigest string, format string) (runtimepb.Runtime_ExportImageClient, error) {
+	return c.client.ExportImage(ctx, &runtimepb.ExportImageRequest{
+		RootDigest: rootDigest,
+		Format:     format,
+	})
+}
 
-	// AttachWorkload opens a bidirectional I/O stream to a running
+// ImportImage imports a DAG image from a tar archive (streaming).
+func (c *GRPCClient) ImportImage(ctx context.Context) (runtimepb.Runtime_ImportImageClient, error) {
+	return c.client.ImportImage(ctx)
+}
+
+// UpdateWorkload updates resource limits for a running workload.
+func (c *GRPCClient) UpdateWorkload(ctx context.Context, req *runtimepb.UpdateWorkloadRequest) (*runtimepb.UpdateWorkloadResponse, error) {
+	return c.client.UpdateWorkload(ctx, req)
+}
+
+// AttachWorkload opens a bidirectional I/O stream to a running
 // workload. The returned stream is used by `nimbusctl workload
 // run` to proxy the user's terminal to the workload's stdio.
 //

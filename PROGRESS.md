@@ -99,7 +99,7 @@
 | **Secret / Config** | `docker secret` | ❌ | |
 | **Healthcheck** | HEALTHCHECK | ❌ | Not enforced in runtime |
 | **Restart policy** | `--restart always` | ❌ | No auto-restart on exit |
-| **Resource limits** | `--memory --cpus` | ❌ | Proto fields exist but unused by executors |
+| **Resource limits** | `--memory --cpus` | ✅ | CPU/memory limits in OCI config.json; live update via `runc update` + `nimbusctl update` |
 | **Native build** | Dockerfile → layer cache | ❌ | Not yet implemented; compose build delegates |
 | **Multi-node** | Swarm / Compose | ❌ | Control plane stub only; no cross-node orchestration |
 
@@ -133,8 +133,7 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 ## Next steps (in priority order)
 
 1. **Nginx entrypoint fix** — Debug `/docker-entrypoint.sh` failure in minimal runc environment.
-2. **Resource limits** — Wire CPU/memory cgroup constraints through executors.
-3. **Health check enforcement** — Periodically probe workload health, auto-restart on failure.
+2. **Health check enforcement** — Periodically probe workload health, auto-restart on failure.
 4. **Volume / bind mount support** — Wire `HostPath` through executors (OCI bind mounts in config.json).
 5. **`docker cp` equivalent** — Add copy to/from workload (via DAG store paths).
 6. **Live stats** — Report CPU/mem/network per workload.

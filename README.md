@@ -259,7 +259,7 @@ reason to optimize them (real load + a real eBPF implementation).
 - Volume / bind mounts (compose volumes field exists but not wired through executors)
 - `docker cp` equivalent (no copy to/from container)
 - `docker stats` equivalent (live CPU/mem reporting)
-- Resource limits (CPU/memory cgroup constraints not enforced)
+- Resource limits (CPU/memory cgroup constraints enforced via `nimbusctl run --cpu --memory`; live update via `nimbusctl update`)
 - Restart policies / health checks
 
 **Test coverage: 92 Rust tests pass** (83 lib + 9 vsock). **9 Go tests pass**
