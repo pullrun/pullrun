@@ -221,6 +221,14 @@ Three things to check, in order:
 3. **The bridge is up.** `ip link show nimbus-br0` should show
    the bridge with `state UP`. If it doesn't, the runtime
    will print an iptables error on the next operation.
+   
+   **Note:** `ip link show <bridge>` returns exit code 0 even
+   when the bridge doesn't exist (writes "does not exist" to
+   stderr). Nimbus uses `ip link add` with "File exists"
+   tolerance instead. If you suspect the bridge is missing
+   despite the runtime saying it exists, check with
+   `ip -d link show nimbus-br0` which shows bridge-specific
+   details only when the device actually exists.
 
 Use `tools/vm-outbound-smoke/` as a standalone reproducer. It
 boots a minimal Alpine VM and runs a single `wget` against a

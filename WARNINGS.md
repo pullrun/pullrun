@@ -192,6 +192,13 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   note below is kept for reference in case manual TAP creation is needed
   during debugging.
 
+### `ip link show` returns exit code 0 even for nonexistent bridges (fixed)
+
+- **Severity: MEDIUM — the old `ensure_bridge_exists` silently never created bridges.**
+- `ip link show <bridge>` writes `Device "<bridge>" does not exist.` to **stderr** but returns exit code **0**. Using `.status()?.success()` to check for bridge existence was wrong — it always returned `true`, so the `ip link add` branch was never reached.
+- **Fix:** Use `ip link add <bridge> type bridge` and check if it succeeds. If it fails with "File exists" (exit code ≠ 0), the bridge already exists — treat that as success.
+- Deployed as part of the bridge networking fix. Verify on any server with `ip link add test-bridge type bridge 2>/dev/null; echo $?` (should print 0 on first run, ≠0 on repeat).
+
 ### Linux bridge kernel dataplane: `ip link add type bridge` needs no special perms
 
 - `ip link add name nimbus-br0 type bridge` works in any container with

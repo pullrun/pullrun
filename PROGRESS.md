@@ -3,7 +3,8 @@
 **Last updated:** 2026-06-08
 **Status:** Fully independent of Docker. Phase D/E — resource limits, volumes, health checks, live stats, docker cp, build layer caching all verified. Deployed and running on server.
 **Tests:** 101 Rust + 9 Go — all passing.
-**New:** Resource limits (`--cpu`/`--memory` + `nimbusctl update`), volume/bind mounts, compose auth, live stats (`nimbusctl stats`), health checks (`--health-cmd`), docker cp (`nimbusctl cp`), build layer caching, container compatibility (/tmp, /dev/shm, /etc/hosts, /etc/resolv.conf).
+**New:** Bridge fix deployed (`ensure_bridge_exists` now correctly creates bridges using `ip link add` with "File exists" tolerance instead of `ip link show` which never detected missing bridges).
+**Previously:** Resource limits (`--cpu`/`--memory` + `nimbusctl update`), volume/bind mounts, compose auth, live stats (`nimbusctl stats`), health checks (`--health-cmd`), docker cp (`nimbusctl cp`), build layer caching, container compatibility (/tmp, /dev/shm, /etc/hosts, /etc/resolv.conf).
 
 ---
 
@@ -62,6 +63,11 @@
 - `/tmp` and `/dev/shm` tmpfs mounts auto-configured
 - `/etc/hosts` and `/etc/resolv.conf` auto-creation inside container rootfs
 
+### Bugfixes
+- **Bridge creation fix** — `ensure_bridge_exists` now uses `ip link add ... type bridge` ignoring "File exists" instead of `ip link show` which returned exit code 0 for nonexistent bridges; bridges were silently never created in prior versions
+- **runc path fix** — `build_image` checks `is_file()` not `exists()` to avoid resolving directory as binary
+- **Materializer layer order** — removed `.rev()` so layers apply base→top (fixed nginx:alpine)
+
 ### Observability
 - Prometheus `/metrics` endpoint (pull rate, workload latency/exit, store size)
 - Grafana dashboard (6 panels, 5 alert rules)
@@ -106,8 +112,8 @@
 | **Diff** | `docker diff` | ❌ | No filesystem diff |
 | **Volume** | `docker volume` | ✅ | Bind mounts via `--volume`/`-v` + compose volumes translation |
 | **Network create** | `docker network` | ❌ | Single bridge; user-defined networks not supported |
-| **Login** | `docker login` | ✅ | `nimbusctl login` stores in `~/.nimbus/auth.json`, auto-used by pull/push |
-| **CP** | `docker cp` | ✅ | `nimbusctl cp` via CopyFile RPC |
+| **Login** | `docker login` | ✅ | `nimbusctl login`/`logout` stores in `~/.nimbus/auth.json`, 0600, auto-used by pull/push/compose |
+| **CP** | `docker cp` | ✅ | `nimbusctl cp` via CopyFile RPC with path-escape validation |
 | **Stats** | `docker stats` | ✅ | `nimbusctl stats` via GetWorkloadStats RPC + cgroupfs |
 | **Export/Import** | `docker export/import` | Different | Nimbus has `save`/`load` in DAG-native format |
 | **Info / Version** | `docker info` | ❌ | No system info command |
@@ -117,6 +123,8 @@
 | **Resource limits** | `--memory --cpus` | ✅ | CPU/memory limits + live update via `runc update` + `nimbusctl update --cpu --memory` |
 | **Native build** | Dockerfile → layer cache | ✅ | SHA256 instruction cache in DagBuilder for RUN/COPY/ADD |
 | **Multi-node** | Swarm / Compose | ❌ | Control plane stub only; no cross-node orchestration |
+| **VM backend** | ❌ (Docker Desktop WSL2 only) | ✅ | Firecracker (Linux KVM) + Apple Virt (macOS) — same OCI image, no rebuild |
+| **Bridge networking** | ✅ | ✅ | veth pairs for containers, TAP for VMs; bridge fix deployed (was silently broken) |
 
 ---
 
@@ -131,6 +139,7 @@
 - **Materializer applies layers in manifest order** (base → top). Critical: the `.rev()` call that reversed layers was removed, fixing images like nginx:alpine that depend on correct layer ordering.
 - **Use `env PATH=... nimbus-runtime daemon`** when starting via nohup over SSH, because PATH is not inherited over SSH non-interactive sessions.
 - **runc binary check**: `build_image` handler uses `is_file()` not `exists()` to avoid resolving the `/var/lib/nimbus/runc` directory as the binary path.
+- **Bridge creation fix**: `ensure_bridge_exists` now uses `ip link add ... type bridge` and ignores "File exists" errors, instead of `ip link show` which returned exit code 0 for nonexistent bridges. Bridges were silently never created in prior versions.
 
 ### Cross-compilation
 ```bash
@@ -148,14 +157,30 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 ---
 
-## Next steps (in priority order)
+## Next steps (in priority order — closing remaining Docker feature gaps first)
 
-1. **DAG directory scan optimization** — `nimbusctl build` scanning large rootfses is very slow; needs parallel/streaming walk or incremental scanning.
-2. **Proxy TCP reset fix** — Port forwarding to containers has TCP reset issues; investigate SPDY→TCP bridge or switch to raw TCP proxy.
-3. **Disk management** — Server disk at 78% (8 GB total); add GC / prune policies, monitor store growth.
-4. **Restart policies** — Auto-restart workloads on unexpected exit (Docker `--restart always` equivalent).
-5. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane.
-6. **Push auth test** — Deploy local `registry:2` container on server, verify `push` + `pull` round-trip with auth.
-7. **Commit / diff** — `docker commit` equivalent (running-container snapshot) and `docker diff` equivalent.
-8. **Network create** — User-defined bridge networks; currently only a single flat bridge.
-9. **Info / Version** — `nimbusctl info` command for system status reporting.
+### Must-have to match Docker CLI surface (implement these next)
+
+1. **Restart policies** — Auto-restart workloads on unexpected exit (`--restart always` equivalent). Watch exited containers, re-create on non-zero exit. This is the biggest UX gap versus Docker.
+
+2. **Commit / diff** — `docker commit` equivalent: snapshot a running container's rootfs diff back into the DAG store. `docker diff` equivalent: enumerate files added/modified/deleted since the container started. Uses the existing materializer + OCI layer reconstruction infrastructure.
+
+3. **Info / Version** — `nimbusctl info` command: daemon version, store size, uptime, backend availability, disk usage. `nimbusctl version`: binary version display.
+
+4. **Network create** — User-defined bridge networks (Docker `docker network create` equivalent). Currently only a single flat 10.42.0.0/16 bridge. Allow named networks with custom subnets, attach workloads by name.
+
+5. **Multi-node DNS** — `.nimbus.local` resolution across nodes via control plane. Depends on #5 (control plane progression).
+
+### Performance & reliability (important, but less user-visible)
+
+6. **DAG directory scan optimization** — Parallelize `walk_and_store` with `walkdir` + `rayon`; add incremental scanning (mtime-based skip for unchanged files).
+
+7. **Proxy TCP reset fix** — Port forwarding to containers has TCP reset issues; investigate SPDY→TCP bridge or switch to raw TCP proxy.
+
+8. **Push auth test** — Deploy local `registry:2` on server, verify `push` + `pull` round-trip with auth.
+
+9. **Disk management** — GC / prune policies: delete old bundles, evict least-recently-used images from DAG store, clean runc container state.
+
+### Post-v1 (multi-node / control plane)
+
+10. **Multi-node orchestration** — Control plane: scheduler, cross-node image pull, cross-node DNS. This is a full re-architecture of the control plane.

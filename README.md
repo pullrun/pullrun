@@ -258,20 +258,22 @@ reason to optimize them (real load + a real eBPF implementation).
 - **Container compatibility** — `/tmp` and `/dev/shm` tmpfs mounts; `/etc/hosts` and `/etc/resolv.conf` auto-creation
 - **Materializer bugfix** — OCI layers applied in correct order (base → top); removed erroneous `.rev()` call, fixing images like nginx:alpine
 - **runc path fix** — `build_image` handler uses `is_file()` not `exists()` to avoid resolving a directory as the binary path
-- **Deployment** — Runtime cross-compiled and deployed to server at 51.159.130.114; nginx:alpine, compose, and exec verified working
+- **Bridge creation fix** — `ensure_bridge_exists` now creates bridges correctly via `ip link add ... type bridge` ignoring "File exists" (previously `ip link show` always returned exit code 0, so bridges were never created); deployed and verified on server
+- **Deployment** — Runtime cross-compiled and deployed to server at 51.159.130.114; nginx:alpine, compose, and exec verified working; server disk freed to 78%
 
 **Stubs / partial:**
 
-- Cross-node service discovery (`.nimbus.local` DNS across cluster)
+- Cross-node service discovery (`.nimbus.local` DNS across cluster) — control plane stub only
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
 - iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
 - `nimbusctl login/logout` with `--password-stdin` for CI usage
-- Restart policies / auto-restart on exit (Docker `--restart always`)
-- `docker commit` / `docker diff` equivalent (running-container snapshot / filesystem diff)
-- User-defined bridge networks (currently single flat bridge)
-- `nimbusctl info` / `nimbusctl version` system info command
+- **Restart policies** — auto-restart on exit (Docker `--restart always` equivalent) — **highest-priority gap**
+- **Commit / diff** — running-container snapshot and filesystem diff — **next after restart**
+- **User-defined bridge networks** — currently single flat bridge
+- **`nimbusctl info` / `nimbusctl version`** — system info command — **quick win, next after commit/diff**
+- **Multi-node orchestration** — control plane needs scheduler, cross-node DNS, persistence (etcd) — post-v1
 
 **Test coverage: 101 Rust tests pass** (workspace-wide). **9 Go tests pass**
 (`go test ./...` from `cli/nimbusctl`).

@@ -53,29 +53,22 @@ impl LinuxContainerExecutor {
     }
 
     fn ensure_bridge_exists(bridge_name: &str) -> Result<(), ExecError> {
-        use std::process::Command as SyncCommand;
-        let check = SyncCommand::new("ip")
-            .args(["link", "show", bridge_name])
-            .output()?;
-        if !check.status.success() {
-            info!(bridge = bridge_name, "creating bridge");
-            let prefix = "16";
-            SyncCommand::new("ip")
-                .args(["link", "add", bridge_name, "type", "bridge"])
-                .output()?;
-            SyncCommand::new("ip")
+        use std::process::Command;
+        // ip link show exits 0 even when the device doesn't exist (it
+        // writes "does not exist" to stderr and returns 0).  So we
+        // try to add the bridge and ignore "File exists".
+        let status = Command::new("ip")
+            .args(["link", "add", bridge_name, "type", "bridge"])
+            .status()
+            .map_err(|e| ExecError::ExecutionFailed(format!("ip link add bridge {bridge_name}: {e}")))?;
+        if status.success() {
+            info!(bridge = bridge_name, "created bridge");
+            Command::new("ip")
                 .args(["link", "set", bridge_name, "up"])
-                .output()?;
-            SyncCommand::new("ip")
-                .args([
-                    "addr",
-                    "add",
-                    &format!("{}/{prefix}", DEFAULT_GATEWAY),
-                    "dev",
-                    bridge_name,
-                ])
-                .output()?;
+                .status()
+                .map_err(|e| ExecError::ExecutionFailed(format!("ip link set {bridge_name} up: {e}")))?;
         }
+        // If status != success, the bridge already exists — that's fine.
         Ok(())
     }
 
