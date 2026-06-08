@@ -23,9 +23,9 @@
 
 | Gap | Area | What's missing | Fix scope |
 |-----|------|---------------|-----------|
-| **G1: PortForward** | CRI / K8s | `kubectl port-forward` broken. Rust RPC returns `unimplemented` (`service.rs:2245`). CRI streaming server has no `/port-forward/` route handler (`streaming.go:55`). CRI `PortForward` method ignores port/IP. | Go CRI + Rust runtime |
-| **G2: Rootless executor not wired** | Runtime | `ExecutorRouter` has no `RootlessContainerExecutor` field (`service.rs:124`). Backend `"container-rootless"` routes to wrong executor. No way to launch rootless containers through gRPC API. | Rust only (types + router) — ✅ FIXED |
-| **G3: VM outbound NAT requires root** | VM networking | `enable_nat()` spawns `iptables` — last root-required op. Already graceful (warns on failure, bridge-local traffic works). Future: pasta/slirp4netns for VMs. | Documented; non‑blocking |
+| **G1: PortForward** | CRI / K8s | `kubectl port-forward` broken. Rust RPC returns `unimplemented` (`service.rs:2245`). CRI streaming server has no `/port-forward/` route handler (`streaming.go:55`). CRI `PortForward` method ignores port/IP. | Go CRI + Rust runtime — ✅ FIXED (CRI shim dials workload IP directly over bridge via SPDY port-forward handler) |
+| **G2: Rootless executor not wired** | Runtime | `ExecutorRouter` has no `RootlessContainerExecutor` field. Backend `"container-rootless"` routes to wrong executor. | Rust only (types + router) — ✅ FIXED |
+| **G3: VM outbound NAT requires root** | VM networking | `enable_nat()` spawns `iptables` — last root-required op. Already graceful (warns on failure, bridge-local traffic works). Future: pasta/slirp4netns for VMs. | Documented; non‑blocking — ✅ ALREADY GRACEFUL |
 
 ### What the audit confirmed IS done (mythbusting)
 
