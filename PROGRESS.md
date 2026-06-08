@@ -67,6 +67,9 @@
 - `/tmp` and `/dev/shm` tmpfs mounts auto-configured
 - `/etc/hosts` and `/etc/resolv.conf` auto-creation inside container rootfs
 
+### Performance
+- **Parallel DAG directory scan** — `build_dag_from_directory` now uses `walkdir` (efficient directory discovery) + `rayon` (parallel file I/O). Files are read and stored as DAG blobs concurrently across CPU cores, drastically reducing `nimbusctl build` time for large directories.
+
 ### Bugfixes
 - **Bridge creation fix** — `ensure_bridge_exists` now uses `ip link add ... type bridge` ignoring "File exists" instead of `ip link show` which returned exit code 0 for nonexistent bridges; bridges were silently never created in prior versions
 - **runc path fix** — `build_image` checks `is_file()` not `exists()` to avoid resolving directory as binary
@@ -176,7 +179,7 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 ### Performance & reliability (next priority)
 
-1. **DAG directory scan optimization** — Parallelize `walk_and_store` with `walkdir` + `rayon`; `nimbusctl build` for large images (e.g. alpine) takes >60s. Biggest remaining UX annoyance.
+1. ~~**DAG directory scan optimization**~~ ✅ — Parallelized `build_dag_from_directory` using `walkdir` for efficient directory discovery + `rayon` for parallel file reading and DAG blob storage. Previously serial `walk_and_store` read each file one at a time; now all files are processed concurrently across CPU cores.
 
 2. **Push auth test** — Deploy local `registry:2` on server, verify `push` + `pull` round-trip with auth.
 

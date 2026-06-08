@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use nimbus_store::{DagNode, Digest, MmapStore};
-use tracing::info;
+use rayon::prelude::*;
+use walkdir::WalkDir;
 
 use crate::OciError;
 
@@ -314,7 +316,75 @@ pub async fn build_dag_from_directory(
         OciError::Other(format!("canonicalize {dir:?}: {e}"))
     })?;
 
-    let root_entry = walk_and_store(store, &dir, &dir)?;
+    // Phase 1: walk the directory tree efficiently with walkdir,
+    // collect all entries with their metadata (fast, no I/O on file content).
+    let mut entries: Vec<(String, /* is_dir */ bool, /* is_symlink */ bool, u32)> = Vec::new();
+    for entry in WalkDir::new(&dir).sort_by_file_name() {
+        let entry = entry.map_err(|e| OciError::Other(format!("walkdir: {e}")))?;
+        let path = entry.path();
+        let ft = entry.file_type();
+        let rel = path
+            .strip_prefix(&dir)
+            .map_err(|_| OciError::Other("path outside root".into()))?
+            .to_string_lossy()
+            .to_string();
+        let mode = if ft.is_dir() {
+            0o755
+        } else if entry.metadata().map(|m| m.permissions().readonly()).unwrap_or(false) {
+            0o444
+        } else {
+            0o644
+        };
+        entries.push((rel, ft.is_dir(), ft.is_symlink(), mode));
+    }
+
+    // Phase 2: process all files in parallel using rayon.
+    // Returns HashMap<relative_path, (digest, size)> for files.
+    let results: Vec<(&str, bool, bool, u32)> = entries.iter().map(|(r, d, s, m)| (r.as_str(), *d, *s, *m)).collect();
+    let file_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
+    let symlink_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    let store_ref: &MmapStore = &store;
+    results.par_iter().for_each(|(rel, is_dir, is_symlink, _mode)| {
+        if *is_dir {
+            return;
+        }
+        let full_path = dir.join(rel);
+        if *is_symlink {
+            let target = match std::fs::read_link(&full_path) {
+                Ok(t) => t.to_string_lossy().to_string(),
+                Err(_) => return,
+            };
+            let node = DagNode::blob(target.as_bytes().to_vec());
+            if let Ok(d) = store_ref.put_blocking(&node) {
+                let mut map = symlink_results.lock().unwrap();
+                map.insert(rel.to_string(), (d, target.len() as u64));
+            }
+            return;
+        }
+        let data = match std::fs::read(&full_path) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let size = data.len() as u64;
+        if data.is_empty() {
+            return;
+        }
+        let node = DagNode::blob(data.clone());
+        match store_ref.put_blocking(&node) {
+            Ok(d) => {
+                if size > SMALL_FILE_THRESHOLD {
+                    let _ = store_ref.put_blob_blocking(&d, &data);
+                }
+                let mut map = file_results.lock().unwrap();
+                map.insert(rel.to_string(), (d, size));
+            }
+            Err(_) => {}
+        }
+    });
+
+    // Phase 3: build DirEntry tree from the collected results.
+    let root_entry = build_dir_entry_tree(&dir, &dir, &file_results.lock().unwrap(), &symlink_results.lock().unwrap())?;
 
     // build_tree is recursive and synchronous; run in spawn_blocking.
     let store_clone = store.clone();
@@ -367,11 +437,13 @@ struct DirEntry {
     children: Vec<DirEntry>,
 }
 
-/// Walk a directory, store file contents as DAG blobs, return a DirEntry tree.
-fn walk_and_store(
-    store: &MmapStore,
+/// Build a DirEntry tree for the given directory using pre-computed file results.
+/// This is synchronous and fast — no I/O on file contents (already digested).
+fn build_dir_entry_tree(
     root: &Path,
     current: &Path,
+    file_results: &HashMap<String, (Digest, u64)>,
+    symlink_results: &HashMap<String, (Digest, u64)>,
 ) -> Result<DirEntry, OciError> {
     let name = if current == root {
         "/".to_string()
@@ -384,31 +456,15 @@ fn walk_and_store(
 
     let mut children = Vec::new();
 
-    if current.is_dir() {
-        let mut read_dir = match std::fs::read_dir(current) {
-            Ok(d) => d,
-            Err(e) => {
-                info!("skipping unreadable directory {current:?}: {e}");
-                return Ok(DirEntry {
-                    name,
-                    is_dir: true,
-                    file_digest: String::new(),
-                    mode: 0o755,
-                    size: 0,
-                    children: vec![],
-                });
-            }
-        };
-
-        while let Some(child) = read_dir.next().transpose()? {
+    if let Ok(read_dir) = std::fs::read_dir(current) {
+        for child in read_dir.flatten() {
             let path = child.path();
-            let meta = match child.metadata() {
-                Ok(m) => m,
+            let ft = match child.file_type() {
+                Ok(t) => t,
                 Err(_) => continue,
             };
-
-            if meta.is_symlink() || meta.is_file() || meta.is_dir() {
-                let child_entry = walk_and_store(store, root, &path)?;
+            if ft.is_symlink() || ft.is_file() || ft.is_dir() {
+                let child_entry = build_dir_entry_tree(root, &path, file_results, symlink_results)?;
                 children.push(child_entry);
             }
         }
@@ -429,47 +485,23 @@ fn walk_and_store(
         })
         .unwrap_or(0o644);
 
-    let (file_digest, size) = if is_symlink {
-        let target = std::fs::read_link(current)
-            .ok()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let node = DagNode::blob(target.as_bytes().to_vec());
-        let d = store
-            .put_blocking(&node)
-            .map_err(|e| OciError::Other(format!("store symlink: {e}")))?;
-        (d, target.len() as u64)
-    } else if is_dir {
-        (String::new(), 0)
-    } else {
-        let data = match std::fs::read(current) {
-            Ok(d) => d,
-            Err(e) => {
-                info!("skipping unreadable file {current:?}: {e}");
-                return Ok(DirEntry {
-                    name,
-                    is_dir: false,
-                    file_digest: String::new(),
-                    mode,
-                    size: 0,
-                    children: vec![],
-                });
+    let (file_digest, size) = if is_symlink || is_dir {
+        let rel = path_to_rel(root, current);
+        if is_symlink {
+            if let Some((d, sz)) = symlink_results.get(&rel) {
+                (d.clone(), *sz)
+            } else {
+                (String::new(), 0)
             }
-        };
-        let size = data.len() as u64;
-        if data.is_empty() {
-            (String::new(), 0)
         } else {
-            let node = DagNode::blob(data.clone());
-            let d = store
-                .put_blocking(&node)
-                .map_err(|e| OciError::Other(format!("store file: {e}")))?;
-
-            if size > SMALL_FILE_THRESHOLD {
-                let _ = store.put_blob_blocking(&d, &data);
-            }
-
-            (d, size)
+            (String::new(), 0)
+        }
+    } else {
+        let rel = path_to_rel(root, current);
+        if let Some((d, sz)) = file_results.get(&rel) {
+            (d.clone(), *sz)
+        } else {
+            (String::new(), 0)
         }
     };
 
@@ -481,6 +513,12 @@ fn walk_and_store(
         size,
         children,
     })
+}
+
+fn path_to_rel(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 /// Recursively build DAG tree nodes from a DirEntry tree (synchronous).
