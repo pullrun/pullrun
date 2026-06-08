@@ -44,6 +44,7 @@ const (
 	Runtime_CopyFile_FullMethodName         = "/nimbus.runtime.Runtime/CopyFile"
 	Runtime_CommitImage_FullMethodName      = "/nimbus.runtime.Runtime/CommitImage"
 	Runtime_DiffWorkload_FullMethodName     = "/nimbus.runtime.Runtime/DiffWorkload"
+	Runtime_RuntimeInfo_FullMethodName      = "/nimbus.runtime.Runtime/RuntimeInfo"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -111,6 +112,8 @@ type RuntimeClient interface {
 	// Diff a running workload against its original image (docker diff equivalent).
 	// Returns lists of files that were added, modified, or deleted.
 	DiffWorkload(ctx context.Context, in *DiffRequest, opts ...grpc.CallOption) (*DiffResponse, error)
+	// Return runtime info: version, uptime, store statistics, workload counts.
+	RuntimeInfo(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoResponse, error)
 }
 
 type runtimeClient struct {
@@ -413,6 +416,16 @@ func (c *runtimeClient) DiffWorkload(ctx context.Context, in *DiffRequest, opts 
 	return out, nil
 }
 
+func (c *runtimeClient) RuntimeInfo(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InfoResponse)
+	err := c.cc.Invoke(ctx, Runtime_RuntimeInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -478,6 +491,8 @@ type RuntimeServer interface {
 	// Diff a running workload against its original image (docker diff equivalent).
 	// Returns lists of files that were added, modified, or deleted.
 	DiffWorkload(context.Context, *DiffRequest) (*DiffResponse, error)
+	// Return runtime info: version, uptime, store statistics, workload counts.
+	RuntimeInfo(context.Context, *InfoRequest) (*InfoResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -562,6 +577,9 @@ func (UnimplementedRuntimeServer) CommitImage(context.Context, *CommitImageReque
 }
 func (UnimplementedRuntimeServer) DiffWorkload(context.Context, *DiffRequest) (*DiffResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DiffWorkload not implemented")
+}
+func (UnimplementedRuntimeServer) RuntimeInfo(context.Context, *InfoRequest) (*InfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RuntimeInfo not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -984,6 +1002,24 @@ func _Runtime_DiffWorkload_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_RuntimeInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RuntimeInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RuntimeInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RuntimeInfo(ctx, req.(*InfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1066,6 +1102,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DiffWorkload",
 			Handler:    _Runtime_DiffWorkload_Handler,
+		},
+		{
+			MethodName: "RuntimeInfo",
+			Handler:    _Runtime_RuntimeInfo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

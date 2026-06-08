@@ -84,6 +84,11 @@ service Runtime {
     // Diff a running workload against its original image (docker diff equivalent).
     // Returns lists of files that were added, modified, or deleted.
     rpc DiffWorkload(DiffRequest) returns (DiffResponse);
+
+    // --- Info / Version (Gap 3) ---
+
+    // Return runtime info: version, uptime, store statistics, workload counts.
+    rpc RuntimeInfo(InfoRequest) returns (InfoResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -575,6 +580,29 @@ message CommitImageResponse {
     // Number of new nodes stored in the DAG (may be 0 if no changes
     // detected and dedup covered everything).
     uint64 new_nodes = 3;
+}
+
+// --- Info / Version ---
+
+message InfoRequest {}
+
+message InfoResponse {
+    // Runtime version string (e.g. "0.1.0").
+    string version = 1;
+    // Runtime uptime in seconds.
+    int64 uptime_seconds = 2;
+    // Number of workloads currently tracked.
+    int64 workload_count = 3;
+    // DAG store mountpoint.
+    string store_mountpoint = 4;
+    // Total bytes on the store filesystem.
+    int64 store_total_bytes = 5;
+    // Used bytes on the store filesystem.
+    int64 store_used_bytes = 6;
+    // Total nodes in the DAG store.
+    int64 store_total_nodes = 7;
+    // Go runtime version string.
+    string go_version = 8;
 }
 
 // --- Diff (docker diff equivalent) ---

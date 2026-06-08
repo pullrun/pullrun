@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -33,6 +34,7 @@ use crate::proto::runtime_server::Runtime;
 use crate::proto::{
     AttachMessage, CopyFileRequest, CopyFileResponse, CommitImageRequest, CommitImageResponse,
     DagNode, DiffRequest, DiffResponse, Event as ProtoEvent, ExecRequest,
+    InfoRequest, InfoResponse,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
     ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
@@ -310,6 +312,24 @@ impl Executor for ExecutorRouter {
         }
         self.container.exec(id, command, timeout_secs).await
     }
+}
+
+/// Best-effort filesystem usage for a given path.
+/// Returns (total_bytes, used_bytes). Falls back to (0, 0) on error.
+#[cfg(target_os = "linux")]
+fn fs_usage(path: &std::path::Path) -> (i64, i64) {
+    use std::os::linux::fs::MetadataExt;
+    if let Ok(m) = std::fs::metadata(path) {
+        let total = m.blocks() * 512;
+        let available = m.avail() * 512;
+        return (total as i64, (total - available) as i64);
+    }
+    (0, 0)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn fs_usage(_path: &std::path::Path) -> (i64, i64) {
+    (0, 0)
 }
 
 /// Builder: call `.service()` to get the actual gRPC service.
@@ -712,6 +732,11 @@ impl RuntimeCommand {
             }
         });
 
+        let start_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
         RuntimeService {
             store,
             policy_engine,
@@ -722,6 +747,7 @@ impl RuntimeCommand {
             kernel_cache: Arc::new(RwLock::new(HashMap::new())),
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(self.config.clone()),
+            start_time: AtomicI64::new(start_time),
         }
     }
 }
@@ -1263,6 +1289,8 @@ pub struct RuntimeService {
     /// via `Arc` so background tasks and gRPC handlers can
     /// read it without taking a service-level lock.
     pub config: Arc<ServiceConfig>,
+    /// Unix timestamp (seconds) when the service started.
+    pub start_time: AtomicI64,
 }
 
 impl RuntimeService {
@@ -3185,6 +3213,46 @@ impl Runtime for RuntimeService {
             added,
             deleted,
             modified,
+        }))
+    }
+
+    async fn runtime_info(
+        &self,
+        _request: tonic::Request<InfoRequest>,
+    ) -> Result<tonic::Response<InfoResponse>, tonic::Status> {
+        let uptime = {
+            let start = self.start_time.load(std::sync::atomic::Ordering::Relaxed);
+            if start > 0 {
+                (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64)
+                    - start
+            } else {
+                0
+            }
+        };
+
+        let workload_count = {
+            let workloads = self.workloads.read().await;
+            workloads.len() as i64
+        };
+
+        let store = &self.store;
+        let mountpoint = self.config.store_root.to_string_lossy().to_string();
+        let total_nodes = store.node_count() as i64;
+        let _total_bytes = store.total_bytes() as i64;
+        let (fs_total, fs_used) = fs_usage(&self.config.store_root);
+
+        Ok(tonic::Response::new(InfoResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            uptime_seconds: uptime,
+            workload_count,
+            store_mountpoint: mountpoint,
+            store_total_bytes: fs_total,
+            store_used_bytes: fs_used,
+            store_total_nodes: total_nodes,
+            go_version: String::new(),
         }))
     }
 }

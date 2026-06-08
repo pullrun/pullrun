@@ -180,3 +180,8 @@ func (c *GRPCClient) CommitImage(ctx context.Context, req *runtimepb.CommitImage
 func (c *GRPCClient) DiffWorkload(ctx context.Context, req *runtimepb.DiffRequest) (*runtimepb.DiffResponse, error) {
 	return c.client.DiffWorkload(ctx, req)
 }
+
+// RuntimeInfo returns runtime information.
+func (c *GRPCClient) RuntimeInfo(ctx context.Context, req *runtimepb.InfoRequest) (*runtimepb.InfoResponse, error) {
+	return c.client.RuntimeInfo(ctx, req)
+}
