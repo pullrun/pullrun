@@ -55,50 +55,51 @@ long-lived runtime instead.
 ## Architecture
 
 ```
-                              ┌───────────────────────┐
-                              │     nimbusctl (Go)    │
-                              │  pull · run · inspect │
-                              │  events · list · logs │
-                              └──────────┬────────────┘
-                                         │ gRPC (UDS or TCP)
-                                         ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │                       nimbus-runtime                         │
-   │                                                             │
-   │   ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-   │   │  pull_image │  │ run_workload│  │   EventBus          │ │
-   │   │  + policy   │─▶│  + policy   │  │  (broadcast, 1024)  │ │
-   │   └──────┬──────┘  └──────┬──────┘  └─────────────────────┘ │
-   │          │                │                                 │
-   │          ▼                ▼                                 │
-   │   ┌─────────────────────────────────────────────────────┐   │
-   │   │           MmapStore  (rkyv + memmap2)               │   │
-   │   │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
-   │   │  │ Manifest │─▶│   Tree   │─▶│ Layer / Blob DAG │   │   │
-   │   │  └──────────┘  └──────────┘  └──────────────────┘   │   │
-   │   │     content-addressed, lock-free DashMap cache       │   │
-   │   └─────────────────────────────────────────────────────┘   │
-   │          │                │                                 │
-   │          ▼                ▼                                 │
-   │   ┌──────────────┐  ┌────────────────┐                     │
-   │   │  LinuxContai-│  │ Firecracker    │  (same IPAM,         │
-   │   │  nerExecutor │  │ Executor       │   same bridge)      │
-   │   │   (runc)     │  │   (KVM)        │                      │
-   │   └──────────────┘  └────────────────┘                     │
-   │          │                │                                 │
-   │          ▼                ▼                                 │
-   │   ┌─────────────────────────────────────────────────────┐   │
-   │   │          ProxyNetwork (10.42.0.0/16)                │   │
-   │   │   userspace TCP/UDP proxy + DNS + IPAM + iptables   │   │
-   │   └─────────────────────────────────────────────────────┘   │
-   └─────────────────────────────────────────────────────────────┘
-                                         │
-                                         ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │      Kubernetes integration (CRI shim, RuntimeClass)         │
-   │      Prometheus metrics (axum /metrics, ServiceMonitor)      │
-   │      Grafana dashboard (6 panels, 5 alerts)                 │
-   └─────────────────────────────────────────────────────────────┘
+                               ┌─────────────────────────────────┐
+                               │       nimbusctl (Go)            │
+                               │  pull · run · inspect · build   │
+                               │  compose · stats · cp · update  │
+                               └────────────┬────────────────────┘
+                                            │ gRPC (UDS or TCP)
+                                            ▼
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │                          nimbus-runtime                              │
+   │                                                                      │
+   │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  │
+   │   │  pull_image │  │ run_workload│  │UpdateWorkload│  │CopyFile  │  │
+   │   │  + policy   │─▶│  + policy   │  │  + stats     │  │ RPC      │  │
+   │   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └────┬─────┘  │
+   │          │                │                │              │         │
+   │          ▼                ▼                ▼              ▼         │
+   │   ┌─────────────────────────────────────────────────────────────┐   │
+   │   │                  MmapStore (rkyv + memmap2)                 │   │
+   │   │  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐  │   │
+   │   │  │ Manifest │─▶│   Tree   │─▶│ Layer / Blob DAG + Cache │  │   │
+   │   │  └──────────┘  └──────────┘  └──────────────────────────┘  │   │
+   │   │     content-addressed, lock-free DashMap cache              │   │
+   │   └─────────────────────────────────────────────────────────────┘   │
+   │          │                │                │                        │
+   │          ▼                ▼                ▼                        │
+   │   ┌──────────────┐  ┌────────────────┐  ┌──────────────────────┐  │
+   │   │  LinuxContai-│  │ Firecracker    │  │  Health check        │  │
+   │   │  nerExecutor │  │ Executor       │  │  watcher loop        │  │
+   │   │   (runc)     │  │   (KVM)        │  │  (exec + state M/C)  │  │
+   │   └──────┬───────┘  └──────┬─────────┘  └──────────────────────┘  │
+   │          │                 │                                       │
+   │          ▼                 ▼                                       │
+   │   ┌──────────────────────────────────────────────────────────────┐ │
+   │   │               ProxyNetwork (10.42.0.0/16)                    │ │
+   │   │   userspace TCP/UDP proxy + DNS + IPAM + iptables            │ │
+   │   │   cgroupfs stats reader + resource limit updater             │ │
+   │   └──────────────────────────────────────────────────────────────┘ │
+   └─────────────────────────────────────────────────────────────────────┘
+                                            │
+                                            ▼
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │      Kubernetes integration (CRI shim, RuntimeClass)                 │
+   │      Prometheus metrics (axum /metrics, ServiceMonitor)              │
+   │      Grafana dashboard (6 panels, 5 alerts)                         │
+   └─────────────────────────────────────────────────────────────────────┘
 ```
 
 **The single most important property**: a `sha256:` digest of an OCI
@@ -118,7 +119,7 @@ cluster.
 | `runtime/nimbus-vm` | Firecracker microVM executor (KVM on Linux) + Apple Virt executor (macOS) |
 | `runtime/nimbus-net` | IPAM, userspace TCP/UDP proxy, DNS, iptables MASQUERADE for VM outbound |
 | `runtime/nimbus-policy` | Cosign signature verification, CycloneDX SBOM scanning, CVSS / license gates |
-| `runtime/nimbus-runtime` | The gRPC daemon: pulls, runs, inspects, streams events, exposes `/metrics` |
+| `runtime/nimbus-runtime` | The gRPC daemon: pulls, runs, inspects, streams events, exposes `/metrics`, live stats, health checks, CopyFile RPC |
 | `cli/nimbusctl` | Go CLI; thin wrapper over the gRPC API |
 | `cri/nimbus-cri` | Kubernetes CRI shim exposing `nimbus-container` and `nimbus-vm` RuntimeClasses |
 | `proto-go/` | Shared Go module: `nimbus/protoapi` (rebuilt via `make proto`) |
@@ -182,6 +183,7 @@ Honest numbers from real hosts:
 | Workload run latency | **~5 s** (nimbus VM boot + workload + shutdown) vs **~0.4 s** (Docker container) | VM boot is the overhead; containers start near-instantly |
 | nimbus-runtime release binary | **12 MB** | `cargo build --release -p nimbus-runtime` on x86_64 Linux |
 | Linux build fix verified | Both `nimbus-vm` + `nimbus-runtime` compile on x86_64 | `AppleVirtAttachHandle` ZST + `dispatch2` cfg-gate |
+| nginx:alpine verified | Container run + compose + exec all working | Deployed to 51.159.130.114; materializer bugfix (layer order) |
 
 **Architectural moat** — nimbus eliminates CVE classes Docker cannot fix:
 
@@ -203,7 +205,7 @@ Honest numbers from real hosts:
 | Debug build size (nimbus-runtime) | 33.8 MB | `target/debug/nimbus-runtime` |
 | Debug build size (nimbusctl) | 15.2 MB | `target/debug/nimbusctl` |
 | Full test suite runtime | **0.8 s** | `cargo test --workspace` from warm cache |
-| `cargo test --workspace` (this repo) | **92 tests pass** | 83 lib + 9 vsock; + `go test ./...` = 9 Go tests passing |
+| `cargo test --workspace` (this repo) | **101 tests pass** | + `go test ./...` = 9 Go tests passing |
 
 What we **don't** claim (yet): high-throughput proxy throughput,
 hot container spawn latency, eBPF fast-path numbers, and
@@ -246,23 +248,32 @@ reason to optimize them (real load + a real eBPF implementation).
 - Rootless ext4 creation via `mkfs.ext4 -d` (no loop-mount, no root)
 - Rootless TAP via `ioctl(TUNSETIFF)` (requires `setcap cap_net_admin=eip`)
 - **Fully Docker-independent** — no Docker daemon, CLI, containerd, or overlayfs anywhere
+- **Resource limits** — CPU/memory cgroup constraints enforced via `runc update` + UpdateWorkload RPC + `nimbusctl update --cpu --memory`
+- **Volume / bind mounts** — Proto Mount + CLI `--volume`/`-v` flags + compose volume translation; HostPath wired through executors
+- **Compose auth** — reads `~/.nimbus/auth.json` for compose pulls; no Docker dependency
+- **Live stats** — Cgroupfs-based CPU/memory reporting + GetWorkloadStats RPC + `nimbusctl stats <id>`
+- **Health checks** — Executor::exec() background watcher loop, health state machine (starting/healthy/unhealthy), `--health-cmd` CLI flags
+- **docker cp** — CopyFile RPC + `nimbusctl cp <id>:<path> <local>` / `nimbusctl cp <local> <id>:<path>`
+- **Build layer caching** — SHA256 instruction cache in DagBuilder for RUN/COPY/ADD; incremental builds reuse cached layers
+- **Container compatibility** — `/tmp` and `/dev/shm` tmpfs mounts; `/etc/hosts` and `/etc/resolv.conf` auto-creation
+- **Materializer bugfix** — OCI layers applied in correct order (base → top); removed erroneous `.rev()` call, fixing images like nginx:alpine
+- **runc path fix** — `build_image` handler uses `is_file()` not `exists()` to avoid resolving a directory as the binary path
+- **Deployment** — Runtime cross-compiled and deployed to server at 51.159.130.114; nginx:alpine, compose, and exec verified working
 
 **Stubs / partial:**
 
-- Build layer caching (based on Dockerfile instruction hash for incremental builds)
 - Cross-node service discovery (`.nimbus.local` DNS across cluster)
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
 - iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
 - `nimbusctl login/logout` with `--password-stdin` for CI usage
-- Volume / bind mounts (compose volumes field exists but not wired through executors)
-- `docker cp` equivalent (no copy to/from container)
-- `docker stats` equivalent (live CPU/mem reporting)
-- Resource limits (CPU/memory cgroup constraints enforced via `nimbusctl run --cpu --memory`; live update via `nimbusctl update`)
-- Restart policies / health checks
+- Restart policies / auto-restart on exit (Docker `--restart always`)
+- `docker commit` / `docker diff` equivalent (running-container snapshot / filesystem diff)
+- User-defined bridge networks (currently single flat bridge)
+- `nimbusctl info` / `nimbusctl version` system info command
 
-**Test coverage: 92 Rust tests pass** (83 lib + 9 vsock). **9 Go tests pass**
+**Test coverage: 101 Rust tests pass** (workspace-wide). **9 Go tests pass**
 (`go test ./...` from `cli/nimbusctl`).
 
 ## Repository layout
