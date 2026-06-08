@@ -16,6 +16,7 @@ nimbus-net = { path = "../nimbus-net" }
 nimbus-vm = { path = "../nimbus-vm" }
 nimbus-vsock = { path = "../nimbus-vsock" }
 nimbus-policy = { path = "../nimbus-policy" }
+libc.workspace = true
 bytes = "1"
 tokio.workspace = true
 tonic.workspace = true

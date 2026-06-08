@@ -1615,6 +1615,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "libc",
  "metrics",
  "metrics-exporter-prometheus",
  "nimbus-exec",

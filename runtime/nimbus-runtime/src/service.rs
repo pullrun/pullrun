@@ -320,13 +320,20 @@ impl Executor for ExecutorRouter {
 /// Returns (total_bytes, used_bytes). Falls back to (0, 0) on error.
 #[cfg(target_os = "linux")]
 fn fs_usage(path: &std::path::Path) -> (i64, i64) {
-    use std::os::linux::fs::MetadataExt;
-    if let Ok(m) = std::fs::metadata(path) {
-        let total = m.blocks() * 512;
-        let available = m.avail() * 512;
-        return (total as i64, (total - available) as i64);
+    use std::ffi::CString;
+    let cpath = match CString::new(path.to_string_lossy().as_bytes()) {
+        Ok(p) => p,
+        Err(_) => return (0, 0),
+    };
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(cpath.as_ptr(), &mut stat) } != 0 {
+        return (0, 0);
     }
-    (0, 0)
+    // f_blocks and f_frsize are typically u64 on 64-bit Linux.
+    // Use u128 to stay safe against overflow for very large filesystems.
+    let total = (stat.f_blocks as u128) * (stat.f_frsize as u128);
+    let available = (stat.f_bavail as u128) * (stat.f_frsize as u128);
+    (total.min(i64::MAX as u128) as i64, (total - available).min(i64::MAX as u128) as i64)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -1703,9 +1710,13 @@ impl Runtime for RuntimeService {
             }
         }
 
+        // Auto-promote to bridge mode when inbound ports are requested
+        // so the container gets a bridge IP and the proxy can forward.
+        let has_inbound_ports = req.network_rules.iter().any(|r| r.direction == "inbound");
         let network_mode = match req.network_mode.as_str() {
             "bridge" => NetworkMode::Bridge,
             "host" => NetworkMode::Host,
+            _ if has_inbound_ports => NetworkMode::Bridge,
             _ => NetworkMode::Loopback,
         };
 
