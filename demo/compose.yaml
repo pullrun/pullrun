@@ -1,0 +1,7 @@
+name: nimbus-demo
+services:
+  sleeper:
+    image: busybox:latest
+    command: ["sleep", "3600"]
+    ports:
+      - "8080:80"

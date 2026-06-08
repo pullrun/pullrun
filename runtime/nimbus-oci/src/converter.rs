@@ -239,10 +239,28 @@ fn extract_tar_entries_sync(
     store: &MmapStore,
     entries: &mut Vec<DirectoryEntry>,
 ) -> Result<HashMap<String, Vec<usize>>, OciError> {
+    struct RawEntry {
+        path: String,
+        parent: String,
+        name: String,
+        mode: u32,
+        size: u64,
+        is_dir: bool,
+        is_symlink: bool,
+        symlink_target: Option<String>,
+        is_hardlink: bool,
+        hardlink_target: Option<String>,
+        blob_digest: String,
+    }
+
     let decoder = GzDecoder::new(blob);
     let mut archive = Archive::new(decoder);
     let mut dir_index: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut raw_entries: Vec<RawEntry> = Vec::new();
+    // Map from path to digest for regular files (used to resolve hardlinks).
+    let mut path_to_digest: HashMap<String, String> = HashMap::new();
 
+    // First pass: collect all entries.
     for entry_result in archive.entries()? {
         let mut entry = entry_result?;
         let path = entry.path()?;
@@ -255,6 +273,7 @@ fn extract_tar_entries_sync(
         let header = entry.header();
         let is_dir = header.entry_type().is_dir();
         let is_symlink = header.entry_type().is_symlink();
+        let is_hardlink = header.entry_type().is_hard_link();
         let mode = header.mode()?;
         let size = header.size()?;
 
@@ -266,11 +285,26 @@ fn extract_tar_entries_sync(
             None
         };
 
+        let hardlink_target = if is_hardlink {
+            header
+                .link_name()?
+                .map(|p| p.to_string_lossy().to_string())
+        } else {
+            None
+        };
+
         let (parent, name) = split_path(&path_str);
 
         let blob_digest = if is_dir || is_symlink {
-            let blob_d = format!("{}:{}:dir", if is_symlink { "symlink" } else { "dir" }, path_str);
+            let blob_d = format!(
+                "{}:{}:dir",
+                if is_symlink { "symlink" } else { "dir" },
+                path_str
+            );
             MmapStore::compute_digest(blob_d.as_bytes())
+        } else if is_hardlink {
+            // Hardlinks have no data; resolve digest from target in second pass.
+            String::new()
         } else {
             let mut file_data = Vec::new();
             entry.read_to_end(&mut file_data)?;
@@ -282,29 +316,94 @@ fn extract_tar_entries_sync(
                 store.put_blob_blocking(&blob_digest, &file_data)?;
             }
 
+            path_to_digest.insert(path_str.clone(), blob_digest.clone());
             blob_digest
         };
 
-        let idx = entries.len();
-        entries.push(DirectoryEntry {
+        raw_entries.push(RawEntry {
+            path: path_str,
+            parent,
             name,
-            digest: blob_digest,
             mode,
             size,
             is_dir,
             is_symlink,
             symlink_target,
+            is_hardlink,
+            hardlink_target,
+            blob_digest,
+        });
+    }
+
+    // Second pass: resolve hardlink digests and build final entries.
+    // Deferred hardlinks whose target hasn't been seen yet.
+    let mut deferred: Vec<usize> = Vec::new();
+
+    for idx in 0..raw_entries.len() {
+        if !raw_entries[idx].is_hardlink {
+            continue;
+        }
+        let target = raw_entries[idx].hardlink_target.clone();
+        if let Some(ref target_path) = target {
+            if let Some(target_digest) = path_to_digest.get(target_path) {
+                let d = target_digest.clone();
+                path_to_digest.insert(raw_entries[idx].path.clone(), d.clone());
+                raw_entries[idx].blob_digest = d;
+            } else {
+                deferred.push(idx);
+            }
+        }
+    }
+
+    // Third pass: resolve deferred hardlinks (target may have been added in pass 2).
+    let mut retry = true;
+    while retry && !deferred.is_empty() {
+        retry = false;
+        let mut still_deferred: Vec<usize> = Vec::new();
+        for idx in deferred.drain(..) {
+            let target = raw_entries[idx].hardlink_target.clone();
+            if let Some(ref target_path) = target {
+                if let Some(target_digest) = path_to_digest.get(target_path) {
+                    raw_entries[idx].blob_digest = target_digest.clone();
+                } else {
+                    still_deferred.push(idx);
+                    retry = true;
+                }
+            }
+        }
+        deferred = still_deferred;
+    }
+
+    // Build final entries.
+    for raw in &raw_entries {
+        let blob_digest = if raw.blob_digest.is_empty() {
+            // Unresolved hardlink: create empty blob as fallback.
+            let empty = DagNode::blob(Vec::new());
+            store.put_blocking(&empty)?
+        } else {
+            raw.blob_digest.clone()
+        };
+
+        let idx = entries.len();
+        entries.push(DirectoryEntry {
+            name: raw.name.clone(),
+            digest: blob_digest,
+            mode: raw.mode,
+            size: raw.size,
+            is_dir: raw.is_dir,
+            is_symlink: raw.is_symlink,
+            symlink_target: raw.symlink_target.clone(),
         });
 
-        dir_index.entry(parent).or_default().push(idx);
+        dir_index.entry(raw.parent.clone()).or_default().push(idx);
 
-        if is_dir {
-            let full_dir_path = if path_str.ends_with('/') {
-                path_str.clone()
+        if raw.is_dir {
+            let full_dir_path = if raw.path.ends_with('/') {
+                raw.path.clone()
             } else {
-                format!("{path_str}/")
+                format!("{}/", raw.path)
             };
-            dir_index.entry(path_str.clone()).or_default();
+            dir_index.entry(raw.path.clone()).or_default();
             dir_index.entry(full_dir_path).or_default();
         }
     }

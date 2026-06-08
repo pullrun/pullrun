@@ -269,6 +269,7 @@ impl Executor for FirecrackerExecutor {
                 .map(|(h, _)| *h)
                 .collect(),
             backend: "vm".to_string(),
+            bridge_name: None,
         };
 
         Ok(handle)

@@ -101,16 +101,17 @@ func newUpCommand() *cobra.Command {
 					workingDir = "/"
 				}
 
-				runResp, err := client.RunWorkload(ctx, &runtimeapi.RunRequest{
-					Id:           id,
-					RootDigest:   pullResp.RootDigest,
-					Backend:      "container",
-					Command:      svc.Command,
-					Env:          env,
-					NetworkRules: networkRules,
-					WorkingDir:   workingDir,
-					BridgeName:   bridgeName,
-				})
+			runResp, err := client.RunWorkload(ctx, &runtimeapi.RunRequest{
+				Id:           id,
+				RootDigest:   pullResp.RootDigest,
+				Backend:      "container",
+				Command:      svc.Command,
+				Env:          env,
+				NetworkRules: networkRules,
+				NetworkMode:  "bridge",
+				WorkingDir:   workingDir,
+				BridgeName:   bridgeName,
+			})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "\n  %s: START FAILED: %v\n", name, err)
 					return fmt.Errorf("run %s: %w", name, err)

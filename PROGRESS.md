@@ -1,9 +1,9 @@
 # Nimbus — Build Progress
 
-> **Last updated:** **Phase D complete: per-project bridge isolation + compose build.**
+> **Last updated:** **Phase D complete: per-project bridge isolation + compose build. Container bridge networking verified with compose-sleep.yaml (busybox). nginx:alpine entrypoint still exits immediately — separate issue.**
 > **Active phase:** Phase D (Compose Feature) complete (5/5).
 > **Roadmap:** **[Phase A]** CRI Completeness ✅ (9/10) → **[Phase B]** VM Polish ✅ (5/5) → **[Phase C]** Persistence ✅ (3/3) → **[Phase D]** Compose Feature ✅ (5/5) → **v1 Production**.
-> **Status:** All Rust and Go code compiles.
+> **Status:** All Rust and Go code compiles. Container bridge networking fully wired (veth, IP, route, proxy). Compose sleep image verified working end-to-end.
 
 ---
 
@@ -1142,5 +1142,43 @@ compose.yaml  ──→  nimbus-compose (Go)
 **Why it matters:** Zero-migration path for Docker users. A developer changes one command (`docker compose up` → `nimbus compose up`) and every service runs in an isolated micro-VM. That's the most powerful adoption demo possible.
 
 **When to build it:** After Phase A (CRI) and Phase B (VM polish) are complete. Compose will exercise *every* CRI and VM gap — it's better to fix those first so Compose "just works."
+
+---
+
+## Session: 2026-06-08 — Compose container bridge networking + pipe hang fix
+
+**Goal:** Make `nimbus compose up` boot containers with functioning bridge networking.
+
+### Achievements
+
+1. **Pipe hang fix (`container.rs`)** — Replaced `Stdio::piped()` + `wait_with_output()` with `Stdio::null()` + `status()` for `runc run -d`. The container init process inherited the pipe FDs from the `runc run -d` child, so `wait_with_output()` blocked forever waiting for those FDs to close (which only happens when the container exits). Switch to `Stdio::null()` avoids the FD leak; `.status().await` returns immediately once `runc` has forked the init process.
+
+2. **Bridge networking verified working (`container.rs`)** — Compose sleep container (busybox) now gets:
+   - Veth pair (`vdemo-sleeper` ↔ `eth0` in container netns)
+   - IP `10.42.0.2/16` on bridge `nimbus-br0`
+   - Default route via `10.42.0.1`
+   - Proxy registers inbound port forwarding (nginx `:80` → `10.42.0.3:80`)
+   - Logs confirm: `allocated bridge IP`, `setting up container bridge network`, `inbound proxy started`
+
+3. **Per-project bridge isolation (`container.rs`, `types.rs`)** — Added `bridge_name: Option<String>` to `ProcessHandle`. The `create()` method populates it from `spec.bridge_name`; `setup_container_network()` now takes a `bridge` parameter instead of hardcoding `"nimbus-br0"`. The `start()` method passes `handle.bridge_name` (defaulting to `DEFAULT_BRIDGE_NAME`). This wires the compose-provisioned per-project bridge (e.g. `nimbus-<sha256(project)[:4]>`) into the container veth attachment.
+
+4. **Checkpoints directory fix (`service.rs`)** — Added `std::fs::create_dir_all(&self.config.checkpoints_dir)` in `RuntimeCommand::service()` daemon startup. Previously the directory didn't exist, causing `failed to write workload checkpoint: No such file or directory` warnings.
+
+### Remaining issues
+
+- **nginx:alpine entrypoint failure**: Container starts with bridge networking + proxy but exits immediately. `/docker-entrypoint.sh` (the OCI entrypoint) likely fails in the minimal runc environment — needs debug inspection of the OCI config and entrypoint execution context.
+- **`WaitForReady(false)` in nimbusctl gRPC client**: A connection drop mid-RPC immediately fails the call. For long pulls this can cause spurious `Canceled` errors.
+
+### Files changed
+
+- `runtime/nimbus-exec/src/types.rs` — `ProcessHandle.bridge_name: Option<String>` field
+- `runtime/nimbus-exec/src/container.rs` — `Stdio::piped()` → `Stdio::null()` + `status()`; `setup_container_network` takes `bridge` param; `start()` passes bridge name; `RootlessContainerExecutor` adds `bridge_name: None`
+- `runtime/nimbus-vm/src/lib.rs` — `FirecrackerExecutor` adds `bridge_name: None` to ProcessHandle
+- `runtime/nimbus-runtime/src/service.rs` — `create_dir_all` for checkpoints directory
+
+### Test counts
+
+- Rust: 92 (83 lib + 9 vsock) — unchanged
+- Go: 9 — unchanged
 
 ---

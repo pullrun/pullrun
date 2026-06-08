@@ -602,6 +602,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn derive_cidr_is_deterministic() {
+        let (gw1, nm1, _) = derive_cidr("nimbus-a1b2c3d4");
+        let (gw2, nm2, _) = derive_cidr("nimbus-a1b2c3d4");
+        assert_eq!(gw1, gw2, "gateway must be deterministic");
+        assert_eq!(nm1, nm2, "netmask must be deterministic");
+    }
+
+    #[test]
+    fn derive_cidr_different_names_different_subnets() {
+        let (gw1, _, _) = derive_cidr("project-alpha");
+        let (gw2, _, _) = derive_cidr("project-beta");
+        assert_ne!(gw1, gw2, "different projects must get different CIDRs");
+    }
+
+    #[test]
+    fn derive_cidr_gateway_is_dot_one() {
+        let (gw, _, _) = derive_cidr("nimbus-deadbeef");
+        let octets = gw.octets();
+        assert_eq!(octets[0], 10, "first octet must be 10");
+        assert_eq!(octets[3], 1, "gateway must end in .1");
+    }
+
+    #[test]
+    fn derive_cidr_netmask_is_24() {
+        let (_, nm, _) = derive_cidr("nimbus-cafebabe");
+        assert_eq!(nm, Ipv4Addr::new(255, 255, 255, 0));
+    }
+
+    #[test]
+    fn derive_cidr_ipam_allocates_after_gateway() {
+        let (gw, _, ipam) = derive_cidr("nimbus-12345678");
+        let first = Ipv4Addr::from(ipam.allocate().expect("first allocation"));
+        // First usable IP should be the gateway + 1.
+        let expected = Ipv4Addr::from(u32::from(gw) + 1);
+        assert_eq!(
+            first, expected,
+            "first allocated IP must be {expected}, got {first}"
+        );
+
+        let second = Ipv4Addr::from(ipam.allocate().expect("second allocation"));
+        assert_eq!(
+            second,
+            Ipv4Addr::from(u32::from(gw) + 2),
+            "second allocated IP must be gateway+2"
+        );
+    }
+
+    #[test]
+    fn derive_cidr_allocations_are_in_correct_subnet() {
+        let (gw, _, ipam) = derive_cidr("nimbus-abcdef01");
+        let base = u32::from(gw) & !0xFF;
+        for _ in 0..10 {
+            let ip = ipam.allocate().expect("allocation");
+            let ip_int = u32::from(Ipv4Addr::from(ip));
+            assert!(
+                ip_int >= base && ip_int < base + 256,
+                "IP {ip_int:#010x} not in /24 starting at {base:#010x}"
+            );
+        }
+    }
+
+    #[test]
+    fn ensure_bridge_named_reports_not_linux_off_target() {
+        if !cfg!(target_os = "linux") {
+            let err = ensure_bridge_named("test-br", "10.0.1.0/24", Ipv4Addr::new(10, 0, 1, 1))
+                .unwrap_err();
+            assert!(matches!(err, VmNetError::NotLinux));
+        }
+    }
+
+    #[test]
     fn mac_from_ip_is_stable_and_well_formed() {
         let mac1 = mac_from_ip(Ipv4Addr::new(10, 42, 0, 5));
         let mac2 = mac_from_ip(Ipv4Addr::new(10, 42, 0, 5));

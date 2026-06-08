@@ -158,6 +158,10 @@ pub struct ProcessHandle {
     pub internal_ip: Option<String>,
     pub host_ports: Vec<u16>,
     pub backend: String,
+    /// Name of the Linux bridge this workload's veth is attached to.
+    /// Populated in `create()` from the spec's `bridge_name`; used in
+    /// `setup_container_network()` to attach the veth to the correct bridge.
+    pub bridge_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]

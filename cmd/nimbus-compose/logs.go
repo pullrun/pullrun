@@ -85,7 +85,7 @@ func newLogsCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output (not yet implemented)")
+	cmd.Flags().BoolVar(&follow, "follow", false, "Follow log output (not yet implemented)")
 	cmd.Flags().Int64VarP(&tail, "tail", "n", 50, "Number of lines to show from end")
 
 	return cmd

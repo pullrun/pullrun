@@ -222,6 +222,7 @@ impl RuntimeCommand {
             let _ = std::fs::create_dir_all(parent);
         }
         let _ = std::fs::create_dir_all(&self.config.bundle_root);
+        let _ = std::fs::create_dir_all(&self.config.checkpoints_dir);
 
         let policy_engine = self.config.policy.as_ref().map(|p| {
             Arc::new(
@@ -254,11 +255,14 @@ impl RuntimeCommand {
         let ipam = proxy.ipam_handle();
         info!("shared workload network: 10.42.0.0/16 (bridge {})", nimbus_vm::BRIDGE_NAME);
 
-        let container = Arc::new(LinuxContainerExecutor::new(
-            MmapStore::new(self.config.store_root.clone()),
-            None,
-            self.config.bundle_root.clone(),
-        ));
+        let container = Arc::new(
+            LinuxContainerExecutor::new(
+                MmapStore::new(self.config.store_root.clone()),
+                None,
+                self.config.bundle_root.clone(),
+            )
+            .with_network(ipam.clone(), proxy.clone()),
+        );
 
         let vm = self.config.vm_backend.as_ref().map(|cfg| {
             let fc_cfg = FirecrackerConfig {

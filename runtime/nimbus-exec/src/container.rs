@@ -1,20 +1,28 @@
+use std::collections::{HashMap, HashSet};
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
-use nimbus_net::Direction;
+use nimbus_net::{Direction, Ipam, NetworkRule, ProxyNetwork};
 use nimbus_oci::OciMaterializer;
 use nimbus_store::MmapStore;
 
 use crate::types::{ExecError, Executor, ExitStatus, ProcessHandle, WorkloadSpec};
 
+const DEFAULT_BRIDGE_NAME: &str = "nimbus-br0";
+const DEFAULT_GATEWAY: Ipv4Addr = Ipv4Addr::new(10, 42, 0, 1);
+
 pub struct LinuxContainerExecutor {
     store: MmapStore,
     runc_path: PathBuf,
     bundle_root: PathBuf,
+    ipam: Option<Arc<Ipam>>,
+    proxy: Option<Arc<ProxyNetwork>>,
 }
 
 impl LinuxContainerExecutor {
@@ -25,11 +33,126 @@ impl LinuxContainerExecutor {
             store,
             runc_path,
             bundle_root,
+            ipam: None,
+            proxy: None,
         }
+    }
+
+    pub fn with_network(mut self, ipam: Arc<Ipam>, proxy: Arc<ProxyNetwork>) -> Self {
+        self.ipam = Some(ipam);
+        self.proxy = Some(proxy);
+        self
     }
 
     fn bundle_dir(&self, id: &str) -> PathBuf {
         self.bundle_root.join(id)
+    }
+
+    fn should_setup_bridge(&self, spec: &WorkloadSpec) -> bool {
+        spec.bridge_name.is_some() || matches!(spec.network_mode, crate::types::NetworkMode::Bridge)
+    }
+
+    fn ensure_bridge_exists(bridge_name: &str) -> Result<(), ExecError> {
+        use std::process::Command as SyncCommand;
+        let check = SyncCommand::new("ip")
+            .args(["link", "show", bridge_name])
+            .output()?;
+        if !check.status.success() {
+            info!(bridge = bridge_name, "creating bridge");
+            let prefix = "16";
+            SyncCommand::new("ip")
+                .args(["link", "add", bridge_name, "type", "bridge"])
+                .output()?;
+            SyncCommand::new("ip")
+                .args(["link", "set", bridge_name, "up"])
+                .output()?;
+            SyncCommand::new("ip")
+                .args([
+                    "addr",
+                    "add",
+                    &format!("{}/{prefix}", DEFAULT_GATEWAY),
+                    "dev",
+                    bridge_name,
+                ])
+                .output()?;
+        }
+        Ok(())
+    }
+
+    async fn setup_container_network(
+        &self,
+        id: &str,
+        ip: Ipv4Addr,
+        host_ports: &[u16],
+        bridge: &str,
+    ) -> Result<(), ExecError> {
+        use std::process::Command as SyncCommand;
+
+        // Get container PID from runc state
+        let output = Command::new(&self.runc_path)
+            .args(["state", id])
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Err(ExecError::ExecutionFailed("runc state failed after start".into()));
+        }
+        let state: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
+        let pid = state["pid"].as_i64()
+            .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
+
+        let veth_host = format!("v{}", &id[..id.len().min(12)]);
+
+        info!(id = %id, veth = veth_host, bridge = bridge, container_ip = %ip, pid = pid, "setting up container bridge network");
+
+        // Create veth pair with one end in the container's netns
+        let status = SyncCommand::new("ip")
+            .args([
+                "link", "add", &veth_host, "type", "veth", "peer", "name", "eth0",
+                "netns", &pid.to_string(),
+            ])
+            .status()
+            .map_err(|e| ExecError::ExecutionFailed(format!("ip link add veth: {e}")))?;
+        if !status.success() {
+            return Err(ExecError::ExecutionFailed("ip link add veth pair failed".into()));
+        }
+
+        // Attach host end to bridge
+        SyncCommand::new("ip")
+            .args(["link", "set", &veth_host, "master", bridge])
+            .status()?;
+        SyncCommand::new("ip")
+            .args(["link", "set", &veth_host, "up"])
+            .status()?;
+
+        // Configure IP inside the container
+        let cidr = format!("{}/16", ip);
+        SyncCommand::new("nsenter")
+            .args(["-t", &pid.to_string(), "-n", "--", "ip", "addr", "add", &cidr, "dev", "eth0"])
+            .status()?;
+        SyncCommand::new("nsenter")
+            .args(["-t", &pid.to_string(), "-n", "--", "ip", "link", "set", "eth0", "up"])
+            .status()?;
+        SyncCommand::new("nsenter")
+            .args([
+                "-t", &pid.to_string(), "-n", "--", "ip", "route", "add", "default",
+                "via", &DEFAULT_GATEWAY.to_string(),
+            ])
+            .status()?;
+
+        // Register with proxy for port forwarding
+        if let Some(ref proxy) = self.proxy {
+            if !host_ports.is_empty() {
+                let rules: Vec<NetworkRule> = host_ports
+                    .iter()
+                    .map(|&port| NetworkRule::inbound(port))
+                    .collect();
+                proxy.register_endpoint(id, ip.to_string(), &rules).await
+                    .map_err(|e| ExecError::ExecutionFailed(format!("proxy register: {e}")))?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn check_runc(&self) -> Result<(), ExecError> {
@@ -71,16 +194,55 @@ impl Executor for LinuxContainerExecutor {
         let materializer = OciMaterializer::new(&self.store);
         let bundle = materializer.materialize_bundle(&spec.image_root, &bundle_dir)?;
 
-        let mut args = if !spec.command.is_empty() {
+        // Fix args composition: ENTRYPOINT is always prepended, CMD/spec.command
+        // is the default args. OCI spec: process.args = entrypoint + command.
+        let mut args = if !bundle.entrypoint.is_empty() {
+            let cmd = if !spec.command.is_empty() {
+                &spec.command
+            } else {
+                &bundle.cmd
+            };
+            [bundle.entrypoint.as_slice(), cmd.as_slice()].concat()
+        } else if !spec.command.is_empty() {
             spec.command.clone()
-        } else if !bundle.entrypoint.is_empty() {
-            [bundle.entrypoint, bundle.cmd].concat()
         } else {
             bundle.cmd
         };
 
         if args.is_empty() {
             args = vec!["/bin/sh".to_string()];
+        }
+
+        // Allocate IP for bridge networking before spec.env is consumed
+        let mut internal_ip: Option<Ipv4Addr> = None;
+        if self.should_setup_bridge(&spec) {
+            let bridge_name = spec.bridge_name.as_deref().unwrap_or(DEFAULT_BRIDGE_NAME);
+            Self::ensure_bridge_exists(bridge_name)?;
+            if let Some(ref ipam) = self.ipam {
+                if let Some(ip) = ipam.allocate() {
+                    internal_ip = Some(Ipv4Addr::from(ip));
+                    info!(id = %spec.id, bridge = bridge_name, ip = %internal_ip.unwrap(), "allocated bridge IP");
+                }
+            }
+        }
+
+        let mut env_vars: Vec<String> = bundle.env.clone();
+        {
+            let spec_env: HashMap<String, String> = spec.env.into_iter().collect();
+            for kv in env_vars.iter_mut() {
+                if let Some((key, _)) = kv.split_once('=') {
+                    if let Some(val) = spec_env.get(key) {
+                        *kv = format!("{}={}", key, val);
+                    }
+                }
+            }
+            let existing_keys: HashSet<String> =
+                env_vars.iter().filter_map(|kv| kv.split_once('=').map(|(k, _)| k.to_string())).collect();
+            for (k, v) in spec_env.iter() {
+                if !existing_keys.contains(k.as_str()) {
+                    env_vars.push(format!("{k}={v}"));
+                }
+            }
         }
 
         let oci_spec = serde_json::json!({
@@ -91,14 +253,41 @@ impl Executor for LinuxContainerExecutor {
                     "uid": 0,
                     "gid": 0
                 },
+                "capabilities": {
+                    "bounding": [
+                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                    ],
+                    "effective": [
+                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                    ],
+                    "permitted": [
+                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                    ]
+                },
                 "args": args,
-                "env": spec.env.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>(),
+                "env": env_vars,
                 "cwd": bundle.working_dir.unwrap_or_else(|| "/".to_string()),
             },
             "root": {
                 "path": bundle.rootfs_path.to_string_lossy(),
                 "readonly": false
             },
+            "mounts": [
+                {"destination": "/proc", "type": "proc", "source": "proc"},
+                {"destination": "/dev", "type": "tmpfs", "source": "tmpfs"},
+                {"destination": "/dev/pts", "type": "devpts", "source": "devpts"},
+                {"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"},
+                {"destination": "/sys", "type": "sysfs", "source": "sysfs"}
+            ],
             "linux": {
                 "namespaces": [
                     {"type": "pid"},
@@ -115,10 +304,11 @@ impl Executor for LinuxContainerExecutor {
             serde_json::to_string_pretty(&oci_spec).unwrap(),
         )?;
 
+        let bridge_name = spec.bridge_name.clone();
         let handle = ProcessHandle {
             id: spec.id.clone(),
             pid: None,
-            internal_ip: None,
+            internal_ip: internal_ip.map(|ip| ip.to_string()),
             host_ports: spec
                 .network_rules
                 .iter()
@@ -126,6 +316,7 @@ impl Executor for LinuxContainerExecutor {
                 .map(|r| r.port)
                 .collect(),
             backend: "container".to_string(),
+            bridge_name,
         };
 
         info!(id = %spec.id, "container created");
@@ -137,21 +328,29 @@ impl Executor for LinuxContainerExecutor {
 
         let bundle_dir = self.bundle_dir(&handle.id);
 
-        let child = Command::new(&self.runc_path)
+        let status = Command::new(&self.runc_path)
             .args(["run", "-d", "-b"])
             .arg(&bundle_dir)
             .arg(&handle.id)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await?;
 
-        let output = child.wait_with_output().await?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+        if !status.success() {
             return Err(ExecError::ExecutionFailed(format!(
-                "runc run failed: {stderr}"
+                "runc run failed for {} (check runc logs)",
+                handle.id
             )));
+        }
+
+        // Set up bridge networking if an IP was allocated in create()
+        if let Some(ref ip_str) = handle.internal_ip {
+            let ip: Ipv4Addr = ip_str.parse().map_err(|e| {
+                ExecError::ExecutionFailed(format!("invalid internal_ip in handle: {e}"))
+            })?;
+            let bridge = handle.bridge_name.as_deref().unwrap_or(DEFAULT_BRIDGE_NAME);
+            self.setup_container_network(&handle.id, ip, &handle.host_ports, bridge).await?;
         }
 
         info!(id = %handle.id, "container started");
@@ -297,6 +496,7 @@ impl Executor for RootlessContainerExecutor {
                 .map(|r| r.port)
                 .collect(),
             backend: "container-rootless".to_string(),
+            bridge_name: None,
         };
 
         info!(id = %spec.id, "rootless container bundle ready");
