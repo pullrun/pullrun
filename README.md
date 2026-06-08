@@ -205,7 +205,7 @@ Honest numbers from real hosts:
 | Debug build size (nimbus-runtime) | 33.8 MB | `target/debug/nimbus-runtime` |
 | Debug build size (nimbusctl) | 15.2 MB | `target/debug/nimbusctl` |
 | Full test suite runtime | **0.8 s** | `cargo test --workspace` from warm cache |
-| `cargo test --workspace` (this repo) | **101 tests pass** | + `go test ./...` = 9 Go tests passing |
+| `cargo test --workspace` (this repo) | **113 tests pass** | + `go test ./...` = 9 Go tests passing |
 
 What we **don't** claim (yet): high-throughput proxy throughput,
 hot container spawn latency, eBPF fast-path numbers, and
@@ -259,6 +259,8 @@ reason to optimize them (real load + a real eBPF implementation).
 - **Materializer bugfix** — OCI layers applied in correct order (base → top); removed erroneous `.rev()` call, fixing images like nginx:alpine
 - **runc path fix** — `build_image` handler uses `is_file()` not `exists()` to avoid resolving a directory as the binary path
 - **Bridge creation fix** — `ensure_bridge_exists` now creates bridges correctly via `ip link add ... type bridge` ignoring "File exists" (previously `ip link show` always returned exit code 0, so bridges were never created); deployed and verified on server
+- **Proxy TCP reset fix** — Bridge always gets `10.42.0.1/16` so the host kernel has a route to containers; auto-promotes to bridge mode when inbound ports are set. Verified: `curl localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200
+- **`fs_usage` cross-compile fix** — replaced non-existent `MetadataExt::blocks()+avail()` with `libc::statvfs`
 - **Deployment** — Runtime cross-compiled and deployed to server at 51.159.130.114; nginx:alpine, compose, and exec verified working; server disk freed to 78%
 
 **Stubs / partial:**
@@ -267,15 +269,17 @@ reason to optimize them (real load + a real eBPF implementation).
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
+- Port mapping syntax (`-p 8080:80`) — currently `--allow-inbound 80` forwards host:80 → container:80 (same port)
 - iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
 - `nimbusctl login/logout` with `--password-stdin` for CI usage
 - ~~**Restart policies**~~ ✅ — `--restart` flag implemented with exponential backoff watcher
 - ~~**Commit / diff**~~ ✅ — `nimbusctl commit` + `nimbusctl diff` implemented
 - ~~**`nimbusctl info` / `nimbusctl version`**~~ ✅ — system info commands implemented
 - ~~**User-defined bridge networks**~~ ✅ — `nimbusctl network create/rm/ls` implemented
+- ~~**Proxy TCP reset**~~ ✅ — Bridge IP assignment + auto-promote to bridge mode fixes port forwarding. Verified: `curl localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200
 - **Multi-node orchestration** — control plane needs scheduler, cross-node DNS, persistence (etcd) — post-v1
 
-**Test coverage: 101 Rust tests pass** (workspace-wide). **9 Go tests pass**
+**Test coverage: 113 Rust tests pass** (workspace-wide). **9 Go tests pass**
 (`go test ./...` from `cli/nimbusctl`).
 
 ## Repository layout
