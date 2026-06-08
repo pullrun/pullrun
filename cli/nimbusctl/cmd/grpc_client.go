@@ -151,6 +151,11 @@ func (c *GRPCClient) UpdateWorkload(ctx context.Context, req *runtimepb.UpdateWo
 	return c.client.UpdateWorkload(ctx, req)
 }
 
+// GetWorkloadStats returns live resource stats for a running workload.
+func (c *GRPCClient) GetWorkloadStats(ctx context.Context, req *runtimepb.GetWorkloadStatsRequest) (*runtimepb.WorkloadStats, error) {
+	return c.client.GetWorkloadStats(ctx, req)
+}
+
 // AttachWorkload opens a bidirectional I/O stream to a running
 // workload. The returned stream is used by `nimbusctl workload
 // run` to proxy the user's terminal to the workload's stdio.

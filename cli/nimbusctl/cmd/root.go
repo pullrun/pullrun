@@ -43,6 +43,7 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewLoginCommand(opts))
 	cmd.AddCommand(NewLogoutCommand(opts))
 	cmd.AddCommand(NewUpdateCommand(opts))
+	cmd.AddCommand(NewStatsCommand(opts))
 
 	return cmd
 }

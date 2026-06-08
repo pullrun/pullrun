@@ -34,8 +34,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{info, warn};
+use nimbus_exec::types::{Backend, ExitStatus, WorkloadSpec, WorkloadStats};
 
-use nimbus_exec::types::{Backend, ExitStatus, WorkloadSpec};
 use nimbus_exec::{ExecError, Executor, ProcessHandle};
 use nimbus_net::{Ipam, NetworkEndpoint, NetworkManager, ProxyNetwork};
 use nimbus_store::MmapStore;
@@ -438,6 +438,12 @@ impl Executor for FirecrackerExecutor {
             "FirecrackerExecutor does not support live resource updates yet".into(),
         ))
     }
+
+    async fn stats(&self, _id: &str) -> Result<WorkloadStats, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "FirecrackerExecutor does not support live stats yet".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -492,6 +498,12 @@ impl Executor for AppleVirtExecutor {
         _cpu_millicores: Option<u64>,
         _memory_bytes: Option<u64>,
     ) -> Result<(), ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "AppleVirtExecutor stub".into(),
+        ))
+    }
+
+    async fn stats(&self, _id: &str) -> Result<WorkloadStats, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "AppleVirtExecutor stub".into(),
         ))

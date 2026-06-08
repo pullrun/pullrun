@@ -39,7 +39,7 @@ use crate::proto::{
     RunComposeRequest, RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse,
     RunRequest, RunResponse, StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest,
     UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStatus, PortForwardRequest,
-    PortForwardData, GetWorkloadStatsRequest, WorkloadStats,
+    PortForwardData, GetWorkloadStatsRequest, WorkloadStats as ProtoWorkloadStats,
     BuildImageRequest, BuildImageResponse,
     PushImageRequest, PushImageResponse,
     ExportImageRequest, ExportImageChunk,
@@ -275,6 +275,24 @@ impl Executor for ExecutorRouter {
         }
         // Fall back to regular container.
         self.container.update(id, cpu_millicores, memory_bytes).await
+    }
+
+    async fn stats(&self, id: &str) -> Result<nimbus_exec::WorkloadStats, ExecError> {
+        // Try rootless first.
+        if let Some(ref rootless) = self.rootless {
+            if rootless.bundle_dir_for(id).exists() {
+                return rootless.stats(id).await;
+            }
+        }
+        // Try VM next.
+        if let Some(vm) = &self.vm {
+            let sidecar = vm.sidecar_path_for(id);
+            if sidecar.exists() {
+                return vm.stats(id).await;
+            }
+        }
+        // Fall back to regular container.
+        self.container.stats(id).await
     }
 }
 
@@ -2389,11 +2407,19 @@ impl Runtime for RuntimeService {
     async fn get_workload_stats(
         &self,
         request: tonic::Request<GetWorkloadStatsRequest>,
-    ) -> Result<tonic::Response<WorkloadStats>, tonic::Status> {
-        let _ = request;
-        Err(tonic::Status::unimplemented(
-            "get_workload_stats not yet implemented",
-        ))
+    ) -> Result<tonic::Response<ProtoWorkloadStats>, tonic::Status> {
+        let req = request.into_inner();
+        match self.executor.stats(&req.id).await {
+            Ok(s) => Ok(tonic::Response::new(ProtoWorkloadStats {
+                id: s.id,
+                cpu_usage_percent: s.cpu_usage_percent,
+                memory_bytes: s.memory_bytes,
+                disk_bytes: s.disk_bytes,
+                network_rx_bytes: s.network_rx_bytes,
+                network_tx_bytes: s.network_tx_bytes,
+            })),
+            Err(e) => Err(tonic::Status::not_found(format!("{e}"))),
+        }
     }
 
     // ------------------------------------------------------------------

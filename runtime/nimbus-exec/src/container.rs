@@ -12,7 +12,7 @@ use nimbus_net::{Direction, Ipam, NetworkRule, ProxyNetwork};
 use nimbus_oci::OciMaterializer;
 use nimbus_store::MmapStore;
 
-use crate::types::{ExecError, Executor, ExitStatus, ProcessHandle, WorkloadSpec};
+use crate::types::{ExecError, Executor, ExitStatus, ProcessHandle, WorkloadSpec, WorkloadStats};
 
 const DEFAULT_BRIDGE_NAME: &str = "nimbus-br0";
 const DEFAULT_GATEWAY: Ipv4Addr = Ipv4Addr::new(10, 42, 0, 1);
@@ -503,6 +503,57 @@ impl Executor for LinuxContainerExecutor {
         info!(%id, cpu_millicores = ?cpu_millicores, memory_bytes = ?memory_bytes, "updated container resources");
         Ok(())
     }
+
+    async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {
+        let output = Command::new(&self.runc_path)
+            .args(["state", id])
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Err(ExecError::NotFound(id.to_string()));
+        }
+        let state: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
+        let pid = state["pid"].as_i64()
+            .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
+
+        let mut mem_bytes: u64 = 0;
+        let mut cpu_usec: u64 = 0;
+
+        // Read cgroup path from /proc/<pid>/cgroup (cgroups v2)
+        let cgroup_path = std::path::PathBuf::from(format!("/proc/{pid}/cgroup"));
+        if let Ok(data) = std::fs::read_to_string(&cgroup_path) {
+            for line in data.lines() {
+                if let Some(path) = line.split("::").nth(1) {
+                    let path = path.trim();
+                    // Read memory.current
+                    let mem_file = format!("/sys/fs/cgroup{path}/memory.current");
+                    if let Ok(val) = std::fs::read_to_string(&mem_file) {
+                        mem_bytes = val.trim().parse().unwrap_or(0);
+                    }
+                    // Read cpu.stat
+                    let cpu_file = format!("/sys/fs/cgroup{path}/cpu.stat");
+                    if let Ok(val) = std::fs::read_to_string(&cpu_file) {
+                        for line in val.lines() {
+                            if let Some(rest) = line.strip_prefix("usage_usec ") {
+                                cpu_usec = rest.trim().parse().unwrap_or(0);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(WorkloadStats {
+            id: id.to_string(),
+            cpu_usage_percent: cpu_usec as f64 / 1_000_000.0, // raw cumulative CPU seconds
+            memory_bytes: mem_bytes,
+            disk_bytes: 0,
+            network_rx_bytes: 0,
+            network_tx_bytes: 0,
+        })
+    }
 }
 
 /// Rootless container executor: uses user namespaces, no veth, no bridge.
@@ -708,5 +759,52 @@ impl Executor for RootlessContainerExecutor {
 
         info!(%id, cpu_millicores = ?cpu_millicores, memory_bytes = ?memory_bytes, "updated rootless container resources");
         Ok(())
+    }
+
+    async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {
+        let output = Command::new(&self.config.runc_path)
+            .args(["state", "--root", &self.config.state_root.to_string_lossy(), id])
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Err(ExecError::NotFound(id.to_string()));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let state: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
+        let pid = state["pid"].as_i64()
+            .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
+
+        let mut mem_bytes: u64 = 0;
+        let mut cpu_usec: u64 = 0;
+
+        let cgroup_path = std::path::PathBuf::from(format!("/proc/{pid}/cgroup"));
+        if let Ok(data) = std::fs::read_to_string(&cgroup_path) {
+            for line in data.lines() {
+                if let Some(path) = line.split("::").nth(1) {
+                    let path = path.trim();
+                    if let Ok(val) = std::fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.current")) {
+                        mem_bytes = val.trim().parse().unwrap_or(0);
+                    }
+                    if let Ok(val) = std::fs::read_to_string(format!("/sys/fs/cgroup{path}/cpu.stat")) {
+                        for line in val.lines() {
+                            if let Some(rest) = line.strip_prefix("usage_usec ") {
+                                cpu_usec = rest.trim().parse().unwrap_or(0);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(WorkloadStats {
+            id: id.to_string(),
+            cpu_usage_percent: cpu_usec as f64 / 1_000_000.0,
+            memory_bytes: mem_bytes,
+            disk_bytes: 0,
+            network_rx_bytes: 0,
+            network_tx_bytes: 0,
+        })
     }
 }

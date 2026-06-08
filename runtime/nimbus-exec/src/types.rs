@@ -211,6 +211,16 @@ pub struct ProcessHandle {
     pub bridge_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct WorkloadStats {
+    pub id: String,
+    pub cpu_usage_percent: f64,
+    pub memory_bytes: u64,
+    pub disk_bytes: u64,
+    pub network_rx_bytes: u64,
+    pub network_tx_bytes: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ExitStatus {
     pub exit_code: i32,
@@ -246,4 +256,5 @@ pub trait Executor: Send + Sync {
         cpu_millicores: Option<u64>,
         memory_bytes: Option<u64>,
     ) -> Result<(), ExecError>;
+    async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError>;
 }
