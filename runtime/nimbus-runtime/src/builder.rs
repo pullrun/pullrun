@@ -341,7 +341,9 @@ impl DagBuilder {
                 {"destination": "/proc", "type": "proc", "source": "proc"},
                 {"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]},
                 {"destination": "/dev/pts", "type": "devpts", "source": "devpts", "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]},
-                {"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["nosuid", "noexec", "nodev", "ro"]}
+                {"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["nosuid", "noexec", "nodev", "ro"]},
+                {"destination": "/tmp", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]},
+                {"destination": "/dev/shm", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}
             ],
             "linux": {
                 "namespaces": [
@@ -359,6 +361,24 @@ impl DagBuilder {
             .map_err(|e| BuildError::Config(e.to_string()))?;
         std::fs::write(&config_path, &config_json)
             .map_err(BuildError::Io)?;
+
+        // Write /etc/hosts and /etc/resolv.conf so entrypoint scripts
+        // that expect these files don't fail.
+        let etc_dir = rootfs_dir.join("etc");
+        let _ = std::fs::create_dir_all(&etc_dir);
+        let hosts_path = etc_dir.join("hosts");
+        if !hosts_path.exists() {
+            std::fs::write(
+                &hosts_path,
+                "127.0.0.1 localhost\n::1 localhost ip6-localhost\n",
+            )
+            .ok();
+        }
+        let resolv_path = etc_dir.join("resolv.conf");
+        if !resolv_path.exists() {
+            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                .ok();
+        }
 
         // Symlink rootfs into bundle
         let bundle_rootfs = bundle_dir.join("rootfs");

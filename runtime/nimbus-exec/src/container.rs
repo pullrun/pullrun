@@ -276,10 +276,12 @@ impl Executor for LinuxContainerExecutor {
 
         let mut mounts = vec![
             serde_json::json!({"destination": "/proc", "type": "proc", "source": "proc"}),
-            serde_json::json!({"destination": "/dev", "type": "tmpfs", "source": "tmpfs"}),
+            serde_json::json!({"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]}),
             serde_json::json!({"destination": "/dev/pts", "type": "devpts", "source": "devpts"}),
             serde_json::json!({"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"}),
             serde_json::json!({"destination": "/sys", "type": "sysfs", "source": "sysfs"}),
+            serde_json::json!({"destination": "/tmp", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}),
+            serde_json::json!({"destination": "/dev/shm", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}),
         ];
         for m in &spec.mounts {
             let mut mount = serde_json::Map::new();
@@ -337,6 +339,24 @@ impl Executor for LinuxContainerExecutor {
             &bundle.config_path,
             serde_json::to_string_pretty(&oci_spec).unwrap(),
         )?;
+
+        // Write /etc/hosts and /etc/resolv.conf into the rootfs so
+        // entrypoint scripts that expect these files don't fail.
+        let etc_dir = bundle.rootfs_path.join("etc");
+        let _ = std::fs::create_dir_all(&etc_dir);
+        let hosts_path = etc_dir.join("hosts");
+        if !hosts_path.exists() {
+            std::fs::write(
+                &hosts_path,
+                format!("127.0.0.1 localhost\n::1 localhost ip6-localhost\n"),
+            )
+            .ok();
+        }
+        let resolv_path = etc_dir.join("resolv.conf");
+        if !resolv_path.exists() {
+            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                .ok();
+        }
 
         let bridge_name = spec.bridge_name.clone();
         let handle = ProcessHandle {
