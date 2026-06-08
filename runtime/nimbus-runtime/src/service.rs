@@ -2562,7 +2562,7 @@ impl Runtime for RuntimeService {
 
         // Determine runc path
         let runc_path = self.config.bundle_root.join("..").join("runc");
-        let runc_path = if runc_path.exists() {
+        let runc_path = if runc_path.is_file() {
             runc_path
         } else {
             PathBuf::from("runc")

@@ -65,7 +65,7 @@ impl<'a> OciMaterializer<'a> {
             .map(|e| e.as_str().to_string())
             .collect();
 
-        for (i, layer_digest) in layer_digests.iter().rev().enumerate() {
+        for (i, layer_digest) in layer_digests.iter().enumerate() {
             debug!(layer = i, %layer_digest, "materializing layer");
             self.materialize_layer(layer_digest, &rootfs_path)?;
         }
@@ -107,7 +107,7 @@ impl<'a> OciMaterializer<'a> {
             .map(|e| e.as_str().to_string())
             .collect();
 
-        for (i, layer_digest) in layer_digests.iter().rev().enumerate() {
+        for (i, layer_digest) in layer_digests.iter().enumerate() {
             debug!(layer = i, %layer_digest, "materializing layer");
             self.materialize_layer(layer_digest, target_dir)?;
         }
