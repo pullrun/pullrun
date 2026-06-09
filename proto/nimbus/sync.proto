@@ -1,0 +1,41 @@
+syntax = "proto3";
+package nimbus.sync;
+
+service BlockSync {
+  // Advertise which blobs this node has via bloom filter exchange.
+  rpc HaveBlobs(HaveBlobsRequest) returns (HaveBlobsResponse);
+
+  // Request specific blobs by digest. Returns a stream of blob data.
+  rpc GetBlobs(GetBlobsRequest) returns (stream BlobChunk);
+
+  // Bidirectional: both sides send/receive missing blobs concurrently.
+  rpc SyncBlobs(stream SyncBlob) returns (stream SyncBlob);
+}
+
+message HaveBlobsRequest {
+  bytes bloom_filter = 1;
+  int32 bloom_k = 2;
+  int32 bloom_m = 3;
+}
+
+message HaveBlobsResponse {
+  bytes bloom_filter = 1;
+  int32 bloom_k = 2;
+  int32 bloom_m = 3;
+}
+
+message GetBlobsRequest {
+  repeated string digests = 1;
+}
+
+message BlobChunk {
+  string digest = 1;
+  bytes data = 2;
+  uint32 offset = 3;
+  bool is_final = 4;
+}
+
+message SyncBlob {
+  string digest = 1;
+  bytes data = 2;
+}

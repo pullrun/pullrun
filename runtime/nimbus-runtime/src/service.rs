@@ -27,6 +27,7 @@ use nimbus_net::{Ipam, ProxyNetwork};
 use nimbus_oci::{current_arch, OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory, build_dag_from_directory_with_platform, DagDirectory, DirectoryEntry};
 use nimbus_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use nimbus_store::MmapStore;
+use nimbus_sync::BlockSyncClient;
 use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
 use crate::events::{Event, EventBus, EventKind};
@@ -83,6 +84,8 @@ pub struct ServiceConfig {
     /// local dev with `registry:2` containers or
     /// self-hosted registries without TLS.
     pub insecure_registries: std::collections::HashSet<String>,
+    /// Optional BlockSync client for peer-to-peer blob distribution.
+    pub block_sync_client: Option<BlockSyncClient>,
 }
 
 impl ServiceConfig {
@@ -97,7 +100,13 @@ impl ServiceConfig {
             trusted_keys: Vec::new(),
             vm_backend: None,
             insecure_registries: std::collections::HashSet::new(),
+            block_sync_client: None,
         }
+    }
+
+    pub fn with_block_sync(mut self, client: BlockSyncClient) -> Self {
+        self.block_sync_client = Some(client);
+        self
     }
 
     pub fn with_policy(mut self, p: Policy) -> Self {
@@ -1518,11 +1527,24 @@ impl Runtime for RuntimeService {
             &req.registry_password,
             &req.registry_token,
         );
-        let puller =
-            OciPuller::with_insecure_registries(auth, self.config.insecure_registries.clone());
-        let pull_result = puller
-            .pull_with_platform(&image_ref, registry, platform.as_deref())
-            .await;
+
+        let pull_result = if let Some(sync_client) = &self.config.block_sync_client {
+            let sync_puller = nimbus_sync::SyncPuller::new(
+                self.store.clone(),
+                auth,
+                self.config.insecure_registries.clone(),
+                Some(sync_client.clone()),
+            );
+            sync_puller
+                .pull(&image_ref, registry, platform.as_deref())
+                .await
+        } else {
+            let puller =
+                OciPuller::with_insecure_registries(auth, self.config.insecure_registries.clone());
+            puller
+                .pull_with_platform(&image_ref, registry, platform.as_deref())
+                .await
+        };
         let pulled = match pull_result {
             Ok(p) => p,
             Err(e) => {

@@ -19,6 +19,7 @@ use nimbus_runtime::metrics;
 use nimbus_runtime::proto;
 use nimbus_runtime::service::{RuntimeCommand, RuntimeService, ServiceConfig, VmBackendConfig};
 use nimbus_store::MmapStore;
+use nimbus_sync::{BlockSyncClient, BlockSyncServer, BlockSyncService, Discovery, generate_node_id};
 use proto::runtime_server::RuntimeServer;
 
 #[derive(Parser)]
@@ -97,6 +98,15 @@ enum Commands {
             help = "Registry to reach over plain HTTP (no TLS). Repeatable. Example: localhost:5000"
         )]
         insecure_registry: Vec<String>,
+
+        // Peer-to-peer block sync. Default is disabled (port 0).
+        // Pass e.g. --sync-addr 0.0.0.0:9500 to enable.
+        #[arg(
+            long = "sync-addr",
+            default_value = "0.0.0.0:0",
+            help = "TCP address for peer-to-peer BlockSync gRPC (e.g. 0.0.0.0:9500). Port 0 = disabled."
+        )]
+        sync_addr: std::net::SocketAddr,
     },
     /// Pull an OCI image into the DAG store
     Pull {
@@ -356,6 +366,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_mem_mib,
         vm_size_mb,
         insecure_registry,
+        sync_addr,
     } = cli.command
     else {
         unreachable!("daemon_main only passes the Daemon variant")
@@ -378,6 +389,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_mem_mib,
         vm_size_mb,
         insecure_registry,
+        sync_addr,
     )
     .await
 }
@@ -496,6 +508,7 @@ async fn run_daemon(
     vm_mem_mib: u32,
     vm_size_mb: u64,
     insecure_registry: Vec<String>,
+    sync_addr: SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let policy = build_policy(
         require_signature,
@@ -548,6 +561,64 @@ async fn run_daemon(
     // Register binfmt_misc handlers for common architectures so
     // cross-arch container execution works without manual setup.
     binfmt::register_common_binfmts();
+
+    // Build the store early so BlockSync and Discovery can share it.
+    let store = Arc::new(MmapStore::new(config.store_root.clone()));
+
+    // Start peer-to-peer BlockSync gRPC server (enabled when port != 0).
+    let block_sync_client: Option<BlockSyncClient> = if sync_addr.port() != 0 {
+        let block_sync_service = BlockSyncService::new(store.clone());
+        let bss = BlockSyncServer::new(block_sync_service.clone());
+        let addr = sync_addr;
+        tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(bss)
+                .serve(addr)
+                .await
+                .ok();
+        });
+        info!(sync_addr = %sync_addr, "BlockSync gRPC server started");
+
+        // Build BlockSync client for outbound peer connections.
+        let client = BlockSyncClient::connect(format!("http://{}", sync_addr))
+            .await
+            .ok();
+        if client.is_some() {
+            info!("BlockSync client initialized");
+        }
+
+        // Start mDNS peer discovery.
+        let node_id = generate_node_id();
+        let discovery = Discovery::new(node_id.clone(), sync_addr);
+        let dh = discovery.clone();
+        tokio::spawn(async move {
+            dh.run().await;
+        });
+        info!(node_id, "peer discovery started");
+
+        // Periodically rebuild bloom filter from store contents.
+        let bf = block_sync_service.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            bf.rebuild_bloom_filter().await;
+            info!(blob_count = bf.blob_count(), "bloom filter rebuilt");
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+                bf.rebuild_bloom_filter().await;
+            }
+        });
+
+        client
+    } else {
+        info!("BlockSync disabled (--sync-addr port is 0)");
+        None
+    };
+
+    if let Some(client) = block_sync_client {
+        config = config.with_block_sync(client);
+        info!("BlockSync wired into service config");
+    }
 
     if std::fs::metadata(socket).is_ok() {
         std::fs::remove_file(socket)?;

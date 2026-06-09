@@ -14,7 +14,7 @@ backend.
 | What Nimbus **is** | What Nimbus **is not** |
 |---|---|---|
 | A content-addressed storage + execution layer for OCI images | A Docker Desktop replacement (yet) |
-| A multi-backend runtime (containers + VMs from the same DAG) | A Swarm / orchestrator clone (leverages K8s CRI; cross-node via P2P DAG block sync — not a control plane rewrite) |
+| A multi-backend runtime (containers + VMs from the same DAG) | A Swarm / orchestrator clone (leverages K8s CRI; cross-node via P2P DAG block sync — Phase 1 implemented, see `docs/cross-node-dag-sync.md`) |
 | A native DAG-aware container image builder | An OCI registry (it pulls from registries, not serves them) |
 | A policy-enforced execution path (cosign signatures, SBOM checks, license/CVSS gates) | A live-migration / CRIU snapshot product |
 | A K8s RuntimeClass provider (`nimbus-container`, `nimbus-vm`) | A general-purpose Kubernetes scheduler replacement (it integrates *with* Kubernetes via CRI) |
@@ -49,6 +49,13 @@ nimbusctl build -t myapp:latest --platform linux/arm64
 
 # 5. Cross-arch run (auto-registers QEMU binfmt — no manual setup):
 nimbusctl run myapp:latest --platform linux/arm64
+
+# 6. Enable peer-to-peer block sync for multi-node image distribution:
+nimbus-runtime daemon --sync-addr 0.0.0.0:9500
+
+# On each additional node, start the daemon with the same --sync-addr:
+# Nodes discover each other via mDNS (239.255.0.100:54321) and
+# automatically delta-sync image blobs (peer → local → registry fallback).
 ```
 
 The CLI spawns the runtime as a child process over a Unix domain
@@ -142,6 +149,7 @@ rest of the cluster delta-syncs. See `docs/cross-node-dag-sync.md`.
 | `runtime/nimbus-exec` | Execution backends: `LinuxContainerExecutor` (runc) and the executor trait |
 | `runtime/nimbus-vm` | Firecracker microVM executor (KVM on Linux) + Apple Virt executor (macOS) |
 | `runtime/nimbus-net` | IPAM, userspace TCP/UDP proxy, DNS, iptables MASQUERADE for VM outbound |
+| `runtime/nimbus-sync` | Peer-to-peer DAG block sync: BloomFilter, BlockSync gRPC service, mDNS discovery, SyncPuller |
 | `runtime/nimbus-policy` | Cosign signature verification, CycloneDX SBOM scanning, CVSS / license gates |
 | `runtime/nimbus-runtime` | The gRPC daemon: pulls, runs, inspects, streams events, exposes `/metrics`, live stats, health checks, CopyFile RPC |
 | `cli/nimbusctl` | Go CLI; thin wrapper over the gRPC API |

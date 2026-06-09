@@ -666,6 +666,42 @@ impl OciPuller {
         let data = decode_body(&content_encoding, raw)?;
         Ok(data)
     }
+
+    /// Resolve image reference and return manifest + config + registry
+    /// metadata, without fetching layer blobs. Returns:
+    ///   (manifest, config, config_digest, registry, repository, token)
+    pub async fn resolve_image(
+        &self,
+        image_ref: &str,
+        explicit_registry: Option<&str>,
+        platform: Option<&str>,
+    ) -> Result<(OciManifest, OciImageConfig, String, String, String, Option<String>), OciError>
+    {
+        let registry = self.registry_for(image_ref, explicit_registry);
+        let (repository, tag) = self.image_parts(image_ref);
+        let token = self.get_token(&registry, &repository).await?;
+
+        let manifest = self
+            .fetch_manifest_with_platform(&registry, &repository, &tag, token.as_deref(), platform)
+            .await?;
+        let config = self
+            .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
+            .await?;
+        let config_digest = manifest.config.digest.clone();
+
+        Ok((manifest, config, config_digest, registry, repository, token))
+    }
+
+    /// Fetch a single blob from the registry by digest.
+    pub async fn fetch_blob_by_digest(
+        &self,
+        registry: &str,
+        repository: &str,
+        digest: &str,
+        token: Option<&str>,
+    ) -> Result<Vec<u8>, OciError> {
+        self.fetch_blob(registry, repository, digest, token).await
+    }
 }
 
 fn decode_body(encoding: &str, data: Vec<u8>) -> Result<Vec<u8>, OciError> {

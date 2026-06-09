@@ -1,10 +1,12 @@
 # Nimbus — Build Progress
 
 **Last updated:** 2026-06-09
-**Status:** ✅ All Docker CE multi-arch gaps closed (manifest list DAG node, multi-arch build+push, cross-arch auto-binfmt). Now re-architecting the last gap: **cross-node DAG block sync** — not a Swarm clone, but a content-addressed P2P block distribution layer that makes multi-node image distribution O(unique blocks) instead of O(per-node full pulls). Integrates with existing Kubernetes CRI shim; zero control plane reimplementation.
-**Tests:** 113 Rust + 9 Go — all passing.
+**Status:** ✅ All Docker CE multi-arch gaps closed (manifest list DAG node, multi-arch build+push, cross-arch auto-binfmt). ✅ Phase 1 of cross-node DAG block sync implemented: `nimbus-sync` crate with `BloomFilter`, `BlockSync` gRPC service, mDNS peer discovery, and `SyncPuller` (peer-aware OCI puller). Wired into daemon (`--sync-addr` flag) and `PullImage` handler. Zero control plane reimplementation — leverages existing K8s CRI shim.
+**Tests:** 118 Rust + 9 Go — all passing.
 
 **New (Manifest list DAG node + multi-arch build+push):** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each to DAG + creates `ManifestList` node. `DagBuilder::build_multi()` builds N platforms serially (shared store dedups layers automatically) and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects manifest vs manifest list and dispatches accordingly.
+
+**New (Cross-node DAG block sync Phase 1 — P2P image distribution):** `runtime/nimbus-sync` crate with `BloomFilter` (optimal sizing, serialization, merge), `BlockSync` gRPC service (HaveBlobs/GetBlobs/SyncBlobs), mDNS peer discovery (UDP multicast `239.255.0.100:54321`), and `SyncPuller` (peer-aware OciPuller wrapper). Added `resolve_image()` and `fetch_blob_by_digest()` to `OciPuller` as non-breaking public API. Daemon accepts `--sync-addr` flag; BlockSync server + discovery start when port is non-zero. `PullImage` handler auto-detects block sync availability and uses `SyncPuller` (peer→local→registry blob resolution). See `docs/cross-node-dag-sync.md`.
 
 **Previously (Cross-arch run — the "better than Docker" gap):** Binfmt extraction — `ensure_cross_arch_binfmt` moved from `builder.rs` to shared `binfmt.rs` module. Daemon startup auto-registers qemu handlers for arm64, arm, ppc64le, s390x, riscv64. `run_workload` reads image architecture from stored manifest; if it differs from host arch (and backend isn't VM), registers the handler on-demand before container creation. **No manual setup step required.** All 53 cross-package tests pass.
 
