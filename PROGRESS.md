@@ -1,14 +1,33 @@
 # Nimbus — Build Progress
 
-**Last updated:** 2026-06-08
-**Status:** ✅ All major Docker CLI feature gaps implemented and deployed. Phase E complete — restart policies, commit/diff, info/version, network create, proxy TCP reset. Deployed and running on server.
+**Last updated:** 2026-06-09
+**Status:** ✅ Multi-arch / cross-platform **run** gap closed: binfmt_misc auto-registered at daemon startup and on-demand for cross-arch container execution. No manual `docker run --privileged --rm multiarch/qemu-user-static --reset -p` needed. Manifest list + multi-arch builder + build+push coming next.
 **Tests:** 113 Rust + 9 Go — all passing.
-**New (Gap 5):** Proxy TCP reset fix — auto-promote to bridge mode when inbound ports requested; bridge always gets host-side IP (`10.42.0.1/16`) so kernel has a route to containers. Verified: `curl http://localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200.
-**New (Gap 4):** `nimbusctl network create/rm/ls` — user-defined bridge networks with persistent registry, deterministic /24 subnet allocation from 10.43.0.0/16.
+
+**New (Cross-arch run — the "better than Docker" gap):** Binfmt extraction — `ensure_cross_arch_binfmt` moved from `builder.rs` to shared `binfmt.rs` module. Daemon startup auto-registers qemu handlers for arm64, arm, ppc64le, s390x, riscv64. `run_workload` reads image architecture from stored manifest; if it differs from host arch (and backend isn't VM), registers the handler on-demand before container creation. **No manual setup step required.** All 53 cross-package tests pass.
+
+**Previously (Multi-arch build + pull):** `--platform` flag on `nimbusctl pull/build/run`. Dockerfile `FROM --platform=...` parsed and honored. Puller resolves multi-arch image indexes for any platform, not just host native. Builder passes target platform through to base image pull, RUN/COPY layer creation, and manifest metadata. Cross-arch RUN execution: auto-detects architecture mismatch, registers qemu-user-static binfmt handlers when needed.
+
+**Previously (Gap 5):** Proxy TCP reset fix — auto-promote to bridge mode when inbound ports requested; bridge always gets host-side IP (`10.42.0.1/16`) so kernel has a route to containers. Verified: `curl http://localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200.
+**Previously (Gap 4):** `nimbusctl network create/rm/ls` — user-defined bridge networks with persistent registry, deterministic /24 subnet allocation from 10.43.0.0/16.
 **Previously (Gap 3):** `nimbusctl info` (runtime version, uptime, store stats) + `nimbusctl version`.
 **Previously (Gap 2):** `nimbusctl commit <id> [tag]` (running-container snapshot → DAG layer) + `nimbusctl diff <id>` (added/modified/deleted file listing vs original image).
 **Previously (Gap 1):** `--restart` flag (`no`/`on-failure`/`always`/`unless-stopped`) with exponential backoff watcher, race-fixed status check.
 **Previously:** Bridge fix deployed, resource limits (`--cpu`/`--memory`), volumes, compose auth, live stats, health checks, docker cp, build layer caching.
+
+## Docker feature gap analysis
+
+All Docker CLI features that remain unimplemented are **community-edition features** — none require Docker Enterprise:
+
+| Feature | Docker CE | Docker EE | Status | Notes |
+|---------|-----------|-----------|--------|-------|
+| Multi-arch pull | ✅ | ✅ | ✅ Nimbus | `--platform linux/arm64` |
+| Multi-arch build | ✅ | ✅ | ✅ Nimbus | `--platform` + QEMU binfmt auto-registration |
+| Multi-arch run | ✅ `qemu-user-static` | ✅ | ✅ Nimbus | **Auto-registered** — no manual step |
+| Manifest list creation | ✅ `docker manifest` | ✅ | ❌ | Planned: `ManifestList` node kind + `DagBuilder::build_multi` |
+| Multi-arch buildx push | ✅ `docker buildx build --push` | ✅ | ❌ | Planned: `DagPusher::push_manifest_list` |
+| Secret / Config | ✅ | ✅ | ❌ | Docker's secret/store; Nimbus can do it via DAG |
+| Multi-node orchestration | ✅ Swarm | ✅ | ❌ | Post-v1; control plane stub exists |
 
 ---
 
@@ -16,12 +35,14 @@
 
 ### Image management
 - `pull` — OCI pull from any registry (Docker Hub, private, insecure), Docker Hub gzip fix, image index support
+- **Multi-arch pull** — `--platform linux/arm64` resolves multi-arch indexes for any platform, not just host native (`puller.rs:326-463`)
 - `push` — DAG-to-OCI layer reconstruction + registry upload via OCI distribution API (monolithic PUT)
 - `save` — DAG-native tar export (BFS walk, serializes all nodes+blobs, **not** OCI format)
 - `load` — Tar import with content-addressed dedup
 - `list` — List images in store
 - `inspect` — Inspect DAG nodes, image config, layers
 - `build` — Native DAG-aware builder: Dockerfile parser, RUN execution via runc, COPY/ADD, layer snapshotting
+- **Multi-arch build** — `--platform linux/arm64` overrides Dockerfile's `FROM --platform`; binfmt_misc registration for cross-arch RUN execution; architecture/os preserved in all manifest nodes (`builder.rs:145-155`, `dockerfile.rs:424-432`)
 - **Build layer caching** — SHA256 instruction cache in DagBuilder for RUN/COPY/ADD; incremental builds reuse cached layers
 - `login/logout` — Registry auth stored in `~/.nimbus/auth.json` (0600 perms), auto-attached to pull/push
 - **Docker-independent** — No Docker daemon, `docker` CLI, containerd, or overlayfs anywhere
@@ -167,26 +188,41 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 ---
 
-## Next steps (all major Docker CLI gaps now closed)
+## Next steps — Docker gaps (all CE, no EE required)
 
-✅ **All 5 Docker feature gaps implemented, deployed, and verified:**
+### 1. Manifest list as first-class DAG node
 
-1. ~~**Restart policies**~~ ✅
-2. ~~**Commit / diff**~~ ✅
-3. ~~**Info / Version**~~ ✅
-4. ~~**Network create**~~ ✅
-5. ~~**Proxy TCP reset fix**~~ ✅ — `curl localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200
+**Design:**
+- Add `NodeKind::ManifestList` to `nimbus-store`
+- `pull --platform all` stores the manifest list node with edges to each arch's manifest node
+- Cross-arch layer dedup is **free** — content addressing means shared layers are stored once
+- `DagPusher::push()` walks the DAG: if root is `ManifestList`, push all manifests + layers + configs + the list
 
-### Performance & reliability (next priority)
+**Why this is better than Docker:** Manifest list is just another DAG node. Docker treats it as a separate registry artifact.
 
-1. ~~**DAG directory scan optimization**~~ ✅ — Parallelized `build_dag_from_directory` using `walkdir` for efficient directory discovery + `rayon` for parallel file reading and DAG blob storage. Previously serial `walk_and_store` read each file one at a time; now all files are processed concurrently across CPU cores.
+### 2. Multi-arch builder (`build --platform linux/amd64,linux/arm64`)
 
-2. **Push auth test** — Deploy local `registry:2` on server, verify `push` + `pull` round-trip with auth.
+**Design:**
+- `DagBuilder::build_multi(store, dockerfile, context, &[Platform], args)` spawns one `build_single` per platform (already parallel internally)
+- After all complete, reads each arch's manifest digest from its DAG, creates a manifest list node with edges to each arch manifest
+- Returns the manifest list digest
 
-3. **Port mapping syntax** — Add `--publish host:container` (e.g. `-p 8080:80`) to complement `--allow-inbound hostPort` (which forwards to same port inside container).
+**Why this is better than Docker:** Content-addressed store is **shared by all arch builds implicitly** — same base layer reused across manifests automatically. BuildKit needs remote cache config for this.
 
-4. **Disk management** — GC / prune policies: delete old bundles, evict least-recently-used images from DAG store, clean runc container state.
+### 3. Manifest list push (`build --push`)
+
+**Design:**
+- `DagPusher::push_manifest_list(list_digest, repo, tag)` walks the DAG from the manifest list node, collects unique manifest/config/layer digests, pushes layers → manifests → list
+- One-liner in build handler: `if req.push { pusher.push_manifest_list(&root, &repo, &tag).await?; }`
+
+**Why this is better than Docker:** Same DAG, no marshalling. Buildx has to serialize between builder and registry.
+
+### 4. Additional improvements
+
+- **Push auth test** — Deploy local `registry:2` on server, verify `push` + `pull` round-trip with auth.
+- **Port mapping syntax** — Add `--publish host:container` (e.g. `-p 8080:80`) to complement `--allow-inbound hostPort`.
+- **Disk management** — GC / prune policies: delete old bundles, evict least-recently-used images from DAG store, clean runc container state.
 
 ### Post-v1 (multi-node / control plane)
 
-5. **Multi-node orchestration** — Control plane: scheduler, cross-node image pull, cross-node DNS. Full re-architecture.
+- **Multi-node orchestration** — Control plane: scheduler, cross-node image pull, cross-node DNS. Full re-architecture.

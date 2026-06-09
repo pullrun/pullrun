@@ -308,9 +308,23 @@ pub struct DagDirectory {
 
 /// Walk a directory recursively, storing every file as a DAG blob, building
 /// tree/layer/manifest nodes. Returns the manifest digest.
+///
+/// `architecture` and `os` are recorded in the manifest node metadata.
+/// Defaults to `"amd64"` and `"linux"` respectively.
 pub async fn build_dag_from_directory(
     store: &Arc<MmapStore>,
     dir: &Path,
+) -> Result<DagDirectory, OciError> {
+    build_dag_from_directory_with_platform(store, dir, "amd64", "linux").await
+}
+
+/// Like `build_dag_from_directory` but allows specifying the target
+/// platform (architecture and OS) for the generated manifest.
+pub async fn build_dag_from_directory_with_platform(
+    store: &Arc<MmapStore>,
+    dir: &Path,
+    architecture: &str,
+    os: &str,
 ) -> Result<DagDirectory, OciError> {
     let dir = dir.canonicalize().map_err(|e| {
         OciError::Other(format!("canonicalize {dir:?}: {e}"))
@@ -406,14 +420,15 @@ pub async fn build_dag_from_directory(
         .await?;
     node_count += 1;
 
+    let config_json_str = format!(r#"{{"architecture":"{architecture}","os":"{os}"}}"#);
     let manifest_data = crate::ManifestData {
-        config_json: r#"{"architecture":"amd64","os":"linux"}"#.to_string(),
+        config_json: config_json_str,
         entrypoint: vec![],
         cmd: vec![],
         env: vec![],
         working_dir: None,
-        architecture: "amd64".to_string(),
-        os: "linux".to_string(),
+        architecture: architecture.to_string(),
+        os: os.to_string(),
     };
     let inline = serde_json::to_vec(&manifest_data).unwrap_or_default();
     let manifest_digest = store

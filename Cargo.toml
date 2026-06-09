@@ -34,7 +34,7 @@ rkyv = { version = "0.7", features = ["validation", "strict"] }
 memmap2 = "0.9"
 dashmap = "5.5"
 nix = { version = "0.28", features = ["process", "sched"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 flate2 = "1.0"
 tar = "0.4"
 libc = "0.2"

@@ -2,6 +2,7 @@ pub mod proto {
     tonic::include_proto!("nimbus.runtime");
 }
 
+pub mod binfmt;
 pub mod events;
 pub mod metrics;
 pub mod service;

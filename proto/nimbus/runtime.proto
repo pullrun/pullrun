@@ -164,6 +164,11 @@ message PullImageRequest {
     string registry_username = 3;
     string registry_password = 4;
     string registry_token = 5;
+    // Target platform, e.g. "linux/amd64" or "linux/arm64".
+    // When empty, the host's native architecture is used.
+    // When set, multi-arch image indexes are resolved for this
+    // platform instead of the host native one.
+    string platform = 6;
 }
 
 message PullImageResponse {
@@ -473,6 +478,11 @@ message BuildImageRequest {
     string context_dir = 2;       // build context directory on the server
     string tag = 3;               // image tag (e.g. "myapp:latest")
     map<string, string> build_args = 4;
+    // Target platform, e.g. "linux/amd64" or "linux/arm64".
+    // Overrides FROM --platform in the Dockerfile. When empty,
+    // falls back to the Dockerfile's --platform if present,
+    // then to the host's native architecture.
+    string platform = 5;
 }
 
 message BuildImageResponse {

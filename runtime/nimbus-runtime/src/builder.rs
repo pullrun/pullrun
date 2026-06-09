@@ -6,12 +6,12 @@ use std::sync::Arc;
 use nimbus_exec::types::{Backend, WorkloadSpec};
 use nimbus_exec::Executor;
 use nimbus_oci::{
-    build_dag_from_directory, DagDirectory, Dockerfile, Instruction, ManifestData,
-    OciMaterializer, OciPuller,
+    build_dag_from_directory, build_dag_from_directory_with_platform, current_arch, DagDirectory,
+    Dockerfile, Instruction, ManifestData, OciMaterializer, OciPuller,
 };
 use nimbus_store::{Digest, MmapStore};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Errors that can occur during DAG-native image builds.
 #[derive(Debug)]
@@ -64,6 +64,9 @@ pub struct DagBuilder {
     runc_path: PathBuf,
     bundle_root: PathBuf,
     insecure_registries: std::collections::HashSet<String>,
+    /// Optional target platform override (e.g. "linux/arm64").
+    /// When set, overrides FROM --platform in the Dockerfile.
+    platform: Option<String>,
     /// Track materialized rootfs paths per layer to reuse when possible.
     rootfs_cache: Arc<RwLock<HashMap<String, PathBuf>>>,
     /// Build layer cache: instruction_hash -> resulting_manifest_digest.
@@ -79,11 +82,22 @@ impl DagBuilder {
         bundle_root: PathBuf,
         insecure_registries: std::collections::HashSet<String>,
     ) -> Self {
+        Self::with_platform(store, runc_path, bundle_root, insecure_registries, None)
+    }
+
+    pub fn with_platform(
+        store: Arc<MmapStore>,
+        runc_path: PathBuf,
+        bundle_root: PathBuf,
+        insecure_registries: std::collections::HashSet<String>,
+        platform: Option<String>,
+    ) -> Self {
         Self {
             store,
             runc_path,
             bundle_root,
             insecure_registries,
+            platform,
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
             layer_cache: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -107,6 +121,13 @@ impl DagBuilder {
         context_dir: &Path,
         _build_args: &HashMap<String, String>,
     ) -> Result<BuildResult, BuildError> {
+        // Determine effective platform: explicit request overrides Dockerfile's
+        // --platform, which overrides host native (None = puller auto-detects).
+        let effective_platform: Option<String> = self
+            .platform
+            .clone()
+            .or_else(|| stage.platform.clone());
+
         // 1. Pull the base image
         info!("pulling base image: {}", stage.from);
         let puller = OciPuller::with_insecure_registries(
@@ -116,7 +137,11 @@ impl DagBuilder {
         let registry = extract_registry(&stage.from);
         let image_ref = extract_image_ref(&stage.from);
         let pulled = puller
-            .pull(&image_ref, Some(registry.as_str()))
+            .pull_with_platform(
+                &image_ref,
+                Some(registry.as_str()),
+                effective_platform.as_deref(),
+            )
             .await
             .map_err(|e| BuildError::Pull(format!("{}: {e}", stage.from)))?;
 
@@ -288,7 +313,7 @@ impl DagBuilder {
         &self,
         current_manifest: &str,
         command: &[String],
-        _manifest_data: &mut ManifestData,
+        manifest_data: &mut ManifestData,
     ) -> Result<String, BuildError> {
         let temp_dir = tempfile::tempdir()
             .map_err(BuildError::Io)?;
@@ -388,6 +413,15 @@ impl DagBuilder {
         std::os::unix::fs::symlink(&rootfs_dir, &bundle_rootfs)
             .map_err(BuildError::Io)?;
 
+        // Cross-architecture check: if the target arch differs from
+        // the host, ensure qemu-user-static binfmt handlers are set up.
+        let target_arch = manifest_data.architecture.as_str();
+        let host_arch = current_arch();
+        if target_arch != host_arch {
+            crate::binfmt::ensure_binfmt_for_arch(target_arch)
+                .map_err(|e| BuildError::Execute(format!("cross-arch setup: {e}")))?;
+        }
+
         // Run runc
         let output = std::process::Command::new(&self.runc_path)
             .args(["run", &workload_id])
@@ -410,13 +444,15 @@ impl DagBuilder {
             )));
         }
 
-        // Re-scan the rootfs into DAG nodes
+        // Re-scan the rootfs into DAG nodes, preserving target architecture.
         info!("scanning rootfs after RUN...");
+        let arch = &manifest_data.architecture;
+        let os = &manifest_data.os;
         let DagDirectory {
             manifest_digest,
             node_count,
             blob_bytes,
-        } = build_dag_from_directory(&self.store, &rootfs_dir)
+        } = build_dag_from_directory_with_platform(&self.store, &rootfs_dir, arch, os)
             .await
             .map_err(|e| BuildError::Scan(e.to_string()))?;
 
@@ -431,7 +467,7 @@ impl DagBuilder {
         context_dir: &Path,
         sources: &[String],
         dest: &str,
-        _manifest_data: &mut ManifestData,
+        manifest_data: &mut ManifestData,
     ) -> Result<String, BuildError> {
         let temp_dir = tempfile::tempdir()
             .map_err(BuildError::Io)?;
@@ -472,7 +508,7 @@ impl DagBuilder {
             manifest_digest,
             node_count,
             blob_bytes,
-        } = build_dag_from_directory(&self.store, &rootfs_dir)
+        } = build_dag_from_directory_with_platform(&self.store, &rootfs_dir, &manifest_data.architecture, &manifest_data.os)
             .await
             .map_err(|e| BuildError::Scan(e.to_string()))?;
 
@@ -598,3 +634,5 @@ fn copy_recursive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
         Ok(())
     }
 }
+
+

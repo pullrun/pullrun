@@ -12,12 +12,13 @@ backend.
 ## What it is — and what it isn't
 
 | What Nimbus **is** | What Nimbus **is not** |
-|---|---|
+|---|---|---|
 | A content-addressed storage + execution layer for OCI images | A Docker Desktop replacement (yet) |
-| A multi-backend runtime (containers + VMs from the same DAG) | A container image builder |
-| A policy-enforced execution path (cosign signatures, SBOM checks, license/CVSS gates) | A general-purpose orchestrator (no Kubernetes scheduler replacement; it integrates *with* Kubernetes via CRI) |
-| A K8s RuntimeClass provider (`nimbus-container`, `nimbus-vm`) | An OCI registry (it pulls from registries, not serves them) |
-| A reproducible artifact store (the same `sha256:abc` always runs identically) | A live-migration / CRIU snapshot product |
+| A multi-backend runtime (containers + VMs from the same DAG) | A multi-node orchestrator (control plane is a stub) |
+| A native DAG-aware container image builder | An OCI registry (it pulls from registries, not serves them) |
+| A policy-enforced execution path (cosign signatures, SBOM checks, license/CVSS gates) | A live-migration / CRIU snapshot product |
+| A K8s RuntimeClass provider (`nimbus-container`, `nimbus-vm`) | A general-purpose Kubernetes scheduler replacement (it integrates *with* Kubernetes via CRI) |
+| A reproducible artifact store (the same `sha256:abc` always runs identically) | A Docker Desktop alternative for macOS GUI apps |
 
 Nimbus is a **complement** to the container ecosystem, not a fork of
 it. It pulls standard OCI images from any registry and runs them
@@ -36,16 +37,18 @@ two binaries `target/release/nimbus-runtime` and
 # 1. Pull an image (deduplicates into the on-disk DAG store).
 nimbusctl pull alpine:3.18
 
-# 2. Run it. Choose the backend explicitly: container or vm.
-nimbusctl run sha256:6a... \
-    --backend container \
-    --cmd /bin/sh,-c,'echo hello from nimbus'
+# 2. Pull for a different architecture (resolves multi-arch image indexes):
+nimbusctl pull alpine:3.18 --platform linux/arm64
 
-# 3. Inspect the workload: state, DAG, network rules, policy decisions.
-nimbusctl inspect wl-abc123
+# 3. Run it as a container (400 ms) or VM (5 s boot):
+nimbusctl run alpine:3.18 --backend container --cmd echo hello
+nimbusctl run alpine:3.18 --backend vm       --cmd echo hello
 
-# 4. Stream runtime events (pulls, runs, exits, policy decisions).
-nimbusctl events --follow
+# 4. Native DAG-aware build (--platform overrides FROM --platform):
+nimbusctl build -t myapp:latest --platform linux/arm64
+
+# 5. Cross-arch run (auto-registers QEMU binfmt — no manual setup):
+nimbusctl run myapp:latest --platform linux/arm64
 ```
 
 The CLI spawns the runtime as a child process over a Unix domain
@@ -219,6 +222,9 @@ reason to optimize them (real load + a real eBPF implementation).
 - DAG store with rkyv + memmap2 + DashMap (zero-copy concurrent reads)
 - OCI pull → DAG conversion → content-addressed deduplication (gzip fix for Docker Hub)
 - OCI image index support (platform-aware child selection, skip attestations)
+- **Multi-arch pull** — `--platform linux/arm64` resolves multi-arch indexes for any platform (`puller.rs:pull_with_platform`)
+- **Multi-arch build** — `--platform` flag, Dockerfile `FROM --platform` support, binfmt_misc auto-registration for cross-arch RUN (`binfmt.rs:ensure_binfmt_for_arch`)
+- **Multi-arch run** — cross-arch container execution: reads image architecture from stored manifest, auto-registers binfmt handler on-demand; no manual `docker run --privileged --rm multiarch/qemu-user-static` needed
 - **Push** — DAG-to-OCI layer reconstruction + registry upload (monolithic PUT)
 - **Save/Load** — DAG-native tar export/import with content-addressed dedup
 - Container execution via runc on Linux
@@ -266,6 +272,8 @@ reason to optimize them (real load + a real eBPF implementation).
 **Stubs / partial:**
 
 - Cross-node service discovery (`.nimbus.local` DNS across cluster) — control plane stub only
+- Manifest list as first-class DAG node (`NodeKind::ManifestList`) — planned
+- Multi-arch build+push (`DagBuilder::build_multi` + `DagPusher::push_manifest_list`) — planned
 - NetworkPolicy K8s integration
 - eBPF/XDP fast-path for the userspace proxy
 - Windows WSL2 forwarding
@@ -277,6 +285,7 @@ reason to optimize them (real load + a real eBPF implementation).
 - ~~**`nimbusctl info` / `nimbusctl version`**~~ ✅ — system info commands implemented
 - ~~**User-defined bridge networks**~~ ✅ — `nimbusctl network create/rm/ls` implemented
 - ~~**Proxy TCP reset**~~ ✅ — Bridge IP assignment + auto-promote to bridge mode fixes port forwarding. Verified: `curl localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200
+- ~~**Multi-arch build + run**~~ ✅ — `--platform` flag, binfmt auto-registration for cross-arch build and run
 - **Multi-node orchestration** — control plane needs scheduler, cross-node DNS, persistence (etcd) — post-v1
 
 **Test coverage: 113 Rust tests pass** (workspace-wide). **9 Go tests pass**

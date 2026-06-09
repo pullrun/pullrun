@@ -270,14 +270,28 @@ impl OciPuller {
         image_ref: &str,
         explicit_registry: Option<&str>,
     ) -> Result<PulledImage, OciError> {
+        self.pull_with_platform(image_ref, explicit_registry, None).await
+    }
+
+    /// Pull an OCI image, optionally selecting a specific platform.
+    ///
+    /// `platform` is a string like `"linux/amd64"` or `"linux/arm64"`.
+    /// When `None`, the host's native architecture is used (equivalent
+    /// to calling `pull()`).
+    pub async fn pull_with_platform(
+        &self,
+        image_ref: &str,
+        explicit_registry: Option<&str>,
+        platform: Option<&str>,
+    ) -> Result<PulledImage, OciError> {
         let registry = self.registry_for(image_ref, explicit_registry);
         let (repository, tag) = self.image_parts(image_ref);
         let token = self.get_token(&registry, &repository).await?;
 
-        info!(image_ref, %registry, %repository, %tag, "pulling OCI image");
+        info!(image_ref, %registry, %repository, %tag, platform = ?platform, "pulling OCI image");
 
         let manifest = self
-            .fetch_manifest(&registry, &repository, &tag, token.as_deref())
+            .fetch_manifest_with_platform(&registry, &repository, &tag, token.as_deref(), platform)
             .await?;
         let config = self
             .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
@@ -315,6 +329,18 @@ impl OciPuller {
         repository: &'a str,
         reference: &'a str,
         token: Option<&'a str>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<OciManifest, OciError>> + Send + 'a>>
+    {
+        self.fetch_manifest_with_platform(registry, repository, reference, token, None)
+    }
+
+    fn fetch_manifest_with_platform<'a>(
+        &'a self,
+        registry: &'a str,
+        repository: &'a str,
+        reference: &'a str,
+        token: Option<&'a str>,
+        platform: Option<&'a str>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<OciManifest, OciError>> + Send + 'a>>
     {
         Box::pin(async move {
@@ -375,8 +401,12 @@ impl OciPuller {
                     OciError::InvalidManifest(format!("manifest list parse: {e}"))
                 })?;
 
-                let target_arch = current_arch();
-                let target_os = "linux";
+                // Resolve the target platform: explicit override, or host native.
+                let (target_arch, target_os) = if let Some(p) = platform {
+                    parse_platform(p)
+                } else {
+                    (current_arch(), "linux")
+                };
 
                 // Pick the child manifest for our platform.
                 // Multi-arch indexes put a `platform` field
@@ -420,10 +450,10 @@ impl OciPuller {
 
                 info!(
                     child_digest = %child.digest,
-                    "following manifest list child for current platform"
+                    "following manifest list child for platform {target_arch}/{target_os}"
                 );
 
-                return self.fetch_manifest(registry, repository, &child.digest, token).await;
+                return self.fetch_manifest_with_platform(registry, repository, &child.digest, token, platform).await;
             }
 
             let manifest: OciManifest = serde_json::from_slice(&bytes)
@@ -514,7 +544,7 @@ fn blob_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) 
     }
 }
 
-fn current_arch() -> &'static str {
+pub fn current_arch() -> &'static str {
     match std::env::consts::ARCH {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
@@ -523,4 +553,13 @@ fn current_arch() -> &'static str {
         "s390x" => "s390x",
         other => other,
     }
+}
+
+/// Parse a platform string like `"linux/amd64"` or `"linux/arm64"` into
+/// `(architecture, os)`. Defaults to `("amd64", "linux")` on parse failure.
+pub fn parse_platform(platform: &str) -> (&str, &str) {
+    let mut parts = platform.splitn(2, '/');
+    let os = parts.next().unwrap_or("linux");
+    let arch = parts.next().unwrap_or("amd64");
+    (arch, os)
 }

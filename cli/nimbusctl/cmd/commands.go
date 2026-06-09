@@ -49,7 +49,10 @@ func generateWorkloadID() string {
 }
 
 func NewPullCommand(opts *RootOptions) *cobra.Command {
-	var registry string
+	var (
+		registry string
+		platform string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "pull [IMAGE]",
@@ -67,7 +70,7 @@ func NewPullCommand(opts *RootOptions) *cobra.Command {
 
 			imageRef := args[0]
 			auth, _ := GetRegistryAuth(NormalizeRegistry(registry))
-			resp, err := client.PullImage(ctx, imageRef, registry, auth)
+			resp, err := client.PullImage(ctx, imageRef, registry, platform, auth)
 			if err != nil {
 				return fmt.Errorf("pull %s: %w", imageRef, err)
 			}
@@ -78,10 +81,14 @@ func NewPullCommand(opts *RootOptions) *cobra.Command {
 			if resp.BytesDeduplicated > 0 {
 				fmt.Printf("  deduped:     %d bytes\n", resp.BytesDeduplicated)
 			}
+			if platform != "" {
+				fmt.Printf("  platform:    %s\n", platform)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&registry, "registry", "docker.io", "Registry to pull from")
+	cmd.Flags().StringVar(&platform, "platform", "", "Target platform (e.g. linux/amd64, linux/arm64)")
 	return cmd
 }
 
@@ -124,6 +131,7 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		healthRetries   uint32
 		healthStartPeriod uint32
 		restartPolicy   string
+		platform        string
 	)
 
 	cmd := &cobra.Command{
@@ -155,7 +163,7 @@ DAG store if not already present.`,
 					pullRegistry = "docker.io"
 				}
 				auth, _ := GetRegistryAuth(NormalizeRegistry(pullRegistry))
-				pullResp, err := client.PullImage(ctx, rootDigest, pullRegistry, auth)
+				pullResp, err := client.PullImage(ctx, rootDigest, pullRegistry, platform, auth)
 				if err != nil {
 					return fmt.Errorf("pull %s: %w", rootDigest, err)
 				}
@@ -266,6 +274,7 @@ DAG store if not already present.`,
 	cmd.Flags().Uint32Var(&healthRetries, "health-retries", 3, "Consecutive failures before marking unhealthy")
 	cmd.Flags().Uint32Var(&healthStartPeriod, "health-start-period", 0, "Grace period before health checks start (seconds)")
 	cmd.Flags().StringVar(&restartPolicy, "restart", "no", "Restart policy: no, on-failure, always, unless-stopped")
+	cmd.Flags().StringVar(&platform, "platform", "", "Target platform for pull (e.g. linux/amd64, linux/arm64)")
 	return cmd
 }
 

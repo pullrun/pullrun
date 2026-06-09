@@ -24,7 +24,7 @@ use nimbus_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
 use nimbus_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use nimbus_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use nimbus_net::{Ipam, ProxyNetwork};
-use nimbus_oci::{OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory, DagDirectory, DirectoryEntry};
+use nimbus_oci::{current_arch, OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory, build_dag_from_directory_with_platform, DagDirectory, DirectoryEntry};
 use nimbus_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use nimbus_store::MmapStore;
 use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
@@ -1507,6 +1507,12 @@ impl Runtime for RuntimeService {
         let _timer = register_pull_timer();
         record_pull(&registry_label, "started");
 
+        let platform: Option<String> = if req.platform.is_empty() {
+            None
+        } else {
+            Some(req.platform.clone())
+        };
+
         let auth = build_auth(
             &req.registry_username,
             &req.registry_password,
@@ -1514,7 +1520,9 @@ impl Runtime for RuntimeService {
         );
         let puller =
             OciPuller::with_insecure_registries(auth, self.config.insecure_registries.clone());
-        let pull_result = puller.pull(&image_ref, registry).await;
+        let pull_result = puller
+            .pull_with_platform(&image_ref, registry, platform.as_deref())
+            .await;
         let pulled = match pull_result {
             Ok(p) => p,
             Err(e) => {
@@ -1600,7 +1608,14 @@ impl Runtime for RuntimeService {
         &self,
         request: tonic::Request<RunRequest>,
     ) -> Result<tonic::Response<RunResponse>, tonic::Status> {
-        let req = request.into_inner();
+        let mut req = request.into_inner();
+        // Strip optional "sha256:" prefix from root digest so
+        // the store can look up the path correctly. The CLI
+        // prepends this prefix for disambiguation, but the
+        // store stores bare hex digests.
+        if let Some(stripped) = req.root_digest.strip_prefix("sha256:") {
+            req.root_digest = stripped.to_string();
+        }
         // Take a copy of the request early so the macOS
         // Apple Virt path (which doesn't go through the
         // executor) can still pass a fresh copy to the
@@ -1725,6 +1740,21 @@ impl Runtime for RuntimeService {
 
         // Defense-in-depth: re-evaluate the policy before launching.
         self.evaluate_for_run(&req.root_digest).await?;
+
+        // Cross-architecture check: if the image arch differs from the
+        // host, register a binfmt_misc handler so runc can transparently
+        // execute foreign-arch binaries via QEMU. Skip for VMs (Firecracker
+        // handles its own emulation).
+        if !matches!(backend, Backend::Vm) {
+            let materializer = nimbus_oci::OciMaterializer::new(&self.store);
+            let md = materializer
+                .materialize_manifest(&req.root_digest)
+                .map_err(|e| Status::internal(format!("read manifest for arch check: {e}")))?;
+            if md.architecture != current_arch() {
+                crate::binfmt::ensure_binfmt_for_arch(&md.architecture)
+                    .map_err(|e| Status::internal(format!("cross-arch binfmt setup: {e}")))?;
+            }
+        }
 
         // Translate the gRPC NetworkRule wire format into the runtime's
         // `nimbus_net::NetworkRule` so the executor can apply it (start
@@ -2048,6 +2078,7 @@ impl Runtime for RuntimeService {
                     registry_username: String::new(),
                     registry_password: String::new(),
                     registry_token: String::new(),
+                    platform: String::new(),
                 });
                 let pull_resp = self.pull_image(pull_req).await?;
                 pull_resp.into_inner().root_digest
@@ -2879,11 +2910,18 @@ impl Runtime for RuntimeService {
             PathBuf::from("runc")
         };
 
-        let builder = crate::builder::DagBuilder::new(
+        let platform: Option<String> = if req.platform.is_empty() {
+            None
+        } else {
+            Some(req.platform.clone())
+        };
+
+        let builder = crate::builder::DagBuilder::with_platform(
             self.store.clone(),
             runc_path,
             self.config.bundle_root.join("build"),
             self.config.insecure_registries.clone(),
+            platform,
         );
 
         let build_args: std::collections::HashMap<String, String> = req.build_args.clone();
@@ -3145,12 +3183,25 @@ impl Runtime for RuntimeService {
             }
         };
 
+        // Read the original manifest to preserve architecture/os.
+        let (orig_arch, orig_os) = {
+            let workloads = self.workloads.read().await;
+            let state = workloads
+                .get(&req.id)
+                .ok_or_else(|| Status::not_found(format!("workload {} not found", req.id)))?;
+            let materializer = nimbus_oci::OciMaterializer::new(&self.store);
+            let md = materializer
+                .materialize_manifest(&state.image_root)
+                .map_err(|e| Status::internal(format!("read manifest: {e}")))?;
+            (md.architecture, md.os)
+        };
+
         // Scan the container rootfs into new DAG nodes.
         let DagDirectory {
             manifest_digest,
             node_count,
             blob_bytes: _,
-        } = build_dag_from_directory(&self.store, &rootfs_path)
+        } = build_dag_from_directory_with_platform(&self.store, &rootfs_path, &orig_arch, &orig_os)
             .await
             .map_err(|e| Status::internal(format!("commit failed: {e}")))?;
 

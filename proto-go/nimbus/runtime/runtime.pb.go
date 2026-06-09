@@ -478,8 +478,13 @@ type PullImageRequest struct {
 	RegistryUsername string                 `protobuf:"bytes,3,opt,name=registry_username,json=registryUsername,proto3" json:"registry_username,omitempty"`
 	RegistryPassword string                 `protobuf:"bytes,4,opt,name=registry_password,json=registryPassword,proto3" json:"registry_password,omitempty"`
 	RegistryToken    string                 `protobuf:"bytes,5,opt,name=registry_token,json=registryToken,proto3" json:"registry_token,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Target platform, e.g. "linux/amd64" or "linux/arm64".
+	// When empty, the host's native architecture is used.
+	// When set, multi-arch image indexes are resolved for this
+	// platform instead of the host native one.
+	Platform      string `protobuf:"bytes,6,opt,name=platform,proto3" json:"platform,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PullImageRequest) Reset() {
@@ -543,6 +548,13 @@ func (x *PullImageRequest) GetRegistryPassword() string {
 func (x *PullImageRequest) GetRegistryToken() string {
 	if x != nil {
 		return x.RegistryToken
+	}
+	return ""
+}
+
+func (x *PullImageRequest) GetPlatform() string {
+	if x != nil {
+		return x.Platform
 	}
 	return ""
 }
@@ -3029,11 +3041,16 @@ func (x *WorkloadStats) GetNetworkTxBytes() uint64 {
 }
 
 type BuildImageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Dockerfile    string                 `protobuf:"bytes,1,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`                   // path to Dockerfile on the server
-	ContextDir    string                 `protobuf:"bytes,2,opt,name=context_dir,json=contextDir,proto3" json:"context_dir,omitempty"` // build context directory on the server
-	Tag           string                 `protobuf:"bytes,3,opt,name=tag,proto3" json:"tag,omitempty"`                                 // image tag (e.g. "myapp:latest")
-	BuildArgs     map[string]string      `protobuf:"bytes,4,rep,name=build_args,json=buildArgs,proto3" json:"build_args,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Dockerfile string                 `protobuf:"bytes,1,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`                   // path to Dockerfile on the server
+	ContextDir string                 `protobuf:"bytes,2,opt,name=context_dir,json=contextDir,proto3" json:"context_dir,omitempty"` // build context directory on the server
+	Tag        string                 `protobuf:"bytes,3,opt,name=tag,proto3" json:"tag,omitempty"`                                 // image tag (e.g. "myapp:latest")
+	BuildArgs  map[string]string      `protobuf:"bytes,4,rep,name=build_args,json=buildArgs,proto3" json:"build_args,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Target platform, e.g. "linux/amd64" or "linux/arm64".
+	// Overrides FROM --platform in the Dockerfile. When empty,
+	// falls back to the Dockerfile's --platform if present,
+	// then to the host's native architecture.
+	Platform      string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3094,6 +3111,13 @@ func (x *BuildImageRequest) GetBuildArgs() map[string]string {
 		return x.BuildArgs
 	}
 	return nil
+}
+
+func (x *BuildImageRequest) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
 }
 
 type BuildImageResponse struct {
@@ -4799,13 +4823,14 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\rservice_to_id\x18\x02 \x03(\v23.nimbus.runtime.RunComposeResponse.ServiceToIdEntryR\vserviceToId\x1a>\n" +
 	"\x10ServiceToIdEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcc\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe8\x01\n" +
 	"\x10PullImageRequest\x12\x1b\n" +
 	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12\x1a\n" +
 	"\bregistry\x18\x02 \x01(\tR\bregistry\x12+\n" +
 	"\x11registry_username\x18\x03 \x01(\tR\x10registryUsername\x12+\n" +
 	"\x11registry_password\x18\x04 \x01(\tR\x10registryPassword\x12%\n" +
-	"\x0eregistry_token\x18\x05 \x01(\tR\rregistryToken\"\x86\x01\n" +
+	"\x0eregistry_token\x18\x05 \x01(\tR\rregistryToken\x12\x1a\n" +
+	"\bplatform\x18\x06 \x01(\tR\bplatform\"\x86\x01\n" +
 	"\x11PullImageResponse\x12\x1f\n" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
@@ -5000,7 +5025,7 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\n" +
 	"disk_bytes\x18\x04 \x01(\x04R\tdiskBytes\x12(\n" +
 	"\x10network_rx_bytes\x18\x05 \x01(\x04R\x0enetworkRxBytes\x12(\n" +
-	"\x10network_tx_bytes\x18\x06 \x01(\x04R\x0enetworkTxBytes\"\xf5\x01\n" +
+	"\x10network_tx_bytes\x18\x06 \x01(\x04R\x0enetworkTxBytes\"\x91\x02\n" +
 	"\x11BuildImageRequest\x12\x1e\n" +
 	"\n" +
 	"dockerfile\x18\x01 \x01(\tR\n" +
@@ -5009,7 +5034,8 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"contextDir\x12\x10\n" +
 	"\x03tag\x18\x03 \x01(\tR\x03tag\x12O\n" +
 	"\n" +
-	"build_args\x18\x04 \x03(\v20.nimbus.runtime.BuildImageRequest.BuildArgsEntryR\tbuildArgs\x1a<\n" +
+	"build_args\x18\x04 \x03(\v20.nimbus.runtime.BuildImageRequest.BuildArgsEntryR\tbuildArgs\x12\x1a\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform\x1a<\n" +
 	"\x0eBuildArgsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"G\n" +

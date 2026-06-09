@@ -14,6 +14,7 @@ use nimbus_exec::types::{Backend, NetworkMode, WorkloadSpec};
 use nimbus_exec::{Executor, LinuxContainerExecutor};
 use nimbus_oci::{OciPuller, OciToDagConverter};
 use nimbus_policy::{CosignKey, Policy};
+use nimbus_runtime::binfmt;
 use nimbus_runtime::metrics;
 use nimbus_runtime::proto;
 use nimbus_runtime::service::{RuntimeCommand, RuntimeService, ServiceConfig, VmBackendConfig};
@@ -543,6 +544,10 @@ async fn run_daemon(
             "metrics endpoint disabled (pass --metrics-addr to enable; e.g. --metrics-addr or --metrics-addr=0.0.0.0:9090)"
         );
     }
+
+    // Register binfmt_misc handlers for common architectures so
+    // cross-arch container execution works without manual setup.
+    binfmt::register_common_binfmts();
 
     if std::fs::metadata(socket).is_ok() {
         std::fs::remove_file(socket)?;

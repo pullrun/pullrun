@@ -12,6 +12,8 @@ import (
 )
 
 func NewBuildCommand(opts *RootOptions) *cobra.Command {
+	var platform string
+
 	cmd := &cobra.Command{
 		Use:   "build [DOCKERFILE] [CONTEXT] -t TAG",
 		Short: "Build an OCI image from a Dockerfile using native DAG builder",
@@ -52,6 +54,7 @@ Args:
 				ContextDir: contextDir,
 				Tag:        tag,
 				BuildArgs:  buildArgs,
+				Platform:   platform,
 			})
 			if err != nil {
 				return fmt.Errorf("build: %w", err)
@@ -67,6 +70,7 @@ Args:
 	}
 	cmd.Flags().StringP("tag", "t", "", "Image tag")
 	cmd.Flags().StringToString("build-arg", nil, "Build arguments (KEY=VALUE)")
+	cmd.Flags().StringVar(&platform, "platform", "", "Target platform (e.g. linux/amd64, linux/arm64); overrides FROM --platform")
 	return cmd
 }
 

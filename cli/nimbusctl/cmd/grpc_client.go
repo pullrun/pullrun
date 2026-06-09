@@ -49,10 +49,13 @@ func (c *GRPCClient) Close() error {
 
 // PullImage fetches an OCI image and stores it in the local DAG.
 // If auth is nil, no credentials are sent.
-func (c *GRPCClient) PullImage(ctx context.Context, imageRef, registry string, auth *RegistryAuth) (*runtimepb.PullImageResponse, error) {
+// platform specifies the target platform (e.g. "linux/amd64", "linux/arm64"),
+// or empty to use the host's native architecture.
+func (c *GRPCClient) PullImage(ctx context.Context, imageRef, registry, platform string, auth *RegistryAuth) (*runtimepb.PullImageResponse, error) {
 	req := &runtimepb.PullImageRequest{
 		ImageRef: imageRef,
 		Registry: registry,
+		Platform: platform,
 	}
 	if auth != nil {
 		req.RegistryUsername = auth.Username
