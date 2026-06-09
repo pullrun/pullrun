@@ -39,3 +39,4 @@ blobs/
 index.json
 manifest.json
 oci-layout
+tools/apple-virt-kernel/
