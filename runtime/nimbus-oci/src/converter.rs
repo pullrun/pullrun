@@ -9,7 +9,7 @@ use tracing::{debug, info};
 
 use nimbus_store::{DagNode, Digest, MmapStore, NodeKind};
 
-use crate::puller::{OciError, PulledImage};
+use crate::puller::{OciError, PulledImage, PulledImageList};
 
 const SMALL_FILE_THRESHOLD: u64 = 4096;
 
@@ -110,6 +110,27 @@ impl OciToDagConverter {
 
         info!(%manifest_digest, layers = layer_digests.len(), "DAG conversion complete");
         Ok(manifest_digest)
+    }
+
+    /// Convert a multi-arch `PulledImageList` into DAG nodes.
+    /// Each child image is converted individually, then a
+    /// `ManifestList` node is created with edges to each
+    /// platform's manifest digest.
+    pub async fn convert_list(&self, list: &PulledImageList) -> Result<Digest, OciError> {
+        info!("converting multi-arch image list to DAG");
+
+        let mut manifest_digests = Vec::with_capacity(list.images.len());
+        for image in &list.images {
+            let digest = self.convert(image).await?;
+            manifest_digests.push(digest);
+        }
+
+        let n = manifest_digests.len();
+        let list_node = DagNode::manifest_list(manifest_digests, list.list_bytes.clone());
+        let list_digest = self.store.put(&list_node).await?;
+
+        info!(%list_digest, children = n, "manifest list DAG conversion complete");
+        Ok(list_digest)
     }
 
     async fn convert_layer(

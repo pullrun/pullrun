@@ -19,6 +19,7 @@ pub enum NodeKind {
     Tree,
     Layer,
     Manifest,
+    ManifestList,
 }
 
 impl DagNode {
@@ -61,6 +62,14 @@ impl DagNode {
             inline_data,
         }
     }
+
+    pub fn manifest_list(edges: Vec<Digest>, inline_data: Vec<u8>) -> Self {
+        Self {
+            kind: NodeKind::ManifestList,
+            edges,
+            inline_data,
+        }
+    }
 }
 
 impl ArchivedDagNode {
@@ -78,5 +87,9 @@ impl ArchivedDagNode {
 
     pub fn is_manifest(&self) -> bool {
         matches!(self.kind, ArchivedNodeKind::Manifest)
+    }
+
+    pub fn is_manifest_list(&self) -> bool {
+        matches!(self.kind, ArchivedNodeKind::ManifestList)
     }
 }

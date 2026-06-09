@@ -125,6 +125,15 @@ pub struct PulledImage {
     pub layer_blobs: Vec<(Digest, Vec<u8>)>,
 }
 
+/// The result of pulling all platforms from a multi-arch image index.
+/// Each `images` entry corresponds to one child manifest in the list.
+#[derive(Debug)]
+pub struct PulledImageList {
+    pub images: Vec<PulledImage>,
+    pub list_bytes: Vec<u8>,
+    pub child_descriptors: Vec<OciDescriptor>,
+}
+
 pub struct OciPuller {
     client: reqwest::Client,
     auth: Option<OciAuth>,
@@ -320,6 +329,148 @@ impl OciPuller {
             config,
             config_digest,
             layer_blobs,
+        })
+    }
+
+    /// Pull all platforms from a multi-arch image index.
+    /// Fetches every child manifest, its config, and its layer blobs.
+    pub async fn pull_all(
+        &self,
+        image_ref: &str,
+        explicit_registry: Option<&str>,
+    ) -> Result<PulledImageList, OciError> {
+        let registry = self.registry_for(image_ref, explicit_registry);
+        let (repository, tag) = self.image_parts(image_ref);
+        let token = self.get_token(&registry, &repository).await?;
+
+        info!(image_ref, %registry, %repository, %tag, "pulling all platforms");
+
+        let (list_bytes, children) = self
+            .fetch_raw_list(&registry, &repository, &tag, token.as_deref())
+            .await?;
+
+        let mut images = Vec::with_capacity(children.len());
+        for child in &children {
+            info!(
+                child_digest = %child.digest,
+                platform = ?child.platform,
+                "pulling child manifest"
+            );
+            let manifest = self
+                .fetch_manifest_with_platform(
+                    &registry,
+                    &repository,
+                    &child.digest,
+                    token.as_deref(),
+                    None,
+                )
+                .await?;
+            let config = self
+                .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
+                .await?;
+            let config_digest = manifest.config.digest.clone();
+
+            let mut layer_blobs = Vec::new();
+            for layer in &manifest.layers {
+                let blob = self
+                    .fetch_blob(&registry, &repository, &layer.digest, token.as_deref())
+                    .await?;
+                layer_blobs.push((layer.digest.clone(), blob));
+            }
+
+            images.push(PulledImage {
+                manifest,
+                config,
+                config_digest,
+                layer_blobs,
+            });
+        }
+
+        info!(
+            platform_count = images.len(),
+            "all platforms pulled successfully"
+        );
+
+        Ok(PulledImageList {
+            images,
+            list_bytes,
+            child_descriptors: children,
+        })
+    }
+
+    /// Fetch the raw manifest list for a reference, returning the
+    /// raw bytes and the child descriptors. Used by `pull_all()`.
+    fn fetch_raw_list<'a>(
+        &'a self,
+        registry: &'a str,
+        repository: &'a str,
+        reference: &'a str,
+        token: Option<&'a str>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Vec<u8>, Vec<OciDescriptor>), OciError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let url = manifest_url(self, registry, repository, reference);
+            let mut req = self
+                .client
+                .get(&url)
+                .header("Accept", "application/vnd.oci.image.index.v1+json")
+                .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+                .header("Accept", "application/vnd.oci.image.manifest.v1+json")
+                .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
+
+            if let Some(t) = token {
+                req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+            }
+
+            let resp = req.send().await?;
+            if !resp.status().is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                return Err(OciError::InvalidManifest(format!(
+                    "manifest list fetch failed: {body}"
+                )));
+            }
+
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+
+            let content_encoding = resp
+                .headers()
+                .get(reqwest::header::CONTENT_ENCODING)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+
+            let raw = resp.bytes().await?.to_vec();
+            let bytes = decode_body(&content_encoding, raw)?;
+
+            let is_list = content_type.contains("manifest.list")
+                || content_type.contains("image.index")
+                || (serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .map(|v| v.get("manifests").is_some())
+                    .unwrap_or(false)
+                    && serde_json::from_slice::<OciManifest>(&bytes).is_err());
+
+            if !is_list {
+                return Err(OciError::InvalidManifest(
+                    "reference does not point to a manifest list".into(),
+                ));
+            }
+
+            #[derive(Deserialize)]
+            struct ManifestList {
+                #[serde(rename = "mediaType")]
+                _media_type: String,
+                manifests: Vec<OciDescriptor>,
+            }
+
+            let list: ManifestList = serde_json::from_slice(&bytes)
+                .map_err(|e| OciError::InvalidManifest(format!("manifest list parse: {e}")))?;
+
+            Ok((bytes, list.manifests))
         })
     }
 

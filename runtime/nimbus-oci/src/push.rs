@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use base64::Engine;
+use serde::Serialize;
 use sha2::{Digest as Sha256Digest, Sha256};
 use tracing::{debug, info};
 
@@ -319,69 +320,102 @@ impl DagPusher {
     }
 
     /// Push a complete OCI image (config + layers + manifest).
+    /// If the root node is a `ManifestList`, delegates to
+    /// `push_manifest_list`.
     pub async fn push(
         &self,
         root_digest: &str,
         target_ref: &str,
     ) -> Result<(String, i64), OciError> {
         let (registry, repository, tag) = self.registry_for(target_ref);
-        info!(
-            root_digest = %root_digest,
-            %registry,
-            %repository,
-            %tag,
-            "pushing DAG image"
-        );
+        info!(%root_digest, %registry, %repository, %tag, "pushing DAG image");
 
-        // Get auth token with push scope.
         let token = self.get_token(&registry, &repository, "push,pull").await?;
 
-        // Read the manifest node.
+        // Check if the root is a manifest list.
         let rd = root_digest.to_string();
-        let manifest_archived = self.store.get_archived(&rd).map_err(|e| {
-            OciError::Other(format!("read manifest node {root_digest}: {e}"))
+        let root_archived = self.store.get_archived(&rd).map_err(|e| {
+            OciError::Other(format!("read node {root_digest}: {e}"))
         })?;
-        if !manifest_archived.is_manifest() {
+        if root_archived.is_manifest_list() {
+            return self.push_manifest_list(root_digest, target_ref).await;
+        }
+
+        if !root_archived.is_manifest() {
             return Err(OciError::InvalidManifest(format!(
-                "node {root_digest} is not a manifest node"
+                "node {root_digest} is neither a manifest nor a manifest list"
             )));
         }
 
-        // Parse ManifestData from inline_data.
-        let manifest_data: ManifestData =
-            serde_json::from_slice(manifest_archived.inline_data.as_ref())?;
+        // Single-arch: push the OCI manifest and tag it.
+        let (oci_manifest, total_pushed) =
+            self.push_oci_manifest(root_digest, &registry, &repository, token.as_deref())
+                .await?;
 
-        // Parse the OCI image config from the stored JSON.
+        let manifest_json = serde_json::to_vec(&oci_manifest)?;
+        let manifest_digest = format!("sha256:{}", hex::encode(Sha256::digest(&manifest_json)));
+        let n_layers = oci_manifest.layers.len() as u64;
+
+        let scheme = self.scheme(&registry);
+        let manifest_url = format!("{scheme}//{registry}/v2/{repository}/manifests/{tag}");
+        let resp = self
+            .authorized_put(&manifest_url, token.as_deref())
+            .header(reqwest::header::CONTENT_TYPE, "application/vnd.oci.image.manifest.v1+json")
+            .body(manifest_json)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(OciError::Other(format!("manifest upload failed for {tag}: {body}")));
+        }
+
+        info!(%manifest_digest, layers = n_layers, bytes = total_pushed, "image pushed successfully");
+        Ok((manifest_digest, total_pushed))
+    }
+
+    /// Push a single OCI manifest (layers + config + manifest blob) to
+    /// the registry by its content digest.  Used internally by both
+    /// `push()` and `push_manifest_list()`.
+    async fn push_oci_manifest(
+        &self,
+        manifest_digest: &str,
+        registry: &str,
+        repository: &str,
+        token: Option<&str>,
+    ) -> Result<(OciManifest, i64), OciError> {
+        let md = manifest_digest.to_string();
+        let archived = self.store.get_archived(&md).map_err(|e| {
+            OciError::Other(format!("read manifest node {manifest_digest}: {e}"))
+        })?;
+        if !archived.is_manifest() {
+            return Err(OciError::InvalidManifest(format!(
+                "node {manifest_digest} is not a manifest node"
+            )));
+        }
+
+        let manifest_data: ManifestData =
+            serde_json::from_slice(archived.inline_data.as_ref())?;
         let oci_config: OciImageConfig =
             serde_json::from_str(&manifest_data.config_json)?;
 
-        // Reconstruct each layer as OCI tar.gz, tracking digests and sizes.
-        let layer_digests: Vec<String> = manifest_archived
+        let layer_digests: Vec<String> = archived
             .edges
             .iter()
             .map(|e| e.as_str().to_string())
             .collect();
 
-        let mut oci_layers: Vec<OciDescriptor> = Vec::new();
+        let mut oci_layers = Vec::new();
         let mut total_pushed: i64 = 0;
-        let mut oci_layer_digests: Vec<String> = Vec::new();
 
         for layer_digest in &layer_digests {
             info!(%layer_digest, "reconstructing OCI layer from DAG");
             let (layer_data, oci_digest) = self.reconstruct_layer(layer_digest)?;
 
-            // Upload the layer blob.
-            self.upload_blob(
-                &registry,
-                &repository,
-                &oci_digest,
-                &layer_data,
-                token.as_deref(),
-            )
-            .await?;
+            self.upload_blob(registry, repository, &oci_digest, &layer_data, token)
+                .await?;
 
             total_pushed += layer_data.len() as i64;
-            oci_layer_digests.push(oci_digest.clone());
 
             oci_layers.push(OciDescriptor {
                 media_type: "application/vnd.oci.image.layer.v1.tar+gzip".to_string(),
@@ -392,21 +426,12 @@ impl DagPusher {
             });
         }
 
-        // Build and upload the config blob.
         let config_json = serde_json::to_vec(&oci_config)?;
         let config_digest = format!("sha256:{}", hex::encode(Sha256::digest(&config_json)));
-        self.upload_blob(
-            &registry,
-            &repository,
-            &config_digest,
-            &config_json,
-            token.as_deref(),
-        )
-        .await?;
+        self.upload_blob(registry, repository, &config_digest, &config_json, token)
+            .await?;
         total_pushed += config_json.len() as i64;
-        let n_layers = oci_layers.len() as u64;
 
-        // Build and upload the manifest.
         let oci_manifest = OciManifest {
             schema_version: 2,
             media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
@@ -421,38 +446,137 @@ impl DagPusher {
             annotations: None,
         };
 
-        let manifest_json = serde_json::to_vec(&oci_manifest)?;
-        let manifest_digest = format!("sha256:{}", hex::encode(Sha256::digest(&manifest_json)));
+        Ok((oci_manifest, total_pushed))
+    }
 
-        // Upload manifest by tag reference.
+    /// Push a manifest list and all its child manfests to the registry.
+    /// Walks the DAG from the manifest list node, pushes every child
+    /// platform's layers/config/manifest, then pushes the image index
+    /// (manifest list) at the requested tag.
+    pub async fn push_manifest_list(
+        &self,
+        list_digest: &str,
+        target_ref: &str,
+    ) -> Result<(String, i64), OciError> {
+        let (registry, repository, tag) = self.registry_for(target_ref);
+
+        let rd = list_digest.to_string();
+        let list_archived = self.store.get_archived(&rd).map_err(|e| {
+            OciError::Other(format!("read manifest list node {list_digest}: {e}"))
+        })?;
+        if !list_archived.is_manifest_list() {
+            return Err(OciError::InvalidManifest(format!(
+                "node {list_digest} is not a manifest list node"
+            )));
+        }
+
+        let token = self.get_token(&registry, &repository, "push,pull").await?;
+        let child_digests: Vec<String> = list_archived
+            .edges
+            .iter()
+            .map(|e| e.as_str().to_string())
+            .collect();
+
+        let mut total_pushed: i64 = 0;
+        let mut manifests = Vec::with_capacity(child_digests.len());
+
+        for child in &child_digests {
+            // Read architecture/os from the child manifest node.
+            let child_archived = self.store.get_archived(child).map_err(|e| {
+                OciError::Other(format!("read child manifest {child}: {e}"))
+            })?;
+            let manifest_data: ManifestData =
+                serde_json::from_slice(child_archived.inline_data.as_ref())?;
+
+            // Push layers + config + manifest blob.
+            let (oci_manifest, manifest_bytes) = self
+                .push_oci_manifest(child, &registry, &repository, token.as_deref())
+                .await?;
+            total_pushed += manifest_bytes;
+
+            // Push the platform manifest by digest.
+            let manifest_json = serde_json::to_vec(&oci_manifest)?;
+            let child_digest = format!("sha256:{}", hex::encode(Sha256::digest(&manifest_json)));
+            let manifest_size = manifest_json.len() as i64;
+            let scheme = self.scheme(&registry);
+            let manifest_url = format!(
+                "{scheme}//{registry}/v2/{repository}/manifests/{child_digest}"
+            );
+            let resp = self
+                .authorized_put(&manifest_url, token.as_deref())
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/vnd.oci.image.manifest.v1+json",
+                )
+                .body(manifest_json)
+                .send()
+                .await?;
+
+            if !resp.status().is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                return Err(OciError::Other(format!(
+                    "child manifest upload failed for {child_digest}: {body}"
+                )));
+            }
+            total_pushed += manifest_size;
+
+            manifests.push(OciDescriptor {
+                media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+                digest: child_digest,
+                size: manifest_size as u64,
+                annotations: None,
+                platform: Some(crate::puller::OciPlatform {
+                    architecture: manifest_data.architecture,
+                    os: manifest_data.os,
+                }),
+            });
+        }
+
+        // Build and push the image index (manifest list).
+        #[derive(Serialize)]
+        struct ImageIndex {
+            #[serde(rename = "schemaVersion")]
+            schema_version: u32,
+            #[serde(rename = "mediaType")]
+            media_type: String,
+            manifests: Vec<OciDescriptor>,
+        }
+
+        let index = ImageIndex {
+            schema_version: 2,
+            media_type: "application/vnd.oci.image.index.v1+json".to_string(),
+            manifests,
+        };
+
+        let index_json = serde_json::to_vec(&index)?;
+        let index_digest = format!("sha256:{}", hex::encode(Sha256::digest(&index_json)));
+
         let scheme = self.scheme(&registry);
-        let manifest_url = format!(
-            "{scheme}//{registry}/v2/{repository}/manifests/{tag}",
-        );
-        let manifest_resp = self
-            .authorized_put(&manifest_url, token.as_deref())
+        let index_url = format!("{scheme}//{registry}/v2/{repository}/manifests/{tag}");
+        let resp = self
+            .authorized_put(&index_url, token.as_deref())
             .header(
                 reqwest::header::CONTENT_TYPE,
-                "application/vnd.oci.image.manifest.v1+json",
+                "application/vnd.oci.image.index.v1+json",
             )
-            .body(manifest_json)
+            .body(index_json)
             .send()
             .await?;
 
-        if !manifest_resp.status().is_success() {
-            let body = manifest_resp.text().await.unwrap_or_default();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
             return Err(OciError::Other(format!(
-                "manifest upload failed for {tag}: {body}"
+                "manifest list upload failed for {tag}: {body}"
             )));
         }
 
         info!(
-            %manifest_digest,
-            layers = n_layers,
+            %index_digest,
+            children = child_digests.len(),
             bytes = total_pushed,
-            "image pushed successfully"
+            "manifest list pushed successfully"
         );
 
-        Ok((manifest_digest, total_pushed))
+        Ok((index_digest, total_pushed))
     }
 }

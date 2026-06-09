@@ -4,7 +4,9 @@
 **Status:** ✅ Multi-arch / cross-platform **run** gap closed: binfmt_misc auto-registered at daemon startup and on-demand for cross-arch container execution. No manual `docker run --privileged --rm multiarch/qemu-user-static --reset -p` needed. Manifest list + multi-arch builder + build+push coming next.
 **Tests:** 113 Rust + 9 Go — all passing.
 
-**New (Cross-arch run — the "better than Docker" gap):** Binfmt extraction — `ensure_cross_arch_binfmt` moved from `builder.rs` to shared `binfmt.rs` module. Daemon startup auto-registers qemu handlers for arm64, arm, ppc64le, s390x, riscv64. `run_workload` reads image architecture from stored manifest; if it differs from host arch (and backend isn't VM), registers the handler on-demand before container creation. **No manual setup step required.** All 53 cross-package tests pass.
+**New (Manifest list DAG node + multi-arch build+push):** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each to DAG + creates `ManifestList` node. `DagBuilder::build_multi()` builds N platforms serially (shared store dedups layers automatically) and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects manifest vs manifest list and dispatches accordingly.
+
+**Previously (Cross-arch run — the "better than Docker" gap):** Binfmt extraction — `ensure_cross_arch_binfmt` moved from `builder.rs` to shared `binfmt.rs` module. Daemon startup auto-registers qemu handlers for arm64, arm, ppc64le, s390x, riscv64. `run_workload` reads image architecture from stored manifest; if it differs from host arch (and backend isn't VM), registers the handler on-demand before container creation. **No manual setup step required.** All 53 cross-package tests pass.
 
 **Previously (Multi-arch build + pull):** `--platform` flag on `nimbusctl pull/build/run`. Dockerfile `FROM --platform=...` parsed and honored. Puller resolves multi-arch image indexes for any platform, not just host native. Builder passes target platform through to base image pull, RUN/COPY layer creation, and manifest metadata. Cross-arch RUN execution: auto-detects architecture mismatch, registers qemu-user-static binfmt handlers when needed.
 
@@ -21,11 +23,11 @@ All Docker CLI features that remain unimplemented are **community-edition featur
 
 | Feature | Docker CE | Docker EE | Status | Notes |
 |---------|-----------|-----------|--------|-------|
-| Multi-arch pull | ✅ | ✅ | ✅ Nimbus | `--platform linux/arm64` |
-| Multi-arch build | ✅ | ✅ | ✅ Nimbus | `--platform` + QEMU binfmt auto-registration |
+| Multi-arch pull | ✅ | ✅ | ✅ Nimbus | `--platform linux/arm64` + `pull_all()` |
+| Multi-arch build | ✅ | ✅ | ✅ Nimbus | `--platform` + `build_multi()` |
 | Multi-arch run | ✅ `qemu-user-static` | ✅ | ✅ Nimbus | **Auto-registered** — no manual step |
-| Manifest list creation | ✅ `docker manifest` | ✅ | ❌ | Planned: `ManifestList` node kind + `DagBuilder::build_multi` |
-| Multi-arch buildx push | ✅ `docker buildx build --push` | ✅ | ❌ | Planned: `DagPusher::push_manifest_list` |
+| Manifest list creation | ✅ `docker manifest` | ✅ | ✅ Nimbus | `DagBuilder::build_multi()` + `OciToDagConverter::convert_list()` |
+| Multi-arch push | ✅ `docker buildx build --push` | ✅ | ✅ Nimbus | `DagPusher::push_manifest_list()` + auto-dispatch in `push()` |
 | Secret / Config | ✅ | ✅ | ❌ | Docker's secret/store; Nimbus can do it via DAG |
 | Multi-node orchestration | ✅ Swarm | ✅ | ❌ | Post-v1; control plane stub exists |
 
@@ -188,36 +190,23 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 ---
 
+### Manifest list as first-class DAG node — ✅ implemented
+
+**Changes:** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each platform to DAG and creates a `ManifestList` node with edges to each manifest. `DagBuilder::build_multi()` builds an image for N platforms and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects whether the root is a single manifest or a manifest list and dispatches accordingly.
+
+All 113 Rust + 9 Go tests pass.
+
 ## Next steps — Docker gaps (all CE, no EE required)
 
-### 1. Manifest list as first-class DAG node
+### ✅ Manifest list — implemented
 
-**Design:**
-- Add `NodeKind::ManifestList` to `nimbus-store`
-- `pull --platform all` stores the manifest list node with edges to each arch's manifest node
-- Cross-arch layer dedup is **free** — content addressing means shared layers are stored once
-- `DagPusher::push()` walks the DAG: if root is `ManifestList`, push all manifests + layers + configs + the list
+- `NodeKind::ManifestList` → `OciPuller::pull_all()` → `OciToDagConverter::convert_list()` → manifest list DAG node
+- `DagBuilder::build_multi()` builds N platforms, stitches manifest list
+- `DagPusher::push_manifest_list()` walks DAG, pushes all platforms + image index
+- `DagPusher::push()` auto-detects manifest vs manifest list
+- Shared store means cross-arch layer dedup is **free** — BuildKit requires remote cache config
 
-**Why this is better than Docker:** Manifest list is just another DAG node. Docker treats it as a separate registry artifact.
-
-### 2. Multi-arch builder (`build --platform linux/amd64,linux/arm64`)
-
-**Design:**
-- `DagBuilder::build_multi(store, dockerfile, context, &[Platform], args)` spawns one `build_single` per platform (already parallel internally)
-- After all complete, reads each arch's manifest digest from its DAG, creates a manifest list node with edges to each arch manifest
-- Returns the manifest list digest
-
-**Why this is better than Docker:** Content-addressed store is **shared by all arch builds implicitly** — same base layer reused across manifests automatically. BuildKit needs remote cache config for this.
-
-### 3. Manifest list push (`build --push`)
-
-**Design:**
-- `DagPusher::push_manifest_list(list_digest, repo, tag)` walks the DAG from the manifest list node, collects unique manifest/config/layer digests, pushes layers → manifests → list
-- One-liner in build handler: `if req.push { pusher.push_manifest_list(&root, &repo, &tag).await?; }`
-
-**Why this is better than Docker:** Same DAG, no marshalling. Buildx has to serialize between builder and registry.
-
-### 4. Additional improvements
+### Additional improvements
 
 - **Push auth test** — Deploy local `registry:2` on server, verify `push` + `pull` round-trip with auth.
 - **Port mapping syntax** — Add `--publish host:container` (e.g. `-p 8080:80`) to complement `--allow-inbound hostPort`.

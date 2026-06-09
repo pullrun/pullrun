@@ -115,6 +115,41 @@ impl DagBuilder {
         self.build_stage(stage, context_dir, build_args).await
     }
 
+    /// Build an image for multiple platforms and produce a manifest list.
+    /// Each platform is built independently (shared store dedups layers
+    /// automatically). Returns the manifest list digest and per-platform
+    /// results.
+    pub async fn build_multi(
+        &self,
+        dockerfile: &Dockerfile,
+        context_dir: &Path,
+        platforms: &[String],
+        build_args: &HashMap<String, String>,
+    ) -> Result<(Digest, Vec<BuildResult>), BuildError> {
+        let mut results = Vec::with_capacity(platforms.len());
+        let mut manifest_digests = Vec::with_capacity(platforms.len());
+
+        for pf in platforms {
+            let builder = DagBuilder::with_platform(
+                self.store.clone(),
+                self.runc_path.clone(),
+                self.bundle_root.clone(),
+                self.insecure_registries.clone(),
+                Some(pf.clone()),
+            );
+            let result = builder.build(dockerfile, context_dir, build_args).await?;
+            manifest_digests.push(result.root_digest.clone());
+            results.push(result);
+        }
+
+        let list_node = nimbus_store::DagNode::manifest_list(manifest_digests, vec![]);
+        let list_digest = self.store.put(&list_node).await
+            .map_err(|e| BuildError::Store(format!("store manifest list: {e}")))?;
+
+        info!(%list_digest, platforms = platforms.len(), "manifest list created for multi-arch build");
+        Ok((list_digest, results))
+    }
+
     async fn build_stage(
         &self,
         stage: &nimbus_oci::BuildStage,
