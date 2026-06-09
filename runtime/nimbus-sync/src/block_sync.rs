@@ -72,6 +72,19 @@ impl BlockSyncService {
     pub fn blob_count(&self) -> usize {
         self.inner.blob_count.load(Ordering::Relaxed)
     }
+
+    /// Returns (serialized_bloom_filter, k, m) for gossip exchange.
+    pub async fn bloom_filter_bytes(&self) -> (Vec<u8>, u32, u64) {
+        let bf = self.inner.bloom_filter.read().await;
+        (bf.to_bytes(), bf.k(), bf.m())
+    }
+
+    /// Insert a digest into the local bloom filter (incremental update).
+    pub async fn insert_bloom_digest(&self, digest: &str) {
+        let mut bf = self.inner.bloom_filter.write().await;
+        bf.insert(digest);
+        self.inner.blob_count.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 fn walk_store_for_blobs(dir: &std::path::Path, out: &mut Vec<String>) -> std::io::Result<()> {

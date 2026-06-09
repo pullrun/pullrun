@@ -19,7 +19,7 @@ use nimbus_runtime::metrics;
 use nimbus_runtime::proto;
 use nimbus_runtime::service::{RuntimeCommand, RuntimeService, ServiceConfig, VmBackendConfig};
 use nimbus_store::MmapStore;
-use nimbus_sync::{BlockSyncClient, BlockSyncServer, BlockSyncService, Discovery, generate_node_id};
+use nimbus_sync::{BlockSyncClient, BlockSyncServer, BlockSyncService, BloomGossip, Discovery, PeerBloomCache, generate_node_id};
 use proto::runtime_server::RuntimeServer;
 
 #[derive(Parser)]
@@ -566,7 +566,7 @@ async fn run_daemon(
     let store = Arc::new(MmapStore::new(config.store_root.clone()));
 
     // Start peer-to-peer BlockSync gRPC server (enabled when port != 0).
-    let block_sync_client: Option<BlockSyncClient> = if sync_addr.port() != 0 {
+    let bloom_cache: Option<PeerBloomCache> = if sync_addr.port() != 0 {
         let block_sync_service = BlockSyncService::new(store.clone());
         let bss = BlockSyncServer::new(block_sync_service.clone());
         let addr = sync_addr;
@@ -579,11 +579,11 @@ async fn run_daemon(
         });
         info!(sync_addr = %sync_addr, "BlockSync gRPC server started");
 
-        // Build BlockSync client for outbound peer connections.
-        let client = BlockSyncClient::connect(format!("http://{}", sync_addr))
+        // Build BlockSync client (connected to our own server for gossip).
+        let local_client = BlockSyncClient::connect(format!("http://{}", sync_addr))
             .await
             .ok();
-        if client.is_some() {
+        if local_client.is_some() {
             info!("BlockSync client initialized");
         }
 
@@ -595,6 +595,18 @@ async fn run_daemon(
             dh.run().await;
         });
         info!(node_id, "peer discovery started");
+
+        // Shared bloom cache for gossip exchange.
+        let cache = PeerBloomCache::new();
+
+        // Start bloom filter gossip (periodic bloom filter exchange with peers).
+        if let Some(client) = local_client {
+            let gossip = BloomGossip::new(client, block_sync_service.clone(), discovery.clone(), cache.clone());
+            tokio::spawn(async move {
+                gossip.run().await;
+            });
+            info!("bloom filter gossip started");
+        }
 
         // Periodically rebuild bloom filter from store contents.
         let bf = block_sync_service.clone();
@@ -609,15 +621,15 @@ async fn run_daemon(
             }
         });
 
-        client
+        Some(cache)
     } else {
         info!("BlockSync disabled (--sync-addr port is 0)");
         None
     };
 
-    if let Some(client) = block_sync_client {
-        config = config.with_block_sync(client);
-        info!("BlockSync wired into service config");
+    if let Some(cache) = bloom_cache {
+        config = config.with_bloom_cache(cache);
+        info!("PeerBloomCache wired into service config");
     }
 
     if std::fs::metadata(socket).is_ok() {
