@@ -3050,7 +3050,15 @@ type BuildImageRequest struct {
 	// Overrides FROM --platform in the Dockerfile. When empty,
 	// falls back to the Dockerfile's --platform if present,
 	// then to the host's native architecture.
-	Platform      string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,5,opt,name=platform,proto3" json:"platform,omitempty"`
+	// Multi-platform override: list of target platforms.
+	// When set, builds each platform and produces a manifest list.
+	// Overrides the single `platform` field above.
+	Platforms []string `protobuf:"bytes,6,rep,name=platforms,proto3" json:"platforms,omitempty"`
+	// Push the built image (or manifest list) to the registry
+	// after a successful build. The `tag` field is used as the
+	// push target (registry/repo:tag).
+	Push          bool `protobuf:"varint,7,opt,name=push,proto3" json:"push,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3118,6 +3126,20 @@ func (x *BuildImageRequest) GetPlatform() string {
 		return x.Platform
 	}
 	return ""
+}
+
+func (x *BuildImageRequest) GetPlatforms() []string {
+	if x != nil {
+		return x.Platforms
+	}
+	return nil
+}
+
+func (x *BuildImageRequest) GetPush() bool {
+	if x != nil {
+		return x.Push
+	}
+	return false
 }
 
 type BuildImageResponse struct {
@@ -5025,7 +5047,7 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\n" +
 	"disk_bytes\x18\x04 \x01(\x04R\tdiskBytes\x12(\n" +
 	"\x10network_rx_bytes\x18\x05 \x01(\x04R\x0enetworkRxBytes\x12(\n" +
-	"\x10network_tx_bytes\x18\x06 \x01(\x04R\x0enetworkTxBytes\"\x91\x02\n" +
+	"\x10network_tx_bytes\x18\x06 \x01(\x04R\x0enetworkTxBytes\"\xc3\x02\n" +
 	"\x11BuildImageRequest\x12\x1e\n" +
 	"\n" +
 	"dockerfile\x18\x01 \x01(\tR\n" +
@@ -5035,7 +5057,9 @@ const file_nimbus_runtime_proto_rawDesc = "" +
 	"\x03tag\x18\x03 \x01(\tR\x03tag\x12O\n" +
 	"\n" +
 	"build_args\x18\x04 \x03(\v20.nimbus.runtime.BuildImageRequest.BuildArgsEntryR\tbuildArgs\x12\x1a\n" +
-	"\bplatform\x18\x05 \x01(\tR\bplatform\x1a<\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform\x12\x1c\n" +
+	"\tplatforms\x18\x06 \x03(\tR\tplatforms\x12\x12\n" +
+	"\x04push\x18\a \x01(\bR\x04push\x1a<\n" +
 	"\x0eBuildArgsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"G\n" +

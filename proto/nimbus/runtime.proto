@@ -483,6 +483,14 @@ message BuildImageRequest {
     // falls back to the Dockerfile's --platform if present,
     // then to the host's native architecture.
     string platform = 5;
+    // Multi-platform override: list of target platforms.
+    // When set, builds each platform and produces a manifest list.
+    // Overrides the single `platform` field above.
+    repeated string platforms = 6;
+    // Push the built image (or manifest list) to the registry
+    // after a successful build. The `tag` field is used as the
+    // push target (registry/repo:tag).
+    bool push = 7;
 }
 
 message BuildImageResponse {

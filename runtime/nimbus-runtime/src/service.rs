@@ -2910,29 +2910,53 @@ impl Runtime for RuntimeService {
             PathBuf::from("runc")
         };
 
-        let platform: Option<String> = if req.platform.is_empty() {
-            None
-        } else {
-            Some(req.platform.clone())
-        };
-
-        let builder = crate::builder::DagBuilder::with_platform(
-            self.store.clone(),
-            runc_path,
-            self.config.bundle_root.join("build"),
-            self.config.insecure_registries.clone(),
-            platform,
-        );
-
         let build_args: std::collections::HashMap<String, String> = req.build_args.clone();
 
-        let result = builder
-            .build(&dockerfile, &context_dir, &build_args)
-            .await
-            .map_err(|e| tonic::Status::internal(format!("build failed: {e}")))?;
+        let root_digest = if !req.platforms.is_empty() {
+            // Multi-platform build.
+            let platforms: Vec<String> = req.platforms.iter().map(|p| {
+                if p.is_empty() { "linux/amd64".to_string() } else { p.clone() }
+            }).collect();
+
+            let builder = crate::builder::DagBuilder::new(
+                self.store.clone(),
+                runc_path,
+                self.config.bundle_root.join("build"),
+                self.config.insecure_registries.clone(),
+            );
+
+            let (list_digest, _results) = builder
+                .build_multi(&dockerfile, &context_dir, &platforms, &build_args)
+                .await
+                .map_err(|e| tonic::Status::internal(format!("multi-arch build failed: {e}")))?;
+
+            list_digest
+        } else {
+            // Single-platform build.
+            let platform: Option<String> = if req.platform.is_empty() {
+                None
+            } else {
+                Some(req.platform.clone())
+            };
+
+            let builder = crate::builder::DagBuilder::with_platform(
+                self.store.clone(),
+                runc_path,
+                self.config.bundle_root.join("build"),
+                self.config.insecure_registries.clone(),
+                platform,
+            );
+
+            let result = builder
+                .build(&dockerfile, &context_dir, &build_args)
+                .await
+                .map_err(|e| tonic::Status::internal(format!("build failed: {e}")))?;
+
+            result.root_digest
+        };
 
         let tag = if req.tag.is_empty() {
-            format!("{}", &result.root_digest[..12])
+            format!("{}", &root_digest[..12])
         } else {
             req.tag.clone()
         };
@@ -2940,11 +2964,32 @@ impl Runtime for RuntimeService {
         // Record the image tag -> root_digest mapping
         {
             let mut tags = self.image_tags.write().await;
-            tags.insert(result.root_digest.clone(), tag.clone());
+            tags.insert(root_digest.clone(), tag.clone());
+        }
+
+        // Push after build if requested.
+        if req.push {
+            let target_ref = if req.tag.is_empty() {
+                return Err(tonic::Status::invalid_argument(
+                    "push requires a tag (use -t registry/repo:tag)",
+                ));
+            } else {
+                req.tag.clone()
+            };
+
+            let pusher = nimbus_oci::DagPusher::new(
+                self.store.clone(),
+                None,
+                self.config.insecure_registries.clone(),
+            );
+            pusher
+                .push(&root_digest, &target_ref)
+                .await
+                .map_err(|e| tonic::Status::internal(format!("push failed: {e}")))?;
         }
 
         Ok(tonic::Response::new(BuildImageResponse {
-            root_digest: result.root_digest,
+            root_digest,
             tag,
         }))
     }

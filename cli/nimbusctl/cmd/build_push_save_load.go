@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -24,6 +25,10 @@ Parses the Dockerfile, pulls the base image, executes RUN instructions
 directly via runc, and snapshots each layer into the DAG store — no
 Docker required.
 
+Multi-platform builds: pass --platform linux/amd64,linux/arm64 to build
+for multiple architectures. The result is a manifest list stored in the
+DAG. Combine with --push to push the manifest list to a registry.
+
 Args:
   DOCKERFILE   path to Dockerfile (default: "./Dockerfile")
   CONTEXT      build context directory (default: directory of Dockerfile)`,
@@ -38,6 +43,7 @@ Args:
 			}
 
 			tag, _ := cmd.Flags().GetString("tag")
+			push, _ := cmd.Flags().GetBool("push")
 			buildArgs, _ := cmd.Flags().GetStringToString("build-arg")
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
@@ -49,12 +55,17 @@ Args:
 			}
 			defer closeFn()
 
+			// Parse comma-separated platforms into primary + multi slice.
+			primaryPlatform, multiPlatforms := splitPlatforms(platform)
+
 			resp, err := client.BuildImage(ctx, &runtimepb.BuildImageRequest{
 				Dockerfile: dockerfile,
 				ContextDir: contextDir,
 				Tag:        tag,
 				BuildArgs:  buildArgs,
-				Platform:   platform,
+				Platform:   primaryPlatform,
+				Platforms:  multiPlatforms,
+				Push:       push,
 			})
 			if err != nil {
 				return fmt.Errorf("build: %w", err)
@@ -65,13 +76,41 @@ Args:
 			if resp.Tag != "" {
 				fmt.Printf("  tag:         %s\n", resp.Tag)
 			}
+			if push {
+				fmt.Printf("  pushed to    %s\n", tag)
+			}
 			return nil
 		},
 	}
-	cmd.Flags().StringP("tag", "t", "", "Image tag")
+	cmd.Flags().StringP("tag", "t", "", "Image tag (e.g. registry.example.com/myapp:latest)")
 	cmd.Flags().StringToString("build-arg", nil, "Build arguments (KEY=VALUE)")
-	cmd.Flags().StringVar(&platform, "platform", "", "Target platform (e.g. linux/amd64, linux/arm64); overrides FROM --platform")
+	cmd.Flags().StringVar(&platform, "platform", "", "Target platform (e.g. linux/amd64, linux/arm64); comma-separated for multi-arch")
+	cmd.Flags().Bool("push", false, "Push the built image to the registry after building")
 	return cmd
+}
+
+// splitPlatforms parses a comma-separated platform string.
+// Returns the primary single platform and a slice for multi-platform.
+func splitPlatforms(raw string) (primary string, multi []string) {
+	if raw == "" {
+		return "", nil
+	}
+	parts := splitAndTrim(raw)
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+	return "", parts
+}
+
+func splitAndTrim(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func NewPushCommand(opts *RootOptions) *cobra.Command {
