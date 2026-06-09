@@ -1,7 +1,7 @@
 # Nimbus — Build Progress
 
 **Last updated:** 2026-06-09
-**Status:** ✅ Multi-arch / cross-platform **run** gap closed: binfmt_misc auto-registered at daemon startup and on-demand for cross-arch container execution. No manual `docker run --privileged --rm multiarch/qemu-user-static --reset -p` needed. Manifest list + multi-arch builder + build+push coming next.
+**Status:** ✅ All Docker CE multi-arch gaps closed (manifest list DAG node, multi-arch build+push, cross-arch auto-binfmt). Now re-architecting the last gap: **cross-node DAG block sync** — not a Swarm clone, but a content-addressed P2P block distribution layer that makes multi-node image distribution O(unique blocks) instead of O(per-node full pulls). Integrates with existing Kubernetes CRI shim; zero control plane reimplementation.
 **Tests:** 113 Rust + 9 Go — all passing.
 
 **New (Manifest list DAG node + multi-arch build+push):** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each to DAG + creates `ManifestList` node. `DagBuilder::build_multi()` builds N platforms serially (shared store dedups layers automatically) and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects manifest vs manifest list and dispatches accordingly.
@@ -29,7 +29,7 @@ All Docker CLI features that remain unimplemented are **community-edition featur
 | Manifest list creation | ✅ `docker manifest` | ✅ | ✅ Nimbus | `DagBuilder::build_multi()` + `OciToDagConverter::convert_list()` |
 | Multi-arch push | ✅ `docker buildx build --push` | ✅ | ✅ Nimbus | `DagPusher::push_manifest_list()` + auto-dispatch in `push()` |
 | Secret / Config | ✅ | ✅ | ❌ | Docker's secret/store; Nimbus can do it via DAG |
-| Multi-node orchestration | ✅ Swarm | ✅ | ❌ | Post-v1; control plane stub exists |
+| Multi-node orchestration | ✅ Swarm | ✅ | ❌ | Re-architecting: P2P DAG block sync (not Swarm clone) — see `docs/cross-node-dag-sync.md` |
 
 ---
 
@@ -155,7 +155,7 @@ All Docker CLI features that remain unimplemented are **community-edition featur
 | **Resource limits** | `--memory --cpus` | ✅ | CPU/memory limits + live update via `runc update` + `nimbusctl update --cpu --memory` |
 | **Native build** | Dockerfile → layer cache | ✅ | SHA256 instruction cache in DagBuilder for RUN/COPY/ADD |
 | **Port forwarding** | `-p host:container` | ✅ | Proxy auto-promotes to bridge mode; assigns `10.42.0.1/16` to bridge so kernel has a route to container subnet. Verified: `curl localhost:80` → nginx 200 via proxy |
-| **Multi-node** | Swarm / Compose | ❌ | Control plane stub only; no cross-node orchestration |
+| **Multi-node** | Swarm / Compose | 🚧 | P2P DAG block sync — not a Swarm clone. Content-addressed peer-to-peer block distribution integrated with K8s CRI shim. See `docs/cross-node-dag-sync.md`. |
 | **VM backend** | ❌ (Docker Desktop WSL2 only) | ✅ | Firecracker (Linux KVM) + Apple Virt (macOS) — same OCI image, no rebuild |
 | **Bridge networking** | ✅ | ✅ | veth pairs for containers, TAP for VMs; bridge fix deployed (was silently broken) |
 
@@ -212,6 +212,18 @@ All 113 Rust + 9 Go tests pass.
 - **Port mapping syntax** — Add `--publish host:container` (e.g. `-p 8080:80`) to complement `--allow-inbound hostPort`.
 - **Disk management** — GC / prune policies: delete old bundles, evict least-recently-used images from DAG store, clean runc container state.
 
-### Post-v1 (multi-node / control plane)
+### 🚧 Cross-node DAG block sync (replaces "Swarm" plan)
 
-- **Multi-node orchestration** — Control plane: scheduler, cross-node image pull, cross-node DNS. Full re-architecture.
+**Key insight:** The DAG is already content-addressed (SHA256). Every blob has a unique address derived from its content. This makes P2P block distribution trivial — content-addressed BitTorrent for OCI/DAG blobs.
+
+**Not a Swarm clone.** No control plane reimplementation. No scheduler. No DNS. No consensus. Nimbus already has Kubernetes CRI integration (`nimbus-container`, `nimbus-vm` RuntimeClasses). The missing piece is **cross-node image distribution** — and the DAG makes it dramatically cheaper than Docker/K8s.
+
+| Approach | Pull N images across M nodes |
+|----------|-----------------------------|
+| Docker/K8s (per-node registry pull) | N × M full pulls |
+| BuildKit with remote cache | N × M layer pulls (cache hits help) |
+| **Nimbus DAG block sync** | 1 full pull + (M−1) delta syncs |
+
+**Architecture:** `BlockSync` gRPC service per nimbus-agent node. When a kubelet requests an image pull via CRI, the puller first checks peer nodes for missing blobs before falling back to the upstream registry. Nodes advertise their available block set via bloom filters. Transfers are delta-only — only blocks the peer doesn't have.
+
+See `docs/cross-node-dag-sync.md` for the full design.

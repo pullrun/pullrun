@@ -14,7 +14,7 @@ backend.
 | What Nimbus **is** | What Nimbus **is not** |
 |---|---|---|
 | A content-addressed storage + execution layer for OCI images | A Docker Desktop replacement (yet) |
-| A multi-backend runtime (containers + VMs from the same DAG) | A multi-node orchestrator (control plane is a stub) |
+| A multi-backend runtime (containers + VMs from the same DAG) | A Swarm / orchestrator clone (leverages K8s CRI; cross-node via P2P DAG block sync — not a control plane rewrite) |
 | A native DAG-aware container image builder | An OCI registry (it pulls from registries, not serves them) |
 | A policy-enforced execution path (cosign signatures, SBOM checks, license/CVSS gates) | A live-migration / CRIU snapshot product |
 | A K8s RuntimeClass provider (`nimbus-container`, `nimbus-vm`) | A general-purpose Kubernetes scheduler replacement (it integrates *with* Kubernetes via CRI) |
@@ -110,7 +110,28 @@ image is the *same* on every node that has pulled it. The DAG nodes
 are content-addressed; the on-disk file names are the digests. Two
 nodes that have pulled `alpine:3.18` will have byte-identical files
 on disk. This is what makes a workload reproducible across the
-cluster.
+cluster — and it's what makes **cross-node block sync** trivial:
+content-addressed blocks can be verified without trust, transferred
+delta-only without a registry, and deduplicated across all images
+and all nodes automatically.
+
+```
+   Node A: [a, b, c, d]          Node B: [a, e, f]
+              │                         │
+              ▼                         ▼
+      ┌─────────────────┐      ┌─────────────────┐
+      │  BlockSync       │◄────►│  BlockSync       │  gRPC bidirectional
+      │  + Bloom filter  │      │  + Bloom filter  │  (have_blobs, get_blobs)
+      └─────────────────┘      └─────────────────┘
+              │                         │
+              ▼                         ▼
+         Upstream Registry         (fallback only)
+```
+
+When a kubelet requests an image pull via CRI, the puller first
+queries peer nodes via `BlockSync` for missing blobs, then falls
+back to the upstream registry. One node pulls the full image; the
+rest of the cluster delta-syncs. See `docs/cross-node-dag-sync.md`.
 
 ### What lives where
 
@@ -126,7 +147,7 @@ cluster.
 | `cli/nimbusctl` | Go CLI; thin wrapper over the gRPC API |
 | `cri/nimbus-cri` | Kubernetes CRI shim exposing `nimbus-container` and `nimbus-vm` RuntimeClasses |
 | `proto-go/` | Shared Go module: `nimbus/protoapi` (rebuilt via `make proto`) |
-| `control-plane/` | Multi-node control plane stub (gRPC API server + agent; persistence deferred to v1) |
+| `control-plane/` | Node registry + heartbeat — being rearchitected as P2P DAG block sync layer (see `docs/cross-node-dag-sync.md`) |
 | `deploy/` | Kubernetes manifests: DaemonSet, ServiceMonitor, PrometheusRule, Grafana dashboard |
 | `tools/` | Standalone smoke-test binaries (e.g. `vm-outbound-smoke`) for hosts without the full workspace |
 
