@@ -27,16 +27,19 @@ pub enum StoreError {
     DigestMismatch { expected: Digest, actual: Digest },
 }
 
-const DEFAULT_MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024; // 512 MB
+const DEFAULT_MAX_NODE_CACHE_BYTES: u64 = 256 * 1024 * 1024; // 256 MB
+const DEFAULT_MAX_BLOB_CACHE_BYTES: u64 = 256 * 1024 * 1024; // 256 MB
 
 pub struct MmapStore {
     root: PathBuf,
     cache: DashMap<Digest, Arc<Mmap>>,
     blob_cache: DashMap<Digest, Arc<Mmap>>,
-    max_cache_bytes: Option<u64>,
+    max_node_cache_bytes: Option<u64>,
+    max_blob_cache_bytes: Option<u64>,
     lru: Arc<Mutex<VecDeque<Digest>>>,
     blob_lru: Arc<Mutex<VecDeque<Digest>>>,
-    total_bytes: Arc<AtomicU64>,
+    total_node_bytes: Arc<AtomicU64>,
+    total_blob_bytes: Arc<AtomicU64>,
 }
 
 /// A guard that keeps the underlying `Mmap` alive and provides
@@ -83,10 +86,12 @@ impl MmapStore {
             root,
             cache: DashMap::new(),
             blob_cache: DashMap::new(),
-            max_cache_bytes: Some(DEFAULT_MAX_CACHE_BYTES),
+            max_node_cache_bytes: Some(DEFAULT_MAX_NODE_CACHE_BYTES),
+            max_blob_cache_bytes: Some(DEFAULT_MAX_BLOB_CACHE_BYTES),
             lru: Arc::new(Mutex::new(VecDeque::new())),
             blob_lru: Arc::new(Mutex::new(VecDeque::new())),
-            total_bytes: Arc::new(AtomicU64::new(0)),
+            total_node_bytes: Arc::new(AtomicU64::new(0)),
+            total_blob_bytes: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -98,27 +103,23 @@ impl MmapStore {
             root,
             cache: DashMap::new(),
             blob_cache: DashMap::new(),
-            max_cache_bytes: None,
+            max_node_cache_bytes: None,
+            max_blob_cache_bytes: None,
             lru: Arc::new(Mutex::new(VecDeque::new())),
             blob_lru: Arc::new(Mutex::new(VecDeque::new())),
-            total_bytes: Arc::new(AtomicU64::new(0)),
+            total_node_bytes: Arc::new(AtomicU64::new(0)),
+            total_blob_bytes: Arc::new(AtomicU64::new(0)),
         }
     }
 
-    /// Set the maximum cache size in bytes. When the total mmap'd
-    /// data exceeds this, the store evicts the least-recently-used
-    /// entries on subsequent `get()` calls.
-    pub fn set_max_cache_bytes(&mut self, max: u64) {
-        self.max_cache_bytes = Some(max);
+    /// Set the maximum node cache size in bytes.
+    pub fn set_max_node_cache_bytes(&mut self, max: u64) {
+        self.max_node_cache_bytes = Some(max);
     }
 
-    /// Remove `max_cache_bytes` limit (unbounded cache).
-    pub fn clear_max_cache_bytes(&mut self) {
-        self.max_cache_bytes = None;
-    }
-
-    pub fn max_cache_bytes(&self) -> Option<u64> {
-        self.max_cache_bytes
+    /// Set the maximum blob cache size in bytes.
+    pub fn set_max_blob_cache_bytes(&mut self, max: u64) {
+        self.max_blob_cache_bytes = Some(max);
     }
 
     pub fn root_dir(&self) -> &Path {
@@ -221,27 +222,27 @@ impl MmapStore {
         lru.push_back(*digest);
         drop(lru);
 
-        self.total_bytes.fetch_add(len, Ordering::Relaxed);
+        self.total_node_bytes.fetch_add(len, Ordering::Relaxed);
         let mmap = Arc::new(mmap);
         self.cache.insert(*digest, mmap.clone());
         Ok(mmap)
     }
 
-    /// Evict the least-recently-used entries from the cache until
-    /// total bytes are within `max_cache_bytes`. Must hold the LRU
-    /// lock. No-op when `max_cache_bytes` is `None` or zero.
+    /// Evict the least-recently-used entries from the node cache until
+    /// total bytes are within `max_node_cache_bytes`. Must hold the LRU
+    /// lock. No-op when `max_node_cache_bytes` is `None` or zero.
     fn evict_lru_locked(&self, lru: &mut VecDeque<Digest>) {
-        let max = match self.max_cache_bytes {
+        let max = match self.max_node_cache_bytes {
             Some(m) if m > 0 => m,
             _ => return,
         };
-        while self.total_bytes.load(Ordering::Relaxed) > max {
+        while self.total_node_bytes.load(Ordering::Relaxed) > max {
             let oldest = match lru.front() {
                 Some(d) => *d,
                 None => break,
             };
             if let Some((_, evicted)) = self.cache.remove(&oldest) {
-                self.total_bytes
+                self.total_node_bytes
                     .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
             }
             lru.pop_front();
@@ -327,26 +328,26 @@ impl MmapStore {
         lru.push_back(*digest);
         drop(lru);
 
-        self.total_bytes.fetch_add(len, Ordering::Relaxed);
+        self.total_blob_bytes.fetch_add(len, Ordering::Relaxed);
         let mmap = Arc::new(mmap);
         self.blob_cache.insert(*digest, mmap.clone());
         Ok(mmap)
     }
 
     /// Evict the least-recently-used blob cache entries until total
-    /// bytes are within `max_cache_bytes`. Must hold the blob LRU lock.
+    /// bytes are within `max_blob_cache_bytes`. Must hold the blob LRU lock.
     fn evict_blob_lru_locked(&self, lru: &mut VecDeque<Digest>) {
-        let max = match self.max_cache_bytes {
+        let max = match self.max_blob_cache_bytes {
             Some(m) if m > 0 => m,
             _ => return,
         };
-        while self.total_bytes.load(Ordering::Relaxed) > max {
+        while self.total_blob_bytes.load(Ordering::Relaxed) > max {
             let oldest = match lru.front() {
                 Some(d) => *d,
                 None => break,
             };
             if let Some((_, evicted)) = self.blob_cache.remove(&oldest) {
-                self.total_bytes
+                self.total_blob_bytes
                     .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
             }
             lru.pop_front();
@@ -366,19 +367,29 @@ impl MmapStore {
         self.cache.len()
     }
 
-    /// Total bytes mmap'd across all nodes currently held in the
-    /// in-process cache. Uses the LRU tracker's running total,
-    /// updated atomically on each insertion/eviction.
-    pub fn total_bytes(&self) -> u64 {
-        self.total_bytes.load(Ordering::Relaxed)
+    /// Total bytes mmap'd across all node entries currently held in the
+    /// in-process cache.
+    pub fn total_node_bytes(&self) -> u64 {
+        self.total_node_bytes.load(Ordering::Relaxed)
     }
 
-    /// Evict a single entry from the in-memory cache. Updates the
+    /// Total bytes mmap'd across all blob entries currently held in the
+    /// in-process cache.
+    pub fn total_blob_bytes(&self) -> u64 {
+        self.total_blob_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Total cached bytes across both node and blob caches.
+    pub fn total_bytes(&self) -> u64 {
+        self.total_node_bytes() + self.total_blob_bytes()
+    }
+
+    /// Evict a single entry from the in-memory node cache. Updates the
     /// LRU tracker and total byte count. This is a no-op if the
     /// digest is not currently cached.
     pub fn evict_cache_entry(&self, digest: &Digest) {
         if let Some((_, evicted)) = self.cache.remove(digest) {
-            self.total_bytes
+            self.total_node_bytes
                 .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
             let mut lru = self.lru.lock().expect("lru lock poisoned");
             lru.retain(|d| d != digest);
