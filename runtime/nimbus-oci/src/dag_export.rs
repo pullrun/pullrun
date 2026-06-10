@@ -21,8 +21,8 @@ struct ExportManifest {
 ///
 /// The tar layout is:
 ///   nimbus-manifest.json  — metadata (root digest, counts)
-///   nimbus-nodes/<digest> — rkyv-serialized DagNode for each node
-///   nimbus-blobs/<digest> — raw blob data (only when stored separately)
+///   `nimbus-nodes/<digest>` — rkyv-serialized DagNode for each node
+///   `nimbus-blobs/<digest>` — raw blob data (only when stored separately)
 pub fn export_dag_to_tar<W: Write>(
     store: &MmapStore,
     root_digest: &str,

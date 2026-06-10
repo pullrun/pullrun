@@ -143,7 +143,7 @@ impl StagedKernel {
         Self::from_image_with_insecure(image_ref, store, registry, &[]).await
     }
 
-    /// Like [`from_image`], but allows specifying a list of
+    /// Like [`Self::from_image`], but allows specifying a list of
     /// registries that should be reached over plain HTTP.
     /// Pass an empty slice to require HTTPS for all
     /// registries (the default).

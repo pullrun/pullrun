@@ -159,7 +159,7 @@ pub enum Frame {
 
     /// What to run.
     WorkloadSpec {
-        /// argv, with argv[0] being the executable name.
+        /// argv, with `argv[0]` being the executable name.
         command: Vec<String>,
         /// Environment variables, in `KEY=VALUE` form.
         env: Vec<String>,
@@ -350,8 +350,8 @@ impl Frame {
 }
 
 /// A [`Frame`] tagged with its on-wire type. This is what the codec
-/// yields; consumers pattern-match on [`frame_type`](Self::frame_type)
-/// before downcasting to the inner [`Frame`].
+/// yields; consumers pattern-match on the type tag returned by
+/// [`Frame::frame_type`] before downcasting to the inner [`Frame`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaggedFrame {
     /// The decoded frame body.

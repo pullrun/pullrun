@@ -239,10 +239,10 @@ message RunRequest {
     // after it exits. Defaults to RESTART_NO.
     RestartPolicy restart_policy = 15;
     // Secrets to mount inside the container (docker --secret equivalent).
-    // Mounted at /run/secrets/<name> by default, or at target_path if set.
+    // Mounted at `/run/secrets/<name>` by default, or at target_path if set.
     repeated SecretRef secrets = 16;
     // Configs to mount inside the container (docker --config equivalent).
-    // Mounted at /<name> by default, or at target_path if set.
+    // Mounted at `/<name>` by default, or at target_path if set.
     repeated ConfigRef configs = 17;
 }
 
@@ -407,7 +407,7 @@ message AttachError {
 // --- CRI support messages (Phase A) ---
 
 message HasImageRequest {
-    string image_ref = 1;  // e.g. "alpine:latest" or "sha256:<digest>"
+    string image_ref = 1;  // e.g. "alpine:latest" or "sha256:`<digest>`"
 }
 
 message HasImageResponse {
@@ -585,7 +585,7 @@ message InspectResponse {
     // DAG traversal: ordered list of `digest:kind` from root manifest
     // down to the leaf blobs. BFS, so the manifest is always first.
     repeated DagNode dag_path = 12;
-    // Per-policy decision log: rule -> "allow" | "deny: <reason>".
+    // Per-policy decision log: rule -> "allow" | "deny: `<reason>`".
     // Populated at pull and at run time. v0 only writes a single
     // entry per decision.
     map<string, string> policy_decisions = 13;
@@ -732,12 +732,12 @@ message DiffResponse {
 
 message SecretRef {
     string name = 1;
-    string target_path = 2;   // default: /run/secrets/<name>
+    string target_path = 2;   // default: `/run/secrets/<name>`
 }
 
 message ConfigRef {
     string name = 1;
-    string target_path = 2;   // default: /<name>
+    string target_path = 2;   // default: `/<name>`
 }
 
 message SecretInfo {
