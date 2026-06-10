@@ -55,7 +55,7 @@ impl Discovery {
 
         let sock = match UdpSocket::bind(bind_addr).await {
             Ok(s) => {
-                info!(local = %s.local_addr().unwrap(), "discovery listening");
+                info!(local = %s.local_addr().expect("bound socket").port(), "discovery listening");
                 s
             }
             Err(e) => {

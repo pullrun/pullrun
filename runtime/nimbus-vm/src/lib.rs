@@ -201,7 +201,10 @@ impl Executor for FirecrackerExecutor {
             create_tap(&tap_name, guest_ip)
                 .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
         };
-        self.tap_fds.lock().unwrap().insert(spec.id.clone(), tap_fd);
+        self.tap_fds
+            .lock()
+            .expect("tap_fds lock poisoned")
+            .insert(spec.id.clone(), tap_fd);
 
         // 3. Start the inbound proxy listeners (for any declared rules).
         //    The listeners bind on 0.0.0.0:host_port and forward into
@@ -318,7 +321,11 @@ impl Executor for FirecrackerExecutor {
         );
 
         let config_path = vm_dir.join("vm-config.json");
-        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&config)
+                .expect("config serialization never fails"),
+        )?;
 
         // Firecracker's --log-path target must exist before the process starts.
         let log_path = vm_dir.join("firecracker.log");
@@ -381,7 +388,11 @@ impl Executor for FirecrackerExecutor {
             if let Ok(sidecar) = serde_json::from_str::<VmSidecar>(&json) {
                 // Extract the TAP fd for this workload and drop it
                 // (which destroys the device), also run ip link del.
-                let tap_fd = self.tap_fds.lock().unwrap().remove(id);
+                let tap_fd = self
+                    .tap_fds
+                    .lock()
+                    .expect("tap_fds lock poisoned")
+                    .remove(id);
                 if let Err(e) = teardown_tap(&sidecar.tap_name, tap_fd) {
                     warn!(tap = %sidecar.tap_name, "tap teardown warning: {e}");
                 }

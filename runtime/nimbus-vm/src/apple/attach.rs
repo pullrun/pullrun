@@ -312,7 +312,7 @@ fn spawn_apple_virt_vm_blocking(
             timeout = ?VSOCK_ACCEPT_TIMEOUT,
             "waiting for guest vsock connection"
         );
-        let guard = conn_slot.lock().unwrap();
+        let guard = conn_slot.lock().expect("conn_slot lock poisoned");
         let (mut new_guard, wait_result) = conn_cond
             .wait_timeout(guard, VSOCK_ACCEPT_TIMEOUT)
             .map_err(|e| AttachError::Vm(format!("condvar poisoned: {e}")))?;
@@ -990,7 +990,7 @@ define_class!(
         ) -> bool {
             let ivars = self.ivars();
             if let (Some(slot), Some(cond)) = (&ivars.conn_slot, &ivars.conn_cond) {
-                let mut guard = slot.lock().unwrap();
+                let mut guard = slot.lock().expect("slot lock poisoned");
                 let conn_ptr: *mut VZVirtioSocketConnection =
                     connection as *const _ as *mut VZVirtioSocketConnection;
                 *guard = Retained::retain(conn_ptr);

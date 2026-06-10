@@ -29,7 +29,7 @@ impl Clone for SecretStore {
     fn clone(&self) -> Self {
         Self {
             store_root: self.store_root.clone(),
-            key_cache: Mutex::new(*self.key_cache.lock().unwrap()),
+            key_cache: Mutex::new(*self.key_cache.lock().expect("key_cache lock poisoned")),
         }
     }
 }
@@ -68,7 +68,7 @@ impl SecretStore {
     }
 
     fn load_or_generate_key(&self) -> Result<[u8; 32], String> {
-        let mut cache = self.key_cache.lock().unwrap();
+        let mut cache = self.key_cache.lock().expect("key_cache lock poisoned");
         if let Some(key) = *cache {
             return Ok(key);
         }

@@ -192,7 +192,7 @@ impl MmapStore {
             let result = entry.value().clone();
             drop(entry);
             // Mark as recently used and trigger eviction.
-            let mut lru = self.lru.lock().unwrap();
+            let mut lru = self.lru.lock().expect("lru lock poisoned");
             if let Some(pos) = lru.iter().position(|d| d == digest) {
                 lru.remove(pos);
             }
@@ -216,7 +216,7 @@ impl MmapStore {
 
         // Evict before inserting so the new entry can't be evicted
         // in the same round.
-        let mut lru = self.lru.lock().unwrap();
+        let mut lru = self.lru.lock().expect("lru lock poisoned");
         self.evict_lru_locked(&mut lru);
         lru.push_back(*digest);
         drop(lru);
@@ -301,7 +301,7 @@ impl MmapStore {
         if let Some(entry) = self.blob_cache.get(digest) {
             let result = entry.value().clone();
             drop(entry);
-            let mut lru = self.blob_lru.lock().unwrap();
+            let mut lru = self.blob_lru.lock().expect("blob_lru lock poisoned");
             if let Some(pos) = lru.iter().position(|d| d == digest) {
                 lru.remove(pos);
             }
@@ -322,7 +322,7 @@ impl MmapStore {
         let len = mmap.len() as u64;
 
         // Evict before inserting so the new entry survives this round.
-        let mut lru = self.blob_lru.lock().unwrap();
+        let mut lru = self.blob_lru.lock().expect("blob_lru lock poisoned");
         self.evict_blob_lru_locked(&mut lru);
         lru.push_back(*digest);
         drop(lru);
@@ -380,7 +380,7 @@ impl MmapStore {
         if let Some((_, evicted)) = self.cache.remove(digest) {
             self.total_bytes
                 .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
-            let mut lru = self.lru.lock().unwrap();
+            let mut lru = self.lru.lock().expect("lru lock poisoned");
             lru.retain(|d| d != digest);
         }
     }

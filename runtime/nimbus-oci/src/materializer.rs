@@ -252,7 +252,8 @@ impl<'a> OciMaterializer<'a> {
 
         std::fs::write(
             config_path,
-            serde_json::to_string_pretty(&oci_spec).unwrap(),
+            serde_json::to_string_pretty(&oci_spec)
+                .expect("oci_spec serialization never fails"),
         )?;
 
         Ok(())

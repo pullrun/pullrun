@@ -371,7 +371,7 @@ pub async fn build_dag_from_directory_with_platform(
             };
             let node = DagNode::blob(target.as_bytes().to_vec());
             if let Ok(d) = store_ref.put_blocking(&node) {
-                let mut map = symlink_results.lock().unwrap();
+                let mut map = symlink_results.lock().expect("results lock poisoned");
                 map.insert(rel.to_string(), (d, target.len() as u64));
             }
             return;
@@ -389,13 +389,18 @@ pub async fn build_dag_from_directory_with_platform(
             if size > SMALL_FILE_THRESHOLD {
                 let _ = store_ref.put_blob_blocking(&d, &data);
             }
-            let mut map = file_results.lock().unwrap();
+            let mut map = file_results.lock().expect("results lock poisoned");
             map.insert(rel.to_string(), (d, size));
         }
     });
 
     // Phase 3: build DirEntry tree from the collected results.
-    let root_entry = build_dir_entry_tree(&dir, &dir, &file_results.lock().unwrap(), &symlink_results.lock().unwrap())?;
+    let root_entry = build_dir_entry_tree(
+        &dir,
+        &dir,
+        &file_results.lock().expect("results lock poisoned"),
+        &symlink_results.lock().expect("results lock poisoned"),
+    )?;
 
     // build_tree is recursive and synchronous; run in spawn_blocking.
     let store_clone = store.clone();

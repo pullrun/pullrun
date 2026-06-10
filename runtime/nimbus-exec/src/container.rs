@@ -242,7 +242,8 @@ impl Executor for LinuxContainerExecutor {
             if let Some(ref ipam) = self.ipam {
                 if let Some(ip) = ipam.allocate() {
                     internal_ip = Some(Ipv4Addr::from(ip));
-                    info!(id = %spec.id, bridge = bridge_name, ip = %internal_ip.unwrap(), "allocated bridge IP");
+                    let ip = internal_ip.expect("just allocated above");
+                    info!(id = %spec.id, bridge = bridge_name, ip = %ip, "allocated bridge IP");
                 }
             }
         }
@@ -291,8 +292,9 @@ impl Executor for LinuxContainerExecutor {
                     "swap": mem_bytes as i64
                 }));
             }
-            linux.as_object_mut().unwrap()
-                .insert("resources".to_string(), serde_json::Value::Object(resources));
+            if let Some(obj) = linux.as_object_mut() {
+                obj.insert("resources".to_string(), serde_json::Value::Object(resources));
+            }
         }
 
         let mut mounts = vec![
@@ -358,7 +360,8 @@ impl Executor for LinuxContainerExecutor {
 
         std::fs::write(
             &bundle.config_path,
-            serde_json::to_string_pretty(&oci_spec).unwrap(),
+            serde_json::to_string_pretty(&oci_spec)
+                .expect("oci_spec serialization should never fail"),
         )?;
 
         // Write /etc/hosts and /etc/resolv.conf into the rootfs so
@@ -755,7 +758,10 @@ impl Executor for RootlessContainerExecutor {
         {
             Ok(net) => {
                 info!(id = %handle.id, "rootless networking set up");
-                self.net_handles.lock().unwrap().insert(handle.id.clone(), net);
+                self.net_handles
+                    .lock()
+                    .expect("net_handles lock poisoned")
+                    .insert(handle.id.clone(), net);
             }
             Err(e) => {
                 warn!(id = %handle.id, "rootless networking failed: {e} - container may have no network");
@@ -763,7 +769,10 @@ impl Executor for RootlessContainerExecutor {
         }
 
         // Store the runc child so we can wait() on it later.
-        self.children.lock().unwrap().insert(handle.id.clone(), child);
+        self.children
+            .lock()
+            .expect("children lock poisoned")
+            .insert(handle.id.clone(), child);
 
         Ok(())
     }
@@ -772,12 +781,12 @@ impl Executor for RootlessContainerExecutor {
         info!(%id, "stopping rootless container");
 
         // Kill the runc child and the network process (pasta/slirp4netns).
-        let maybe_child = self.children.lock().unwrap().remove(id);
+        let maybe_child = self.children.lock().expect("children lock poisoned").remove(id);
         if let Some(mut child) = maybe_child {
             let _ = child.kill();
             tokio::task::spawn_blocking(move || child.wait()).await.ok();
         }
-        if let Some(mut net) = self.net_handles.lock().unwrap().remove(id) {
+        if let Some(mut net) = self.net_handles.lock().expect("net_handles lock poisoned").remove(id) {
             net.kill().ok();
         }
 
@@ -798,7 +807,7 @@ impl Executor for RootlessContainerExecutor {
     }
 
     async fn wait(&self, id: &str) -> Result<ExitStatus, ExecError> {
-        let maybe_child = self.children.lock().unwrap().remove(id);
+        let maybe_child = self.children.lock().expect("children lock poisoned").remove(id);
         if let Some(mut child) = maybe_child {
             let status = tokio::task::spawn_blocking(move || child.wait())
                 .await
