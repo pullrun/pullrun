@@ -159,9 +159,9 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		Long: `Run a workload. Accepts either a content-addressed digest (sha256:...)
 or an image:tag reference (e.g. alpine:latest) which will be pulled first.
 
-Use --backend=vm --kernel-image=<ref> to run inside an Apple Virt micro-VM
-(macOS only). The kernel is an OCI image and will be staged from the local
-DAG store if not already present.`,
+Use --backend=vm to run inside an Apple Virt micro-VM (macOS only).
+The kernel is loaded from ~/.nimbus/kernels/ by default, or from
+an OCI image via --kernel-image=<ref>.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
@@ -322,7 +322,7 @@ DAG store if not already present.`,
 	cmd.Flags().Uint64Var(&cpuMillicores, "cpu", 1000, "CPU millicores (1000 = 1 vCPU)")
 	cmd.Flags().Uint64Var(&memoryBytes, "memory", 512*1024*1024, "Memory limit in bytes")
 	cmd.Flags().StringVar(&networkMode, "net", "isolated", "Network mode: isolated|host|none")
-	cmd.Flags().StringVar(&kernelImage, "kernel-image", "", "OCI reference for the kernel image (required for --backend=vm, e.g. 'nimbus/kernel-asahi:6.19.14')")
+	cmd.Flags().StringVar(&kernelImage, "kernel-image", "", "OCI reference for the kernel image (optional on macOS when ~/.nimbus/kernels/ has one, e.g. 'nimbus/kernel-asahi:6.19.14')")
 	cmd.Flags().StringVar(&registry, "registry", "", "Registry to pull the workload image from (default: docker.io; use 'localhost:5000' for local registries)")
 	cmd.Flags().StringSliceVarP(&volumes, "volume", "v", nil, "Bind mount (source:destination[:options]), e.g. /host/path:/container/path:ro")
 	cmd.Flags().StringVar(&healthCmd, "health-cmd", "", "Health check command (e.g. 'curl -f http://localhost:80' or 'ls /tmp/healthy')")

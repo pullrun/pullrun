@@ -156,6 +156,18 @@ apple-smoke-signed: apple-sign-smoke
 build-apple-smoke:
 	cd tools/apple-virt-smoke && cargo build
 
+NIMBUS_RUNTIME = $(CURDIR)/target/debug/nimbus-runtime
+apple-sign-daemon:
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "apple-sign-daemon only runs on macOS"; \
+		exit 0; \
+	fi
+	codesign --force --sign - \
+		--entitlements $(APPLE_ENTITLEMENTS) \
+		--options runtime \
+		$(NIMBUS_RUNTIME)
+	@echo "Signed $(NIMBUS_RUNTIME) with com.apple.security.virtualization"
+
 # Help
 help:
 	@echo "Nimbus Build System"
@@ -172,3 +184,4 @@ help:
 	@echo "  install              Install binaries to PATH"
 	@echo "  install-kernel       Download Kata's vmlinux.container to ~/.nimbus/kernels"
 	@echo "  apple-sign-smoke     Sign tools/apple-virt-smoke with the virt entitlement"
+	@echo "  apple-sign-daemon    Sign nimbus-runtime with the virt entitlement (macOS VM)"

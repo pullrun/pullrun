@@ -7,3 +7,5 @@
 # can deadlock if the fd isn't actually non-blocking. We do
 # this in tests where deadlock isn't a concern.
 rustflags = ["--cfg", "tokio_allow_from_blocking_fd"]
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-musl-gcc"

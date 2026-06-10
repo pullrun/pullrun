@@ -30,6 +30,10 @@ use nimbus_store::{Digest, MmapStore};
 use nimbus_sync::PeerBloomCache;
 use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
+/// Cache key used when the kernel is loaded from a local path
+/// (e.g. `~/.nimbus/kernels/`) instead of an OCI image.
+const LOCAL_KERNEL_CACHE_KEY: &str = "__local";
+
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
@@ -1675,7 +1679,7 @@ impl Runtime for RuntimeService {
         // partially moved (e.g. `req.env`) before that
         // path is reached, so we can't just clone it
         // there.
-        let req_for_state = req.clone();
+        let mut req_for_state = req.clone();
         let backend = Backend::from_str(&req.backend)
             .map_err(tonic::Status::invalid_argument)?;
 
@@ -1693,9 +1697,41 @@ impl Runtime for RuntimeService {
         if backend_label == "vm" {
             let has_local_kernel = self.config.vm_backend.is_some();
             if req.kernel_image.is_empty() && !has_local_kernel {
-                return Err(tonic::Status::invalid_argument(
-                    "backend=vm requires kernel_image (e.g. 'nimbus/kernel-asahi:6.19.14')",
-                ));
+                // On macOS, try a locally installed kernel from
+                // ~/.nimbus/kernels/ (or NIMBUS_KERNEL_PATH) so
+                // users can run VMs without pushing a kernel OCI
+                // image.
+                #[cfg(target_os = "macos")]
+                {
+                    match find_local_kernel() {
+                        Some((vmlinux, initramfs)) => {
+                            let staged = StagedKernel::from_paths(vmlinux, initramfs)
+                                .map_err(|e| tonic::Status::internal(format!("local kernel: {e}")))?;
+                            info!(
+                                "using local kernel; caching under {}",
+                                LOCAL_KERNEL_CACHE_KEY
+                            );
+                            self.kernel_cache
+                                .write()
+                                .await
+                                .insert(LOCAL_KERNEL_CACHE_KEY.to_string(), staged);
+                            req.kernel_image = LOCAL_KERNEL_CACHE_KEY.to_string();
+                            req_for_state.kernel_image = LOCAL_KERNEL_CACHE_KEY.to_string();
+                        }
+                        None => {
+                            return Err(tonic::Status::invalid_argument(
+                                "backend=vm requires kernel_image, or a local kernel at \
+                                 ~/.nimbus/kernels/ (set NIMBUS_KERNEL_PATH)",
+                            ));
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    return Err(tonic::Status::invalid_argument(
+                        "backend=vm requires kernel_image (e.g. 'nimbus/kernel-asahi:6.19.14')",
+                    ));
+                }
             }
             // When kernel_image is non-empty, stage the kernel from
             // OCI for Apple Virt (macOS). For Firecracker (Linux),
@@ -3954,6 +3990,60 @@ fn materialize_rootfs(
     let materializer = OciMaterializer::new(store);
     rt.block_on(materializer.materialize_into(&digest, &target))?;
     Ok(target)
+}
+
+/// Try to find a locally installed kernel for Apple Virt VMs.
+///
+/// Looks in order:
+/// 1. `NIMBUS_KERNEL_PATH` env var (with optional `NIMBUS_INITRAMFS_PATH`)
+/// 2. `~/.nimbus/kernels/` — picks the latest `vmlinux-*` file,
+///    with initramfs from `~/.nimbus/initramfs/nimbus-initramfs.cpio.gz`.
+#[cfg(target_os = "macos")]
+fn find_local_kernel() -> Option<(std::path::PathBuf, Option<std::path::PathBuf>)> {
+    let home = std::path::PathBuf::from(std::env::var("HOME").ok()?);
+
+    // 1. Check env var.
+    if let Ok(path) = std::env::var("NIMBUS_KERNEL_PATH") {
+        let p = std::path::PathBuf::from(&path);
+        if p.is_file() {
+            let initramfs = std::env::var("NIMBUS_INITRAMFS_PATH")
+                .ok()
+                .map(std::path::PathBuf::from)
+                .filter(|p| p.is_file())
+                .or_else(|| {
+                    let default = home.join(".nimbus/initramfs/nimbus-initramfs.cpio.gz");
+                    if default.is_file() { Some(default) } else { None }
+                });
+            return Some((p, initramfs));
+        }
+    }
+
+    // 2. Scan ~/.nimbus/kernels/ for vmlinux files.
+    let kernel_dir = home.join(".nimbus/kernels");
+    if !kernel_dir.is_dir() {
+        return None;
+    }
+    let mut candidates: Vec<std::path::PathBuf> = std::fs::read_dir(&kernel_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name();
+            name.to_string_lossy().starts_with("vmlinux")
+        })
+        .map(|e| e.path())
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates.sort();
+    let kernel = candidates.into_iter().last()?;
+
+    let initramfs = {
+        let p = home.join(".nimbus/initramfs/nimbus-initramfs.cpio.gz");
+        if p.is_file() { Some(p) } else { None }
+    };
+
+    Some((kernel, initramfs))
 }
 
 /// Build an `OciAuth` from optional protobuf string fields.
