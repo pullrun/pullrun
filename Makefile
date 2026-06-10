@@ -157,6 +157,23 @@ build-apple-smoke:
 	cd tools/apple-virt-smoke && cargo build
 
 NIMBUS_RUNTIME = $(CURDIR)/target/debug/nimbus-runtime
+
+build-initramfs:
+	@echo "=== Building initramfs (busybox + nimbus-init) ==="
+	@if [ ! -f /tmp/busybox-aarch64 ]; then \
+		echo "Downloading busybox static binary..."; \
+		curl -fL -o /tmp/busybox-aarch64 \
+			https://busybox.net/downloads/binaries/1.35.0-aarch64-linux-musl/busybox; \
+		chmod +x /tmp/busybox-aarch64; \
+	fi
+	@mkdir -p $(HOME)/.nimbus/initramfs
+	cargo build -p nimbus-init --target aarch64-unknown-linux-musl --release
+	cd tools/build-initramfs && cargo build
+	./tools/build-initramfs/target/debug/build-initramfs \
+		--busybox /tmp/busybox-aarch64 \
+		--nimbus-init $(CURDIR)/target/aarch64-unknown-linux-musl/release/nimbus-init \
+		--out $(HOME)/.nimbus/initramfs/nimbus-initramfs.cpio.gz
+	@echo "Initramfs built: $(HOME)/.nimbus/initramfs/nimbus-initramfs.cpio.gz"
 apple-sign-daemon:
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "apple-sign-daemon only runs on macOS"; \
@@ -183,5 +200,6 @@ help:
 	@echo "  run-cli              Run nimbusctl (set ARGS for command)"
 	@echo "  install              Install binaries to PATH"
 	@echo "  install-kernel       Download Kata's vmlinux.container to ~/.nimbus/kernels"
+	@echo "  build-initramfs      Build initramfs (busybox + nimbus-init) to ~/.nimbus/initramfs"
 	@echo "  apple-sign-smoke     Sign tools/apple-virt-smoke with the virt entitlement"
 	@echo "  apple-sign-daemon    Sign nimbus-runtime with the virt entitlement (macOS VM)"

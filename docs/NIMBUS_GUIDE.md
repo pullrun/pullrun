@@ -13,8 +13,8 @@ Apple Virtualization VMs (macOS)** — all from the same image.
 | Container backend (runc) | ❌ (runc is Linux-only) | ✅ `--backend container` |
 | Rootless container backend | ❌ (runc + pasta) | ✅ `--backend container` (EUID != 0) |
 | Firecracker VM backend | ❌ (needs KVM) | ✅ `--backend vm` |
+| Apple Virt VMs via nimbusctl | ✅ (with entitlement, kernel in ~/.nimbus/kernels/) | ❌ |
 | Apple Virt VM standalone tools | ✅ (with entitlement) | ❌ |
-| AppleVirtExecutor (runtime) | ❌ (Phase 5 stub) | ❌ |
 | nimbusctl CLI | ✅ | ✅ |
 | nimbus-runtime daemon | ✅ (stores, sync, policy) | ✅ (all backends) |
 | P2P DAG block sync | ✅ | ✅ |
@@ -23,9 +23,11 @@ Apple Virtualization VMs (macOS)** — all from the same image.
 | `nimbusctl kernel install` | ✅ → arm64 | ✅ → amd64 |
 
 **Key insight:** nimbusctl works identically on both platforms for all
-store/sync/policy operations. The backends differ: macOS uses the
-standalone Apple Virt tools (`apple-virt-smoke`, `apple-virt-exec`);
-Linux uses `nimbusctl run --backend container` or `--backend vm`.
+store/sync/policy operations. `nimbusctl run --backend vm` works on
+both macOS (Apple Virtualization) and Linux (Firecracker/KVM). On macOS
+the daemon discovers the kernel from `~/.nimbus/kernels/` automatically;
+no `--kernel-image` flag needed. Standalone tools (`apple-virt-smoke`,
+`apple-virt-exec`) are also available for direct FFI testing.
 
 ## Quick start
 
@@ -268,8 +270,10 @@ nimbusctl logout
 nimbusctl run alpine:3.18 --backend container --cmd echo hello
 nimbusctl run sha256:<digest> --backend container --cmd sleep --cmd 60
 
-# Run a Firecracker VM (Linux — needs kernel, see VM section)
+# Run a VM — works on macOS (Apple Virt) and Linux (Firecracker/KVM)
+# On macOS, no --kernel-image needed: kernel auto-discovered from ~/.nimbus/kernels/
 nimbusctl run alpine:3.18 --backend vm --cmd echo hello
+nimbusctl run alpine:3.18 --backend vm --cmd /bin/echo hello --attach  # single-step
 
 # With environment variables
 nimbusctl run alpine:3.18 -e FOO=bar -e BAZ=qux --cmd printenv
@@ -398,11 +402,16 @@ nimbusctl kernel install --version 3.31.0     # specific version
 # Installed to ~/.nimbus/kernels/vmlinux-<version>
 ```
 
+On macOS, the daemon automatically discovers the kernel from
+`~/.nimbus/kernels/` (and initramfs from `~/.nimbus/initramfs/`),
+so `--kernel-image` is not required. Override with the `NIMBUS_KERNEL_PATH`
+or `NIMBUS_INITRAMFS_PATH` environment variables.
+
 ### Run flags (nimbusctl run)
 
 | Flag | Purpose |
 |------|---------|
-| `--backend` | `container` (Linux), `vm` (Linux+KVM), `sandbox` |
+| `--backend` | `container` (Linux), `vm` (macOS+AppleVirt / Linux+KVM), `sandbox` |
 | `--cmd` | Command + args (repeatable, overrides entrypoint) |
 | `-e` / `--env` | Environment variables (`KEY=VALUE`) |
 | `--name` | Workload name (auto-generated if empty) |
@@ -412,7 +421,7 @@ nimbusctl kernel install --version 3.31.0     # specific version
 | `-p` / `--publish` | Publish port (`host:container` or just `port`) |
 | `--allow-inbound` | Expose port (repeatable) |
 | `--allow-outbound` | Allow outbound (`tcp:host:port`) |
-| `--kernel-image` | OCI kernel image for VM backend |
+| `--kernel-image` | OCI kernel image for VM backend (optional on macOS when `~/.nimbus/kernels/` has one) |
 | `--registry` | Registry for pulling the workload image |
 | `--platform` | Target platform for pull (`linux/amd64`, `linux/arm64`) |
 | `--restart` | Restart policy: `no`, `on-failure`, `always`, `unless-stopped` |
@@ -542,81 +551,117 @@ NIMBUS_FC_VMLINUX=~/.nimbus/kernels/vmlinux-3.31.0 ./target/debug/firecracker-sm
 ## Apple VM backend (macOS)
 
 The Apple Virtualization framework allows running Linux VMs on Apple
-Silicon macOS. Nimbus provides two standalone tools: `apple-virt-smoke`
-(FFI pool test) and `apple-virt-exec` (full VM workload executor).
+Silicon macOS. The recommended way is `nimbusctl run --backend vm`,
+which works identically to the Firecracker backend on Linux. Standalone
+tools (`apple-virt-smoke`, `apple-virt-exec`) are also available for
+direct FFI testing.
 
-### Prerequisites
+### Quickest start (one-shot VM workload)
 
-1. **A kernel image** for the Apple Virt guest ABI (Kata arm64):
+```bash
+# 1. Install kernel + initramfs (one-time setup)
+make install-kernel
+make build-initramfs          # builds busybox + nimbus-init for aarch64
 
-   ```bash
-   make install-kernel       # → ~/.nimbus/kernels/vmlinux-3.31.0 (ARM64)
-   # or: nimbusctl kernel install
-   ```
+# 2. Sign the daemon with the virtualization entitlement (one-time)
+make apple-sign-daemon
 
-2. **An initramfs** containing nimbus-init + busybox:
-
-   ```bash
-   # Build nimbus-init for arm64 musl
-   cargo build -p nimbus-init --target aarch64-unknown-linux-musl --release
-
-   # Build the initramfs builder
-   cd tools/build-initramfs && cargo build
-
-   # Get a static busybox binary
-   curl -fL -o /tmp/busybox-aarch64 \
-     https://busybox.net/downloads/binaries/1.35.0-aarch64-linux-musl/busybox
-   chmod +x /tmp/busybox-aarch64
-
-   # Build the initramfs
-   mkdir -p ~/.nimbus/initramfs
-   cd tools/build-initramfs && cargo build
-
-   # Get a static busybox binary
-   curl -fL -o /tmp/busybox-aarch64 \
-     https://busybox.net/downloads/binaries/1.35.0-aarch64-linux-musl/busybox
-   chmod +x /tmp/busybox-aarch64
-
-   # Build the initramfs
-   ./target/debug/build-initramfs \
-     --busybox /tmp/busybox-aarch64 \
-     --nimbus-init ../../target/aarch64-unknown-linux-musl/release/nimbus-init \
-     --out ~/.nimbus/initramfs/nimbus-initramfs.cpio.gz
+# 3. Run a VM workload — no --kernel-image needed, discovered from ~/.nimbus/
+nimbusctl run alpine:latest --backend vm --cmd /bin/echo "hello from nimbus VM via Apple Virt" --attach
 ```
 
-   The initramfs layout:
-   ```
-   /init                  → shell script that execs /sbin/nimbus-init
-   /sbin/nimbus-init      → the static nimbus-init binary
-   /bin/busybox           → busybox (shell, utilities)
-   /bin/{sh,cat,ls,...}   → symlinks to busybox applets
-   /dev/{console,null,tty}→ device nodes
-   /proc, /sys, /etc      → directories for mounting
-   ```
+### Setup (one-time)
 
-3. **Code signing entitlement**:
+#### 1. Kernel image
 
-   ```bash
-   codesign --force --sign - \
-     --entitlements tools/apple-virt-smoke/virt.entitlements \
-     --options runtime \
-     tools/apple-virt-smoke/target/debug/apple-virt-smoke
+Download Kata Containers' arm64 kernel:
 
-   codesign --force --sign - \
-     --entitlements ../apple-virt-smoke/virt.entitlements \
-     --options runtime \
-     tools/apple-virt-exec/target/debug/apple-virt-exec
-   ```
+```bash
+make install-kernel       # → ~/.nimbus/kernels/vmlinux-3.31.0 (ARM64)
+# or: nimbusctl kernel install
+```
 
-   The entitlement XML is:
-   ```xml
-   <key>com.apple.security.virtualization</key>
-   <true/>
-   ```
+The daemon looks for kernel images in `~/.nimbus/kernels/` (picks the
+latest `vmlinux-*` file) or the `NIMBUS_KERNEL_PATH` env var.
 
-### apple-virt-smoke (FFI pool test)
+#### 2. Initramfs with nimbus-init + busybox
 
-Tests the Apple Virtualization framework end-to-end:
+```bash
+# Build nimbus-init for arm64 musl
+cargo build -p nimbus-init --target aarch64-unknown-linux-musl --release
+
+# Build the initramfs builder
+cd tools/build-initramfs && cargo build
+
+# Get a static busybox binary
+curl -fL -o /tmp/busybox-aarch64 \
+  https://busybox.net/downloads/binaries/1.35.0-aarch64-linux-musl/busybox
+chmod +x /tmp/busybox-aarch64
+
+# Build the initramfs
+mkdir -p ~/.nimbus/initramfs
+./target/debug/build-initramfs \
+  --busybox /tmp/busybox-aarch64 \
+  --nimbus-init ../../target/aarch64-unknown-linux-musl/release/nimbus-init \
+  --out ~/.nimbus/initramfs/nimbus-initramfs.cpio.gz
+```
+
+The initramfs layout:
+```
+/init                  → shell script that execs /sbin/nimbus-init
+/sbin/nimbus-init      → the static nimbus-init binary
+/bin/busybox           → busybox (shell, utilities)
+/bin/{sh,cat,ls,...}   → symlinks to busybox applets
+/dev/{console,null,tty}→ device nodes
+/proc, /sys, /etc      → directories for mounting
+```
+
+#### 3. Code signing entitlement
+
+The daemon process needs the `com.apple.security.virtualization`
+entitlement to create VMs:
+
+```bash
+# One-time signing (re-sign after every `cargo build`)
+make apple-sign-daemon
+```
+
+The entitlement XML used (`tools/apple-virt-smoke/virt.entitlements`):
+```xml
+<key>com.apple.security.virtualization</key>
+<true/>
+```
+
+### Running VM workloads via nimbusctl
+
+Once the kernel + initramfs are installed at `~/.nimbus/kernels/` and
+`~/.nimbus/initramfs/`, the daemon picks them up automatically:
+
+```bash
+# Run and attach (single step — blocks until exit, streams output)
+nimbusctl run alpine:latest --backend vm --cmd /bin/echo "hello from nimbus VM via Apple Virt" --attach
+
+# Run with environment variables
+nimbusctl run alpine:latest --backend vm -e FOO=bar --cmd /bin/printenv --attach
+
+# Run detached, then attach separately
+nimbusctl run alpine:latest --backend vm --name myvm --cmd /bin/sleep --cmd 60
+nimbusctl workload run myvm          # attach to booted VM
+```
+
+The daemon discovers:
+- Kernel from `~/.nimbus/kernels/` (latest `vmlinux-*` file) or `NIMBUS_KERNEL_PATH`
+- Initramfs from `~/.nimbus/initramfs/nimbus-initramfs.cpio.gz` or `NIMBUS_INITRAMFS_PATH`
+
+No `--kernel-image` flag is needed when these local paths are present.
+To use an OCI-packaged kernel image from a registry instead, pass
+`--kernel-image <ref>`.
+
+### Standalone tools
+
+For direct FFI testing without the daemon:
+
+#### apple-virt-smoke (FFI pool test)
 
 ```bash
 cd tools/apple-virt-smoke && cargo build
@@ -631,22 +676,11 @@ Success output:
 ```
 INFO staging pre-built kernel path=~/.nimbus/kernels/vmlinux-3.31.0
 INFO creating Apple Virt VM index=0 total=3
-INFO creating Apple Virt VM index=1 total=3
-INFO creating Apple Virt VM index=2 total=3
-INFO AppleVirtPool::new OK elapsed_ms=563
-INFO pool created pool_size=3
-INFO pool.acquire OK elapsed_ms=0
-INFO acquired warm VM state=VZVirtualMachineState(1)
-INFO VM is Running
-INFO AcquiredVm::release OK elapsed_ms=0
-INFO released VM back to pool
+...
 INFO PASS: Apple Virt FFI round-trip succeeded
 ```
 
-### apple-virt-exec (full VM workload)
-
-Boots a fresh VM, runs a command via vsock + nimbus-init, streams
-output back:
+#### apple-virt-exec (full VM workload)
 
 ```bash
 cd tools/apple-virt-exec && cargo build
@@ -673,7 +707,7 @@ INFO workload completed elapsed_ms=159 exit_code=0
 | `--kernel` | (required) | Path to vmlinux kernel |
 | `--kernel-image` | (mutually exclusive) | OCI reference for kernel image |
 | `--initramfs` | (required with `--kernel`) | Path to initramfs cpio.gz |
-| `--rootfs` | (required) | Host dir for VirtioFS share (guest sees `/mnt/host`) |
+| `--rootfs` | (required) | Host dir for VirtioFS share |
 | `--store` | same as `--rootfs` | Second VirtioFS share tag `nimbus-store` |
 | `--cpus` | 1 | vCPUs per VM |
 | `--mem-mib` | 512 | Memory per VM |
@@ -786,29 +820,24 @@ rm -rf target
 ## Known issues
 
 1. **Container backend unavailable on macOS** — runc, cgroups, and
-   Linux namespaces are not available. Use the standalone Apple Virt
-   tools for VMs.
+   Linux namespaces are not available. Use `--backend vm` for VMs.
 
-2. **AppleVirtExecutor in runtime is a stub** — the daemon's
-   `--backend=vm` path only works with Firecracker (Linux). The
-   Apple Virt integration into the runtime is Phase 5. Use
-   `apple-virt-exec` standalone for now.
-
-3. **Initramfs busybox applets are fixed** — applets are hardcoded in
+2. **Initramfs busybox applets are fixed** — applets are hardcoded in
    `build-initramfs/src/main.rs`. Add more or rebuild with a different
    busybox config if needed.
 
-4. **No store garbage collection** — the DAG store grows monotonically.
+3. **No store garbage collection** — the DAG store grows monotonically.
    Monitor disk usage or periodically `rm -rf /var/lib/nimbus` and
    re-pull.
 
-5. **Apple Virt without entitlement** — running unsigned will get:
+4. **Apple Virt without entitlement** — running unsigned will get:
    ```text
    ERROR AppleVirtPool::new failed: Invalid virtual machine configuration.
    The process doesn't have the "com.apple.security.virtualization" entitlement.
    ```
+   Fix: `make apple-sign-daemon`.
 
-6. **`--publish` flag in `nimbus-runtime run` CLI is parsed but
+5. **`--publish` flag in `nimbus-runtime run` CLI is parsed but
    unused** — the daemon's gRPC `RunWorkload` handles ports correctly;
    use `nimbusctl run -p` instead of `nimbus-runtime run --publish`.
 

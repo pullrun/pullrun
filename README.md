@@ -27,21 +27,23 @@ nimbusctl pull alpine:3.18
 # 2. Pull for a different architecture (resolves multi-arch image indexes):
 nimbusctl pull alpine:3.18 --platform linux/arm64
 
-# 3. Run it as a container (Linux) or VM (macOS):
+# 3. Run it as a container (Linux) or Apple Virt VM (macOS, no --kernel-image needed):
 nimbusctl run alpine:3.18 --backend container --cmd echo hello   # Linux only
-nimbusctl run alpine:3.18 --backend vm       --cmd echo hello    # Linux+KVM
+nimbusctl run alpine:3.18 --backend vm       --cmd echo hello    # Linux+KVM or macOS+AppleVirt
 
-# 4. Native DAG-aware build (--platform overrides FROM --platform):
+# 4. (macOS) Sign daemon once, then use --attach for single-step VM run:
+make apple-sign-daemon
+nimbusctl run alpine:3.18 --backend vm --cmd /bin/echo hello --attach
+
+# 5. Native DAG-aware build (--platform overrides FROM --platform):
 nimbusctl build -t myapp:latest --platform linux/arm64
 
-# 5. Secrets and configs (Docker --secret/--config equivalent):
+# 6. Secrets and configs (Docker --secret/--config equivalent):
 nimbusctl secret create db_password secret data
 nimbusctl run myapp:latest --secret db_password
 
-# 6. Enable peer-to-peer block sync for multi-node image distribution:
+# 7. Enable peer-to-peer block sync for multi-node image distribution:
 nimbus-runtime daemon --sync-addr 0.0.0.0:9500
-
-# 7. (macOS) Apple Virt VM standalone tools — see docs/NIMBUS_GUIDE.md
 ```
 
 The CLI uses `--direct` mode by default: it spawns the runtime as a
@@ -204,6 +206,7 @@ alert rules), and K8s deployment manifests are in `deploy/`.
 | Metric | Value |
 |---|---|
 | Firecracker VM boot (kernel + exit) | **4.9 s** |
+| Apple Virt VM boot (kernel + exit, macOS) | **~160 ms** |
 | `alpine:3.18` pull (first time) | **968 ms** — ~2x faster than Docker |
 | Container run latency | **~400 ms** |
 | gRPC ListWorkloads (warm) | **< 1 ms** |
