@@ -187,11 +187,8 @@ impl PolicyEngine {
             Err(e) => return Err(e.into()),
         };
 
-        // SAFETY: `sig_mmap` is a read-only mmap of a blob that was
-        // written by `rkyv::to_bytes`. The mmap is not mutated while
-        // this reference lives (store guarantees write-once). The data
-        // is self-validating via rkyv's built-in alignment checks.
-        let blob = unsafe { rkyv::archived_root::<SignatureBlob>(&sig_mmap[..]) };
+        let blob = rkyv::check_archived_root::<SignatureBlob>(&sig_mmap[..])
+            .map_err(|e| PolicyError::InvalidSignature(format!("corrupt signature blob: {e}")))?;
         let payload = blob.payload.as_str().as_bytes().to_vec();
         let signature = blob.signature.to_vec();
 

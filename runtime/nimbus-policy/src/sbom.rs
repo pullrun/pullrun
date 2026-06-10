@@ -83,12 +83,9 @@ pub fn encode_sbom(blob: &SbomBlob) -> Result<Vec<u8>, Box<dyn std::error::Error
 /// Decode an rkyv byte slice as an `SbomBlob`.
 pub fn decode_sbom(
     bytes: &[u8],
-) -> Result<&ArchivedSbomBlob, Box<dyn std::error::Error + Send + Sync>> {
-    // SAFETY: `bytes` must contain a valid, aligned archived `SbomBlob`
-    // produced by `rkyv::to_bytes`. The caller owns the backing data and
-    // must not mutate it while the reference is alive (the mmap store
-    // guarantees write-once semantics).
-    Ok(unsafe { rkyv::archived_root::<SbomBlob>(bytes) })
+) -> Result<&ArchivedSbomBlob, Box<dyn std::error::Error>> {
+    Ok(rkyv::check_archived_root::<SbomBlob>(bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?)
 }
 
 pub fn evaluate_sbom(

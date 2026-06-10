@@ -215,12 +215,8 @@ impl DagPusher {
                     let blob_mmap = self.store.get(&entry.digest).map_err(|e| {
                         OciError::Other(format!("read blob {}: {e}", entry.digest.as_hex()))
                     })?;
-                    // SAFETY: `blob_mmap` is a read-only mmap of a blob
-                    // written by the store's `put` path (rkyv-serialized).
-                    // The store guarantees no concurrent mutation.
-                    let blob_node = unsafe {
-                        rkyv::archived_root::<nimbus_store::DagNode>(&blob_mmap[..])
-                    };
+                    let blob_node = rkyv::check_archived_root::<nimbus_store::DagNode>(&blob_mmap[..])
+                        .map_err(|e| OciError::Other(format!("corrupt blob node {}: {e}", entry.digest.as_hex())))?;
                     let file_data = blob_node.inline_data.as_ref();
 
                     let mut header = tar::Header::new_gnu();
