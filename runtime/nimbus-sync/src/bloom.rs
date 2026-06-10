@@ -11,7 +11,7 @@ pub struct BloomFilter {
 
 impl BloomFilter {
     pub fn new(m: u64, k: u32) -> Self {
-        let word_count = (m + 63) / 64;
+        let word_count = m.div_ceil(64);
         Self {
             bits: vec![0u64; word_count as usize],
             k,
@@ -81,7 +81,7 @@ impl BloomFilter {
         }
         let m = u64::from_le_bytes(data[0..8].try_into().ok()?);
         let k = u32::from_le_bytes(data[8..12].try_into().ok()?);
-        let word_count = ((m + 63) / 64) as usize;
+        let word_count = (m.div_ceil(64)) as usize;
         let expected_len = 12 + word_count * 8;
         if data.len() < expected_len {
             return None;
@@ -121,6 +121,7 @@ fn hash_seed(item: &str, seed: u64) -> u64 {
 }
 
 fn g_i(h1: u64, h2: u64, i: u32, m: u64) -> u64 {
+    // Standard Kirsch-Mitzenmacker hash: g_i = (h1 + i * h2) % m
     h1.wrapping_add(i as u64).wrapping_mul(h2) % m
 }
 

@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use nimbus_oci::{OciAuth, OciImageConfig, OciManifest, OciPuller, PulledImage};
-use nimbus_store::MmapStore;
-use tonic::transport::Endpoint;
+use nimbus_store::{Digest, MmapStore};
 use tracing::{debug, info, warn};
 
 use crate::block_sync::BlockSyncClient;
@@ -78,11 +77,16 @@ impl SyncPuller {
             let blob_data = self
                 .fetch_blob_with_sync(bloom_cache, digest, &registry, &repository, token.as_deref())
                 .await?;
-            layer_blobs.push((digest.clone(), blob_data));
+            let d = Digest::from_hex(digest)
+                .map_err(|e| nimbus_oci::OciError::Other(format!("invalid layer digest: {e}")))?;
+            layer_blobs.push((d, blob_data));
         }
 
+        let cd = Digest::from_hex(&config_digest)
+            .map_err(|e| nimbus_oci::OciError::Other(format!("invalid config digest: {e}")))?;
+
         info!(image_ref, layers = layer_blobs.len(), "all layers synced");
-        Ok(PulledImage { manifest, config, config_digest, layer_blobs })
+        Ok(PulledImage { manifest, config, config_digest: cd, layer_blobs })
     }
 
     async fn resolve_image(
@@ -103,7 +107,9 @@ impl SyncPuller {
         repository: &str,
         token: Option<&str>,
     ) -> Result<Vec<u8>, nimbus_oci::OciError> {
-        let d = digest.to_string();
+        // Parse the hex portion (Digest::from_hex strips "sha256:" prefix).
+        let d = Digest::from_hex(digest)
+            .map_err(|e| nimbus_oci::OciError::Other(format!("invalid digest {digest}: {e}")))?;
 
         // 1. Check local store.
         if self.store.exists(&d) {
@@ -129,18 +135,24 @@ impl SyncPuller {
 
         // 3. Fall back to upstream registry.
         debug!(%digest, "blob not on any peer; falling back to registry");
-        let d2 = digest.to_string();
         let data = self.oci_puller.fetch_blob_by_digest(registry, repository, digest, token).await?;
-        let _ = self.store.put_blob_blocking(&d2, &data);
+        let _ = self.store.put_blob_blocking(&d, &data);
         Ok(data)
     }
 
     async fn try_fetch_from_peer(&self, sync_addr: &str, digest: &str) -> Option<Vec<u8>> {
+        const PEER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
         let endpoint = format!("http://{}", sync_addr);
-        let mut client = match BlockSyncClient::connect(endpoint).await {
-            Ok(c) => c,
-            Err(e) => {
+        let mut client = match tokio::time::timeout(PEER_TIMEOUT, BlockSyncClient::connect(endpoint)).await
+        {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
                 debug!(%sync_addr, error = %e, "failed to connect to peer");
+                return None;
+            }
+            Err(_) => {
+                debug!(%sync_addr, "peer connect timed out");
                 return None;
             }
         };
@@ -149,8 +161,8 @@ impl SyncPuller {
             digests: vec![digest.to_string()],
         });
 
-        match client.get_blobs(request).await {
-            Ok(response) => {
+        match tokio::time::timeout(PEER_TIMEOUT, client.get_blobs(request)).await {
+            Ok(Ok(response)) => {
                 let mut stream = response.into_inner();
                 let mut collected = Vec::new();
                 while let Some(chunk_result) = stream.next().await {
@@ -169,8 +181,12 @@ impl SyncPuller {
                 }
                 if !collected.is_empty() { Some(collected) } else { None }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 debug!(%digest, %sync_addr, error = %e, "peer get_blobs failed");
+                None
+            }
+            Err(_) => {
+                debug!(%digest, %sync_addr, "peer get_blobs timed out");
                 None
             }
         }

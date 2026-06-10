@@ -49,6 +49,14 @@ const (
 	Runtime_RemoveNetwork_FullMethodName    = "/nimbus.runtime.Runtime/RemoveNetwork"
 	Runtime_ListNetworks_FullMethodName     = "/nimbus.runtime.Runtime/ListNetworks"
 	Runtime_Prune_FullMethodName            = "/nimbus.runtime.Runtime/Prune"
+	Runtime_CreateSecret_FullMethodName     = "/nimbus.runtime.Runtime/CreateSecret"
+	Runtime_ListSecrets_FullMethodName      = "/nimbus.runtime.Runtime/ListSecrets"
+	Runtime_InspectSecret_FullMethodName    = "/nimbus.runtime.Runtime/InspectSecret"
+	Runtime_RemoveSecret_FullMethodName     = "/nimbus.runtime.Runtime/RemoveSecret"
+	Runtime_CreateConfig_FullMethodName     = "/nimbus.runtime.Runtime/CreateConfig"
+	Runtime_ListConfigs_FullMethodName      = "/nimbus.runtime.Runtime/ListConfigs"
+	Runtime_InspectConfig_FullMethodName    = "/nimbus.runtime.Runtime/InspectConfig"
+	Runtime_RemoveConfig_FullMethodName     = "/nimbus.runtime.Runtime/RemoveConfig"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -129,6 +137,16 @@ type RuntimeClient interface {
 	// Prune removes stopped workloads, stale bundles, and temporary
 	// materialized rootfs directories to reclaim disk space.
 	Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error)
+	// Secret CRUD.
+	CreateSecret(ctx context.Context, in *CreateSecretRequest, opts ...grpc.CallOption) (*CreateSecretResponse, error)
+	ListSecrets(ctx context.Context, in *ListSecretsRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error)
+	InspectSecret(ctx context.Context, in *InspectSecretRequest, opts ...grpc.CallOption) (*InspectSecretResponse, error)
+	RemoveSecret(ctx context.Context, in *RemoveSecretRequest, opts ...grpc.CallOption) (*RemoveSecretResponse, error)
+	// Config CRUD (identical shape to secrets, stored unencrypted).
+	CreateConfig(ctx context.Context, in *CreateConfigRequest, opts ...grpc.CallOption) (*CreateConfigResponse, error)
+	ListConfigs(ctx context.Context, in *ListConfigsRequest, opts ...grpc.CallOption) (*ListConfigsResponse, error)
+	InspectConfig(ctx context.Context, in *InspectConfigRequest, opts ...grpc.CallOption) (*InspectConfigResponse, error)
+	RemoveConfig(ctx context.Context, in *RemoveConfigRequest, opts ...grpc.CallOption) (*RemoveConfigResponse, error)
 }
 
 type runtimeClient struct {
@@ -481,6 +499,86 @@ func (c *runtimeClient) Prune(ctx context.Context, in *PruneRequest, opts ...grp
 	return out, nil
 }
 
+func (c *runtimeClient) CreateSecret(ctx context.Context, in *CreateSecretRequest, opts ...grpc.CallOption) (*CreateSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSecretResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListSecrets(ctx context.Context, in *ListSecretsRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSecretsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListSecrets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) InspectSecret(ctx context.Context, in *InspectSecretRequest, opts ...grpc.CallOption) (*InspectSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectSecretResponse)
+	err := c.cc.Invoke(ctx, Runtime_InspectSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveSecret(ctx context.Context, in *RemoveSecretRequest, opts ...grpc.CallOption) (*RemoveSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveSecretResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) CreateConfig(ctx context.Context, in *CreateConfigRequest, opts ...grpc.CallOption) (*CreateConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateConfigResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListConfigs(ctx context.Context, in *ListConfigsRequest, opts ...grpc.CallOption) (*ListConfigsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListConfigsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListConfigs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) InspectConfig(ctx context.Context, in *InspectConfigRequest, opts ...grpc.CallOption) (*InspectConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectConfigResponse)
+	err := c.cc.Invoke(ctx, Runtime_InspectConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveConfig(ctx context.Context, in *RemoveConfigRequest, opts ...grpc.CallOption) (*RemoveConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveConfigResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -559,6 +657,16 @@ type RuntimeServer interface {
 	// Prune removes stopped workloads, stale bundles, and temporary
 	// materialized rootfs directories to reclaim disk space.
 	Prune(context.Context, *PruneRequest) (*PruneResponse, error)
+	// Secret CRUD.
+	CreateSecret(context.Context, *CreateSecretRequest) (*CreateSecretResponse, error)
+	ListSecrets(context.Context, *ListSecretsRequest) (*ListSecretsResponse, error)
+	InspectSecret(context.Context, *InspectSecretRequest) (*InspectSecretResponse, error)
+	RemoveSecret(context.Context, *RemoveSecretRequest) (*RemoveSecretResponse, error)
+	// Config CRUD (identical shape to secrets, stored unencrypted).
+	CreateConfig(context.Context, *CreateConfigRequest) (*CreateConfigResponse, error)
+	ListConfigs(context.Context, *ListConfigsRequest) (*ListConfigsResponse, error)
+	InspectConfig(context.Context, *InspectConfigRequest) (*InspectConfigResponse, error)
+	RemoveConfig(context.Context, *RemoveConfigRequest) (*RemoveConfigResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -658,6 +766,30 @@ func (UnimplementedRuntimeServer) ListNetworks(context.Context, *ListNetworksReq
 }
 func (UnimplementedRuntimeServer) Prune(context.Context, *PruneRequest) (*PruneResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Prune not implemented")
+}
+func (UnimplementedRuntimeServer) CreateSecret(context.Context, *CreateSecretRequest) (*CreateSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSecret not implemented")
+}
+func (UnimplementedRuntimeServer) ListSecrets(context.Context, *ListSecretsRequest) (*ListSecretsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSecrets not implemented")
+}
+func (UnimplementedRuntimeServer) InspectSecret(context.Context, *InspectSecretRequest) (*InspectSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectSecret not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveSecret(context.Context, *RemoveSecretRequest) (*RemoveSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveSecret not implemented")
+}
+func (UnimplementedRuntimeServer) CreateConfig(context.Context, *CreateConfigRequest) (*CreateConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateConfig not implemented")
+}
+func (UnimplementedRuntimeServer) ListConfigs(context.Context, *ListConfigsRequest) (*ListConfigsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListConfigs not implemented")
+}
+func (UnimplementedRuntimeServer) InspectConfig(context.Context, *InspectConfigRequest) (*InspectConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectConfig not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveConfig(context.Context, *RemoveConfigRequest) (*RemoveConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveConfig not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -1170,6 +1302,150 @@ func _Runtime_Prune_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_CreateSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateSecret(ctx, req.(*CreateSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListSecrets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSecretsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListSecrets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListSecrets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListSecrets(ctx, req.(*ListSecretsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_InspectSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).InspectSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_InspectSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).InspectSecret(ctx, req.(*InspectSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveSecret(ctx, req.(*RemoveSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_CreateConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateConfig(ctx, req.(*CreateConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListConfigs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListConfigsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListConfigs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListConfigs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListConfigs(ctx, req.(*ListConfigsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_InspectConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).InspectConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_InspectConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).InspectConfig(ctx, req.(*InspectConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveConfig(ctx, req.(*RemoveConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1272,6 +1548,38 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Prune",
 			Handler:    _Runtime_Prune_Handler,
+		},
+		{
+			MethodName: "CreateSecret",
+			Handler:    _Runtime_CreateSecret_Handler,
+		},
+		{
+			MethodName: "ListSecrets",
+			Handler:    _Runtime_ListSecrets_Handler,
+		},
+		{
+			MethodName: "InspectSecret",
+			Handler:    _Runtime_InspectSecret_Handler,
+		},
+		{
+			MethodName: "RemoveSecret",
+			Handler:    _Runtime_RemoveSecret_Handler,
+		},
+		{
+			MethodName: "CreateConfig",
+			Handler:    _Runtime_CreateConfig_Handler,
+		},
+		{
+			MethodName: "ListConfigs",
+			Handler:    _Runtime_ListConfigs_Handler,
+		},
+		{
+			MethodName: "InspectConfig",
+			Handler:    _Runtime_InspectConfig_Handler,
+		},
+		{
+			MethodName: "RemoveConfig",
+			Handler:    _Runtime_RemoveConfig_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

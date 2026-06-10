@@ -50,7 +50,7 @@ func newFileStore(root string) *fileStore {
 	}
 	for _, d := range []string{"sandboxes", "containers"} {
 		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
-			log.Fatalf("failed to create %s store directory: %v", d, err)
+			log.Printf("failed to create %s store directory: %v", d, err)
 		}
 	}
 	s.loadAll()

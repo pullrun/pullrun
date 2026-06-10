@@ -233,9 +233,15 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 			}
 			switch b := msg.Body.(type) {
 			case *nimbusruntime.AttachMessage_Stdout:
-				stdoutCh <- b.Stdout.Data
+				select {
+				case stdoutCh <- b.Stdout.Data:
+				default:
+				}
 			case *nimbusruntime.AttachMessage_Stderr:
-				stderrCh <- b.Stderr.Data
+				select {
+				case stderrCh <- b.Stderr.Data:
+				default:
+				}
 			case *nimbusruntime.AttachMessage_Exit:
 				exitCh <- b.Exit
 				return
@@ -249,8 +255,16 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 	upgrader := spdy.NewResponseUpgrader()
 	var spdyWg sync.WaitGroup
 
-	_ = exitCh
-	_ = errCh
+	// Drain exit/error channels so the gRPC receiver goroutine
+	// never blocks indefinitely. Log any errors received.
+	go func() {
+		select {
+		case exit := <-exitCh:
+			log.Printf("workload %s exited: code=%d", session.workloadID, exit.ExitCode)
+		case err := <-errCh:
+			log.Printf("workload %s stream error: %v", session.workloadID, err)
+		}
+	}()
 
 	conn := upgrader.UpgradeResponse(w, r, func(stream httpstream.Stream, _ <-chan struct{}) error {
 		st := stream.Headers().Get("streamType")

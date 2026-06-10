@@ -105,7 +105,7 @@ func (c *criServer) RemoveImage(ctx context.Context, req *runtimeapi.RemoveImage
 
 	if err != nil {
 		log.Printf("RemoveImage image=%s (runtime error: %v)", req.Image.Image, err)
-		return &runtimeapi.RemoveImageResponse{}, nil
+		return nil, fmt.Errorf("remove %s: %w", req.Image.Image, err)
 	}
 
 	log.Printf("RemoveImage image=%s freed=%d bytes", req.Image.Image, resp.BytesFreed)
@@ -117,20 +117,31 @@ func (c *criServer) ImageFsInfo(ctx context.Context, req *runtimeapi.ImageFsInfo
 	resp, err := c.runtimeClient.DagStoreInfo(infoCtx, &nimbusruntime.DagStoreInfoRequest{})
 	cancel()
 
+	var mountpoint string
+	var usedBytes uint64
+	var totalNodes uint64
 	if err != nil {
 		log.Printf("ImageFsInfo (runtime error: %v)", err)
+		mountpoint = "/var/lib/nimbus/dag"
 	} else {
 		log.Printf("ImageFsInfo mount=%s total=%d used=%d nodes=%d",
 			resp.Mountpoint, resp.TotalBytes, resp.UsedBytes, resp.TotalNodes)
+		mountpoint = resp.Mountpoint
+		if resp.UsedBytes > 0 {
+			usedBytes = uint64(resp.UsedBytes)
+		}
+		if resp.TotalNodes > 0 {
+			totalNodes = uint64(resp.TotalNodes)
+		}
 	}
 
 	return &runtimeapi.ImageFsInfoResponse{
 		ImageFilesystems: []*runtimeapi.FilesystemUsage{
 			{
 				Timestamp:  time.Now().UnixNano(),
-				FsId:       &runtimeapi.FilesystemIdentifier{Mountpoint: "/var/lib/nimbus/dag"},
-				UsedBytes:  &runtimeapi.UInt64Value{Value: 0},
-				InodesUsed: &runtimeapi.UInt64Value{Value: 0},
+				FsId:       &runtimeapi.FilesystemIdentifier{Mountpoint: mountpoint},
+				UsedBytes:  &runtimeapi.UInt64Value{Value: usedBytes},
+				InodesUsed: &runtimeapi.UInt64Value{Value: totalNodes},
 			},
 		},
 	}, nil

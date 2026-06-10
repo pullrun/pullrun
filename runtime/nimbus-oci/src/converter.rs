@@ -7,11 +7,9 @@ use serde::{Deserialize, Serialize};
 use tar::Archive;
 use tracing::{debug, info};
 
-use nimbus_store::{DagNode, Digest, MmapStore, NodeKind};
+use nimbus_store::{DagNode, Digest, MmapStore, NodeKind, SMALL_FILE_THRESHOLD};
 
 use crate::puller::{OciError, PulledImage, PulledImageList};
-
-const SMALL_FILE_THRESHOLD: u64 = 4096;
 
 #[derive(Debug, Clone)]
 pub struct DirectoryEntry {
@@ -28,14 +26,14 @@ impl DirectoryEntry {
     fn to_inline_bytes(&self) -> Vec<u8> {
         let entry: SerializedEntry = SerializedEntry {
             name: self.name.clone(),
-            digest: self.digest.clone(),
+            digest: self.digest,
             mode: self.mode,
             size: self.size,
             is_dir: self.is_dir,
             is_symlink: self.is_symlink,
             symlink_target: self.symlink_target.clone(),
         };
-        let mut buf = serde_json::to_vec(&entry).unwrap_or_default();
+        let mut buf = serde_json::to_vec(&entry).expect("SerializedEntry must always serialize");
         buf.push(b'\n');
         buf
     }
@@ -65,7 +63,7 @@ impl DirectoryEntry {
 #[derive(Serialize, Deserialize)]
 struct SerializedEntry {
     name: String,
-    digest: String,
+    digest: Digest,
     mode: u32,
     size: u64,
     is_dir: bool,
@@ -75,7 +73,6 @@ struct SerializedEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestData {
-    pub config_json: String,
     pub entrypoint: Vec<String>,
     pub cmd: Vec<String>,
     pub env: Vec<String>,
@@ -135,7 +132,7 @@ impl OciToDagConverter {
 
     async fn convert_layer(
         &self,
-        layer_digest: &str,
+        layer_digest: &Digest,
         blob: &[u8],
     ) -> Result<Digest, OciError> {
         debug!(%layer_digest, size = blob.len(), "converting layer to DAG");
@@ -178,7 +175,7 @@ impl OciToDagConverter {
                         .await?;
                     child_digests.push(subtree_digest);
                 } else {
-                    child_digests.push(entry.digest.clone());
+                    child_digests.push(entry.digest);
                 }
                 child_entries.push(entry.clone());
             }
@@ -209,10 +206,8 @@ impl OciToDagConverter {
         config: &crate::puller::OciImageConfig,
         layer_digests: &[Digest],
     ) -> Result<Digest, OciError> {
-        let config_json = serde_json::to_string(config)
+        let _config_json = serde_json::to_string(config)
             .map_err(|e| OciError::InvalidManifest(format!("config serialize: {e}")))?;
-
-        let config_bytes = config_json.as_bytes().to_vec();
 
         let entrypoint: Vec<String> = config
             .config
@@ -233,7 +228,6 @@ impl OciToDagConverter {
             .unwrap_or_default();
 
         let manifest_data = ManifestData {
-            config_json: String::from_utf8_lossy(&config_bytes).to_string(),
             entrypoint,
             cmd,
             env,
@@ -271,7 +265,7 @@ fn extract_tar_entries_sync(
         symlink_target: Option<String>,
         is_hardlink: bool,
         hardlink_target: Option<String>,
-        blob_digest: String,
+        blob_digest: Digest,
     }
 
     let decoder = GzDecoder::new(blob);
@@ -279,7 +273,7 @@ fn extract_tar_entries_sync(
     let mut dir_index: HashMap<String, Vec<usize>> = HashMap::new();
     let mut raw_entries: Vec<RawEntry> = Vec::new();
     // Map from path to digest for regular files (used to resolve hardlinks).
-    let mut path_to_digest: HashMap<String, String> = HashMap::new();
+    let mut path_to_digest: HashMap<String, Digest> = HashMap::new();
 
     // First pass: collect all entries.
     for entry_result in archive.entries()? {
@@ -325,7 +319,7 @@ fn extract_tar_entries_sync(
             MmapStore::compute_digest(blob_d.as_bytes())
         } else if is_hardlink {
             // Hardlinks have no data; resolve digest from target in second pass.
-            String::new()
+            Digest([0u8; 32])
         } else {
             let mut file_data = Vec::new();
             entry.read_to_end(&mut file_data)?;
@@ -337,7 +331,7 @@ fn extract_tar_entries_sync(
                 store.put_blob_blocking(&blob_digest, &file_data)?;
             }
 
-            path_to_digest.insert(path_str.clone(), blob_digest.clone());
+            path_to_digest.insert(path_str.clone(), blob_digest);
             blob_digest
         };
 
@@ -360,16 +354,13 @@ fn extract_tar_entries_sync(
     // Deferred hardlinks whose target hasn't been seen yet.
     let mut deferred: Vec<usize> = Vec::new();
 
-    for idx in 0..raw_entries.len() {
-        if !raw_entries[idx].is_hardlink {
-            continue;
-        }
-        let target = raw_entries[idx].hardlink_target.clone();
+    for (idx, raw_entry) in raw_entries.iter_mut().enumerate().filter(|(_, e)| e.is_hardlink) {
+        let target = raw_entry.hardlink_target.clone();
         if let Some(ref target_path) = target {
             if let Some(target_digest) = path_to_digest.get(target_path) {
-                let d = target_digest.clone();
-                path_to_digest.insert(raw_entries[idx].path.clone(), d.clone());
-                raw_entries[idx].blob_digest = d;
+                let d = *target_digest;
+                path_to_digest.insert(raw_entry.path.clone(), d);
+                raw_entry.blob_digest = d;
             } else {
                 deferred.push(idx);
             }
@@ -377,18 +368,18 @@ fn extract_tar_entries_sync(
     }
 
     // Third pass: resolve deferred hardlinks (target may have been added in pass 2).
-    let mut retry = true;
-    while retry && !deferred.is_empty() {
-        retry = false;
+    let max_retries = deferred.len();
+    let mut retries = 0;
+    while retries < max_retries && !deferred.is_empty() {
+        retries += 1;
         let mut still_deferred: Vec<usize> = Vec::new();
         for idx in deferred.drain(..) {
             let target = raw_entries[idx].hardlink_target.clone();
             if let Some(ref target_path) = target {
                 if let Some(target_digest) = path_to_digest.get(target_path) {
-                    raw_entries[idx].blob_digest = target_digest.clone();
+                    raw_entries[idx].blob_digest = *target_digest;
                 } else {
                     still_deferred.push(idx);
-                    retry = true;
                 }
             }
         }
@@ -397,12 +388,12 @@ fn extract_tar_entries_sync(
 
     // Build final entries.
     for raw in &raw_entries {
-        let blob_digest = if raw.blob_digest.is_empty() {
+        let blob_digest = if raw.blob_digest == Digest([0u8; 32]) {
             // Unresolved hardlink: create empty blob as fallback.
             let empty = DagNode::blob(Vec::new());
             store.put_blocking(&empty)?
         } else {
-            raw.blob_digest.clone()
+            raw.blob_digest
         };
 
         let idx = entries.len();

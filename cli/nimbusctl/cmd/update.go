@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -49,8 +48,7 @@ Examples:
 			if resp.Success {
 				fmt.Println("Resources updated.")
 			} else {
-				fmt.Fprintln(os.Stderr, "Update failed or no changes applied.")
-				os.Exit(1)
+				return fmt.Errorf("update failed or no changes applied")
 			}
 			return nil
 		},

@@ -4,7 +4,7 @@ use std::io::Write;
 use serde::Serialize;
 use tracing::debug;
 
-use nimbus_store::MmapStore;
+use nimbus_store::{Digest, MmapStore};
 
 use crate::puller::OciError;
 
@@ -51,7 +51,7 @@ pub fn export_dag_to_tar<W: Write>(
     // Write each node (read via the cache API).
     for digest in &node_digests {
         let mmap = store.get(digest).map_err(|e| {
-            OciError::Other(format!("read node {digest}: {e}"))
+            OciError::Other(format!("read node {}: {e}", digest.as_hex()))
         })?;
         let data: &[u8] = &mmap[..];
         let mut header = tar::Header::new_gnu();
@@ -59,7 +59,7 @@ pub fn export_dag_to_tar<W: Write>(
         header.set_entry_type(tar::EntryType::Regular);
         header.set_mode(0o644);
         header.set_mtime(0);
-        let tar_path = format!("nimbus-nodes/{digest}");
+        let tar_path = format!("nimbus-nodes/{}", digest.as_hex());
         tar.append_data(&mut header, &tar_path, data)?;
         debug!(%digest, size = data.len(), "exported node");
     }
@@ -67,7 +67,7 @@ pub fn export_dag_to_tar<W: Write>(
     // Write each blob (read via the store API).
     for digest in &blob_digests {
         let mmap = store.get_blob(digest).map_err(|e| {
-            OciError::Other(format!("read blob {digest}: {e}"))
+            OciError::Other(format!("read blob {}: {e}", digest.as_hex()))
         })?;
         let data: &[u8] = &mmap[..];
         let mut header = tar::Header::new_gnu();
@@ -75,7 +75,7 @@ pub fn export_dag_to_tar<W: Write>(
         header.set_entry_type(tar::EntryType::Regular);
         header.set_mode(0o644);
         header.set_mtime(0);
-        let tar_path = format!("nimbus-blobs/{digest}");
+        let tar_path = format!("nimbus-blobs/{}", digest.as_hex());
         tar.append_data(&mut header, &tar_path, data)?;
         debug!(%digest, size = data.len(), "exported blob");
     }
@@ -86,18 +86,17 @@ pub fn export_dag_to_tar<W: Write>(
 
 /// BFS walk from `root_digest`, collecting all node digests and
 /// which ones have separate blob files on disk.
-fn walk_dag_collect(store: &MmapStore, root_digest: &str) -> (Vec<String>, Vec<String>) {
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue: VecDeque<String> = VecDeque::new();
-    let mut node_digests: Vec<String> = Vec::new();
-    let mut blob_digests: Vec<String> = Vec::new();
+fn walk_dag_collect(store: &MmapStore, root_digest: &str) -> (Vec<Digest>, Vec<Digest>) {
+    let root = Digest::from_hex(root_digest).unwrap_or(Digest([0u8; 32]));
+    let mut visited: HashSet<Digest> = HashSet::new();
+    let mut queue: VecDeque<Digest> = VecDeque::new();
+    let mut node_digests: Vec<Digest> = Vec::new();
+    let mut blob_digests: Vec<Digest> = Vec::new();
 
-    if !root_digest.is_empty() {
-        queue.push_back(root_digest.to_string());
-    }
+    queue.push_back(root);
 
     while let Some(digest) = queue.pop_front() {
-        if !visited.insert(digest.clone()) {
+        if !visited.insert(digest) {
             continue;
         }
 
@@ -106,20 +105,17 @@ fn walk_dag_collect(store: &MmapStore, root_digest: &str) -> (Vec<String>, Vec<S
             continue;
         }
 
-        node_digests.push(digest.clone());
+        node_digests.push(digest);
 
         // Check if this node has a separate blob file.
         if store.blob_path(&digest).exists() {
-            blob_digests.push(digest.clone());
+            blob_digests.push(digest);
         }
 
         // Enqueue edges.
         if let Ok(archived) = store.get_archived(&digest) {
             for edge in archived.edges.iter() {
-                let edge_str: String = edge.as_str().to_string();
-                if !edge_str.is_empty() {
-                    queue.push_back(edge_str);
-                }
+                queue.push_back(Digest(*edge));
             }
         }
     }

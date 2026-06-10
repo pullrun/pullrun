@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -6,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use dashmap::DashMap;
 use memmap2::Mmap;
 use rkyv::Deserialize;
-use sha2::{Digest as Sha256Digest, Sha256};
 use tracing::{debug, trace};
 
 use crate::{node::ArchivedDagNode, DagNode, Digest};
@@ -32,10 +32,49 @@ const DEFAULT_MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024; // 512 MB
 pub struct MmapStore {
     root: PathBuf,
     cache: DashMap<Digest, Arc<Mmap>>,
+    blob_cache: DashMap<Digest, Arc<Mmap>>,
     max_cache_bytes: Option<u64>,
     lru: Arc<Mutex<VecDeque<Digest>>>,
+    blob_lru: Arc<Mutex<VecDeque<Digest>>>,
     total_bytes: Arc<AtomicU64>,
 }
+
+/// A guard that keeps the underlying `Mmap` alive and provides
+/// `Deref` access to the archived DAG node. Prevents use-after-free
+/// if the LRU cache evicts the entry while a reference is held.
+pub struct ArchivedNodeGuard {
+    _mmap: Arc<Mmap>,
+    archived: *const ArchivedDagNode,
+}
+
+impl ArchivedNodeGuard {
+    fn new(digest: &Digest, mmap: Arc<Mmap>) -> Result<Self, StoreError> {
+        let ptr: *const ArchivedDagNode =
+            rkyv::check_archived_root::<DagNode>(&mmap[..])
+                .map_err(|e| StoreError::Corrupted(*digest, e.to_string()))?;
+        Ok(Self {
+            _mmap: mmap,
+            archived: ptr,
+        })
+    }
+}
+
+impl Deref for ArchivedNodeGuard {
+    type Target = ArchivedDagNode;
+    fn deref(&self) -> &ArchivedDagNode {
+        // SAFETY: `self.archived` points into the mmap owned by
+        // `self._mmap` (the `Arc<Mmap>` field ensures the backing
+        // memory stays alive). The pointer is valid, aligned, and
+        // was produced by `rkyv::archived_root`.
+        unsafe { &*self.archived }
+    }
+}
+
+// SAFETY: ArchivedNodeGuard owns an Arc<Mmap> which is Send+Sync,
+// and the raw pointer points into that mmap, so sending the guard
+// across threads is safe.
+unsafe impl Send for ArchivedNodeGuard {}
+unsafe impl Sync for ArchivedNodeGuard {}
 
 impl MmapStore {
     pub fn new(root: PathBuf) -> Self {
@@ -43,8 +82,10 @@ impl MmapStore {
         Self {
             root,
             cache: DashMap::new(),
+            blob_cache: DashMap::new(),
             max_cache_bytes: Some(DEFAULT_MAX_CACHE_BYTES),
             lru: Arc::new(Mutex::new(VecDeque::new())),
+            blob_lru: Arc::new(Mutex::new(VecDeque::new())),
             total_bytes: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -56,8 +97,10 @@ impl MmapStore {
         Self {
             root,
             cache: DashMap::new(),
+            blob_cache: DashMap::new(),
             max_cache_bytes: None,
             lru: Arc::new(Mutex::new(VecDeque::new())),
+            blob_lru: Arc::new(Mutex::new(VecDeque::new())),
             total_bytes: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -83,19 +126,21 @@ impl MmapStore {
     }
 
     fn path_for(&self, digest: &Digest) -> PathBuf {
-        let (a, b, rest) = (&digest[0..2], &digest[2..4], &digest[4..]);
+        let hex = digest.as_hex();
+        assert!(hex.len() >= 4 && hex.is_char_boundary(4), "digest too short or at char boundary");
+        let (a, b, rest) = (&hex[0..2], &hex[2..4], &hex[4..]);
         self.root.join(a).join(b).join(rest).join("node.rkyv")
     }
 
     fn path_for_blob(&self, digest: &Digest) -> PathBuf {
-        let (a, b, rest) = (&digest[0..2], &digest[2..4], &digest[4..]);
+        let hex = digest.as_hex();
+        assert!(hex.len() >= 4 && hex.is_char_boundary(4), "digest too short or at char boundary");
+        let (a, b, rest) = (&hex[0..2], &hex[2..4], &hex[4..]);
         self.root.join(a).join(b).join(rest).join("blob.raw")
     }
 
     pub fn compute_digest(data: &[u8]) -> Digest {
-        let mut hasher = Sha256::new();
-        sha2::digest::Digest::update(&mut hasher, data);
-        hex::encode(sha2::digest::Digest::finalize(hasher))
+        Digest::compute(data)
     }
 
     pub async fn put(&self, node: &DagNode) -> Result<Digest, StoreError> {
@@ -142,34 +187,44 @@ impl MmapStore {
     }
 
     pub fn get(&self, digest: &Digest) -> Result<Arc<Mmap>, StoreError> {
-        let entry = self
-            .cache
-            .entry(digest.clone())
-            .or_try_insert_with(|| -> Result<Arc<Mmap>, StoreError> {
-                let path = self.path_for(digest);
-                if !path.exists() {
-                    return Err(StoreError::NotFound(digest.clone()));
-                }
-                let file = std::fs::File::open(&path)?;
-                let mmap = unsafe { Mmap::map(&file)? };
-                // Track cache bytes for the LRU evictor.
-                self.total_bytes.fetch_add(mmap.len() as u64, Ordering::Relaxed);
-                Ok(Arc::new(mmap))
-            })?;
-
-        let result = entry.value().clone();
-
-        // Mark this digest as recently used and trigger eviction
-        // if the cache exceeds the configured limit.
-        let mut lru = self.lru.lock().unwrap();
-        // Move to back (most recently used).
-        if let Some(pos) = lru.iter().position(|d| d == digest) {
-            lru.remove(pos);
+        // Fast path: check if the entry is already cached.
+        if let Some(entry) = self.cache.get(digest) {
+            let result = entry.value().clone();
+            drop(entry);
+            // Mark as recently used and trigger eviction.
+            let mut lru = self.lru.lock().unwrap();
+            if let Some(pos) = lru.iter().position(|d| d == digest) {
+                lru.remove(pos);
+            }
+            lru.push_back(*digest);
+            self.evict_lru_locked(&mut lru);
+            return Ok(result);
         }
-        lru.push_back(digest.clone());
-        self.evict_lru_locked(&mut lru);
 
-        Ok(result)
+        // Slow path: load from disk, insert, then evict.
+        let path = self.path_for(digest);
+        if !path.exists() {
+            return Err(StoreError::NotFound(*digest));
+        }
+        let file = std::fs::File::open(&path)?;
+        // SAFETY: `file` is opened read-only and is not modified while
+        // the mapping exists. `memmap2::Mmap::map` requires the caller
+        // to ensure the underlying file doesn't change — the store's
+        // write path only appends new blobs, never modifies existing ones.
+        let mmap = unsafe { Mmap::map(&file)? };
+        let len = mmap.len() as u64;
+
+        // Evict before inserting so the new entry can't be evicted
+        // in the same round.
+        let mut lru = self.lru.lock().unwrap();
+        self.evict_lru_locked(&mut lru);
+        lru.push_back(*digest);
+        drop(lru);
+
+        self.total_bytes.fetch_add(len, Ordering::Relaxed);
+        let mmap = Arc::new(mmap);
+        self.cache.insert(*digest, mmap.clone());
+        Ok(mmap)
     }
 
     /// Evict the least-recently-used entries from the cache until
@@ -182,7 +237,7 @@ impl MmapStore {
         };
         while self.total_bytes.load(Ordering::Relaxed) > max {
             let oldest = match lru.front() {
-                Some(d) => d.clone(),
+                Some(d) => *d,
                 None => break,
             };
             if let Some((_, evicted)) = self.cache.remove(&oldest) {
@@ -193,27 +248,19 @@ impl MmapStore {
         }
     }
 
-    pub fn get_archived(&self, digest: &Digest) -> Result<&ArchivedDagNode, StoreError> {
+    pub fn get_archived(&self, digest: &Digest) -> Result<ArchivedNodeGuard, StoreError> {
         let mmap = self.get(digest)?;
-        // SAFETY: rkyv::check_archived_root returns a reference tied to the input slice.
-        // The Arc<Mmap> is stored in the cache and only freed when the entry is evicted.
-        // We return a reference tied to `&self` (which holds the DashMap).
-        let bytes: &[u8] = &mmap[..];
-        let archived = rkyv::check_archived_root::<DagNode>(bytes)
-            .map_err(|e| StoreError::Corrupted(digest.clone(), e.to_string()))?;
-        // SAFETY: The archived reference is valid as long as the Arc<Mmap> lives in the cache.
-        // We extend the lifetime to 'self since the cache outlives any single call.
-        Ok(unsafe { std::mem::transmute::<&ArchivedDagNode, &ArchivedDagNode>(archived) })
+        ArchivedNodeGuard::new(digest, mmap)
     }
 
     pub fn get_deserialized(&self, digest: &Digest) -> Result<DagNode, StoreError> {
         let mmap = self.get(digest)?;
         let bytes: &[u8] = &mmap[..];
         let archived = rkyv::check_archived_root::<DagNode>(bytes)
-            .map_err(|e| StoreError::Corrupted(digest.clone(), e.to_string()))?;
+            .map_err(|e| StoreError::Corrupted(*digest, e.to_string()))?;
         let node: DagNode = archived
             .deserialize(&mut rkyv::Infallible)
-            .map_err(|e| StoreError::Corrupted(digest.clone(), e.to_string()))?;
+            .map_err(|e| StoreError::Corrupted(*digest, e.to_string()))?;
         Ok(node)
     }
 
@@ -250,15 +297,60 @@ impl MmapStore {
     }
 
     pub fn get_blob(&self, digest: &Digest) -> Result<Arc<Mmap>, StoreError> {
-        let path = self.path_for_blob(digest);
-
-        if !path.exists() {
-            return Err(StoreError::NotFound(digest.clone()));
+        // Fast path: check blob cache.
+        if let Some(entry) = self.blob_cache.get(digest) {
+            let result = entry.value().clone();
+            drop(entry);
+            let mut lru = self.blob_lru.lock().unwrap();
+            if let Some(pos) = lru.iter().position(|d| d == digest) {
+                lru.remove(pos);
+            }
+            lru.push_back(*digest);
+            self.evict_blob_lru_locked(&mut lru);
+            return Ok(result);
         }
 
+        // Slow path: load from disk.
+        let path = self.path_for_blob(digest);
+        if !path.exists() {
+            return Err(StoreError::NotFound(*digest));
+        }
         let file = std::fs::File::open(&path)?;
+        // SAFETY: Same invariants as `get_deserialized` — blob files
+        // are write-once, read-many, so the mapping will not be mutated.
         let mmap = unsafe { Mmap::map(&file)? };
-        Ok(Arc::new(mmap))
+        let len = mmap.len() as u64;
+
+        // Evict before inserting so the new entry survives this round.
+        let mut lru = self.blob_lru.lock().unwrap();
+        self.evict_blob_lru_locked(&mut lru);
+        lru.push_back(*digest);
+        drop(lru);
+
+        self.total_bytes.fetch_add(len, Ordering::Relaxed);
+        let mmap = Arc::new(mmap);
+        self.blob_cache.insert(*digest, mmap.clone());
+        Ok(mmap)
+    }
+
+    /// Evict the least-recently-used blob cache entries until total
+    /// bytes are within `max_cache_bytes`. Must hold the blob LRU lock.
+    fn evict_blob_lru_locked(&self, lru: &mut VecDeque<Digest>) {
+        let max = match self.max_cache_bytes {
+            Some(m) if m > 0 => m,
+            _ => return,
+        };
+        while self.total_bytes.load(Ordering::Relaxed) > max {
+            let oldest = match lru.front() {
+                Some(d) => *d,
+                None => break,
+            };
+            if let Some((_, evicted)) = self.blob_cache.remove(&oldest) {
+                self.total_bytes
+                    .fetch_sub(evicted.len() as u64, Ordering::Relaxed);
+            }
+            lru.pop_front();
+        }
     }
 
     pub fn blob_path(&self, digest: &Digest) -> PathBuf {
@@ -270,7 +362,7 @@ impl MmapStore {
         self.path_for(digest)
     }
 
-    pub fn node_count(&self) -> usize {
+    pub fn cached_node_count(&self) -> usize {
         self.cache.len()
     }
 
@@ -298,6 +390,10 @@ impl MmapStore {
 mod tests {
     use super::*;
     use crate::node::NodeKind;
+
+    fn d(hex: &str) -> Digest {
+        Digest::from_hex(hex).unwrap()
+    }
 
     #[tokio::test]
     async fn test_put_get_roundtrip() {
@@ -335,7 +431,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = MmapStore::new(dir.path().to_path_buf());
 
-        let result = store.get(&"deadbeef".repeat(8));
+        let result = store.get(&d(&"deadbeef".repeat(8)));
         assert!(matches!(result, Err(StoreError::NotFound(_))));
     }
 
@@ -344,10 +440,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = MmapStore::new(dir.path().to_path_buf());
 
+        let a = d(&"aa".repeat(32));
+        let b = d(&"bb".repeat(32));
+        let c = d(&"cc".repeat(32));
+
         let blob = DagNode::new(NodeKind::Blob, vec![], b"data".to_vec());
-        let tree = DagNode::new(NodeKind::Tree, vec!["abc123".into()], b"tree".to_vec());
-        let layer = DagNode::new(NodeKind::Layer, vec!["def456".into()], b"layer".to_vec());
-        let manifest = DagNode::new(NodeKind::Manifest, vec!["ghi789".into()], b"manifest".to_vec());
+        let tree = DagNode::new(NodeKind::Tree, vec![a], b"tree".to_vec());
+        let layer = DagNode::new(NodeKind::Layer, vec![b], b"layer".to_vec());
+        let manifest = DagNode::new(NodeKind::Manifest, vec![c], b"manifest".to_vec());
 
         let b = store.put(&blob).await.unwrap();
         let t = store.put(&tree).await.unwrap();
@@ -369,37 +469,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_total_bytes_and_node_count() {
-        // Empty store: zero on both axes.
         let dir = tempfile::tempdir().unwrap();
         let store = MmapStore::new(dir.path().to_path_buf());
-        assert_eq!(store.node_count(), 0);
+        assert_eq!(store.cached_node_count(), 0);
         assert_eq!(store.total_bytes(), 0);
 
-        // `put()` writes to disk but does NOT populate the in-process
-        // mmap cache. `get()` and `get_blob()` are the operations that
-        // load the data into the cache. Mirror the real workload
-        // pattern: put then get.
         let d1 = store.put(&DagNode::blob(b"alpha".to_vec())).await.unwrap();
         let d2 = store.put(&DagNode::blob(b"bravo!".to_vec())).await.unwrap();
         let d3 = store.put(&DagNode::blob(b"".to_vec())).await.unwrap();
         let _ = store.get(&d1).unwrap();
         let _ = store.get(&d2).unwrap();
         let _ = store.get(&d3).unwrap();
-        assert_eq!(store.node_count(), 3);
+        assert_eq!(store.cached_node_count(), 3);
         let bytes_after = store.total_bytes();
-        // memmap2 returns the file size (not page-aligned) for small
-        // files. rkyv overhead is 8 bytes per node for the small
-        // blobs we wrote, so the sum is small but strictly positive.
         assert!(bytes_after > 0, "got {bytes_after}");
         assert!(bytes_after < 1024 * 1024, "store grew unexpectedly large: {bytes_after}");
 
-        // A duplicate get() (after a put() of identical content) must
-        // not double-count: dedup happens at put() so the second get()
-        // is a cache hit.
         let d1b = store.put(&DagNode::blob(b"alpha".to_vec())).await.unwrap();
         assert_eq!(d1, d1b, "identical content must hash to the same digest");
         let _ = store.get(&d1b).unwrap();
-        assert_eq!(store.node_count(), 3);
+        assert_eq!(store.cached_node_count(), 3);
         assert_eq!(store.total_bytes(), bytes_after);
     }
 
@@ -411,15 +500,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(MmapStore::new(dir.path().to_path_buf()));
 
+        let d1 = d(&"aa".repeat(32));
+        let d2 = d(&"bb".repeat(32));
+
         let node = DagNode::manifest(
-            vec!["abc123".into(), "def456".into()],
+            vec![d1, d2],
             b"image config for concurrent test".to_vec(),
         );
         let digest = store.put(&node).await.unwrap();
 
-        // 100 OS threads, zero copies, no locks.
-        // Validates: rkyv + memmap2 + DashMap = lock-free concurrent access
-        // to immutable archives across threads.
         let mut handles = vec![];
         for _ in 0..100 {
             let store = store.clone();
@@ -440,9 +529,6 @@ mod tests {
 
     #[test]
     fn concurrent_mmap_reads_100_threads() {
-        // The architectural test: 100 std threads, each doing a zero-copy
-        // mmap + rkyv::archived_root dereference, all in parallel.
-        // No locks. No allocations. Pure shared page cache.
         use std::sync::Arc;
         use std::thread;
 
@@ -450,7 +536,7 @@ mod tests {
         let store = Arc::new(MmapStore::new(dir.path().to_path_buf()));
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let node = DagNode::manifest(vec!["abc123".into()], b"manifest bytes".to_vec());
+        let node = DagNode::manifest(vec![d(&"aa".repeat(32))], b"manifest bytes".to_vec());
         let digest = rt.block_on(store.put(&node)).unwrap();
 
         let mut handles = vec![];
@@ -494,29 +580,29 @@ mod tests {
         let blob_data = DagNode::blob(b"file content".to_vec());
         let blob_digest = store.put(&blob_data).await.unwrap();
 
-        let tree = DagNode::tree(vec![blob_digest.clone()], b"dir listing".to_vec());
+        let tree = DagNode::tree(vec![blob_digest], b"dir listing".to_vec());
         let tree_digest = store.put(&tree).await.unwrap();
 
-        let layer = DagNode::layer(vec![tree_digest.clone()], b"layer delta".to_vec());
+        let layer = DagNode::layer(vec![tree_digest], b"layer delta".to_vec());
         let layer_digest = store.put(&layer).await.unwrap();
 
-        let manifest = DagNode::manifest(vec![layer_digest.clone()], b"image config".to_vec());
+        let manifest = DagNode::manifest(vec![layer_digest], b"image config".to_vec());
         let manifest_digest = store.put(&manifest).await.unwrap();
 
         let root_mmap = store.get(&manifest_digest).unwrap();
         let root = unsafe { rkyv::archived_root::<DagNode>(&root_mmap[..]) };
         assert!(root.is_manifest());
 
-        let edges: Vec<String> = root.edges.iter().map(|e| e.as_str().to_string()).collect();
+        let edges: Vec<Digest> = root.edges.iter().map(|e| Digest(*e)).collect();
         assert_eq!(edges.len(), 1);
 
         let layer_mmap = store.get(&edges[0]).unwrap();
         let layer_node = unsafe { rkyv::archived_root::<DagNode>(&layer_mmap[..]) };
-        let layer_edges: Vec<String> = layer_node.edges.iter().map(|e| e.as_str().to_string()).collect();
+        let layer_edges: Vec<Digest> = layer_node.edges.iter().map(|e| Digest(*e)).collect();
 
         let tree_mmap = store.get(&layer_edges[0]).unwrap();
         let tree_node = unsafe { rkyv::archived_root::<DagNode>(&tree_mmap[..]) };
-        let tree_edges: Vec<String> = tree_node.edges.iter().map(|e| e.as_str().to_string()).collect();
+        let tree_edges: Vec<Digest> = tree_node.edges.iter().map(|e| Digest(*e)).collect();
 
         let blob_mmap = store.get(&tree_edges[0]).unwrap();
         let blob_node = unsafe { rkyv::archived_root::<DagNode>(&blob_mmap[..]) };

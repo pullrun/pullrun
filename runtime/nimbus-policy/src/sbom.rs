@@ -15,7 +15,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tracing::debug;
 
-use nimbus_store::{MmapStore, StoreError};
+use nimbus_store::{Digest, MmapStore, StoreError};
 
 use crate::PolicyError;
 
@@ -66,11 +66,12 @@ impl SbomData {
     }
 }
 
-pub fn sbom_digest_for(manifest_digest: &str) -> String {
+pub fn sbom_digest_for(manifest_digest: &str) -> Digest {
     let mut h = Sha256::new();
     h.update(b"nimbus.sbom.v1\n");
     h.update(manifest_digest.as_bytes());
-    hex::encode(h.finalize())
+    let result: [u8; 32] = h.finalize().into();
+    Digest(result)
 }
 
 /// Encode an `SbomBlob` to rkyv bytes. Helper for producers/tests.
@@ -83,6 +84,10 @@ pub fn encode_sbom(blob: &SbomBlob) -> Result<Vec<u8>, Box<dyn std::error::Error
 pub fn decode_sbom(
     bytes: &[u8],
 ) -> Result<&ArchivedSbomBlob, Box<dyn std::error::Error + Send + Sync>> {
+    // SAFETY: `bytes` must contain a valid, aligned archived `SbomBlob`
+    // produced by `rkyv::to_bytes`. The caller owns the backing data and
+    // must not mutate it while the reference is alive (the mmap store
+    // guarantees write-once semantics).
     Ok(unsafe { rkyv::archived_root::<SbomBlob>(bytes) })
 }
 

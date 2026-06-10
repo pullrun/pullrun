@@ -29,8 +29,8 @@ impl<'a> OciMaterializer<'a> {
         &self,
         manifest_digest: &Digest,
     ) -> Result<ManifestData, OciError> {
-        let mmap = self.store.get(manifest_digest)?;
-        let manifest_node = unsafe { rkyv::archived_root::<nimbus_store::DagNode>(&mmap[..]) };
+        let manifest_node = self.store.get_archived(manifest_digest)
+            .map_err(|e| OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}")))?;
 
         if !manifest_node.is_manifest() {
             return Err(OciError::InvalidManifest(format!(
@@ -56,13 +56,13 @@ impl<'a> OciMaterializer<'a> {
 
         info!(%manifest_digest, rootfs = %rootfs_path.display(), "materializing bundle");
 
-        let mmap = self.store.get(manifest_digest)?;
-        let manifest_node = unsafe { rkyv::archived_root::<nimbus_store::DagNode>(&mmap[..]) };
+        let manifest_node = self.store.get_archived(manifest_digest)
+            .map_err(|e| OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}")))?;
 
-        let layer_digests: Vec<String> = manifest_node
+        let layer_digests: Vec<Digest> = manifest_node
             .edges
             .iter()
-            .map(|e| e.as_str().to_string())
+            .map(|e| Digest(*e))
             .collect();
 
         for (i, layer_digest) in layer_digests.iter().enumerate() {
@@ -98,13 +98,13 @@ impl<'a> OciMaterializer<'a> {
 
         info!(%manifest_digest, target = %target_dir.display(), "materializing DAG root into target dir");
 
-        let mmap = self.store.get(manifest_digest)?;
-        let manifest_node = unsafe { rkyv::archived_root::<nimbus_store::DagNode>(&mmap[..]) };
+        let manifest_node = self.store.get_archived(manifest_digest)
+            .map_err(|e| OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}")))?;
 
-        let layer_digests: Vec<String> = manifest_node
+        let layer_digests: Vec<Digest> = manifest_node
             .edges
             .iter()
-            .map(|e| e.as_str().to_string())
+            .map(|e| Digest(*e))
             .collect();
 
         for (i, layer_digest) in layer_digests.iter().enumerate() {
@@ -120,13 +120,13 @@ impl<'a> OciMaterializer<'a> {
         layer_digest: &Digest,
         rootfs_path: &Path,
     ) -> Result<(), OciError> {
-        let mmap = self.store.get(layer_digest)?;
-        let layer_node = unsafe { rkyv::archived_root::<nimbus_store::DagNode>(&mmap[..]) };
+        let layer_node = self.store.get_archived(layer_digest)
+            .map_err(|e| OciError::Other(format!("corrupt layer node {layer_digest}: {e}")))?;
 
         if layer_node.is_layer() {
             let layer_path = String::from_utf8_lossy(&layer_node.inline_data).to_string();
             for edge in layer_node.edges.iter() {
-                let child_digest = edge.as_str().to_string();
+                let child_digest = Digest(*edge);
                 self.materialize_tree(&child_digest, rootfs_path, &layer_path)?;
             }
         }
@@ -140,13 +140,13 @@ impl<'a> OciMaterializer<'a> {
         rootfs_path: &Path,
         base_path: &str,
     ) -> Result<(), OciError> {
-        let mmap = self.store.get(tree_digest)?;
-        let tree_node = unsafe { rkyv::archived_root::<nimbus_store::DagNode>(&mmap[..]) };
+        let tree_node = self.store.get_archived(tree_digest)
+            .map_err(|e| OciError::Other(format!("corrupt tree node {tree_digest}: {e}")))?;
 
         if tree_node.is_layer() {
             let layer_path = String::from_utf8_lossy(&tree_node.inline_data).to_string();
             for edge in tree_node.edges.iter() {
-                let child_digest = edge.as_str().to_string();
+                let child_digest = Digest(*edge);
                 self.materialize_tree(&child_digest, rootfs_path, &layer_path)?;
             }
             return Ok(());
@@ -184,10 +184,7 @@ impl<'a> OciMaterializer<'a> {
                     let blob_path = self.store.blob_path(&entry.digest);
                     if blob_path.exists() {
                         std::fs::copy(&blob_path, &full_path)?;
-                    } else if let Ok(blob_mmap) = self.store.get(&entry.digest) {
-                        let blob_node = unsafe {
-                            rkyv::archived_root::<nimbus_store::DagNode>(&blob_mmap[..])
-                        };
+                    } else if let Ok(blob_node) = self.store.get_archived(&entry.digest) {
                         std::fs::write(&full_path, &blob_node.inline_data[..])?;
                     }
 
@@ -205,7 +202,7 @@ impl<'a> OciMaterializer<'a> {
         }
 
         for edge in tree_node.edges.iter() {
-            let child_digest = edge.as_str().to_string();
+            let child_digest = Digest(*edge);
             if self.store.get(&child_digest).is_err() {
                 debug!(child = %child_digest, "skipping edge (symlink marker, not a stored node)");
                 continue;

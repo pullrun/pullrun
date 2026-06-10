@@ -3,7 +3,7 @@ use std::io::Read;
 use serde::Deserialize;
 use tracing::{debug, info};
 
-use nimbus_store::MmapStore;
+use nimbus_store::{Digest, MmapStore};
 
 use crate::puller::OciError;
 
@@ -54,17 +54,19 @@ pub fn import_dag_from_tar<R: Read>(
         let entry_data = buf;
 
         if let Some(digest_str) = path.strip_prefix("nimbus-nodes/") {
-            let digest = digest_str.to_string();
+            let digest = Digest::from_hex(digest_str)
+                .map_err(|e| OciError::Other(format!("invalid digest in archive: {e}")))?;
             let computed = MmapStore::compute_digest(&entry_data);
             if computed != digest {
                 return Err(OciError::Other(format!(
-                    "node digest mismatch: expected {digest}, got {computed}"
+                    "node digest mismatch: expected {digest_str}, got {}",
+                    computed.as_hex()
                 )));
             }
             // Validate the rkyv data, then write directly to disk.
             let _validated =
                 rkyv::check_archived_root::<nimbus_store::DagNode>(&entry_data).map_err(|e| {
-                    OciError::Other(format!("invalid node {digest}: {e}"))
+                    OciError::Other(format!("invalid node {digest_str}: {e}"))
                 })?;
 
             let already_exists = store.exists(&digest);
@@ -85,11 +87,16 @@ pub fn import_dag_from_tar<R: Read>(
                 "imported node"
             );
         } else if let Some(digest_str) = path.strip_prefix("nimbus-blobs/") {
-            let digest = digest_str.to_string();
-            // Digest in filename is the DAG node digest, NOT the
-            // content hash. We skip content-hash validation here and
-            // rely on the store's content-addressed put (which reads
-            // the existing blob file if present and deduplicates).
+            let digest = Digest::from_hex(digest_str)
+                .map_err(|e| OciError::Other(format!("invalid digest in archive: {e}")))?;
+            // Verify content matches the claimed digest.
+            let computed = MmapStore::compute_digest(&entry_data);
+            if computed != digest {
+                return Err(OciError::Other(format!(
+                    "blob digest mismatch: expected {digest_str}, got {}",
+                    computed.as_hex()
+                )));
+            }
             let already_exists = store.blob_path(&digest).exists();
             store.put_blob_blocking(&digest, &entry_data)?;
             if already_exists {

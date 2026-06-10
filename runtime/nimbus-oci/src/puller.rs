@@ -9,6 +9,8 @@ use tracing::{debug, info};
 
 use nimbus_store::Digest;
 
+type FetchResult<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Vec<u8>, Vec<OciDescriptor>), OciError>> + Send + 'a>>;
+
 #[derive(Debug, Error)]
 pub enum OciError {
     #[error("HTTP error: {0}")]
@@ -269,8 +271,14 @@ impl OciPuller {
             }
             let t: TokenResponse = resp.json().await?;
             Ok(t.token.or(t.access_token))
-        } else {
+        } else if resp.status().as_u16() == 404 {
+            // Registry has no auth endpoint — proceed without a token.
             Ok(None)
+        } else {
+            let status = resp.status();
+            Err(OciError::Other(format!(
+                "registry authentication failed for {registry}/{repository}: HTTP {status}"
+            )))
         }
     }
 
@@ -306,7 +314,8 @@ impl OciPuller {
             .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
             .await?;
 
-        let config_digest = manifest.config.digest.clone();
+        let config_digest = Digest::from_hex(&manifest.config.digest)
+            .map_err(|e| OciError::Other(format!("invalid config digest: {e}")))?;
         let _config_data = serde_json::to_vec(&config)?;
 
         let mut layer_blobs = Vec::new();
@@ -315,11 +324,13 @@ impl OciPuller {
                 .fetch_blob(&registry, &repository, &layer.digest, token.as_deref())
                 .await?;
             debug!(digest = %layer.digest, size = blob.len(), "layer downloaded");
-            layer_blobs.push((layer.digest.clone(), blob));
+            let layer_d = Digest::from_hex(&layer.digest)
+                .map_err(|e| OciError::Other(format!("invalid layer digest: {e}")))?;
+            layer_blobs.push((layer_d, blob));
         }
 
         info!(
-            config_digest,
+            %config_digest,
             layers = layer_blobs.len(),
             "image pulled successfully"
         );
@@ -368,14 +379,17 @@ impl OciPuller {
             let config = self
                 .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
                 .await?;
-            let config_digest = manifest.config.digest.clone();
+            let config_digest = Digest::from_hex(&manifest.config.digest)
+                .map_err(|e| OciError::Other(format!("invalid config digest: {e}")))?;
 
             let mut layer_blobs = Vec::new();
             for layer in &manifest.layers {
                 let blob = self
                     .fetch_blob(&registry, &repository, &layer.digest, token.as_deref())
                     .await?;
-                layer_blobs.push((layer.digest.clone(), blob));
+                let layer_d = Digest::from_hex(&layer.digest)
+                    .map_err(|e| OciError::Other(format!("invalid layer digest: {e}")))?;
+                layer_blobs.push((layer_d, blob));
             }
 
             images.push(PulledImage {
@@ -406,7 +420,7 @@ impl OciPuller {
         repository: &'a str,
         reference: &'a str,
         token: Option<&'a str>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Vec<u8>, Vec<OciDescriptor>), OciError>> + Send + 'a>>
+    ) -> FetchResult<'a>
     {
         Box::pin(async move {
             let url = manifest_url(self, registry, repository, reference);
@@ -472,17 +486,6 @@ impl OciPuller {
 
             Ok((bytes, list.manifests))
         })
-    }
-
-    fn fetch_manifest<'a>(
-        &'a self,
-        registry: &'a str,
-        repository: &'a str,
-        reference: &'a str,
-        token: Option<&'a str>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<OciManifest, OciError>> + Send + 'a>>
-    {
-        self.fetch_manifest_with_platform(registry, repository, reference, token, None)
     }
 
     fn fetch_manifest_with_platform<'a>(
@@ -705,7 +708,7 @@ impl OciPuller {
 }
 
 fn decode_body(encoding: &str, data: Vec<u8>) -> Result<Vec<u8>, OciError> {
-    if encoding.contains("gzip") {
+    if encoding.to_lowercase().contains("gzip") {
         let mut decoder = GzDecoder::new(&data[..]);
         let mut decoded = Vec::new();
         decoder.read_to_end(&mut decoded)?;
@@ -746,7 +749,7 @@ pub fn current_arch() -> &'static str {
 /// `(architecture, os)`. Defaults to `("amd64", "linux")` on parse failure.
 pub fn parse_platform(platform: &str) -> (&str, &str) {
     let mut parts = platform.splitn(2, '/');
-    let os = parts.next().unwrap_or("linux");
     let arch = parts.next().unwrap_or("amd64");
+    let os = parts.next().unwrap_or("linux");
     (arch, os)
 }

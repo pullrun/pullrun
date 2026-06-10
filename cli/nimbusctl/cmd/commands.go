@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -46,6 +48,19 @@ func generateWorkloadID() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
 	return "wl-" + hex.EncodeToString(b[:])
+}
+
+// parseEnvVars parses KEY=VALUE pairs from a string slice into a map.
+func parseEnvVars(envVars []string) (map[string]string, error) {
+	envMap := make(map[string]string, len(envVars))
+	for _, e := range envVars {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid env var %q (expected KEY=VALUE)", e)
+		}
+		envMap[parts[0]] = parts[1]
+	}
+	return envMap, nil
 }
 
 func NewPullCommand(opts *RootOptions) *cobra.Command {
@@ -132,6 +147,9 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		healthStartPeriod uint32
 		restartPolicy   string
 		platform        string
+		secretNames     []string
+		configNames     []string
+		attach          bool
 	)
 
 	cmd := &cobra.Command{
@@ -178,12 +196,9 @@ DAG store if not already present.`,
 			}
 
 			// Parse env vars
-			for _, e := range envVars {
-				parts := strings.SplitN(e, "=", 2)
-				if len(parts) != 2 {
-					return fmt.Errorf("invalid env var %q (expected KEY=VALUE)", e)
-				}
-				envMap[parts[0]] = parts[1]
+			envMap, err = parseEnvVars(envVars)
+			if err != nil {
+				return err
 			}
 
 			id := name
@@ -222,6 +237,26 @@ DAG store if not already present.`,
 				}
 			}
 
+			// Parse --secret and --config references
+			var secretRefs []*runtimepb.SecretRef
+			for _, s := range secretNames {
+				parts := strings.SplitN(s, "=", 2)
+				ref := &runtimepb.SecretRef{Name: parts[0]}
+				if len(parts) == 2 {
+					ref.TargetPath = parts[1]
+				}
+				secretRefs = append(secretRefs, ref)
+			}
+			var configRefs []*runtimepb.ConfigRef
+			for _, c := range configNames {
+				parts := strings.SplitN(c, "=", 2)
+				ref := &runtimepb.ConfigRef{Name: parts[0]}
+				if len(parts) == 2 {
+					ref.TargetPath = parts[1]
+				}
+				configRefs = append(configRefs, ref)
+			}
+
 			restartProto, err := parseRestartPolicy(restartPolicy)
 			if err != nil {
 				return err
@@ -240,17 +275,39 @@ DAG store if not already present.`,
 				Mounts:        mounts,
 				HealthCheck:   healthCheck,
 				RestartPolicy: restartProto,
+				Secrets:       secretRefs,
+				Configs:       configRefs,
 			})
 			if err != nil {
 				return fmt.Errorf("run workload: %w", err)
 			}
 
-			fmt.Printf("Started %s\n", resp.Id)
-			fmt.Printf("  backend:    %s\n", resp.BackendUsed)
-			fmt.Printf("  pid:        %d\n", resp.Pid)
-			if resp.InternalIp != "" {
-				fmt.Printf("  internal:   %s\n", resp.InternalIp)
+			// Print a one-line notice (compatible with --attach output).
+			// When --attach is set, we skip the multi-line summary so the
+			// workload's stdout appears immediately below.
+			if !attach {
+				fmt.Printf("Started %s\n", resp.Id)
+				fmt.Printf("  backend:    %s\n", resp.BackendUsed)
+				fmt.Printf("  pid:        %d\n", resp.Pid)
+				if resp.InternalIp != "" {
+					fmt.Printf("  internal:   %s\n", resp.InternalIp)
+				}
 			}
+
+			if attach {
+				// Switch to a background context — the workload is already
+				// running and should keep running even if the 60s pull/run
+				// context has less time left.
+				attachCtx, attachCancel := context.WithCancel(context.Background())
+				defer attachCancel()
+
+				if backend == "vm" {
+					return attachToWorkload(attachCtx, client, resp.Id, nil, nil, "")
+				}
+				// Container backend: stream logs and poll for exit code.
+				return streamAndWait(attachCtx, client, resp.Id)
+			}
+
 			return nil
 		},
 	}
@@ -275,6 +332,9 @@ DAG store if not already present.`,
 	cmd.Flags().Uint32Var(&healthStartPeriod, "health-start-period", 0, "Grace period before health checks start (seconds)")
 	cmd.Flags().StringVar(&restartPolicy, "restart", "no", "Restart policy: no, on-failure, always, unless-stopped")
 	cmd.Flags().StringVar(&platform, "platform", "", "Target platform for pull (e.g. linux/amd64, linux/arm64)")
+	cmd.Flags().StringSliceVar(&secretNames, "secret", nil, "Mount a secret at /run/secrets/<name> (format: name or name=/custom/path)")
+	cmd.Flags().StringSliceVar(&configNames, "config", nil, "Mount a config at /<name> (format: name or name=/custom/path)")
+	cmd.Flags().BoolVarP(&attach, "attach", "a", false, "Attach to workload: streams stdout/stderr (vm) or polls for exit code (container)")
 	return cmd
 }
 
@@ -415,16 +475,11 @@ func NewListCommand(opts *RootOptions) *cobra.Command {
 			}
 
 			if asJSON {
-				// Simple JSON output (no extra dependency)
-				fmt.Println("[")
-				for i, w := range resp.Workloads {
-					if i > 0 {
-						fmt.Print(",\n")
-					}
-					fmt.Printf(`  {"id":%q,"state":%q,"backend":%q,"ip":%q,"pid":%d}`,
-						w.Id, w.State, w.Backend, w.InternalIp, w.ExitCode)
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(resp.Workloads); err != nil {
+					return fmt.Errorf("encode JSON: %w", err)
 				}
-				fmt.Println("\n]")
 				return nil
 			}
 
@@ -433,14 +488,14 @@ func NewListCommand(opts *RootOptions) *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("%-20s %-12s %-12s %-16s %s\n", "ID", "STATE", "BACKEND", "IP", "PID")
+			fmt.Printf("%-20s %-12s %-12s %-16s %s\n", "ID", "STATE", "BACKEND", "IP", "EXIT")
 			for _, w := range resp.Workloads {
-				pidStr := "-"
-				if w.ExitCode > 0 {
-					pidStr = fmt.Sprintf("%d", w.ExitCode)
+				exitStr := "-"
+				if w.ExitCode > 0 || w.State == "exited" {
+					exitStr = fmt.Sprintf("%d", w.ExitCode)
 				}
 				fmt.Printf("%-20s %-12s %-12s %-16s %s\n",
-					w.Id, w.State, w.Backend, w.InternalIp, pidStr)
+					w.Id, w.State, w.Backend, w.InternalIp, exitStr)
 			}
 			return nil
 		},
@@ -565,7 +620,10 @@ func NewExecCommand(opts *RootOptions) *cobra.Command {
 
 // spawnRuntime starts nimbus-runtime as a child process in daemon mode.
 func spawnRuntime(opts *RootOptions) error {
-	runtimeBinary, _ := findRuntimeBinary()
+	runtimeBinary, err := findRuntimeBinary()
+	if err != nil {
+		return err
+	}
 
 	storeRoot := os.Getenv("NIMBUS_STORE")
 	if storeRoot == "" {
@@ -584,16 +642,22 @@ func spawnRuntime(opts *RootOptions) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	doneCh := make(chan struct{})
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigCh
-		if cmd.Process != nil {
-			cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-sigCh:
+			if cmd.Process != nil {
+				cmd.Process.Signal(syscall.SIGTERM)
+			}
+		case <-doneCh:
 		}
 	}()
 
 	if err := cmd.Start(); err != nil {
+		signal.Stop(sigCh)
+		close(doneCh)
 		return fmt.Errorf("start runtime: %w", err)
 	}
 
@@ -601,10 +665,14 @@ func spawnRuntime(opts *RootOptions) error {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(opts.SocketPath); err == nil {
+			signal.Stop(sigCh)
+			close(doneCh)
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	signal.Stop(sigCh)
+	close(doneCh)
 	return fmt.Errorf("runtime socket %s did not appear within 5s", opts.SocketPath)
 }
 
@@ -612,5 +680,145 @@ func findRuntimeBinary() (string, error) {
 	if path, err := exec.LookPath("nimbus-runtime"); err == nil {
 		return path, nil
 	}
-	return "nimbus-runtime", nil
+	return "", fmt.Errorf("nimbus-runtime not found in PATH: install it or check $PATH")
+}
+
+// attachToWorkload opens a bidirectional AttachWorkload stream to a running
+// workload and proxies the terminal's stdio. It blocks until the workload
+// exits or the context is cancelled. If command/env/workdir are non-nil/non-empty
+// they override the workload's entrypoint; pass nil/"" to keep defaults.
+//
+// The caller is responsible for signal handling (context cancellation on ^C).
+func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string, command []string, env map[string]string, workingDir string) error {
+	stream, err := client.AttachWorkload(ctx)
+	if err != nil {
+		return fmt.Errorf("attach: %w", err)
+	}
+
+	if err := stream.Send(&runtimepb.AttachMessage{
+		Body: &runtimepb.AttachMessage_Open{
+			Open: &runtimepb.AttachOpen{
+				WorkloadId: workloadID,
+				Command:    command,
+				Env:        env,
+				WorkingDir: workingDir,
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("send open: %w", err)
+	}
+
+	stdinDone := make(chan struct{})
+	go func() {
+		defer close(stdinDone)
+		buf := make([]byte, 4096)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				if sendErr := stream.Send(&runtimepb.AttachMessage{
+					Body: &runtimepb.AttachMessage_Stdin{
+						Stdin: &runtimepb.AttachStdin{Data: chunk},
+					},
+				}); sendErr != nil {
+					return
+				}
+			}
+			if err == io.EOF {
+				_ = stream.Send(&runtimepb.AttachMessage{
+					Body: &runtimepb.AttachMessage_StdinEof{
+						StdinEof: &runtimepb.AttachStdinEof{},
+					},
+				})
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	exitCode := 0
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				break
+			}
+			return fmt.Errorf("recv: %w", err)
+		}
+		switch body := msg.Body.(type) {
+		case *runtimepb.AttachMessage_Stdout:
+			if body.Stdout != nil {
+				if _, err := os.Stdout.Write(body.Stdout.Data); err != nil {
+					return fmt.Errorf("write stdout: %w", err)
+				}
+			}
+		case *runtimepb.AttachMessage_Stderr:
+			if body.Stderr != nil {
+				if _, err := os.Stderr.Write(body.Stderr.Data); err != nil {
+					return fmt.Errorf("write stderr: %w", err)
+				}
+			}
+		case *runtimepb.AttachMessage_Exit:
+			if body.Exit != nil && body.Exit.HasExitCode {
+				exitCode = int(body.Exit.ExitCode)
+			}
+		case *runtimepb.AttachMessage_Error:
+			if body.Error != nil {
+				fmt.Fprintf(os.Stderr, "[nimbus] runtime error: %s\n", body.Error.Message)
+			}
+		}
+	}
+
+	<-stdinDone
+
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+	return nil
+}
+
+// streamAndWait polls a container-backed workload until it exits and
+// propagates its exit code. Container stdout/stderr is not yet captured
+// by the runtime (runc executor uses Stdio::null()), so this shows
+// status transitions only. AttachWorkload bidi streaming is used for
+// the vm backend instead — see attachToWorkload.
+func streamAndWait(ctx context.Context, client *GRPCClient, workloadID string) error {
+	attachCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Fprintln(os.Stderr, "\n[nimbus] detached")
+		cancel()
+	}()
+
+	pollInterval := 500 * time.Millisecond
+	for {
+		select {
+		case <-attachCtx.Done():
+			return nil
+		case <-time.After(pollInterval):
+		}
+
+		status, err := client.GetWorkload(attachCtx, workloadID)
+		if err != nil {
+			if attachCtx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("get status: %w", err)
+		}
+		if status.State == "exited" || status.State == "stopped" {
+			if status.ExitCode != 0 {
+				os.Exit(int(status.ExitCode))
+			}
+			return nil
+		}
+	}
 }

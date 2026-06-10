@@ -66,7 +66,7 @@ impl CosignKey {
         use ed25519_dalek::SigningKey;
         use rand::rngs::OsRng;
         let sk = SigningKey::generate(&mut OsRng);
-        let vk = sk.verifying_key().clone();
+        let vk = sk.verifying_key();
         Self {
             id: format!("test-key-{}", hex::encode(vk.to_bytes()[..4].as_ref())),
             verifying_key: vk,
@@ -102,7 +102,8 @@ pub fn signature_digest_for(image_ref: &str) -> Digest {
     h.update(b"nimbus.cosign.sig.v1\n");
     h.update(image_ref.as_bytes());
     h.update(b"\n");
-    hex::encode(h.finalize())
+    let result: [u8; 32] = h.finalize().into();
+    Digest(result)
 }
 
 /// Build the canonical payload string that gets signed for a given image + manifest.

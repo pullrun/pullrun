@@ -112,6 +112,8 @@ pub enum FrameType {
 }
 
 impl FrameType {
+    /// Convert a raw byte to a `FrameType`, returning `None` for
+    /// unknown or reserved byte values.
     pub fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
             0x01 => Self::InitHello,
@@ -395,7 +397,7 @@ pub enum ProtocolError {
     },
 
     /// A string field was not valid UTF-8.
-    #[error("non-UTF-8 string in {ty} frame: {0}")]
+    #[error("non-UTF-8 string in {ty} frame: {ty}")]
     BadUtf8 {
         /// Frame type containing the bad string.
         ty: FrameType,

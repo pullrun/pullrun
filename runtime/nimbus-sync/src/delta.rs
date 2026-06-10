@@ -10,20 +10,6 @@ pub fn compute_delta(local_blobs: &[String], peer_filter: &BloomFilter) -> Vec<S
         .collect()
 }
 
-/// Given two bloom filters, compute an approximate symmetric delta.
-/// Returns the list of digests from `local_blobs` that the peer
-/// likely doesn't have. This is an approximation — bloom filter
-/// false positives mean we might skip sending a blob the peer
-/// actually needs, but the peer can request it explicitly via GetBlobs.
-#[allow(unused_variables)]
-pub fn approximate_missing(local_blobs: &[String], local_filter: &BloomFilter, peer_filter: &BloomFilter) -> Vec<String> {
-    local_blobs
-        .iter()
-        .filter(|d| !peer_filter.contains(d))
-        .cloned()
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

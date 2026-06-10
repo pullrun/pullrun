@@ -277,11 +277,14 @@ pub fn detect_rootless_available() -> bool {
 }
 
 pub fn is_running_as_root() -> bool {
+    // SAFETY: `libc::geteuid()` is async-signal-safe and returns a
+    // trivial integer value. No shared state is accessed.
     unsafe { libc::geteuid() == 0 }
 }
 
 /// Returns the effective user ID of the current process.
 pub fn current_euid() -> u32 {
+    // SAFETY: `libc::geteuid()` is async-signal-safe, no invariants.
     unsafe { libc::geteuid() }
 }
 
@@ -300,7 +303,13 @@ mod tests {
     #[test]
     fn test_rootless_config_default_state_root() {
         let cfg = RootlessConfig::detect(1000);
-        assert!(cfg.state_root.to_string_lossy().contains("1000"));
+        let path = cfg.state_root.to_string_lossy();
+        // When XDG_RUNTIME_DIR is set the uid may not appear in the
+        // path; on systems where it is unset the uid should appear.
+        assert!(
+            path.contains("1000") || std::env::var("XDG_RUNTIME_DIR").is_ok(),
+            "expected '1000' in state root, got: {path}"
+        );
     }
 
     #[test]

@@ -18,8 +18,12 @@ use nimbus_runtime::binfmt;
 use nimbus_runtime::metrics;
 use nimbus_runtime::proto;
 use nimbus_runtime::service::{RuntimeCommand, RuntimeService, ServiceConfig, VmBackendConfig};
-use nimbus_store::MmapStore;
-use nimbus_sync::{BlockSyncClient, BlockSyncServer, BlockSyncService, BloomGossip, Discovery, PeerBloomCache, generate_node_id};
+use nimbus_store::{Digest, MmapStore};
+use nimbus_sync::{
+    BlockSyncClient, BlockSyncServer, BlockSyncService, BloomGossip, Discovery,
+    PeerBloomCache, RegistrarClient, RegistrarServer, RegistrarService,
+    generate_node_id, run_registrar_client,
+};
 use proto::runtime_server::RuntimeServer;
 
 #[derive(Parser)]
@@ -107,6 +111,20 @@ enum Commands {
             help = "TCP address for peer-to-peer BlockSync gRPC (e.g. 0.0.0.0:9500). Port 0 = disabled."
         )]
         sync_addr: std::net::SocketAddr,
+
+        // Registrar (optional centralized peer registry).
+        // --registrar-addr: host a registrar on this address.
+        // --registrar-connect: register with a remote registrar.
+        #[arg(
+            long = "registrar-addr",
+            help = "Host the Registrar gRPC service on this address (e.g. 0.0.0.0:9600). Not started by default."
+        )]
+        registrar_addr: Option<SocketAddr>,
+        #[arg(
+            long = "registrar-connect",
+            help = "Register this node with a remote Registrar at this address (e.g. 10.0.0.1:9600)."
+        )]
+        registrar_connect: Option<SocketAddr>,
     },
     /// Pull an OCI image into the DAG store
     Pull {
@@ -256,7 +274,7 @@ fn daemon_main(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // fatal errors (e.g. socket bind failure) back to the
     // main thread, which will then exit the process with a
     // non-zero code.
-    let (err_tx, err_rx) = std::sync::mpsc::channel::<String>();
+    let (err_tx, _err_rx) = std::sync::mpsc::channel::<String>();
 
     let _side_thread = std::thread::Builder::new()
         .name("nimbus-runtime-tokio".into())
@@ -289,8 +307,8 @@ fn daemon_main(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         // error before exit, it will be queued in `err_rx`.
         // We can't easily observe it from this thread, so
         // the side thread calls `std::process::exit(0)` on
-        // clean shutdown and `std::process::exit(1)` on
-        // failure (handled in `run_daemon_cmd`).
+        // clean shutdown and the main thread reads the error
+        // from the channel on non-macOS platforms.
         // SAFETY: dispatch_main() never returns.
         dispatch2::dispatch_main();
     }
@@ -300,7 +318,7 @@ fn daemon_main(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         // thread just waits for it. If it errors out, we
         // surface the error.
         drop(_side_thread);
-        if let Ok(msg) = err_rx.recv() {
+        if let Ok(msg) = _err_rx.recv() {
             return Err(msg.into());
         }
         Ok(())
@@ -367,6 +385,8 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_size_mb,
         insecure_registry,
         sync_addr,
+        registrar_addr,
+        registrar_connect,
     } = cli.command
     else {
         unreachable!("daemon_main only passes the Daemon variant")
@@ -390,6 +410,8 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_size_mb,
         insecure_registry,
         sync_addr,
+        registrar_addr,
+        registrar_connect,
     )
     .await
 }
@@ -399,10 +421,10 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 async fn run_pull(
     image_ref: &str,
     registry: Option<&str>,
-    store_root: &PathBuf,
+    store_root: &std::path::Path,
     insecure_registries: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let store = Arc::new(MmapStore::new(store_root.clone()));
+    let store = Arc::new(MmapStore::new(store_root.to_path_buf()));
     let puller = OciPuller::with_insecure_registries(
         None,
         insecure_registries.iter().cloned().collect(),
@@ -417,6 +439,7 @@ async fn run_pull(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_workload(
     root_digest: &str,
     name: &str,
@@ -425,15 +448,15 @@ async fn run_workload(
     env_vars: &[String],
     _allow_outbound: &[String],
     _publish: &[u16],
-    store_root: &PathBuf,
+    store_root: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let store = MmapStore::new(store_root.clone());
+    let store = MmapStore::new(store_root.to_path_buf());
     let bundle_root = store_root.join("bundles");
     std::fs::create_dir_all(&bundle_root)?;
 
     let executor = LinuxContainerExecutor::new(store, None, bundle_root);
 
-    let backend = Backend::from_str(backend).map_err(|e| format!("{e}"))?;
+    let backend = Backend::from_str(backend).map_err(|e| e.to_string())?;
     let env: HashMap<String, String> = env_vars
         .iter()
         .filter_map(|e| {
@@ -448,9 +471,11 @@ async fn run_workload(
         command.to_vec()
     };
 
+    let image_root = Digest::from_hex(root_digest)
+        .map_err(|e| format!("invalid digest: {e}"))?;
     let spec = WorkloadSpec {
         id: name.to_string(),
-        image_root: root_digest.to_string(),
+        image_root,
         backend,
         command: cmd.clone(),
         env,
@@ -475,8 +500,8 @@ async fn run_workload(
     Ok(())
 }
 
-async fn run_stop(id: &str, store_root: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let store = MmapStore::new(store_root.clone());
+async fn run_stop(id: &str, store_root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let store = MmapStore::new(store_root.to_path_buf());
     let bundle_root = store_root.join("bundles");
     let executor = LinuxContainerExecutor::new(store, None, bundle_root);
     executor.stop(id).await?;
@@ -484,12 +509,13 @@ async fn run_stop(id: &str, store_root: &PathBuf) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-async fn run_list(_store_root: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_list(_store_root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("runc").args(["list"]).output().await?;
     println!("{}", String::from_utf8_lossy(&output.stdout));
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_daemon(
     socket: &str,
     store_root: PathBuf,
@@ -509,6 +535,8 @@ async fn run_daemon(
     vm_size_mb: u64,
     insecure_registry: Vec<String>,
     sync_addr: SocketAddr,
+    registrar_addr: Option<SocketAddr>,
+    registrar_connect: Option<SocketAddr>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let policy = build_policy(
         require_signature,
@@ -565,6 +593,19 @@ async fn run_daemon(
     // Build the store early so BlockSync and Discovery can share it.
     let store = Arc::new(MmapStore::new(config.store_root.clone()));
 
+    // Clean up any leftover secrets-stage directories from a previous
+    // crash or unclean shutdown.
+    let staged_root = config.store_root.join("run").join("secrets-stage");
+    if staged_root.exists() {
+        std::fs::remove_dir_all(&staged_root).ok();
+        info!("cleaned up stale secrets-stage directory");
+    }
+
+    // Generate a single node ID for the lifetime of this daemon.
+    // Used for both mDNS discovery and registrar registration.
+    let node_id = generate_node_id();
+    info!(%node_id, "node identity");
+
     // Start peer-to-peer BlockSync gRPC server (enabled when port != 0).
     let bloom_cache: Option<PeerBloomCache> = if sync_addr.port() != 0 {
         let block_sync_service = BlockSyncService::new(store.clone());
@@ -588,13 +629,11 @@ async fn run_daemon(
         }
 
         // Start mDNS peer discovery.
-        let node_id = generate_node_id();
         let discovery = Discovery::new(node_id.clone(), sync_addr);
         let dh = discovery.clone();
         tokio::spawn(async move {
             dh.run().await;
         });
-        info!(node_id, "peer discovery started");
 
         // Shared bloom cache for gossip exchange.
         let cache = PeerBloomCache::new();
@@ -627,9 +666,51 @@ async fn run_daemon(
         None
     };
 
-    if let Some(cache) = bloom_cache {
-        config = config.with_bloom_cache(cache);
+    if let Some(cache) = &bloom_cache {
+        config = config.with_bloom_cache(cache.clone());
         info!("PeerBloomCache wired into service config");
+    }
+
+    // ─── Registrar (optional centralized peer registry) ─────────
+    if let Some(addr) = registrar_addr {
+        let reg_svc = RegistrarService::new();
+        let reg_svr = RegistrarServer::new(reg_svc.clone());
+        tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(reg_svr)
+                .serve(addr)
+                .await
+                .ok();
+        });
+        info!(registrar_addr = %addr, "Registrar gRPC server started");
+
+        // Background eviction of stale peers.
+        tokio::spawn(async move {
+            reg_svc.run_eviction().await;
+        });
+    }
+
+    // Register with a remote registrar if --registrar-connect is set.
+    if let Some(connect_addr) = registrar_connect {
+        let sync_addr_str = if sync_addr.port() != 0 {
+            sync_addr.to_string()
+        } else {
+            warn!("--registrar-connect set but block sync is disabled (--sync-addr port 0); peers cannot connect to this node");
+            String::new()
+        };
+        match RegistrarClient::connect(format!("http://{}", connect_addr)).await {
+            Ok(client) => {
+                let node_id_c = node_id.clone();
+                let sync_addr_c = sync_addr_str.clone();
+                tokio::spawn(async move {
+                    run_registrar_client(client, node_id_c, sync_addr_c).await;
+                });
+                info!(%node_id, registrar = %connect_addr, "registered with remote registrar");
+            }
+            Err(e) => {
+                warn!(error = %e, registrar = %connect_addr, "failed to connect to registrar");
+            }
+        }
     }
 
     if std::fs::metadata(socket).is_ok() {
@@ -647,13 +728,24 @@ async fn run_daemon(
         let store = service.store.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
-            // First tick fires immediately; that's fine, the
-            // values are real.
             loop {
                 interval.tick().await;
-                let nodes = store.node_count();
+                let nodes = store.cached_node_count();
                 let bytes = store.total_bytes();
                 metrics::record_store_stats(nodes, bytes);
+            }
+        });
+    }
+
+    // Spawn a gauge updater for block sync metrics (peer count).
+    if let Some(cache) = &bloom_cache {
+        let bc = cache.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let n = bc.peer_count().await;
+                metrics::record_sync_peer_count(n);
             }
         });
     }

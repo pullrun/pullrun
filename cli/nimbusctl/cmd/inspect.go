@@ -43,11 +43,7 @@ which policies allowed or denied the workload, with reasons.`,
 			}
 
 			if !resp.Found {
-				// Match the CLI's "explicit, not surprising" style:
-				// say the workload isn't in the runtime's view,
-				// and exit non-zero so scripts can detect it.
-				fmt.Fprintf(os.Stderr, "workload %s not found (GC'd or never existed)\n", args[0])
-				os.Exit(1)
+				return fmt.Errorf("workload %s not found (GC'd or never existed)", args[0])
 			}
 
 			if asJSON {

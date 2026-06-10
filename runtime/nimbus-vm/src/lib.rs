@@ -1,3 +1,5 @@
+#![allow(clippy::doc_lazy_continuation)]
+
 pub mod attach;
 pub mod ext4;
 pub mod network;
@@ -44,10 +46,7 @@ pub use ext4::{
     ext4_path_for, firecracker_config, materialize_ext4_rootfs, Ext4Error, Ext4Options,
 };
 
-/// Sidecar state for a Firecracker VM's host-side networking. Held in
-/// `FirecrackerExecutor::vm_state` (in-memory for v0; a sidecar file is
-/// the obvious next step) so `stop()` can `teardown_tap` deterministically.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VmSidecar {
     pub vm_net: VmNetwork,
     pub endpoint: NetworkEndpoint,
@@ -90,7 +89,10 @@ pub struct FirecrackerExecutor {
     /// `vm_ip:port`) for declared inbound rules.
     proxy: Arc<ProxyNetwork>,
     /// Open fds on `/dev/net/tun`, keyed by workload id. Kept alive to
-    /// prevent the kernel from destroying the TAP devices.
+    /// prevent the kernel from destroying the TAP devices. Held briefly
+    /// (insert/remove of a `File` handle + optional `teardown_tap()`), so
+    /// the `Mutex` contention is negligible. The inner `File` is `Send` but
+    /// not `Sync`, hence `Mutex` rather than `RwLock`.
     tap_fds: Mutex<HashMap<String, File>>,
 }
 
@@ -163,7 +165,7 @@ impl Executor for FirecrackerExecutor {
 
         // 1. Allocate an IP. Use a per-project IPAM if bridge_name
         //    is set (per-project isolation), otherwise the global pool.
-        let (bridge_name, netmask, gateway, guest_ip, ipam_owned) =
+        let (_bridge_name, _netmask, _gateway, guest_ip, _ipam_owned) =
             if let Some(ref bn) = spec.bridge_name {
                 let (gateway, netmask, project_ipam) =
                     crate::network::derive_cidr(bn);
@@ -223,7 +225,7 @@ impl Executor for FirecrackerExecutor {
         };
 
         let store = self.store.clone();
-        let root_digest = spec.image_root.clone();
+        let root_digest = spec.image_root;
         let ext4_path_owned = ext4_path.clone();
         let id = spec.id.clone();
 
@@ -263,11 +265,7 @@ impl Executor for FirecrackerExecutor {
             id: spec.id.clone(),
             pid: None,
             internal_ip: Some(guest_ip.to_string()),
-            host_ports: endpoint
-                .host_port_mappings
-                .iter()
-                .copied()
-                .collect(),
+            host_ports: endpoint.host_port_mappings.to_vec(),
             backend: "vm".to_string(),
             bridge_name: None,
         };
@@ -459,7 +457,7 @@ pub struct AppleVirtConfig {
 }
 
 pub struct AppleVirtExecutor {
-    config: AppleVirtConfig,
+    pub config: AppleVirtConfig,
 }
 
 impl AppleVirtExecutor {

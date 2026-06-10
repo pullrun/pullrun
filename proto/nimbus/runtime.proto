@@ -106,6 +106,20 @@ service Runtime {
     // Prune removes stopped workloads, stale bundles, and temporary
     // materialized rootfs directories to reclaim disk space.
     rpc Prune(PruneRequest) returns (PruneResponse);
+
+    // --- Secret / Config management (docker secret/config equivalent) ---
+
+    // Secret CRUD.
+    rpc CreateSecret(CreateSecretRequest) returns (CreateSecretResponse);
+    rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse);
+    rpc InspectSecret(InspectSecretRequest) returns (InspectSecretResponse);
+    rpc RemoveSecret(RemoveSecretRequest) returns (RemoveSecretResponse);
+
+    // Config CRUD (identical shape to secrets, stored unencrypted).
+    rpc CreateConfig(CreateConfigRequest) returns (CreateConfigResponse);
+    rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse);
+    rpc InspectConfig(InspectConfigRequest) returns (InspectConfigResponse);
+    rpc RemoveConfig(RemoveConfigRequest) returns (RemoveConfigResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -161,6 +175,10 @@ message RunComposeResponse {
 message PullImageRequest {
     string image_ref = 1;
     string registry = 2;
+    // Registry credentials are transmitted in plaintext over gRPC.
+    // This is acceptable for UDS connections (default) where the
+    // socket is file-system-protected. For non-UDS deployments
+    // (e.g. --sync-addr), a TLS wrapper or mTLS must be added.
     string registry_username = 3;
     string registry_password = 4;
     string registry_token = 5;
@@ -220,6 +238,12 @@ message RunRequest {
     // Controls whether the runtime automatically re-creates the workload
     // after it exits. Defaults to RESTART_NO.
     RestartPolicy restart_policy = 15;
+    // Secrets to mount inside the container (docker --secret equivalent).
+    // Mounted at /run/secrets/<name> by default, or at target_path if set.
+    repeated SecretRef secrets = 16;
+    // Configs to mount inside the container (docker --config equivalent).
+    // Mounted at /<name> by default, or at target_path if set.
+    repeated ConfigRef configs = 17;
 }
 
 enum RestartPolicy {
@@ -664,17 +688,17 @@ message InfoResponse {
     // Runtime version string (e.g. "0.1.0").
     string version = 1;
     // Runtime uptime in seconds.
-    int64 uptime_seconds = 2;
+    uint64 uptime_seconds = 2;
     // Number of workloads currently tracked.
-    int64 workload_count = 3;
+    uint64 workload_count = 3;
     // DAG store mountpoint.
     string store_mountpoint = 4;
     // Total bytes on the store filesystem.
-    int64 store_total_bytes = 5;
+    uint64 store_total_bytes = 5;
     // Used bytes on the store filesystem.
-    int64 store_used_bytes = 6;
+    uint64 store_used_bytes = 6;
     // Total nodes in the DAG store.
-    int64 store_total_nodes = 7;
+    uint64 store_total_nodes = 7;
     // Go runtime version string.
     string go_version = 8;
 }
@@ -703,3 +727,74 @@ message DiffResponse {
     // Files that exist in both but have different content.
     repeated string modified = 3;
 }
+
+// --- Secret / Config management ---
+
+message SecretRef {
+    string name = 1;
+    string target_path = 2;   // default: /run/secrets/<name>
+}
+
+message ConfigRef {
+    string name = 1;
+    string target_path = 2;   // default: /<name>
+}
+
+message SecretInfo {
+    string name = 1;
+    int64 created_at = 2;      // unix seconds
+    int64 size_bytes = 3;
+}
+
+message CreateSecretRequest {
+    string name = 1;
+    bytes data = 2;
+}
+message CreateSecretResponse {}
+
+message ListSecretsRequest {}
+message ListSecretsResponse {
+    repeated SecretInfo secrets = 1;
+}
+
+message InspectSecretRequest {
+    string name = 1;
+}
+message InspectSecretResponse {
+    SecretInfo secret = 1;
+}
+
+message RemoveSecretRequest {
+    string name = 1;
+}
+message RemoveSecretResponse {}
+
+// Config messages (same shape, distinct type names for wire clarity).
+message ConfigInfo {
+    string name = 1;
+    int64 created_at = 2;
+    int64 size_bytes = 3;
+}
+
+message CreateConfigRequest {
+    string name = 1;
+    bytes data = 2;
+}
+message CreateConfigResponse {}
+
+message ListConfigsRequest {}
+message ListConfigsResponse {
+    repeated ConfigInfo configs = 1;
+}
+
+message InspectConfigRequest {
+    string name = 1;
+}
+message InspectConfigResponse {
+    ConfigInfo config = 1;
+}
+
+message RemoveConfigRequest {
+    string name = 1;
+}
+message RemoveConfigResponse {}

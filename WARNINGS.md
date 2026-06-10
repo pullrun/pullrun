@@ -1188,7 +1188,19 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ---
 
-## nimbusctl workload run
+## nimbusctl workload run / nimbusctl run --attach
+
+### `--attach` is the preferred single-step pattern
+
+`nimbusctl run <image> --attach` (or `-a`) combines spawn and attach
+into one command — equivalent to `docker run -it`. For the VM backend
+it opens an AttachWorkload bidi stream; for the container backend it
+polls for exit and propagates the exit code (container stdout/stderr
+capture is not yet implemented).
+
+`nimbusctl workload run <id>` is the two-step equivalent for attaching
+to an already-running workload. Prefer `nimbusctl run --attach` when
+starting new workloads.
 
 ### Generated proto types are pointer-wrapped oneofs
 
@@ -1226,11 +1238,11 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### SIGINT during attach detaches, doesn't kill the workload
 
-- `nimbusctl workload run` installs a SIGINT handler
-  that cancels the context, which closes the gRPC
-  stream. The runtime service then sends `StdinEof`
-  to the workload's stdin pipe and waits for natural
-  exit.
+- Both `nimbusctl workload run <id>` and `nimbusctl run --attach`
+  install a SIGINT handler that cancels the context,
+  which closes the gRPC stream. The runtime service
+  then sends `StdinEof` to the workload's stdin pipe
+  and waits for natural exit.
 - This is "detach" behavior, not "stop" behavior.
   Use `nimbusctl stop <id>` to forcefully kill the
   workload.
@@ -1314,4 +1326,58 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   vmlinux file on the host filesystem.
 - Fix: call `StagedKernel::from_image()` in the Firecracker code path too,
   or at minimum document that `--vm-kernel` is required.
+
+---
+
+## `unsafe` block audit (June 2026)
+
+Total: **~128 `unsafe { }` blocks** across the workspace.
+
+### By category
+
+| Category | Count | Risk | Notes |
+|----------|-------|------|-------|
+| objc2 FFI (Apple Virtualization) | ~82 | Low | Structurally required by framework bindings; all calls are simple constructors/setters/property reads on valid objects |
+| libc FFI (syscalls) | ~18 | Low | `statvfs`, `socket`, `connect`, `dup`, `fcntl`, `ioctl`, `write`, `close`, `geteuid`, `_exit` — all async-signal-safe or properly scoped |
+| rkyv zero-copy deserialization | ~10 | **Medium** | No read-time checksum validation; write-once mmap invariant bounds the risk |
+| Raw pointer dereference (thread-boundary) | 4 | Low | `&*(vm_addr as *const ...)` pattern with documented safety comments |
+| `Box::from_raw` (thread-boundary) | 4 | Low | All paired with prior `Box::into_raw` / `std::mem::forget`; documented |
+| Raw fd ownership (`from_raw_fd`) | 4 | Low | All fds owned by the caller; standard pattern |
+| `Mmap::map` | 2 | Low | Backing files are write-once, not modified during mapping |
+| `std::mem::zeroed` | 1 | Low | `libc::statvfs` is POD; zero is valid initial state |
+
+### By file
+
+| File | Blocks | Primary category | Safety comments |
+|------|--------|-----------------|-----------------|
+| `runtime/nimbus-vm/src/apple/attach.rs` | 62 | objc2 FFI | Partial (raw ptrs + Box::from_raw + Retained::retain documented) |
+| `runtime/nimbus-vm/src/apple.rs` | 37 | objc2 FFI | Partial (raw ptrs + alloc documented) |
+| `runtime/nimbus-store/src/store.rs` | 10 | mmap + rkyv | Added June 2026 |
+| `runtime/nimbus-init/src/vsock_client.rs` | 6 | libc FFI | Yes — thorough per-block comments |
+| `tools/apple-virt-exec/src/main.rs` | 3 | libc `_exit` | Contextual |
+| `runtime/nimbus-runtime/src/service.rs` | 2 | libc FFI | Added June 2026 |
+| `runtime/nimbus-exec/src/rootless.rs` | 2 | libc `geteuid` | Added June 2026 |
+| `tools/apple-virt-smoke/src/main.rs` | 2 | libc `_exit` | Contextual |
+| `runtime/nimbus-policy/src/sbom.rs` | 1 | rkyv | Added June 2026 |
+| `runtime/nimbus-policy/src/lib.rs` | 1 | rkyv | Added June 2026 |
+| `runtime/nimbus-vm/src/network.rs` | 1 | libc `ioctl` | Added June 2026 |
+| `runtime/nimbus-oci/src/push.rs` | 1 | rkyv | Added June 2026 |
+
+### Action items
+
+- [x] Add `// SAFETY:` comments to undocumented non-objc2 unsafe blocks
+- [ ] (Phase 4) Add read-time `check_bytes` validation before `rkyv::archived_root` — highest risk
+- [ ] Consider `#![deny(unsafe_op_in_unsafe_fn)]` in crate-level lints
+  to ensure new unsafe blocks always get safety comments
+
+### rkyv read-time checksum gap
+
+- rkyv's `archived_root` is inherently `unsafe` because it produces a
+  reference with alignment/lifetime requirements the compiler cannot verify.
+- **All 10+ call sites** rely on the invariant that the backing mmap is
+  write-once and never mutated while the reference is alive. This is
+  guaranteed by the `MmapStore` architecture.
+- **Known gap**: `check_bytes` validation runs only at write time. A
+  corrupted file on disk (bit rot, partial write after crash) will produce
+  undefined behavior when read. Fix planned in Phase 4.
 

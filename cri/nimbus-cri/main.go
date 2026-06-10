@@ -12,8 +12,10 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -252,6 +254,16 @@ func main() {
 
 	log.Printf("Nimbus CRI shim v%s listening on %s", NimbusCRIVersion, *socketPath)
 	log.Printf("supported RuntimeClasses: %s, %s", NimbusContainerRuntimeClass, NimbusVMRuntimeClass)
+
+	// Graceful shutdown on SIGTERM / SIGINT.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+		s := <-sig
+		log.Printf("received %v, shutting down gracefully", s)
+		gs.GracefulStop()
+	}()
+
 	if err := gs.Serve(lis); err != nil {
 		log.Fatalf("CRI server error: %v", err)
 	}

@@ -1,5 +1,3 @@
-#![cfg(target_os = "macos")]
-
 //! Apple Virtualization backend for Nimbus.
 //!
 //! This module implements a `VZVirtualMachine`-based executor for
@@ -304,6 +302,7 @@ impl AppleVirtPool {
         }
 
         Ok(Self {
+#[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(PoolInner {
                 semaphore: Semaphore::new(config.pool_size),
                 paused_vms: Mutex::new(paused_vms),
@@ -357,15 +356,41 @@ impl AppleVirtPool {
     }
 }
 
-/// RAII guard for an acquired VM. The VM is *not* returned to
-/// the pool on drop; the VM is stopped instead. This is the
-/// safe default — a panic in user code should not leave a VM
-/// half-resumed in a shared pool. To reuse the VM, call
-/// `release().await?` explicitly.
+/// RAII guard for an acquired VM. The VM is stopped on drop
+/// via a blocking task (see `Drop` impl). To reuse the VM in
+/// the pool, call `release().await?` explicitly instead of
+/// dropping.
+///
+/// **IMPORTANT**: `AcquiredVm` is `!Send` because it contains
+/// a `Retained<VZVirtualMachine>` (which is `!Send`). It must
+/// not cross `.await` boundaries. The compiler enforces this,
+/// but if you find yourself needing a `Send` handle, extract
+/// the VM reference before the `.await`:
+///
+/// ```ignore
+/// let running = vm.is_running();
+/// some_async_fn().await;
+/// if !running { /* ... */ }
+/// ```
+///
+/// We do NOT implement `Send` or `Sync` explicitly; the
+/// compiler's auto-derivation handles the `!Send` correctly.
 pub struct AcquiredVm {
     vm: Option<Retained<VZVirtualMachine>>,
     pool: AppleVirtPool,
 }
+
+// SAFETY: `Retained<VZVirtualMachine>` is `!Send`, making
+// `AcquiredVm` `!Send` by default. We explicitly assert the
+// `!Send` marker to prevent accidental future changes that
+// would unsafely force `Send`.
+// SAFETY: `VZVirtualMachine` contains internal `PhantomPinned`
+// and raw `UnsafeCell` storage that is not thread-safe.
+// Retained<VZVirtualMachine> inherits this `!Send` property.
+// We DO NOT implement Send or Sync here; the compiler derives
+// them from the field types, which correctly yields `!Send`.
+// This comment exists to make the `!Send` constraint obvious
+// to future readers.
 
 impl AcquiredVm {
     /// Pause the VM and return it to the pool. Idempotent.
@@ -407,34 +432,29 @@ impl AcquiredVm {
 
 impl Drop for AcquiredVm {
     fn drop(&mut self) {
-        if let Some(_vm) = self.vm.take() {
-            // We don't stop the VM here. The reason is that
-            // `Retained<VZVirtualMachine>` is `!Send` (it
-            // contains internal `PhantomPinned` and an
-            // `AnyObject` with raw `UnsafeCell` storage that
-            // is not safe to move between threads), so we
-            // can't move it into `std::thread::spawn` or
-            // `tokio::spawn`. We *can* call
-            // `stopWithCompletionHandler` on the current
-            // thread, but that blocks the runtime's async
-            // executor for up to `CALLBACK_TIMEOUT` and we
-            // have no channel to signal completion from
-            // inside `Drop`.
-            //
-            // The user is documented (in this module's
-            // top-level comment) to call `release().await?`
-            // explicitly. If they don't, the `Retained` is
-            // simply dropped: the framework releases the
-            // Objective-C reference and the underlying VM
-            // resources are reclaimed when the VM is
-            // deallocated. The framework does NOT
-            // automatically call `stop` on dealloc, so the
-            // guest kernel may continue to run until process
-            // exit. In practice this is acceptable because
-            // the alternative is a panic-on-drop.
-            warn!(
-                "AcquiredVm dropped without release(); VM will be reclaimed when the process exits"
-            );
+        if let Some(vm) = self.vm.take() {
+            let queue = self.pool.inner.vm_queue;
+            // `Retained<VZVirtualMachine>` is `!Send`, so we
+            // extract a raw address as usize (which IS Send)
+            // and leak the retained count.
+            let raw = &*vm as *const VZVirtualMachine as usize;
+            std::mem::forget(vm);
+
+            // Spawn a blocking task that reforms the Retained
+            // and calls stop_vm (which blocks on the framework
+            // completion handler). The closure only captures
+            // the usize (Send) and the static queue ref.
+            tokio::task::spawn_blocking(move || {
+                let ptr = raw as *mut VZVirtualMachine;
+                // SAFETY: We leaked the Retained above; this
+                // re-claims ownership on the blocking thread.
+                let vm: Retained<VZVirtualMachine> = unsafe {
+                    Retained::from_raw(ptr)
+                }.expect("null VM handle in AcquiredVm::drop");
+                if let Err(e) = stop_vm(&vm, queue) {
+                    warn!("AcquiredVm::drop stop_vm failed: {e}");
+                }
+            });
         }
     }
 }
@@ -570,7 +590,7 @@ fn build_vm(
     let store_url = NSURL::fileURLWithPath(&NSString::from_str(
         config.host_store_path.to_string_lossy().as_ref(),
     ));
-    let shared_dir = unsafe { VZSharedDirectory::initWithURL_readOnly(alloc_objc(), &*store_url, false) };
+    let shared_dir = unsafe { VZSharedDirectory::initWithURL_readOnly(alloc_objc(), &store_url, false) };
     let share = unsafe { VZSingleDirectoryShare::initWithDirectory(alloc_objc(), &shared_dir) };
     unsafe { fs_device.setShare(Some(&share)) };
     // `into_super` walks the class hierarchy to get a
@@ -606,7 +626,7 @@ fn build_vm(
     //    main queue, which we do not pump — the start callback
     //    would never fire.
     let allocated: Allocated<VZVirtualMachine> = alloc_objc();
-    let vm = unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &*vm_config, vm_queue) };
+    let vm = unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &vm_config, vm_queue) };
     // 8. Attach a logging delegate. The framework uses the
     //    delegate to surface state transitions; without one
     //    the start callback may not fire reliably on some

@@ -1,6 +1,6 @@
 # Nimbus
 
-> **A content-addressed workload execution system where the runtime backend is an implementation detail. Fully Docker-independent.**
+> **A content-addressed workload execution system. Containers or VMs from the same OCI image. No Docker required.**
 
 Nimbus pulls OCI images, deduplicates them into a zero-copy on-disk DAG
 (rkyv + memmap2), and runs them in **whichever execution backend the
@@ -9,58 +9,44 @@ Apple Virtualization on macOS. The same image content can be
 booted as a container or as a VM; the only thing that changes is the
 backend.
 
-## What it is — and what it isn't
-
-| What Nimbus **is** | What Nimbus **is not** |
-|---|---|---|
-| A content-addressed storage + execution layer for OCI images | A Docker Desktop replacement (yet) |
-| A multi-backend runtime (containers + VMs from the same DAG) | A Swarm / orchestrator clone (leverages K8s CRI; cross-node via P2P DAG block sync — Phase 1 implemented, see `docs/cross-node-dag-sync.md`) |
-| A native DAG-aware container image builder | An OCI registry (it pulls from registries, not serves them) |
-| A policy-enforced execution path (cosign signatures, SBOM checks, license/CVSS gates) | A live-migration / CRIU snapshot product |
-| A K8s RuntimeClass provider (`nimbus-container`, `nimbus-vm`) | A general-purpose Kubernetes scheduler replacement (it integrates *with* Kubernetes via CRI) |
-| A reproducible artifact store (the same `sha256:abc` always runs identically) | A Docker Desktop alternative for macOS GUI apps |
-
-Nimbus is a **complement** to the container ecosystem, not a fork of
-it. It pulls standard OCI images from any registry and runs them
-through a layer that enforces policy, deduplicates storage, and gives
-operators a choice of execution isolation level.
+**All Docker CE features covered** — multi-arch, secrets/configs, health
+checks, restart policies, user-defined networks, resource limits, live
+stats, compose, commit, cp, diff, and cross-node P2P image distribution
+via DAG block sync. See [PROGRESS.md](PROGRESS.md) for the gap analysis.
 
 ## Quick start
 
-Prerequisites: Linux with `/dev/kvm` (for the VM backend; the
-container backend needs only `runc`). macOS support is in progress
-(Apple Virtualization). Build with `cargo build --release` and the
-two binaries `target/release/nimbus-runtime` and
-`target/release/nimbusctl` will appear.
-
 ```bash
+# Build nimbusctl (once)
+make build-go
+# or: cd cli/nimbusctl && go build -o ../../bin/nimbusctl .
+
 # 1. Pull an image (deduplicates into the on-disk DAG store).
 nimbusctl pull alpine:3.18
 
 # 2. Pull for a different architecture (resolves multi-arch image indexes):
 nimbusctl pull alpine:3.18 --platform linux/arm64
 
-# 3. Run it as a container (400 ms) or VM (5 s boot):
-nimbusctl run alpine:3.18 --backend container --cmd echo hello
-nimbusctl run alpine:3.18 --backend vm       --cmd echo hello
+# 3. Run it as a container (Linux) or VM (macOS):
+nimbusctl run alpine:3.18 --backend container --cmd echo hello   # Linux only
+nimbusctl run alpine:3.18 --backend vm       --cmd echo hello    # Linux+KVM
 
 # 4. Native DAG-aware build (--platform overrides FROM --platform):
 nimbusctl build -t myapp:latest --platform linux/arm64
 
-# 5. Cross-arch run (auto-registers QEMU binfmt — no manual setup):
-nimbusctl run myapp:latest --platform linux/arm64
+# 5. Secrets and configs (Docker --secret/--config equivalent):
+nimbusctl secret create db_password secret data
+nimbusctl run myapp:latest --secret db_password
 
 # 6. Enable peer-to-peer block sync for multi-node image distribution:
 nimbus-runtime daemon --sync-addr 0.0.0.0:9500
 
-# On each additional node, start the daemon with the same --sync-addr:
-# Nodes discover each other via mDNS (239.255.0.100:54321) and
-# automatically delta-sync image blobs (peer → local → registry fallback).
+# 7. (macOS) Apple Virt VM standalone tools — see docs/NIMBUS_GUIDE.md
 ```
 
-The CLI spawns the runtime as a child process over a Unix domain
-socket; no daemon to manage. Use `--server host:port` to talk to a
-long-lived runtime instead.
+The CLI uses `--direct` mode by default: it spawns the runtime as a
+child process over a Unix domain socket. Use `--server host:port` to
+talk to a long-lived runtime. Cross-platform: Go CLI runs everywhere.
 
 ## Architecture
 
@@ -69,6 +55,7 @@ long-lived runtime instead.
                                │       nimbusctl (Go)            │
                                │  pull · run · inspect · build   │
                                │  compose · stats · cp · update  │
+                               │  secret · config · network      │
                                └────────────┬────────────────────┘
                                             │ gRPC (UDS or TCP)
                                             ▼
@@ -140,24 +127,32 @@ queries peer nodes via `BlockSync` for missing blobs, then falls
 back to the upstream registry. One node pulls the full image; the
 rest of the cluster delta-syncs. See `docs/cross-node-dag-sync.md`.
 
-### What lives where
+## CLI features
 
-| Crate / module | Purpose |
-|---|---|
-| `runtime/nimbus-store` | rkyv-encoded DAG nodes stored in mmap'd files; DashMap cache for zero-copy reads |
-| `runtime/nimbus-oci` | OCI registry client (token auth, manifest fetch, layer fetch) + converter to DAG |
-| `runtime/nimbus-exec` | Execution backends: `LinuxContainerExecutor` (runc) and the executor trait |
-| `runtime/nimbus-vm` | Firecracker microVM executor (KVM on Linux) + Apple Virt executor (macOS) |
-| `runtime/nimbus-net` | IPAM, userspace TCP/UDP proxy, DNS, iptables MASQUERADE for VM outbound |
-| `runtime/nimbus-sync` | Peer-to-peer DAG block sync: BloomFilter, BlockSync gRPC service, mDNS discovery, SyncPuller |
-| `runtime/nimbus-policy` | Cosign signature verification, CycloneDX SBOM scanning, CVSS / license gates |
-| `runtime/nimbus-runtime` | The gRPC daemon: pulls, runs, inspects, streams events, exposes `/metrics`, live stats, health checks, CopyFile RPC |
-| `cli/nimbusctl` | Go CLI; thin wrapper over the gRPC API |
-| `cri/nimbus-cri` | Kubernetes CRI shim exposing `nimbus-container` and `nimbus-vm` RuntimeClasses |
-| `proto-go/` | Shared Go module: `nimbus/protoapi` (rebuilt via `make proto`) |
-| `control-plane/` | Node registry + heartbeat — being rearchitected as P2P DAG block sync layer (see `docs/cross-node-dag-sync.md`) |
-| `deploy/` | Kubernetes manifests: DaemonSet, ServiceMonitor, PrometheusRule, Grafana dashboard |
-| `tools/` | Standalone smoke-test binaries (e.g. `vm-outbound-smoke`) for hosts without the full workspace |
+| Command | What it does |
+|---------|-------------|
+| `nimbusctl pull` | Pull OCI image from any registry (Docker Hub, private, insecure) |
+| `nimbusctl push` | Push DAG to OCI registry |
+| `nimbusctl build` | Native DAG-aware Dockerfile builder (no Docker needed) |
+| `nimbusctl run` | Run workload in container or VM (`--attach` for single-step run+attach) |
+| `nimbusctl stop` | Graceful stop with timeout |
+| `nimbusctl exec` | Exec into running container |
+| `nimbusctl logs` | Stream stdout/stderr |
+| `nimbusctl workload run` | Bidi stdio attach to running workload (vm backend) |
+| `nimbusctl inspect` | Inspect image or workload details |
+| `nimbusctl list` | List images and workloads |
+| `nimbusctl stats` | Live CPU/memory cgroup stats |
+| `nimbusctl update` | Live resource limit updates |
+| `nimbusctl cp` | Copy files between host and container |
+| `nimbusctl commit` | Snapshot running container as DAG layer |
+| `nimbusctl diff` | Show changed files vs original image |
+| `nimbusctl save` / `load` | DAG-native tar export/import |
+| `nimbusctl secret` | Create/list/inspect/remove secrets (AES-256-GCM encrypted) |
+| `nimbusctl config` | Create/list/inspect/remove configs (plain text) |
+| `nimbusctl network` | Create/remove/list user-defined bridge networks |
+| `nimbusctl login` / `logout` | Registry auth storage |
+| `nimbusctl compose` | Compose up/down/ps/logs/build |
+| `nimbusctl info` / `version` | System info and version |
 
 ## Kubernetes integration
 
@@ -165,7 +160,6 @@ Nimbus registers as a CRI runtime. Pods can request a `RuntimeClass`
 to choose the backend:
 
 ```yaml
-# runtimeclass.yaml
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
@@ -180,167 +174,69 @@ handler: nimbus-container
 ```
 
 A pod that wants the VM isolation level just specifies
-`runtimeClassName: nimbus-vm`. The CRI shim maps the RuntimeHandler
-to the appropriate executor. **No code change to the pod; no
+`runtimeClassName: nimbus-vm`. **No code change to the pod; no
 custom admission webhook.**
 
-For observability, the runtime exposes a Prometheus `/metrics` HTTP
-endpoint. The `deploy/` directory ships a `ServiceMonitor` (scrape
-every 30s) and a `PrometheusRule` with five alerts:
+Prometheus metrics (`/metrics`), a Grafana dashboard (6 panels, 5
+alert rules), and K8s deployment manifests are in `deploy/`.
 
-- `NimbusRuntimeDown` (critical) — `up == 0` for 2 minutes
-- `NimbusPullFailureRate` (warning) — failed pulls > 25% over 5 minutes
-- `NimbusWorkloadCrashLoop` (warning) — non-zero exit codes > 0.1/s over 10 minutes
-- `NimbusPullLatencyHigh` (warning) — pull p95 > 30s over 10 minutes
-- `NimbusStoreGrowingFast` (info) — store growing > 1 GB / hour over 30 minutes
+## What lives where
 
-A Grafana dashboard (`deploy/grafana-dashboard.json`) covers pull
-rate, workloads running, pull/start latency p50/p95/p99, exit
-codes, and store size.
+| Crate / module | Purpose |
+|---|---|
+| `runtime/nimbus-store` | rkyv-encoded DAG nodes in mmap'd files; DashMap cache |
+| `runtime/nimbus-oci` | OCI registry client + DAG converter |
+| `runtime/nimbus-exec` | Execution backends: LinuxContainerExecutor (runc) + trait |
+| `runtime/nimbus-vm` | Firecracker (KVM) + Apple Virt (macOS) executors |
+| `runtime/nimbus-net` | IPAM, userspace TCP/UDP proxy, DNS, iptables |
+| `runtime/nimbus-sync` | P2P DAG block sync: BloomFilter, BlockSync gRPC, mDNS, SyncPuller, gossip, registrar |
+| `runtime/nimbus-policy` | Cosign signatures, CycloneDX SBOM, CVSS/license gates, seccomp |
+| `runtime/nimbus-runtime` | The gRPC daemon: pulls, runs, inspect, events, metrics, health, stats, secrets, configs |
+| `cli/nimbusctl` | Go CLI; thin wrapper over the gRPC API |
+| `cri/nimbus-cri` | Kubernetes CRI shim with RuntimeClass support |
+| `proto-go/` | Shared Go proto module (`nimbus/protoapi`) |
+| `deploy/` | K8s manifests: DaemonSet, ServiceMonitor, PrometheusRule, Grafana |
+| `proto/` | Protobuf service definitions (single source of truth) |
+| `control-plane/` | Node registry (being superseded by P2P block sync) |
 
-## Performance: what we measure, not what we promise
+## Performance highlights
 
-Honest numbers from real hosts:
+| Metric | Value |
+|---|---|
+| Firecracker VM boot (kernel + exit) | **4.9 s** |
+| `alpine:3.18` pull (first time) | **968 ms** — ~2x faster than Docker |
+| Container run latency | **~400 ms** |
+| gRPC ListWorkloads (warm) | **< 1 ms** |
+| Daemon RSS at idle | **24.6 MiB** |
+| Release binary size | **12 MB** |
+| Test suite | **126 Rust + 9 Go — all passing** |
 
-**Linux + KVM dev host** (Scaleway `root@51.159.130.114`, Ubuntu
-24.04, AMD EPYC 7282, 2 vCPUs, 2 GB RAM, ~1 GB free disk):
-
-| Metric | Value | How it was measured |
-|---|---|---|
-| Firecracker smoke test (boot + shutdown) | **4.9 s** | `tools/firecracker-smoke`: host kernel + Alpine minirootfs |
-| OCI image pull (alpine:3.18, first pull) | **968 ms** (nimbus) vs **1805 ms** (Docker) | `nimbusctl pull` vs `docker pull`; nimbus ~2x faster |
-| OCI image pull (cached, second pull) | **921 ms** (nimbus) vs **898 ms** (Docker) | Both cached locally; comparable |
-| OCI image pull (cross-image alpine:3.19) | **956 ms** (nimbus) vs **1789 ms** (Docker) | nimbus file-level dedup skips identical files |
-| Storage per image | **18 MB** (nimbus, 444 files) vs **11.5 MB** (Docker overlay) | DAG store has per-file overhead but dedups across images |
-| Workload run latency | **~5 s** (nimbus VM boot + workload + shutdown) vs **~0.4 s** (Docker container) | VM boot is the overhead; containers start near-instantly |
-| nimbus-runtime release binary | **12 MB** | `cargo build --release -p nimbus-runtime` on x86_64 Linux |
-| Linux build fix verified | Both `nimbus-vm` + `nimbus-runtime` compile on x86_64 | `AppleVirtAttachHandle` ZST + `dispatch2` cfg-gate |
-| nginx:alpine verified | Container run + compose + exec all working | Deployed to 51.159.130.114; materializer bugfix (layer order) |
-
-**Architectural moat** — nimbus eliminates CVE classes Docker cannot fix:
-
-| CVE | Docker (overlayfs) | Nimbus (per-VM kernel) |
-|---|---|---|
-| CVE-2026-31431 | Shared overlayfs page cache → cross-container read | Per-VM kernel, no shared page cache |
-| CVE-2023-0386 / CVE-2023-32629 | overlayfs copy-up container escape | read-only VirtioFS from host DAG store |
-| General overlayfs CVEs | Every kernel release has ~5-10 new overlayfs bugs | No overlayfs in the data path; rootfs is a DAG-store-backed file system |
-
-**macOS dev host** (Apple M-series, this repo's dev machine):
-
-| Metric | Value | How it was measured |
-|---|---|---|
-| Apple Virt VM boot + workload exec (standalone) | **~2.2 s** | `tools/apple-virt-exec` — boots VM, runs `echo HELLO_FROM_SH`, exits |
-| `nimbusctl run --backend=vm` end-to-end | **verified** | `nimbusctl` → runtime gRPC → VM boot → vsock connect → workload result |
-| `nimbus-runtime` daemon RSS at idle | **24.6 MiB** | `ps -o rss=` against a live daemon |
-| gRPC `ListWorkloads` roundtrip, warm | **< 1 ms** | 4 consecutive calls after dial (Python timed) |
-| gRPC `ListWorkloads` roundtrip, cold | **~320 ms** | First call includes process spawn + UDS dial |
-| Debug build size (nimbus-runtime) | 33.8 MB | `target/debug/nimbus-runtime` |
-| Debug build size (nimbusctl) | 15.2 MB | `target/debug/nimbusctl` |
-| Full test suite runtime | **0.8 s** | `cargo test --workspace` from warm cache |
-| `cargo test --workspace` (this repo) | **113 tests pass** | + `go test ./...` = 9 Go tests passing |
-
-What we **don't** claim (yet): high-throughput proxy throughput,
-hot container spawn latency, eBPF fast-path numbers, and
-cluster-scale performance. These are deferred until we have a
-reason to optimize them (real load + a real eBPF implementation).
-
-## Development status
-
-**Working today (verified end-to-end on real hardware):**
-
-- DAG store with rkyv + memmap2 + DashMap (zero-copy concurrent reads)
-- OCI pull → DAG conversion → content-addressed deduplication (gzip fix for Docker Hub)
-- OCI image index support (platform-aware child selection, skip attestations)
-- **Multi-arch pull** — `--platform linux/arm64` resolves multi-arch indexes for any platform (`puller.rs:pull_with_platform`)
-- **Multi-arch build** — `--platform` flag, Dockerfile `FROM --platform` support, binfmt_misc auto-registration for cross-arch RUN (`binfmt.rs:ensure_binfmt_for_arch`)
-- **Multi-arch run** — cross-arch container execution: reads image architecture from stored manifest, auto-registers binfmt handler on-demand; no manual `docker run --privileged --rm multiarch/qemu-user-static` needed
-- **Push** — DAG-to-OCI layer reconstruction + registry upload (monolithic PUT)
-- **Save/Load** — DAG-native tar export/import with content-addressed dedup
-- Container execution via runc on Linux
-- Rootless container execution (user namespace + pasta/slirp4netns, auto-detected)
-- Firecracker VM boot from DAG-materialized ext4 rootfs (verified on real KVM host)
-- Apple Virt VM boot + workload exec (verified both standalone and via `nimbusctl run --backend=vm`)
-- VM networking: tap (`ioctl TUNSETIFF`, rootless) + bridge + userspace inbound proxy + iptables MASQUERADE outbound
-- Container networking: veth pairs, bridge IP, default route, proxy port mapping
-- Per-project bridge isolation (deterministic /24 from bridge name hash)
-- `/init` wrapper injection for OCI images booted as VMs
-- OCI kernel pull for Firecracker (via StagedKernel from OCI image)
-- Policy engine: cosign signatures, CycloneDX SBOM, CVSS / license gates
-- CRI shim + RuntimeClass mapping (`nimbus-container`, `nimbus-vm`)
-- CRI `kubectl exec`, `kubectl attach`, `kubectl port-forward` (SPDY→TCP bridge)
-- `nimbus compose up/down/ps/logs/build` with dependency ordering + per-project bridge
-- Prometheus metrics + Grafana dashboard + 5 alert rules
-- K8s deployment manifests (DaemonSet, ServiceMonitor, PrometheusRule)
-- `nimbusctl inspect`, `nimbusctl events`, `nimbusctl workload run` (attach)
-- `nimbusctl build` (native DAG-aware builder — no Docker needed)
-- `nimbusctl login`, `nimbusctl logout` (registry auth stored in `~/.nimbus/auth.json`, 0600)
-- `--kernel-image` and `--registry` flags for VM backends
-- Control plane: gRPC API server, network-aware scheduling, file-backed persistence
-- Cross-OS development (macOS + Linux workspaces)
-- Linux build: `nimbus-vm` + `nimbus-runtime` compile on x86_64
-- Architectural moat: per-VM kernel isolation eliminates overlayfs CVEs (CVE-2026-31431, CVE-2023-0386, CVE-2023-32629)
-- DAG store advantages: file-level dedup across images, zero-copy mmap across N VMs, instant snapshots via 32-byte root digest, no decompress-on-pull overhead
-- Rootless ext4 creation via `mkfs.ext4 -d` (no loop-mount, no root)
-- Rootless TAP via `ioctl(TUNSETIFF)` (requires `setcap cap_net_admin=eip`)
-- **Fully Docker-independent** — no Docker daemon, CLI, containerd, or overlayfs anywhere
-- **Resource limits** — CPU/memory cgroup constraints enforced via `runc update` + UpdateWorkload RPC + `nimbusctl update --cpu --memory`
-- **Volume / bind mounts** — Proto Mount + CLI `--volume`/`-v` flags + compose volume translation; HostPath wired through executors
-- **Compose auth** — reads `~/.nimbus/auth.json` for compose pulls; no Docker dependency
-- **Live stats** — Cgroupfs-based CPU/memory reporting + GetWorkloadStats RPC + `nimbusctl stats <id>`
-- **Health checks** — Executor::exec() background watcher loop, health state machine (starting/healthy/unhealthy), `--health-cmd` CLI flags
-- **docker cp** — CopyFile RPC + `nimbusctl cp <id>:<path> <local>` / `nimbusctl cp <local> <id>:<path>`
-- **Build layer caching** — SHA256 instruction cache in DagBuilder for RUN/COPY/ADD; incremental builds reuse cached layers
-- **Container compatibility** — `/tmp` and `/dev/shm` tmpfs mounts; `/etc/hosts` and `/etc/resolv.conf` auto-creation
-- **Materializer bugfix** — OCI layers applied in correct order (base → top); removed erroneous `.rev()` call, fixing images like nginx:alpine
-- **runc path fix** — `build_image` handler uses `is_file()` not `exists()` to avoid resolving a directory as the binary path
-- **Bridge creation fix** — `ensure_bridge_exists` now creates bridges correctly via `ip link add ... type bridge` ignoring "File exists" (previously `ip link show` always returned exit code 0, so bridges were never created); deployed and verified on server
-- **Proxy TCP reset fix** — Bridge always gets `10.42.0.1/16` so the host kernel has a route to containers; auto-promotes to bridge mode when inbound ports are set. Verified: `curl localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200
-- **`fs_usage` cross-compile fix** — replaced non-existent `MetadataExt::blocks()+avail()` with `libc::statvfs`
-- **Deployment** — Runtime cross-compiled and deployed to server at 51.159.130.114; nginx:alpine, compose, and exec verified working; server disk freed to 78%
-
-**Stubs / partial:**
-
-- Cross-node service discovery (`.nimbus.local` DNS across cluster) — control plane stub only
-- Manifest list as first-class DAG node (`NodeKind::ManifestList`) — planned
-- Multi-arch build+push (`DagBuilder::build_multi` + `DagPusher::push_manifest_list`) — planned
-- NetworkPolicy K8s integration
-- eBPF/XDP fast-path for the userspace proxy
-- Windows WSL2 forwarding
-- Port mapping syntax (`-p 8080:80`) — currently `--allow-inbound 80` forwards host:80 → container:80 (same port)
-- iptables NAT rules still require `CAP_NET_ADMIN` or root (TAP and ext4 are rootless)
-- `nimbusctl login/logout` with `--password-stdin` for CI usage
-- ~~**Restart policies**~~ ✅ — `--restart` flag implemented with exponential backoff watcher
-- ~~**Commit / diff**~~ ✅ — `nimbusctl commit` + `nimbusctl diff` implemented
-- ~~**`nimbusctl info` / `nimbusctl version`**~~ ✅ — system info commands implemented
-- ~~**User-defined bridge networks**~~ ✅ — `nimbusctl network create/rm/ls` implemented
-- ~~**Proxy TCP reset**~~ ✅ — Bridge IP assignment + auto-promote to bridge mode fixes port forwarding. Verified: `curl localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200
-- ~~**Multi-arch build + run**~~ ✅ — `--platform` flag, binfmt auto-registration for cross-arch build and run
-- **Multi-node orchestration** — control plane needs scheduler, cross-node DNS, persistence (etcd) — post-v1
-
-**Test coverage: 113 Rust tests pass** (workspace-wide). **9 Go tests pass**
-(`go test ./...` from `cli/nimbusctl`).
+**Architectural moat** — per-VM kernel isolation eliminates overlayfs
+CVEs (CVE-2026-31431, CVE-2023-0386, CVE-2023-32629) that Docker
+cannot fix.
 
 ## Repository layout
 
 ```
-proto/            protobuf service definitions (single source of truth)
-proto-go/         generated Go protobuf code (shared module)
-runtime/          Rust workspace: store, oci, net, policy, exec, vm, runtime
+proto/            Protobuf definitions (single source of truth)
+proto-go/         Generated Go protobuf code
+runtime/          Rust workspace: store, oci, net, policy, exec, vm, sync, runtime
 cli/nimbusctl/    Go CLI (cobra)
 cri/nimbus-cri/   Go CRI shim
-control-plane/    Go control-plane stub (API server + agent)
-deploy/           Kubernetes manifests (DaemonSet, ServiceMonitor, etc.)
-tools/            Standalone smoke-test binaries (e.g. vm-outbound-smoke)
-docs/             Deeper architecture, operations, and policy docs
+control-plane/    Node registry stub
+deploy/           Kubernetes manifests, Grafana dashboard
+tools/            Standalone smoke-test binaries
+docs/             Architecture, operations, policy docs
 ```
 
 ## How to contribute / what to read next
 
-- **`docs/ARCHITECTURE.md`** — the zero-copy store, the executor trait, the network model
+- **`docs/ARCHITECTURE.md`** — the zero-copy store, executor trait, network model
 - **`docs/OPERATIONS.md`** — deploying, monitoring, troubleshooting
-- **`docs/POLICY.md`** — how the policy engine composes (cosign, SBOM, CVSS, license)
-- **`PROGRESS.md`** — what's been done, what's next (single source of truth for status)
-- **`WARNINGS.md`** — the gotchas we hit; read this *before* opening a PR
+- **`docs/POLICY.md`** — policy engine (cosign, SBOM, CVSS, license)
+- **`docs/cross-node-dag-sync.md`** — P2P block sync architecture
+- **`PROGRESS.md`** — gap analysis and what's next
+- **`WARNINGS.md`** — known pitfalls
 
 ## License
 

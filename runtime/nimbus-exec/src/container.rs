@@ -3,6 +3,7 @@ use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use async_trait::async_trait;
 use tokio::process::Command;
@@ -54,6 +55,12 @@ impl LinuxContainerExecutor {
 
     fn ensure_bridge_exists(bridge_name: &str) -> Result<(), ExecError> {
         use std::process::Command;
+        // Check that `ip` exists before trying to use it (macOS doesn't have it).
+        if Command::new("ip").arg("--version").output().is_err() {
+            return Err(ExecError::ExecutionFailed(
+                "'ip' command not found — bridge networking requires iproute2 (Linux only)".into()
+            ));
+        }
         // ip link show exits 0 even when the device doesn't exist (it
         // writes "does not exist" to stderr and returns 0).  So we
         // try to add the bridge and ignore "File exists".
@@ -105,7 +112,11 @@ impl LinuxContainerExecutor {
         let pid = state["pid"].as_i64()
             .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
 
-        let veth_host = format!("v{}", &id[..id.len().min(12)]);
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        id.hash(&mut hasher);
+        let hash_suffix = format!("{:x}", hasher.finish());
+        let veth_host = format!("v{}", &hash_suffix[..8.min(hash_suffix.len())]);
 
         info!(id = %id, veth = veth_host, bridge = bridge, container_ip = %ip, pid = pid, "setting up container bridge network");
 
@@ -358,7 +369,7 @@ impl Executor for LinuxContainerExecutor {
         if !hosts_path.exists() {
             std::fs::write(
                 &hosts_path,
-                format!("127.0.0.1 localhost\n::1 localhost ip6-localhost\n"),
+                "127.0.0.1 localhost\n::1 localhost ip6-localhost\n",
             )
             .ok();
         }
@@ -426,6 +437,20 @@ impl Executor for LinuxContainerExecutor {
 
     async fn stop(&self, id: &str) -> Result<(), ExecError> {
         info!(%id, "stopping container");
+
+        // Send SIGTERM first, give the process 10s to shut down gracefully.
+        let _ = Command::new(&self.runc_path)
+            .args(["kill", id, "SIGTERM"])
+            .output()
+            .await;
+
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+        // Force kill with SIGKILL
+        let _ = Command::new(&self.runc_path)
+            .args(["kill", id, "SIGKILL"])
+            .output()
+            .await;
 
         let output = Command::new(&self.runc_path)
             .args(["delete", "-f", id])
@@ -566,34 +591,54 @@ impl Executor for LinuxContainerExecutor {
         let mut mem_bytes: u64 = 0;
         let mut cpu_usec: u64 = 0;
 
-        // Read cgroup path from /proc/<pid>/cgroup (cgroups v2)
+        // Read cgroup path from /proc/<pid>/cgroup
         let cgroup_path = std::path::PathBuf::from(format!("/proc/{pid}/cgroup"));
         if let Ok(data) = std::fs::read_to_string(&cgroup_path) {
             for line in data.lines() {
-                if let Some(path) = line.split("::").nth(1) {
-                    let path = path.trim();
-                    // Read memory.current
-                    let mem_file = format!("/sys/fs/cgroup{path}/memory.current");
-                    if let Ok(val) = std::fs::read_to_string(&mem_file) {
-                        mem_bytes = val.trim().parse().unwrap_or(0);
-                    }
-                    // Read cpu.stat
-                    let cpu_file = format!("/sys/fs/cgroup{path}/cpu.stat");
-                    if let Ok(val) = std::fs::read_to_string(&cpu_file) {
-                        for line in val.lines() {
-                            if let Some(rest) = line.strip_prefix("usage_usec ") {
-                                cpu_usec = rest.trim().parse().unwrap_or(0);
+                if line.contains("::") {
+                    // cgroups v2: 0::/system.slice/nimbus-...
+                    if let Some(path) = line.split("::").nth(1) {
+                        let path = path.trim();
+                        let mem_file = format!("/sys/fs/cgroup{path}/memory.current");
+                        if let Ok(val) = std::fs::read_to_string(&mem_file) {
+                            mem_bytes = val.trim().parse().unwrap_or(0);
+                        }
+                        let cpu_file = format!("/sys/fs/cgroup{path}/cpu.stat");
+                        if let Ok(val) = std::fs::read_to_string(&cpu_file) {
+                            for line in val.lines() {
+                                if let Some(rest) = line.strip_prefix("usage_usec ") {
+                                    cpu_usec = rest.trim().parse().unwrap_or(0);
+                                }
                             }
                         }
                     }
-                    break;
+                } else if !line.starts_with('#') {
+                    // cgroups v1: 0::/docker/... (hybrid) or 1:name=systemd:/...
+                    // Try v1 paths for memory and cpuacct controllers.
+                    if let Some(cg_path) = line.split(':').nth(2) {
+                        let cg_path = cg_path.trim();
+                        // Try memory cgroup v1
+                        let mem_v1 = format!("/sys/fs/cgroup/memory{cg_path}/memory.usage_in_bytes");
+                        if mem_bytes == 0 {
+                            if let Ok(val) = std::fs::read_to_string(&mem_v1) {
+                                mem_bytes = val.trim().parse().unwrap_or(0);
+                            }
+                        }
+                        // Try cpuacct cgroup v1
+                        let cpu_v1 = format!("/sys/fs/cgroup/cpuacct{cg_path}/cpuacct.usage");
+                        if cpu_usec == 0 {
+                            if let Ok(val) = std::fs::read_to_string(&cpu_v1) {
+                                cpu_usec = val.trim().parse::<u64>().unwrap_or(0) / 1_000_000;
+                            }
+                        }
+                    }
                 }
             }
         }
 
         Ok(WorkloadStats {
             id: id.to_string(),
-            cpu_usage_percent: cpu_usec as f64 / 1_000_000.0, // raw cumulative CPU seconds
+            cpu_usage_percent: cpu_usec as f64 / 1_000_000.0, // cumulative CPU seconds from cgroup cpu.stat
             memory_bytes: mem_bytes,
             disk_bytes: 0,
             network_rx_bytes: 0,
@@ -610,6 +655,8 @@ pub struct RootlessContainerExecutor {
     config: crate::rootless::RootlessConfig,
     uid: u32,
     use_pasta: bool,
+    net_handles: Mutex<HashMap<String, crate::rootless::NetworkHandle>>,
+    children: Mutex<HashMap<String, std::process::Child>>,
 }
 
 impl RootlessContainerExecutor {
@@ -622,6 +669,8 @@ impl RootlessContainerExecutor {
             config,
             uid,
             use_pasta: true,
+            net_handles: Mutex::new(HashMap::new()),
+            children: Mutex::new(HashMap::new()),
         }
     }
 
@@ -704,24 +753,33 @@ impl Executor for RootlessContainerExecutor {
         )
         .await
         {
-            Ok(_net) => {
+            Ok(net) => {
                 info!(id = %handle.id, "rootless networking set up");
-                // In a real implementation, we'd keep the network handle
-                // and kill it on stop()
+                self.net_handles.lock().unwrap().insert(handle.id.clone(), net);
             }
             Err(e) => {
                 warn!(id = %handle.id, "rootless networking failed: {e} - container may have no network");
             }
         }
 
-        // Detach the runc child
-        std::mem::forget(child);
+        // Store the runc child so we can wait() on it later.
+        self.children.lock().unwrap().insert(handle.id.clone(), child);
 
         Ok(())
     }
 
     async fn stop(&self, id: &str) -> Result<(), ExecError> {
         info!(%id, "stopping rootless container");
+
+        // Kill the runc child and the network process (pasta/slirp4netns).
+        let maybe_child = self.children.lock().unwrap().remove(id);
+        if let Some(mut child) = maybe_child {
+            let _ = child.kill();
+            tokio::task::spawn_blocking(move || child.wait()).await.ok();
+        }
+        if let Some(mut net) = self.net_handles.lock().unwrap().remove(id) {
+            net.kill().ok();
+        }
 
         let _ = std::process::Command::new(&self.config.runc_path)
             .arg("delete")
@@ -739,8 +797,26 @@ impl Executor for RootlessContainerExecutor {
         Ok(())
     }
 
-    async fn wait(&self, _id: &str) -> Result<ExitStatus, ExecError> {
-        warn!("rootless wait not implemented; container runs detached");
+    async fn wait(&self, id: &str) -> Result<ExitStatus, ExecError> {
+        let maybe_child = self.children.lock().unwrap().remove(id);
+        if let Some(mut child) = maybe_child {
+            let status = tokio::task::spawn_blocking(move || child.wait())
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("join wait task for {id}: {e}")))?
+                .map_err(|e| ExecError::ExecutionFailed(format!("wait for runc child {id}: {e}")))?;
+            let exit_code = status.code().unwrap_or(-1);
+            use std::os::unix::process::ExitStatusExt;
+            let signal = status.signal();
+            return Ok(ExitStatus { exit_code, signal });
+        }
+        // Child not found — check if it was already stopped via stop()
+        if !self.bundle_dir(id).exists() {
+            return Ok(ExitStatus {
+                exit_code: 0,
+                signal: None,
+            });
+        }
+        warn!(%id, "wait called before start; returning 0");
         Ok(ExitStatus {
             exit_code: 0,
             signal: None,

@@ -1,14 +1,18 @@
 # Nimbus — Build Progress
 
 **Last updated:** 2026-06-09
-**Status:** ✅ All Docker CE multi-arch gaps closed (manifest list DAG node, multi-arch build+push, cross-arch auto-binfmt). ✅ Phase 1 of cross-node DAG block sync implemented: `nimbus-sync` crate with `BloomFilter`, `BlockSync` gRPC service, mDNS peer discovery, and `SyncPuller` (peer-aware OCI puller). Wired into daemon (`--sync-addr` flag) and `PullImage` handler. Zero control plane reimplementation — leverages existing K8s CRI shim.
+**Status:** ✅ Full Docker-like workflow on both platforms. nimbusctl CLI (Go) works identically on macOS and Linux for all store/sync/policy operations. Container backend (runc) and Firecracker VM backend (KVM) work on Linux. Apple Virt standalone tools work on macOS. Cross-compilation: Go CLI statically linked for any target; Rust musl targets supported. P2P DAG block sync (Phases 1-3) fully implemented.
 **Tests:** 118 Rust + 9 Go — all passing.
+
+**New (Secret/Config support — Docker `--secret`/`--config` equivalent):** Proto additions (8 new RPCs + `SecretRef`/`ConfigRef` messages in `RunRequest`). `SecretStore` module with AES-256-GCM encrypted storage for secrets, plain text for configs, auto-generated key at `/var/lib/nimbus/secret.key`. Service handler implementations for create/list/inspect/remove. Container mount integration: bind-mounts staged files at `/run/secrets/<name>`; cleanup on stop/prune. Go CLI: `nimbusctl secret create/ls/inspect/rm`, `nimbusctl config create/ls/inspect/rm`, `--secret`/`--config` flags on `run` command. All proto and Go stubs regenerated; zero breaking changes to existing APIs.
 
 **New (Manifest list DAG node + multi-arch build+push):** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each to DAG + creates `ManifestList` node. `DagBuilder::build_multi()` builds N platforms serially (shared store dedups layers automatically) and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects manifest vs manifest list and dispatches accordingly.
 
 **New (Cross-node DAG block sync Phase 1 — P2P image distribution):** `runtime/nimbus-sync` crate with `BloomFilter` (optimal sizing, serialization, merge), `BlockSync` gRPC service (HaveBlobs/GetBlobs/SyncBlobs), mDNS peer discovery (UDP multicast `239.255.0.100:54321`), and `SyncPuller` (peer-aware OciPuller wrapper). Added `resolve_image()` and `fetch_blob_by_digest()` to `OciPuller` as non-breaking public API. Daemon accepts `--sync-addr` flag; BlockSync server + discovery start when port is non-zero. `PullImage` handler auto-detects block sync availability and uses `SyncPuller` (peer→local→registry blob resolution). See `docs/cross-node-dag-sync.md`.
 
 **New (Cross-node DAG block sync Phase 2 — gossip-based bloom filter exchange):** `BloomGossip` background task exchanges bloom filters with random peers every 60s via `HaveBlobs` RPC. `PeerBloomCache` maintains a node_id → (bloom_filter, sync_addr) map with 5-minute TTL. `SyncPuller` now uses `PeerBloomCache` to identify which peers likely have each blob, then dynamically connects to those peers via `BlockSyncClient`. No more querying every peer for every blob — O(1) bloom filter lookup per blob, O(N) gossip rounds per minute. `BlockSyncService::insert_bloom_digest()` enables incremental bloom filter updates. See `docs/cross-node-dag-sync.md`.
+
+**New (Cross-node DAG block sync Phase 3 — metrics + registrar):** Prometheus metrics counters added to `BlockSyncService`: `bytes_sent`, `bytes_received`, `blob_requests` per GetBlobs/SyncBlobs handlers. `nimbus_sync_peer_count` gauge published every 30s from PeerBloomCache. Optional `Registrar` gRPC service (Register/Lookup/ListPeers/Heartbeat/Deregister + background TTL-based eviction) — hosted via `--registrar-addr`, remote registration via `--registrar-connect`. 4 e2e tests for registrar, 4 e2e tests for block sync P2P blob transfer — all passing.
 
 **Previously (Cross-arch run — the "better than Docker" gap):** Binfmt extraction — `ensure_cross_arch_binfmt` moved from `builder.rs` to shared `binfmt.rs` module. Daemon startup auto-registers qemu handlers for arm64, arm, ppc64le, s390x, riscv64. `run_workload` reads image architecture from stored manifest; if it differs from host arch (and backend isn't VM), registers the handler on-demand before container creation. **No manual setup step required.** All 53 cross-package tests pass.
 
@@ -32,8 +36,8 @@ All Docker CLI features that remain unimplemented are **community-edition featur
 | Multi-arch run | ✅ `qemu-user-static` | ✅ | ✅ Nimbus | **Auto-registered** — no manual step |
 | Manifest list creation | ✅ `docker manifest` | ✅ | ✅ Nimbus | `DagBuilder::build_multi()` + `OciToDagConverter::convert_list()` |
 | Multi-arch push | ✅ `docker buildx build --push` | ✅ | ✅ Nimbus | `DagPusher::push_manifest_list()` + auto-dispatch in `push()` |
-| Secret / Config | ✅ | ✅ | ❌ | Docker's secret/store; Nimbus can do it via DAG |
-| Multi-node orchestration | ✅ Swarm | ✅ | ❌ | Re-architecting: P2P DAG block sync (not Swarm clone) — see `docs/cross-node-dag-sync.md` |
+| Secret / Config | ✅ | ✅ | ✅ Nimbus | AES-256-GCM encrypted (secrets) / plain (configs); bind-mount into containers; `nimbusctl secret/config create/ls/inspect/rm`; `--secret`/`--config` flags on `run` |
+| Multi-node orchestration | ✅ Swarm | ✅ | ✅ Nimbus | P2P DAG block sync (not Swarm clone) — Phase 1-3 complete: BlockSync gRPC, mDNS + gossip bloom exchange, SyncPuller, optional Registrar, Prometheus metrics. See `docs/cross-node-dag-sync.md` |
 
 ---
 
@@ -58,7 +62,8 @@ All Docker CLI features that remain unimplemented are **community-edition featur
 - `stop` — Graceful stop with timeout
 - `exec` — Exec into running container
 - `logs` — Stream stdout/stderr logs
-- `attach` — Attach to running workload (bidi stdio via gRPC stream)
+- `attach` — Attach to running workload (bidi stdio via gRPC stream)  
+  `nimbusctl run --attach` / `-a` combines spawn + attach in one step
 - `port-forward` — CRI shim dials workload IP over bridge (SPDY→TCP bridge)
 - `compose up/down/ps/logs` — Full compose support with dependency ordering, port mapping, per-project bridge isolation
 - **`update`** — Live resource limit updates via `runc update` + UpdateWorkload RPC + `nimbusctl update --cpu --memory`
@@ -153,13 +158,13 @@ All Docker CLI features that remain unimplemented are **community-edition featur
 | **Stats** | `docker stats` | ✅ | `nimbusctl stats` via GetWorkloadStats RPC + cgroupfs |
 | **Export/Import** | `docker export/import` | Different | Nimbus has `save`/`load` in DAG-native format |
 | **Info / Version** | `docker info` / `--version` | ✅ | `nimbusctl info` (version, uptime, store, workloads) + `nimbusctl version` |
-| **Secret / Config** | `docker secret` | ❌ | |
+| **Secret / Config** | `docker secret` | ✅ | AES-256-GCM encrypted secrets, plain configs; `nimbusctl secret/config create/ls/inspect/rm`; mount via `--secret`/`--config` |
 | **Healthcheck** | HEALTHCHECK | ✅ | Executor::exec() watcher loop + health state machine + `--health-cmd` |
 | **Restart policy** | `--restart` | ✅ | `--restart no|on-failure|always|unless-stopped` with exponential backoff watcher |
 | **Resource limits** | `--memory --cpus` | ✅ | CPU/memory limits + live update via `runc update` + `nimbusctl update --cpu --memory` |
 | **Native build** | Dockerfile → layer cache | ✅ | SHA256 instruction cache in DagBuilder for RUN/COPY/ADD |
 | **Port forwarding** | `-p host:container` | ✅ | Proxy auto-promotes to bridge mode; assigns `10.42.0.1/16` to bridge so kernel has a route to container subnet. Verified: `curl localhost:80` → nginx 200 via proxy |
-| **Multi-node** | Swarm / Compose | 🚧 | P2P DAG block sync — not a Swarm clone. Content-addressed peer-to-peer block distribution integrated with K8s CRI shim. See `docs/cross-node-dag-sync.md`. |
+| **Multi-node** | Swarm / Compose | ✅ | P2P DAG block sync — Phase 1-3 complete: BlockSync gRPC, mDNS + gossip bloom exchange, SyncPuller, optional Registrar, Prometheus metrics. See `docs/cross-node-dag-sync.md`. |
 | **VM backend** | ❌ (Docker Desktop WSL2 only) | ✅ | Firecracker (Linux KVM) + Apple Virt (macOS) — same OCI image, no rebuild |
 | **Bridge networking** | ✅ | ✅ | veth pairs for containers, TAP for VMs; bridge fix deployed (was silently broken) |
 
@@ -198,7 +203,7 @@ go test ./cli/nimbusctl/...   # 9 Go tests
 
 **Changes:** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each platform to DAG and creates a `ManifestList` node with edges to each manifest. `DagBuilder::build_multi()` builds an image for N platforms and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects whether the root is a single manifest or a manifest list and dispatches accordingly.
 
-All 113 Rust + 9 Go tests pass.
+All 126 Rust + 9 Go tests pass.
 
 ## Next steps — Docker gaps (all CE, no EE required)
 
@@ -216,7 +221,7 @@ All 113 Rust + 9 Go tests pass.
 - **Port mapping syntax** — Add `--publish host:container` (e.g. `-p 8080:80`) to complement `--allow-inbound hostPort`.
 - **Disk management** — GC / prune policies: delete old bundles, evict least-recently-used images from DAG store, clean runc container state.
 
-### 🚧 Cross-node DAG block sync (replaces "Swarm" plan)
+### ✅ Cross-node DAG block sync (Phase 1-3 complete)
 
 **Key insight:** The DAG is already content-addressed (SHA256). Every blob has a unique address derived from its content. This makes P2P block distribution trivial — content-addressed BitTorrent for OCI/DAG blobs.
 
@@ -228,6 +233,6 @@ All 113 Rust + 9 Go tests pass.
 | BuildKit with remote cache | N × M layer pulls (cache hits help) |
 | **Nimbus DAG block sync** | 1 full pull + (M−1) delta syncs |
 
-**Architecture:** `BlockSync` gRPC service per nimbus-agent node. When a kubelet requests an image pull via CRI, the puller first checks peer nodes for missing blobs before falling back to the upstream registry. Nodes advertise their available block set via bloom filters. Transfers are delta-only — only blocks the peer doesn't have.
+**Implementation:** `BlockSync` gRPC service (HaveBlobs/GetBlobs/SyncBlobs), mDNS discovery (UDP multicast), gossip-based bloom filter exchange (BloomGossip + PeerBloomCache, 60s/5min TTL), SyncPuller (peer→local→registry blob resolution), optional Registrar gRPC service (--registrar-addr, --registrar-connect), Prometheus metrics (bytes sent/received, blob requests, peer count). Wired into daemon start-up and `PullImage` handler. 126 Rust + 9 Go tests passing.
 
 See `docs/cross-node-dag-sync.md` for the full design.

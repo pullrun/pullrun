@@ -11,13 +11,14 @@
 //! `NIMBUS_VSOCK_FALLBACK_UNIX=/path/to.sock` to override the
 //! default `/tmp/nimbus-init.sock`.
 
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::sync::Arc;
 
 use nimbus_vsock::{Frame, ProtocolError};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+#[cfg(target_os = "linux")]
 use tracing::warn;
 
 /// vsock connect errors.
@@ -156,7 +157,7 @@ impl VsockClient {
         // ownership), then convert to a tokio UnixStream.
         let std_stream = unsafe { StdUnixStream::from_raw_fd(duped) };
         std_stream.set_nonblocking(false).ok();
-        Ok(UnixStream::from_std(std_stream)?)
+        UnixStream::from_std(std_stream)
     }
 
     /// Connect to the host's vsock listener on `port`.
@@ -169,7 +170,7 @@ impl VsockClient {
     /// 2. Unix domain socket at
     ///    `$NIMBUS_VSOCK_FALLBACK_UNIX` or
     ///    `/tmp/nimbus-init.sock`
-    pub async fn connect(port: u32) -> Result<Self, VsockError> {
+    pub async fn connect(_port: u32) -> Result<Self, VsockError> {
         // Try AF_VSOCK first on Linux. Retry up to 5 times
         // with a short backoff because the host listener
         // registration can race with our connect.
@@ -177,7 +178,7 @@ impl VsockClient {
         {
             let mut last_err: Option<std::io::Error> = None;
             for attempt in 1..=5 {
-                match Self::connect_vsock(port) {
+                match Self::connect_vsock(_port) {
                     Ok(fd) => {
                         return Ok(Self {
                             inner: Arc::new(VsockInner {
@@ -270,7 +271,7 @@ impl VsockClient {
             }));
         }
         let ty = nimbus_vsock::FrameType::from_u8(ty_byte)
-            .ok_or_else(|| VsockError::Encode(ProtocolError::Truncated {
+            .ok_or(VsockError::Encode(ProtocolError::Truncated {
                 ty: nimbus_vsock::FrameType::Error,
                 needed: 1,
                 got: 0,

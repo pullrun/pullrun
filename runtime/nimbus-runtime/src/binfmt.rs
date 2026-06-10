@@ -12,7 +12,7 @@ pub fn ensure_binfmt_for_arch(target_arch: &str) -> Result<(), String> {
     #[cfg(not(target_os = "linux"))]
     {
         warn!("cross-arch execution is only supported on Linux (target={target_arch})");
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
@@ -33,7 +33,7 @@ pub fn ensure_binfmt_for_arch(target_arch: &str) -> Result<(), String> {
             "riscv64" => ("qemu-riscv64", "/usr/bin/qemu-riscv64-static"),
             _ => {
                 debug!("no known binfmt handler for arch {target_arch}");
-                return Ok(());
+        Ok(());
             }
         };
 

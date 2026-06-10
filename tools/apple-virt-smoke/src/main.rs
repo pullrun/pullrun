@@ -70,6 +70,7 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Instant;
 
 use clap::Parser;
@@ -343,7 +344,7 @@ fn stage_kernel(args: &Args) -> Result<StagedKernel, OciKernelError> {
             .join("apple-virt-smoke-store")
             .join("oci-store");
         std::fs::create_dir_all(&store_dir).map_err(|e| OciKernelError::Io(e))?;
-        let store = MmapStore::new(store_dir);
+        let store = Arc::new(MmapStore::new(store_dir));
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

@@ -24,9 +24,9 @@ use nimbus_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
 use nimbus_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use nimbus_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use nimbus_net::{Ipam, ProxyNetwork};
-use nimbus_oci::{current_arch, OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory, build_dag_from_directory_with_platform, DagDirectory, DirectoryEntry};
+use nimbus_oci::{current_arch, OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory_with_platform, DagDirectory, DirectoryEntry};
 use nimbus_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
-use nimbus_store::MmapStore;
+use nimbus_store::{Digest, MmapStore};
 use nimbus_sync::PeerBloomCache;
 use nimbus_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
@@ -40,7 +40,7 @@ use crate::proto::{
     RemoveNetworkRequest, RemoveNetworkResponse,
     ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
     InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
-    ListWorkloadsResponse, LogChunk, Mount as ProtoMount, NetworkRule as ProtoNetworkRule,
+    ListWorkloadsResponse, LogChunk, NetworkRule as ProtoNetworkRule,
     PruneRequest, PruneResponse,
     PullImageRequest, PullImageResponse, RemoveImageRequest, RemoveImageResponse,
     RunComposeRequest, RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse,
@@ -51,6 +51,14 @@ use crate::proto::{
     PushImageRequest, PushImageResponse,
     ExportImageRequest, ExportImageChunk,
     ImportImageChunk, ImportImageResponse,
+    CreateSecretRequest, CreateSecretResponse,
+    ListSecretsRequest, ListSecretsResponse,
+    InspectSecretRequest, InspectSecretResponse,
+    RemoveSecretRequest, RemoveSecretResponse,
+    CreateConfigRequest, CreateConfigResponse,
+    ListConfigsRequest, ListConfigsResponse,
+    InspectConfigRequest, InspectConfigResponse,
+    RemoveConfigRequest, RemoveConfigResponse,
 };
 
 use crate::metrics::{
@@ -86,12 +94,15 @@ pub struct ServiceConfig {
     pub insecure_registries: std::collections::HashSet<String>,
     /// Optional peer bloom cache for peer-to-peer blob distribution.
     pub bloom_cache: Option<PeerBloomCache>,
+    /// Secret/config store for docker --secret/--config equivalent.
+    pub secrets_store: crate::secrets::SecretStore,
 }
 
 impl ServiceConfig {
     pub fn new(store_root: PathBuf) -> Self {
         let bundle_root = store_root.join("bundles");
         let checkpoints_dir = store_root.join("checkpoints");
+        let ss = store_root.clone();
         Self {
             store_root,
             bundle_root,
@@ -101,6 +112,7 @@ impl ServiceConfig {
             vm_backend: None,
             insecure_registries: std::collections::HashSet::new(),
             bloom_cache: None,
+            secrets_store: crate::secrets::SecretStore::new(ss),
         }
     }
 
@@ -335,7 +347,12 @@ fn fs_usage(path: &std::path::Path) -> (i64, i64) {
         Ok(p) => p,
         Err(_) => return (0, 0),
     };
+    // SAFETY: `std::mem::zeroed()` is valid for `libc::statvfs` — the
+    // struct is plain-old-data (all-zero is a valid initial state before
+    // `statvfs` fills it).
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `statvfs` is reentrant and async-signal-safe. `cpath` is
+    // a valid null-terminated C string; `stat` is a valid mutable pointer.
     if unsafe { libc::statvfs(cpath.as_ptr(), &mut stat) } != 0 {
         return (0, 0);
     }
@@ -689,9 +706,12 @@ impl RuntimeCommand {
 
         // Health check watcher: runs every 10 seconds, probes workloads
         // that have health_check configured, updates health status.
+        // Uses per-workload jitter (derived from workload ID hash) to avoid
+        // thundering herds when many workloads share the same interval.
         let hc_workloads = workloads.clone();
         let hc_executor = executor.clone();
         tokio::spawn(async move {
+            use std::hash::{Hash, Hasher};
             use std::time::Duration;
             let mut interval = tokio::time::interval(Duration::from_secs(10));
             interval.tick().await;
@@ -703,22 +723,27 @@ impl RuntimeCommand {
                         .filter(|(_, s)| s.status == "running")
                         .filter_map(|(id, s)| {
                             s.health_check.as_ref().map(|hc| {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_secs() as i64)
-                                    .unwrap_or(0);
+                                // Compute jitter from workload ID.
+                                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                                id.hash(&mut hasher);
+                                let jitter = hasher.finish();
                                 (id.clone(), hc.test.clone(), hc.interval_seconds.max(1),
                                  hc.timeout_seconds.max(1), hc.retries.max(1),
-                                 s.start_time + hc.start_period_seconds as i64)
+                                 s.start_time + hc.start_period_seconds as i64, jitter)
                             })
                         })
-                        .filter(|(_, _, interval, _, _, grace_end)| {
+                        .filter(|(_id, _, interval, _, _, grace_end, jitter)| {
                             let interval = *interval as u64;
                             let now = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
-                                .map(|d| d.as_secs() as u64)
+                                .map(|d| d.as_secs())
                                 .unwrap_or(0);
-                            now % interval == 0 || now >= *grace_end as u64
+                            // Include jitter phase so workloads with the same
+                            // interval probe at different ticks.
+                            now.wrapping_add(*jitter).is_multiple_of(interval) || now >= *grace_end as u64
+                        })
+                        .map(|(id, test, interval, timeout, retries, grace_end, _)| {
+                            (id, test, interval, timeout, retries, grace_end)
                         })
                         .collect()
                 };
@@ -786,15 +811,17 @@ impl RuntimeCommand {
 fn walk_dag(store: &MmapStore, image_root: &str) -> Vec<DagNode> {
     use std::collections::{HashSet, VecDeque};
     let mut out: Vec<DagNode> = Vec::new();
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue: VecDeque<String> = VecDeque::new();
+    let mut visited: HashSet<Digest> = HashSet::new();
+    let mut queue: VecDeque<Digest> = VecDeque::new();
 
     if !image_root.is_empty() {
-        queue.push_back(image_root.to_string());
+        if let Ok(d) = Digest::from_hex(image_root) {
+            queue.push_back(d);
+        }
     }
 
     while let Some(digest) = queue.pop_front() {
-        if !visited.insert(digest.clone()) {
+        if !visited.insert(digest) {
             continue;
         }
 
@@ -833,7 +860,7 @@ fn walk_dag(store: &MmapStore, image_root: &str) -> Vec<DagNode> {
                             // `MmapStore::node_size` API.
 
         out.push(DagNode {
-            digest: digest.clone(),
+            digest: digest.as_hex(),
             kind: kind.to_string(),
             size_bytes: 0, // see comment above
         });
@@ -846,9 +873,10 @@ fn walk_dag(store: &MmapStore, image_root: &str) -> Vec<DagNode> {
         // because that's recorded on the child node via its own
         // `kind`.
         for edge in archived.edges.iter() {
-            let edge_str: String = edge.as_str().to_string();
-            if !edge_str.is_empty() {
-                queue.push_back(edge_str);
+            let child = Digest(*edge);
+            let hex = child.as_hex();
+            if !hex.is_empty() {
+                queue.push_back(child);
             }
         }
     }
@@ -859,7 +887,7 @@ fn walk_dag(store: &MmapStore, image_root: &str) -> Vec<DagNode> {
 #[cfg(test)]
 mod walk_dag_tests {
     use super::walk_dag;
-    use nimbus_store::{DagNode as StoreDagNode, MmapStore, NodeKind};
+    use nimbus_store::{DagNode as StoreDagNode, Digest, MmapStore, NodeKind};
 
     #[test]
     fn walks_manifest_tree_layer() {
@@ -871,12 +899,12 @@ mod walk_dag_tests {
         let layer = StoreDagNode::new(NodeKind::Layer, vec![], b"layer-bytes".to_vec());
         let tree = StoreDagNode::new(
             NodeKind::Tree,
-            vec!["layer-digest".to_string()],
+            vec![Digest::ZERO],
             b"tree-bytes".to_vec(),
         );
         let manifest = StoreDagNode::new(
             NodeKind::Manifest,
-            vec!["tree-digest".to_string()],
+            vec![Digest::ZERO],
             b"manifest-bytes".to_vec(),
         );
 
@@ -885,38 +913,37 @@ mod walk_dag_tests {
         let tree_digest = store.put_blocking(&tree).unwrap();
         let manifest_digest = store.put_blocking(&manifest).unwrap();
 
-        // The manifest we constructed has edges pointing at the
-        // literal strings "tree-digest" and "layer-digest" which we
-        // never inserted under those names (the store returns
-        // content-hashed digests). So the first walk produces just
-        // the manifest — the BFS visits the manifest, sees the
-        // dangling edges, and the visited set stops the descent.
-        // This is *expected* behaviour; the walk is robust to
-        // dangling edges (real OCI images are well-formed, but the
-        // helper is defensive).
-        let path = walk_dag(&store, &manifest_digest);
+        // The manifest has edges pointing at Digest::ZERO which is
+        // never inserted in the store. The BFS visits the manifest,
+        // sees the dangling edges, and the visited set stops the
+        // descent. This is *expected* behaviour; the walk is robust
+        // to dangling edges (real OCI images are well-formed, but
+        // the helper is defensive).
+        let md = manifest_digest.as_hex();
+        let path = walk_dag(&store, &md);
         assert_eq!(path.len(), 1, "expected just the manifest, got {:?}", path);
         assert_eq!(path[0].kind, "manifest");
-        assert_eq!(path[0].digest, manifest_digest);
+        assert_eq!(path[0].digest, md);
 
         // Now build a manifest whose edges reference the *real*
         // digests returned by put_blocking, and walk that. We
         // should get manifest → tree. (The tree's edge to
-        // "layer-digest" is also dangling, by design — same
-        // reason.)
+        // Digest::ZERO is also dangling, by design — same reason.)
         let real_manifest = StoreDagNode::new(
             NodeKind::Manifest,
-            vec![tree_digest.clone()],
+            vec![tree_digest],
             b"real-manifest-bytes".to_vec(),
         );
         let real_manifest_digest = store.put_blocking(&real_manifest).unwrap();
 
-        let path = walk_dag(&store, &real_manifest_digest);
+        let rmd = real_manifest_digest.as_hex();
+        let td = tree_digest.as_hex();
+        let path = walk_dag(&store, &rmd);
         assert_eq!(path.len(), 2, "expected manifest+tree, got {:?}", path);
         assert_eq!(path[0].kind, "manifest");
-        assert_eq!(path[0].digest, real_manifest_digest);
+        assert_eq!(path[0].digest, rmd);
         assert_eq!(path[1].kind, "tree");
-        assert_eq!(path[1].digest, tree_digest);
+        assert_eq!(path[1].digest, td);
     }
 
     /// Minimal tempdir shim so we don't pull in a `tempfile` crate
@@ -1072,7 +1099,7 @@ fn parse_restart_policy(p: i32) -> nimbus_exec::types::RestartPolicy {
 async fn attempt_restart(
     watcher_executor: &Arc<ExecutorRouter>,
     watcher_workloads: &Arc<RwLock<HashMap<String, WorkloadState>>>,
-    watcher_store: &Arc<MmapStore>,
+    _watcher_store: &Arc<MmapStore>,
     watcher_checkpoints_dir: &std::path::Path,
     watcher_bus: &Arc<EventBus>,
     id: &str,
@@ -1083,7 +1110,7 @@ async fn attempt_restart(
 
     // Read current state to get restart count and policy.
     let (restart_count, image_root, command, env, cpu_millicores, memory_bytes,
-          network_rules, kernel_image_ref, working_dir, bridge_name, mounts,
+          network_rules, kernel_image_ref, _working_dir, bridge_name, mounts,
           health_check, network_mode_str, stopped_by_operator) = {
         let map = watcher_workloads.read().await;
         match map.get(id) {
@@ -1117,7 +1144,7 @@ async fn attempt_restart(
     }
 
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s.
-    let backoff_secs = std::cmp::min(1u64 << restart_count, 30u64);
+    let backoff_secs = std::cmp::min(1u64 << restart_count.min(63), 30u64);
     tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
 
     // Reconstruct the spec.
@@ -1136,6 +1163,10 @@ async fn attempt_restart(
         // Kernel path from staged kernel cache; best-effort.
         // In v0 we skip this — the kernel was already cached.
         None
+    };
+    let image_root = match Digest::from_hex(&image_root) {
+        Ok(d) => d,
+        Err(_) => return,
     };
     let spec = WorkloadSpec {
         id: id.to_string(),
@@ -1180,7 +1211,7 @@ async fn attempt_restart(
                     Event::new(id, crate::events::EventKind::WorkloadStarted)
                         .with_metadata("backend", &handle.backend)
                         .with_metadata("source", "restart_watcher")
-                        .with_metadata("restart_count", &checkpoint.restart_count.to_string()),
+                        .with_metadata("restart_count", checkpoint.restart_count.to_string()),
                 );
                 info!(%id, restart_count = checkpoint.restart_count, "workload restarted");
             }
@@ -1319,7 +1350,7 @@ impl RuntimeService {
     async fn evaluate_pulled(
         &self,
         image_ref: &str,
-        manifest_digest: &str,
+        manifest_digest: &Digest,
     ) -> Result<(), Status> {
         let Some(engine) = &self.policy_engine else {
             return Ok(());
@@ -1327,7 +1358,7 @@ impl RuntimeService {
         let policy = engine.default_policy().clone();
         let store = self.store.clone();
         let image_ref = image_ref.to_string();
-        let manifest_digest = manifest_digest.to_string();
+        let manifest_digest = manifest_digest.as_hex();
         let engine = engine.clone();
         let decision_image_ref = image_ref.clone();
         let decision_manifest = manifest_digest.clone();
@@ -1373,7 +1404,6 @@ impl RuntimeService {
         let policy = engine.default_policy().clone();
         let store = self.store.clone();
         let engine = engine.clone();
-        let image_ref = image_ref;
         let root_digest = root_digest.to_string();
         let decision_root = root_digest.clone();
         let decision = tokio::task::spawn_blocking(move || {
@@ -1478,7 +1508,7 @@ impl RuntimeService {
                 .with_metadata("backend", &final_backend)
                 .with_metadata("image_root", &final_image_root)
                 .with_metadata("internal_ip", &final_ip)
-                .with_metadata("pid", &final_pid.to_string()),
+                .with_metadata("pid", final_pid.to_string()),
         );
 
         Ok(tonic::Response::new(RunResponse {
@@ -1553,7 +1583,7 @@ impl Runtime for RuntimeService {
                     Event::new(&image_ref, EventKind::ImagePulled)
                         .with_metadata("registry", &registry_label)
                         .with_metadata("outcome", "failed")
-                        .with_metadata("error", &e.to_string()),
+                        .with_metadata("error", e.to_string()),
                 );
                 return Err(tonic::Status::internal(format!("pull failed: {e}")));
             }
@@ -1569,7 +1599,7 @@ impl Runtime for RuntimeService {
                     Event::new(&image_ref, EventKind::ImagePulled)
                         .with_metadata("registry", &registry_label)
                         .with_metadata("outcome", "failed")
-                        .with_metadata("error", &format!("conversion: {e}")),
+                        .with_metadata("error", format!("conversion: {e}")),
                 );
                 return Err(tonic::Status::internal(format!("conversion failed: {e}")));
             }
@@ -1578,7 +1608,7 @@ impl Runtime for RuntimeService {
         // Record image_ref -> root_digest for later run-time policy checks.
         {
             let mut tags = self.image_tags.write().await;
-            tags.insert(root_digest.clone(), image_ref.clone());
+            tags.insert(root_digest.as_hex(), image_ref.clone());
         }
 
         // Policy gate.
@@ -1588,7 +1618,7 @@ impl Runtime for RuntimeService {
                 Event::new(&image_ref, EventKind::PolicyDenied)
                     .with_metadata("registry", &registry_label)
                     .with_metadata("phase", "pull")
-                    .with_metadata("reason", &e.message().to_string()),
+                    .with_metadata("reason", e.message().to_string()),
             );
             return Err(e);
         }
@@ -1606,21 +1636,21 @@ impl Runtime for RuntimeService {
             self.event_bus.emit(
                 Event::new(&image_ref, EventKind::ImageDeduped)
                     .with_metadata("registry", &registry_label)
-                    .with_metadata("root_digest", &root_digest)
-                    .with_metadata("bytes_stored", &bytes_stored.to_string()),
+                    .with_metadata("root_digest", root_digest.as_hex())
+                    .with_metadata("bytes_stored", bytes_stored.to_string()),
             );
         } else {
             self.event_bus.emit(
                 Event::new(&image_ref, EventKind::ImagePulled)
                     .with_metadata("registry", &registry_label)
-                    .with_metadata("root_digest", &root_digest)
-                    .with_metadata("bytes_stored", &bytes_stored.to_string()),
+                    .with_metadata("root_digest", root_digest.as_hex())
+                    .with_metadata("bytes_stored", bytes_stored.to_string()),
             );
         }
 
         record_pull(&registry_label, "success");
         Ok(tonic::Response::new(PullImageResponse {
-            root_digest,
+            root_digest: root_digest.as_hex(),
             bytes_stored,
             bytes_deduplicated: 0,
         }))
@@ -1647,7 +1677,7 @@ impl Runtime for RuntimeService {
         // there.
         let req_for_state = req.clone();
         let backend = Backend::from_str(&req.backend)
-            .map_err(|e| tonic::Status::invalid_argument(e))?;
+            .map_err(tonic::Status::invalid_argument)?;
 
         // RAII timer: records wall-clock duration of the whole RPC
         // (parse, policy, create, start) on drop, regardless of
@@ -1696,7 +1726,7 @@ impl Runtime for RuntimeService {
                                 .with_metadata("image", &req.kernel_image)
                                 .with_metadata(
                                     "vmlinux_bytes",
-                                    &kernel.vmlinux_size().to_string(),
+                                    kernel.vmlinux_size().to_string(),
                                 ),
                         );
                         self.kernel_cache
@@ -1710,7 +1740,7 @@ impl Runtime for RuntimeService {
                                 .with_metadata("kind", "kernel")
                                 .with_metadata("image", &req.kernel_image)
                                 .with_metadata("outcome", "failed")
-                                .with_metadata("error", &e.to_string()),
+                                .with_metadata("error", e.to_string()),
                         );
                         return Err(tonic::Status::internal(format!(
                             "stage kernel {}: {e}",
@@ -1769,8 +1799,10 @@ impl Runtime for RuntimeService {
         // handles its own emulation).
         if !matches!(backend, Backend::Vm) {
             let materializer = nimbus_oci::OciMaterializer::new(&self.store);
+            let root_digest = Digest::from_hex(&req.root_digest)
+                .map_err(|e| Status::internal(format!("invalid digest: {e}")))?;
             let md = materializer
-                .materialize_manifest(&req.root_digest)
+                .materialize_manifest(&root_digest)
                 .map_err(|e| Status::internal(format!("read manifest for arch check: {e}")))?;
             if md.architecture != current_arch() {
                 crate::binfmt::ensure_binfmt_for_arch(&md.architecture)
@@ -1827,18 +1859,77 @@ impl Runtime for RuntimeService {
                 .map(|k| k.vmlinux_path().to_path_buf())
         };
 
-        let mounts: Vec<nimbus_exec::Mount> = req.mounts.iter().map(|m| nimbus_exec::Mount {
-            type_: m.r#type.clone(),
-            source: m.source.clone(),
-            destination: m.destination.clone(),
-            options: m.options.clone(),
-        }).collect();
+        // Resolve secrets/configs and stage them for bind-mounting.
+        let staged_secret_dir = self.config.store_root.join("run").join("secrets-stage").join(&req.id);
+        let mut extra_mounts: Vec<nimbus_exec::Mount> = Vec::new();
+
+        if !req.secrets.is_empty() || !req.configs.is_empty() {
+            let _ = std::fs::create_dir_all(&staged_secret_dir);
+        }
+
+        for sr in &req.secrets {
+            let content = self
+                .config
+                .secrets_store
+                .read_secret_raw(&sr.name)
+                .map_err(|e| tonic::Status::invalid_argument(format!("secret '{}': {e}", sr.name)))?;
+            let target = if sr.target_path.is_empty() {
+                format!("/run/secrets/{}", sr.name)
+            } else {
+                sr.target_path.clone()
+            };
+            let stage_path = staged_secret_dir.join(&sr.name);
+            std::fs::write(&stage_path, &content)
+                .map_err(|e| tonic::Status::internal(format!("stage secret '{}': {e}", sr.name)))?;
+            extra_mounts.push(nimbus_exec::Mount {
+                type_: "bind".to_string(),
+                source: stage_path.to_string_lossy().to_string(),
+                destination: target,
+                options: vec!["ro".to_string(), "rbind".to_string()],
+            });
+        }
+
+        for cr in &req.configs {
+            let content = self
+                .config
+                .secrets_store
+                .read_config_raw(&cr.name)
+                .map_err(|e| tonic::Status::invalid_argument(format!("config '{}': {e}", cr.name)))?;
+            let target = if cr.target_path.is_empty() {
+                format!("/{}", cr.name)
+            } else {
+                cr.target_path.clone()
+            };
+            let stage_path = staged_secret_dir.join(&cr.name);
+            std::fs::write(&stage_path, &content)
+                .map_err(|e| tonic::Status::internal(format!("stage config '{}': {e}", cr.name)))?;
+            extra_mounts.push(nimbus_exec::Mount {
+                type_: "bind".to_string(),
+                source: stage_path.to_string_lossy().to_string(),
+                destination: target,
+                options: vec!["ro".to_string(), "rbind".to_string()],
+            });
+        }
+
+        let mounts: Vec<nimbus_exec::Mount> = req
+            .mounts
+            .iter()
+            .map(|m| nimbus_exec::Mount {
+                type_: m.r#type.clone(),
+                source: m.source.clone(),
+                destination: m.destination.clone(),
+                options: m.options.clone(),
+            })
+            .chain(extra_mounts)
+            .collect();
 
         let restart_policy = parse_restart_policy(req.restart_policy);
 
+        let image_root = Digest::from_hex(&req.root_digest)
+            .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
         let spec = WorkloadSpec {
             id: req.id.clone(),
-            image_root: req.root_digest.clone(),
+            image_root,
             backend,
             command: req.command.clone(),
             env,
@@ -1960,7 +2051,7 @@ impl Runtime for RuntimeService {
                     Event::new(&req.id, EventKind::WorkloadStarted)
                         .with_metadata("backend", &backend_label)
                         .with_metadata("outcome", "create_failed")
-                        .with_metadata("error", &e.to_string()),
+                        .with_metadata("error", e.to_string()),
                 );
                 return Err(tonic::Status::internal(format!("create failed: {e}")));
             }
@@ -1971,7 +2062,7 @@ impl Runtime for RuntimeService {
                 Event::new(&req.id, EventKind::WorkloadStarted)
                     .with_metadata("backend", &handle.backend)
                     .with_metadata("outcome", "start_failed")
-                    .with_metadata("error", &e.to_string()),
+                    .with_metadata("error", e.to_string()),
             );
             return Err(tonic::Status::internal(format!("start failed: {e}")));
         }
@@ -2058,15 +2149,13 @@ impl Runtime for RuntimeService {
         // survives a runtime restart.
         write_workload_checkpoint(&self.config.checkpoints_dir, &final_id, &state);
 
-        record_workload_started(&backend_label);
-
         // Emit the public WorkloadStarted event for observers.
         self.event_bus.emit(
             Event::new(&final_id, EventKind::WorkloadStarted)
                 .with_metadata("backend", &final_backend)
                 .with_metadata("image_root", &final_image_root)
                 .with_metadata("internal_ip", &final_ip)
-                .with_metadata("pid", &final_pid.to_string()),
+                .with_metadata("pid", final_pid.to_string()),
         );
 
         Ok(tonic::Response::new(RunResponse {
@@ -2146,6 +2235,8 @@ impl Runtime for RuntimeService {
                 mounts: service.mounts.clone(),
                 health_check: service.health_check.clone(),
                 restart_policy: 0, // default: no restart for compose
+                secrets: Vec::new(),
+                configs: Vec::new(),
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -2174,6 +2265,10 @@ impl Runtime for RuntimeService {
         if let Some(rootfs_path) = self.rootfs_cache.write().await.remove(&id) {
             tokio::fs::remove_dir_all(&rootfs_path).await.ok();
         }
+
+        // Clean up staged secrets/configs for this workload.
+        let staged_secret_dir = self.config.store_root.join("run").join("secrets-stage").join(&id);
+        tokio::fs::remove_dir_all(&staged_secret_dir).await.ok();
 
         // Look up the backend label *before* mutating state, so the
         // metrics call sees the same label as the one that was
@@ -2300,15 +2395,44 @@ impl Runtime for RuntimeService {
         &self,
         request: tonic::Request<StreamLogsRequest>,
     ) -> Result<tonic::Response<Self::StreamLogsStream>, tonic::Status> {
-        let _req = request.into_inner();
+        let req = request.into_inner();
         let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+        // Verify the workload exists before starting the stream.
+        let workloads = self.workloads.read().await;
+        let state = workloads.get(&req.id).ok_or_else(|| {
+            tonic::Status::not_found(format!("workload {} not found", req.id))
+        })?;
+        let status_str = format!("{}\n", state.status);
+        drop(workloads);
+
         tokio::spawn(async move {
-            tx.send(Ok(LogChunk {
-                data: "logs streaming...\n".into(),
+            // Send current status as the first log chunk.
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            if tx.send(Ok(LogChunk {
+                data: status_str.into_bytes(),
                 stderr: false,
-                timestamp: 0,
-            })).await.ok();
+                timestamp: now,
+            })).await.is_err() {
+                return;
+            }
+
+            if req.follow {
+                // Poll workload state periodically and send updates.
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+                loop {
+                    interval.tick().await;
+                    // The receiver dropped? Stop.
+                    if tx.is_closed() {
+                        break;
+                    }
+                }
+            }
         });
+
         Ok(tonic::Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
     }
 
@@ -2469,17 +2593,29 @@ impl Runtime for RuntimeService {
         request: tonic::Request<ExecRequest>,
     ) -> Result<tonic::Response<ExecResponse>, tonic::Status> {
         let req = request.into_inner();
-        let mut cmd = tokio::process::Command::new("runc");
-        cmd.args(["exec", &req.id]);
-        for arg in &req.command { cmd.arg(arg); }
 
-        let output = cmd.output().await
+        // Dispatch through ExecutorRouter for correct backend selection.
+        let exit_code = self.executor
+            .exec(&req.id, &req.command, 30)
+            .await
             .map_err(|e| tonic::Status::internal(format!("exec failed: {e}")))?;
 
+        // Also capture stdout/stderr via runc exec (works for container backend;
+        // VM/rootless backends return empty output, which is acceptable).
+        let (stdout, stderr) = {
+            let mut cmd = tokio::process::Command::new("runc");
+            cmd.args(["exec", &req.id]);
+            for arg in &req.command { cmd.arg(arg); }
+            match cmd.output().await {
+                Ok(out) => (out.stdout, out.stderr),
+                Err(_) => (Vec::new(), Vec::new()),
+            }
+        };
+
         Ok(tonic::Response::new(ExecResponse {
-            exit_code: output.status.code().unwrap_or(-1),
-            stdout: output.stdout,
-            stderr: output.stderr,
+            exit_code,
+            stdout,
+            stderr,
         }))
     }
 
@@ -2571,9 +2707,9 @@ impl Runtime for RuntimeService {
         };
         let env = if open_env.is_empty() {
             state
-                .command
+                .env
                 .iter()
-                .filter_map(|s| s.split_once('=').map(|(k, v)| format!("{k}={v}")))
+                .map(|(k, v)| format!("{k}={v}"))
                 .collect()
         } else {
             open_env
@@ -2733,7 +2869,7 @@ impl Runtime for RuntimeService {
                 .with_metadata("outcome", "pending")
                 .with_metadata("image_root", &state.image_root)
                 .with_metadata("kernel_image", &kernel_image_ref)
-                .with_metadata("command", &command.join(" ")),
+                .with_metadata("command", command.join(" ")),
         );
 
         // 9. Spawn the blocking session. This is where
@@ -2754,7 +2890,7 @@ impl Runtime for RuntimeService {
                     Event::new(&workload_id_session, EventKind::WorkloadStarted)
                         .with_metadata("backend", "apple-virt-attach")
                         .with_metadata("outcome", "failed")
-                        .with_metadata("error", &err.to_string()),
+                        .with_metadata("error", err.to_string()),
                 );
                 let body = attach_error_to_status(&err);
                 // Best-effort: try to push the error on the
@@ -2978,7 +3114,7 @@ impl Runtime for RuntimeService {
         };
 
         let tag = if req.tag.is_empty() {
-            format!("{}", &root_digest[..12])
+            root_digest.as_hex()[..12].to_string()
         } else {
             req.tag.clone()
         };
@@ -2986,7 +3122,7 @@ impl Runtime for RuntimeService {
         // Record the image tag -> root_digest mapping
         {
             let mut tags = self.image_tags.write().await;
-            tags.insert(root_digest.clone(), tag.clone());
+            tags.insert(root_digest.as_hex(), tag.clone());
         }
 
         // Push after build if requested.
@@ -3005,13 +3141,13 @@ impl Runtime for RuntimeService {
                 self.config.insecure_registries.clone(),
             );
             pusher
-                .push(&root_digest, &target_ref)
+                .push(&root_digest.as_hex(), &target_ref)
                 .await
                 .map_err(|e| tonic::Status::internal(format!("push failed: {e}")))?;
         }
 
         Ok(tonic::Response::new(BuildImageResponse {
-            root_digest,
+            root_digest: root_digest.as_hex(),
             tag,
         }))
     }
@@ -3059,7 +3195,7 @@ impl Runtime for RuntimeService {
         tokio::spawn(async move {
             // Write tar to a Vec, then chunk and send.
             let mut buf = Vec::new();
-            if let Err(e) = export_dag_to_tar(&*store, &root_digest, &mut buf) {
+            if let Err(e) = export_dag_to_tar(&store, &root_digest, &mut buf) {
                 let _ = tx
                     .send(Err(tonic::Status::internal(format!("export failed: {e}"))))
                     .await;
@@ -3103,7 +3239,7 @@ impl Runtime for RuntimeService {
 
         // Import from the buffered data.
         let (root_digest, bytes_stored, bytes_deduplicated) = tokio::task::spawn_blocking(
-            move || import_dag_from_tar(&*store, &buf[..]),
+            move || import_dag_from_tar(&store, &buf[..]),
         )
         .await
         .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
@@ -3257,8 +3393,10 @@ impl Runtime for RuntimeService {
                 .get(&req.id)
                 .ok_or_else(|| Status::not_found(format!("workload {} not found", req.id)))?;
             let materializer = nimbus_oci::OciMaterializer::new(&self.store);
+            let image_root = Digest::from_hex(&state.image_root)
+                .map_err(|e| Status::internal(format!("invalid digest: {e}")))?;
             let md = materializer
-                .materialize_manifest(&state.image_root)
+                .materialize_manifest(&image_root)
                 .map_err(|e| Status::internal(format!("read manifest: {e}")))?;
             (md.architecture, md.os)
         };
@@ -3275,11 +3413,11 @@ impl Runtime for RuntimeService {
         // If a tag was provided, record it in the image tag map.
         if !req.tag.is_empty() {
             let mut tags = self.image_tags.write().await;
-            tags.insert(manifest_digest.clone(), req.tag.clone());
+            tags.insert(manifest_digest.as_hex(), req.tag.clone());
         }
 
         Ok(tonic::Response::new(CommitImageResponse {
-            root_digest: manifest_digest,
+            root_digest: manifest_digest.as_hex(),
             tag: req.tag,
             new_nodes: node_count as u64,
         }))
@@ -3339,7 +3477,7 @@ impl Runtime for RuntimeService {
             }
         }
 
-        for (path, _) in &original_files {
+        for path in original_files.keys() {
             if !container_files.contains_key(path) {
                 deleted.push(path.clone());
             }
@@ -3366,8 +3504,8 @@ impl Runtime for RuntimeService {
                 (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
-                    .as_secs() as i64)
-                    - start
+                    .as_secs())
+                    .saturating_sub(start as u64)
             } else {
                 0
             }
@@ -3375,13 +3513,13 @@ impl Runtime for RuntimeService {
 
         let workload_count = {
             let workloads = self.workloads.read().await;
-            workloads.len() as i64
+            workloads.len() as u64
         };
 
         let store = &self.store;
         let mountpoint = self.config.store_root.to_string_lossy().to_string();
-        let total_nodes = store.node_count() as i64;
-        let _total_bytes = store.total_bytes() as i64;
+        let total_nodes = store.cached_node_count() as u64;
+        let _total_bytes = store.total_bytes();
         let (fs_total, fs_used) = fs_usage(&self.config.store_root);
 
         Ok(tonic::Response::new(InfoResponse {
@@ -3389,8 +3527,8 @@ impl Runtime for RuntimeService {
             uptime_seconds: uptime,
             workload_count,
             store_mountpoint: mountpoint,
-            store_total_bytes: fs_total,
-            store_used_bytes: fs_used,
+            store_total_bytes: fs_total as u64,
+            store_used_bytes: fs_used as u64,
             store_total_nodes: total_nodes,
             go_version: String::new(),
         }))
@@ -3412,8 +3550,7 @@ impl Runtime for RuntimeService {
 
         // Determine subnet. For v0, use a deterministic /24 based on the bridge name.
         let subnet = if req.subnet.is_empty() {
-            let subnet_str = network_subnet_for(&req.name);
-            subnet_str
+            network_subnet_for(&req.name)
         } else {
             req.subnet.clone()
         };
@@ -3480,6 +3617,136 @@ impl Runtime for RuntimeService {
         Ok(tonic::Response::new(ListNetworksResponse { networks }))
     }
 
+    // ─── Secret / Config handlers ────────────────────────────
+
+    async fn create_secret(
+        &self,
+        request: tonic::Request<CreateSecretRequest>,
+    ) -> Result<tonic::Response<CreateSecretResponse>, tonic::Status> {
+        let req = request.into_inner();
+        self.config
+            .secrets_store
+            .create_secret(&req.name, &req.data)
+            .map_err(tonic::Status::invalid_argument)?;
+        Ok(tonic::Response::new(CreateSecretResponse {}))
+    }
+
+    async fn list_secrets(
+        &self,
+        _request: tonic::Request<ListSecretsRequest>,
+    ) -> Result<tonic::Response<ListSecretsResponse>, tonic::Status> {
+        let items = self
+            .config
+            .secrets_store
+            .list_secrets()
+            .map_err(tonic::Status::internal)?;
+        let secrets: Vec<crate::proto::SecretInfo> = items
+            .into_iter()
+            .map(|s| crate::proto::SecretInfo {
+                name: s.name,
+                created_at: s.created_at,
+                size_bytes: s.size_bytes,
+            })
+            .collect();
+        Ok(tonic::Response::new(ListSecretsResponse { secrets }))
+    }
+
+    async fn inspect_secret(
+        &self,
+        request: tonic::Request<InspectSecretRequest>,
+    ) -> Result<tonic::Response<InspectSecretResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let s = self
+            .config
+            .secrets_store
+            .inspect_secret(&req.name)
+            .map_err(tonic::Status::not_found)?;
+        let secret = crate::proto::SecretInfo {
+            name: s.name,
+            created_at: s.created_at,
+            size_bytes: s.size_bytes,
+        };
+        Ok(tonic::Response::new(InspectSecretResponse {
+            secret: Some(secret),
+        }))
+    }
+
+    async fn remove_secret(
+        &self,
+        request: tonic::Request<RemoveSecretRequest>,
+    ) -> Result<tonic::Response<RemoveSecretResponse>, tonic::Status> {
+        let req = request.into_inner();
+        self.config
+            .secrets_store
+            .remove_secret(&req.name)
+            .map_err(tonic::Status::not_found)?;
+        Ok(tonic::Response::new(RemoveSecretResponse {}))
+    }
+
+    async fn create_config(
+        &self,
+        request: tonic::Request<CreateConfigRequest>,
+    ) -> Result<tonic::Response<CreateConfigResponse>, tonic::Status> {
+        let req = request.into_inner();
+        self.config
+            .secrets_store
+            .create_config(&req.name, &req.data)
+            .map_err(tonic::Status::invalid_argument)?;
+        Ok(tonic::Response::new(CreateConfigResponse {}))
+    }
+
+    async fn list_configs(
+        &self,
+        _request: tonic::Request<ListConfigsRequest>,
+    ) -> Result<tonic::Response<ListConfigsResponse>, tonic::Status> {
+        let items = self
+            .config
+            .secrets_store
+            .list_configs()
+            .map_err(tonic::Status::internal)?;
+        let configs: Vec<crate::proto::ConfigInfo> = items
+            .into_iter()
+            .map(|c| crate::proto::ConfigInfo {
+                name: c.name,
+                created_at: c.created_at,
+                size_bytes: c.size_bytes,
+            })
+            .collect();
+        Ok(tonic::Response::new(ListConfigsResponse { configs }))
+    }
+
+    async fn inspect_config(
+        &self,
+        request: tonic::Request<InspectConfigRequest>,
+    ) -> Result<tonic::Response<InspectConfigResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let c = self
+            .config
+            .secrets_store
+            .inspect_config(&req.name)
+            .map_err(tonic::Status::not_found)?;
+        let config = crate::proto::ConfigInfo {
+            name: c.name,
+            created_at: c.created_at,
+            size_bytes: c.size_bytes,
+        };
+        Ok(tonic::Response::new(InspectConfigResponse {
+            config: Some(config),
+        }))
+    }
+
+    async fn remove_config(
+        &self,
+        request: tonic::Request<RemoveConfigRequest>,
+    ) -> Result<tonic::Response<RemoveConfigResponse>, tonic::Status> {
+        let req = request.into_inner();
+        self.config
+            .secrets_store
+            .remove_config(&req.name)
+            .map_err(tonic::Status::not_found)?;
+        Ok(tonic::Response::new(RemoveConfigResponse {}))
+    }
+
     async fn prune(
         &self,
         _request: tonic::Request<PruneRequest>,
@@ -3534,6 +3801,24 @@ impl Runtime for RuntimeService {
                 true
             }
         });
+
+        // 3. Clean up orphaned secret/config staging directories.
+        let staged_root = store_root.join("run").join("secrets-stage");
+        if staged_root.exists() {
+            if let Ok(entries) = std::fs::read_dir(&staged_root) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_dir() { continue; }
+                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if !active_ids.contains(&name) {
+                        if let Ok(meta) = std::fs::metadata(&path) {
+                            bytes_freed += meta.len() as i64;
+                        }
+                        std::fs::remove_dir_all(&path).ok();
+                    }
+                }
+            }
+        }
 
         Ok(tonic::Response::new(PruneResponse {
             bundles_removed,
@@ -3652,7 +3937,7 @@ fn materialize_rootfs(
     use nimbus_store::Digest;
     let target = std::env::temp_dir().join(format!(
         "nimbus-rootfs-{}-{}",
-        manifest_digest.replace(':', "_").replace('/', "_"),
+        manifest_digest.replace([':', '/'], "_"),
         std::process::id(),
     ));
     if target.exists() {
@@ -3735,10 +4020,9 @@ fn walk_dag_tree(
     store: &MmapStore,
     manifest_digest: &str,
 ) -> Result<HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
-    use nimbus_store::{NodeKind, Digest as DagDigest};
+    use nimbus_store::NodeKind;
     let mut files = HashMap::new();
-    let digest: DagDigest = manifest_digest
-        .parse()
+    let digest = Digest::from_hex(manifest_digest)
         .map_err(|e| format!("parse digest {manifest_digest}: {e}"))?;
     let manifest_node = store
         .get_deserialized(&digest)
@@ -3746,21 +4030,15 @@ fn walk_dag_tree(
     if manifest_node.kind != NodeKind::Manifest {
         return Err("not a manifest node".into());
     }
-    for layer_digest in &manifest_node.edges {
-        let layer_digest: DagDigest = layer_digest
-            .parse()
-            .map_err(|e| format!("parse layer digest: {e}"))?;
+    for layer_edge in &manifest_node.edges {
         let layer_node = store
-            .get_deserialized(&layer_digest)
+            .get_deserialized(layer_edge)
             .map_err(|e| format!("failed to read layer: {e}"))?;
         if layer_node.kind != NodeKind::Layer {
             continue;
         }
-        if let Some(tree_digest_str) = layer_node.edges.first() {
-            let tree_digest: DagDigest = tree_digest_str
-                .parse()
-                .map_err(|e| format!("parse tree digest: {e}"))?;
-            walk_tree_node(store, &tree_digest, "", &mut files)?;
+        if let Some(tree_digest) = layer_node.edges.first() {
+            walk_tree_node(store, tree_digest, "", &mut files)?;
         }
     }
     Ok(files)
@@ -3768,7 +4046,7 @@ fn walk_dag_tree(
 
 fn walk_tree_node(
     store: &MmapStore,
-    tree_digest: &nimbus_store::Digest,
+    tree_digest: &Digest,
     prefix: &str,
     files: &mut HashMap<String, String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -3787,12 +4065,9 @@ fn walk_tree_node(
             format!("{}/{}", prefix, entry.name)
         };
         if entry.is_dir {
-            let child_digest: nimbus_store::Digest = entry.digest
-                .parse()
-                .map_err(|e| format!("parse child digest: {e}"))?;
-            walk_tree_node(store, &child_digest, &child_path, files)?;
+            walk_tree_node(store, &entry.digest, &child_path, files)?;
         } else {
-            files.insert(child_path, entry.digest.clone());
+            files.insert(child_path, entry.digest.as_hex());
         }
     }
     Ok(())

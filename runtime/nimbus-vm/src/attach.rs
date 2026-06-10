@@ -119,7 +119,7 @@ pub struct AppleVirtAttachHandle {
     pub(crate) _vm: objc2::rc::Retained<objc2_virtualization::VZVirtualMachine>,
     /// The vsock connection. `fileDescriptor()` returns the
     /// fd we read/write.
-    pub(crate) conn: objc2::rc::Retained<objc2_virtualization::VZVirtioSocketConnection>,
+    pub(crate) _conn: objc2::rc::Retained<objc2_virtualization::VZVirtioSocketConnection>,
     /// Vsock fd (already dup'd by the spawn function so
     /// the framework's copy is independent).
     pub(crate) fd: std::os::fd::RawFd,
@@ -196,9 +196,9 @@ pub type FrameSource = std::sync::mpsc::Receiver<Frame>;
 ///
 /// `vsock_fd` is the raw file descriptor returned by
 /// [`AppleVirtAttachHandle::fd`]. `client_in` is the stream
-/// of frames coming from the gRPC client (i.e. `WorkloadStdin`
+/// of frames coming from the gRPC client (`WorkloadStdin`
 /// + `StdinEof`); `server_out` is the sink for frames going
-/// to the gRPC client (i.e. `WorkloadStdout` + `Stderr` +
+/// to the gRPC client (`WorkloadStdout` + `Stderr` +
 /// `Exit`).
 ///
 /// This is the **production** entry point. It runs the

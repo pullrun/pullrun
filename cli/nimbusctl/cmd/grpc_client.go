@@ -207,3 +207,37 @@ func (c *GRPCClient) ListNetworks(ctx context.Context, req *runtimepb.ListNetwor
 func (c *GRPCClient) Prune(ctx context.Context, req *runtimepb.PruneRequest) (*runtimepb.PruneResponse, error) {
 	return c.client.Prune(ctx, req)
 }
+
+// ─── Secret / Config ──────────────────────────────────────────
+
+func (c *GRPCClient) CreateSecret(ctx context.Context, name string, data []byte) (*runtimepb.CreateSecretResponse, error) {
+	return c.client.CreateSecret(ctx, &runtimepb.CreateSecretRequest{Name: name, Data: data})
+}
+
+func (c *GRPCClient) ListSecrets(ctx context.Context) (*runtimepb.ListSecretsResponse, error) {
+	return c.client.ListSecrets(ctx, &runtimepb.ListSecretsRequest{})
+}
+
+func (c *GRPCClient) InspectSecret(ctx context.Context, name string) (*runtimepb.InspectSecretResponse, error) {
+	return c.client.InspectSecret(ctx, &runtimepb.InspectSecretRequest{Name: name})
+}
+
+func (c *GRPCClient) RemoveSecret(ctx context.Context, name string) (*runtimepb.RemoveSecretResponse, error) {
+	return c.client.RemoveSecret(ctx, &runtimepb.RemoveSecretRequest{Name: name})
+}
+
+func (c *GRPCClient) CreateConfig(ctx context.Context, name string, data []byte) (*runtimepb.CreateConfigResponse, error) {
+	return c.client.CreateConfig(ctx, &runtimepb.CreateConfigRequest{Name: name, Data: data})
+}
+
+func (c *GRPCClient) ListConfigs(ctx context.Context) (*runtimepb.ListConfigsResponse, error) {
+	return c.client.ListConfigs(ctx, &runtimepb.ListConfigsRequest{})
+}
+
+func (c *GRPCClient) InspectConfig(ctx context.Context, name string) (*runtimepb.InspectConfigResponse, error) {
+	return c.client.InspectConfig(ctx, &runtimepb.InspectConfigRequest{Name: name})
+}
+
+func (c *GRPCClient) RemoveConfig(ctx context.Context, name string) (*runtimepb.RemoveConfigResponse, error) {
+	return c.client.RemoveConfig(ctx, &runtimepb.RemoveConfigRequest{Name: name})
+}

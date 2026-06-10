@@ -2,13 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::block_sync::{BlockSyncClient, BlockSyncService};
 use crate::bloom::BloomFilter;
-use crate::discovery::{Discovery, PeerInfo};
+use crate::discovery::Discovery;
 use crate::proto::HaveBlobsRequest;
 
 const GOSSIP_INTERVAL: Duration = Duration::from_secs(60);
@@ -27,6 +29,12 @@ pub struct PeerBloomInfo {
 #[derive(Clone, Debug)]
 pub struct PeerBloomCache {
     cache: Arc<RwLock<HashMap<String, PeerBloomInfo>>>,
+}
+
+impl Default for PeerBloomCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PeerBloomCache {
@@ -125,44 +133,49 @@ impl BloomGossip {
                 continue;
             }
 
-            let peer = match peers.choose(&mut rand::thread_rng()) {
-                Some(p) => p.clone(),
-                None => continue,
-            };
+            // Pick 2-3 random peers per round for faster convergence.
+            // Use StdRng::from_entropy() instead of thread_rng() because
+            // thread_rng() is !Send and cannot cross .await boundaries.
+            let mut rng = StdRng::from_entropy();
+            let peer_count = (peers.len() as u32).clamp(1, 3);
+            let selected: Vec<_> = peers.as_slice().choose_multiple(&mut rng, peer_count as usize).cloned().collect();
 
-            // Get our bloom filter
+            // Get our bloom filter once, reuse for all peers in this round.
             let (bf_bytes, bf_k, bf_m) = self.block_sync_service.bloom_filter_bytes().await;
 
-            let request = tonic::Request::new(HaveBlobsRequest {
-                bloom_filter: bf_bytes,
-                bloom_k: bf_k as i32,
-                bloom_m: bf_m as i32,
-            });
+            for peer in &selected {
+                let request = tonic::Request::new(HaveBlobsRequest {
+                    bloom_filter: bf_bytes.clone(),
+                    bloom_k: bf_k as i32,
+                    bloom_m: bf_m as i32,
+                });
 
-            match self.block_sync_client.clone().have_blobs(request).await {
-                Ok(response) => {
-                    let resp = response.into_inner();
-                    let peer_addr = peer.sync_addr.to_string();
-                    let info = PeerBloomInfo {
-                        node_id: peer.node_id.clone(),
-                        sync_addr: peer_addr.clone(),
-                        bloom_bytes: resp.bloom_filter,
-                        bloom_k: resp.bloom_k as u32,
-                        bloom_m: resp.bloom_m as u64,
-                        last_updated: Instant::now(),
-                    };
-                    self.bloom_cache
-                        .update(peer.node_id.clone(), peer_addr, info)
-                        .await;
-                    let count = self.bloom_cache.peer_count().await;
-                    debug!(
-                        peer = %peer.node_id,
-                        bloom_peers = count,
-                        "gossip exchange complete"
-                    );
-                }
-                Err(e) => {
-                    warn!(peer = %peer.node_id, error = %e, "gossip exchange failed");
+                match self.block_sync_client.clone().have_blobs(request).await {
+                    Ok(response) => {
+                        let resp = response.into_inner();
+                        let peer_addr = peer.sync_addr.to_string();
+                        // Cache the parsed bloom filter alongside the raw bytes.
+                        let info = PeerBloomInfo {
+                            node_id: peer.node_id.clone(),
+                            sync_addr: peer_addr.clone(),
+                            bloom_bytes: resp.bloom_filter,
+                            bloom_k: resp.bloom_k as u32,
+                            bloom_m: resp.bloom_m as u64,
+                            last_updated: Instant::now(),
+                        };
+                        self.bloom_cache
+                            .update(peer.node_id.clone(), peer_addr, info)
+                            .await;
+                        let count = self.bloom_cache.peer_count().await;
+                        debug!(
+                            peer = %peer.node_id,
+                            bloom_peers = count,
+                            "gossip exchange complete"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(peer = %peer.node_id, error = %e, "gossip exchange failed");
+                    }
                 }
             }
 

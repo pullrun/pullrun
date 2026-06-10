@@ -32,6 +32,8 @@ pub struct Discovery {
     node_id: String,
     sync_addr: SocketAddr,
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+    /// Per-source rate limiting: tracks last announcement time per source IP.
+    rate_limiter: Arc<RwLock<HashMap<String, Instant>>>,
 }
 
 impl Discovery {
@@ -40,6 +42,7 @@ impl Discovery {
             node_id,
             sync_addr,
             peers: Arc::new(RwLock::new(HashMap::new())),
+            rate_limiter: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -91,6 +94,8 @@ impl Discovery {
 
         let peers = self.peers.clone();
         let node_id = self.node_id.clone();
+        let rate_limiter = self.rate_limiter.clone();
+        let peers_for_evict = self.peers.clone();
 
         // Broadcast task
         tokio::spawn(async move {
@@ -103,15 +108,43 @@ impl Discovery {
             }
         });
 
-        // Listen for peer announcements
+        // Periodic stale peer eviction (runs every 30s, independent of recv).
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let mut peers = peers_for_evict.write().await;
+                let threshold = Instant::now() - PEER_TIMEOUT;
+                peers.retain(|id, info| {
+                    let keep = info.last_seen >= threshold;
+                    if !keep {
+                        info!(peer = %id, addr = %info.sync_addr, "evicting stale peer");
+                    }
+                    keep
+                });
+            }
+        });
+
+        // Listen for peer announcements (rate-limited per source).
         let mut buf = [0u8; 4096];
         loop {
             match sock.recv_from(&mut buf).await {
-                Ok((len, _src)) => {
+                Ok((len, src)) => {
                     let data = &buf[..len];
                     if let Ok(ann) = serde_json::from_slice::<NodeAnnouncement>(data) {
                         if ann.node_id == node_id {
                             continue;
+                        }
+                        // Rate limit: at most 1 announcement per source per 10s.
+                        {
+                            let mut rl = rate_limiter.write().await;
+                            let last = rl.get(&src.ip().to_string()).copied();
+                            if let Some(last) = last {
+                                if Instant::now().duration_since(last) < Duration::from_secs(10) {
+                                    continue;
+                                }
+                            }
+                            rl.insert(src.ip().to_string(), Instant::now());
                         }
                         if let Ok(addr) = ann.sync_addr.parse::<SocketAddr>() {
                             let mut peers = peers.write().await;
@@ -135,9 +168,6 @@ impl Discovery {
                     debug!(error = %e, "discovery recv error");
                 }
             }
-
-            // Evict stale peers periodically (every ~50 messages).
-            self.evict_stale_peers().await;
         }
     }
 
@@ -148,18 +178,6 @@ impl Discovery {
 
     pub async fn get_peer_count(&self) -> usize {
         self.peers.read().await.len()
-    }
-
-    async fn evict_stale_peers(&self) {
-        let mut peers = self.peers.write().await;
-        let threshold = Instant::now() - PEER_TIMEOUT;
-        peers.retain(|id, info| {
-            let keep = info.last_seen >= threshold;
-            if !keep {
-                info!(peer = %id, addr = %info.sync_addr, "evicting stale peer");
-            }
-            keep
-        });
     }
 }
 

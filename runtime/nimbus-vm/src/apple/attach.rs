@@ -3,19 +3,19 @@
 //! Implements the host-side state machine for an
 //! `AttachWorkload` session:
 //!
-//! 1. `spawn_apple_virt_vm` builds and starts a fresh
-//!    `VZVirtualMachine` configured with:
-//!    - `VZLinuxBootLoader` (kernel + optional initramfs
-//!      from `StagedKernel`)
-//!    - `VZGenericPlatformConfiguration`
-//!    - `VZVirtioFileSystemDeviceConfiguration` (rootfs
-//!      at `nimbus-rootfs` VirtioFS tag)
-//!    - `VZVirtioSocketDeviceConfiguration` (for
-//!      guest→host vsock)
-//!    Then it gets the runtime socket device via
-//!    `vm.socketDevices().firstObject()` and registers a
-//!    `VZVirtioSocketListener` on the configured port,
-//!    then waits for the guest to connect.
+//!   1. `spawn_apple_virt_vm` builds and starts a fresh
+//!      `VZVirtualMachine` configured with:
+//!      - `VZLinuxBootLoader` (kernel + optional initramfs
+//!        from `StagedKernel`)
+//!      - `VZGenericPlatformConfiguration`
+//!      - `VZVirtioFileSystemDeviceConfiguration` (rootfs
+//!        at `nimbus-rootfs` VirtioFS tag)
+//!      - `VZVirtioSocketDeviceConfiguration` (for
+//!        guest→host vsock)
+//!        Then it gets the runtime socket device via
+//!        `vm.socketDevices().firstObject()` and registers a
+//!        `VZVirtioSocketListener` on the configured port,
+//!        then waits for the guest to connect.
 //! 2. Once the connection arrives, it reads the first
 //!    `nimbus_vsock::Frame::InitHello` from the fd.
 //! 3. `run_session_blocking` wraps the fd in a pair of
@@ -38,7 +38,7 @@ use std::time::Duration;
 
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
-use nimbus_vsock::{Frame, FrameType, ProtocolError, MAX_PAYLOAD};
+use nimbus_vsock::{Frame, FrameType, MAX_PAYLOAD};
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyObject, NSObject};
 use objc2::{define_class, msg_send, ClassType, DefinedClass};
@@ -110,7 +110,7 @@ pub async fn spawn_apple_virt_vm(
     let conn: Retained<VZVirtioSocketConnection> = *conn_box;
     Ok(AppleVirtAttachHandle {
         _vm,
-        conn,
+        _conn: conn,
         fd: parts.fd,
         port: parts.port,
         init_hello: parts.init_hello,
@@ -139,6 +139,10 @@ fn spawn_apple_virt_vm_blocking(
     debug!("building listener + delegate");
 
     // 1. Build the listener + delegate first.
+    // Arc<Mutex<Option<Retained<...>>>> is !Send+!Sync because
+    // Retained is objc2. This is intentional: the conn_slot is
+    // only used from the main dispatch queue thread.
+    #[allow(clippy::arc_with_non_send_sync)]
     let conn_slot: Arc<Mutex<Option<Retained<VZVirtioSocketConnection>>>> =
         Arc::new(Mutex::new(None));
     let conn_cond: Arc<Condvar> = Arc::new(Condvar::new());
@@ -190,7 +194,7 @@ fn spawn_apple_virt_vm_blocking(
     debug!("constructing VM with main queue");
     let vm_queue: &'static DispatchQueue = DispatchQueue::main();
     let allocated: Allocated<VZVirtualMachine> = unsafe { msg_send![VZVirtualMachine::class(), alloc] };
-    let vm = unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &*vm_config, vm_queue) };
+    let vm = unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &vm_config, vm_queue) };
     debug!("VM constructed");
 
     // 5. Start the VM. Dispatch the call onto the VM's queue
@@ -369,7 +373,6 @@ fn spawn_apple_virt_vm_blocking(
 fn read_init_hello_blocking(
     fd: std::os::fd::RawFd,
 ) -> Result<(Frame, std::os::fd::RawFd), AttachError> {
-    use std::io::Read;
     // Dup the fd first: the framework owns the original;
     // we use our own copy for reading the init hello.
     let our_fd = unsafe { libc::dup(fd) };
@@ -504,12 +507,9 @@ fn read_init_hello_blocking(
 ///      disconnects (the gRPC client hung up).
 pub fn run_session_blocking(
     cfg: AppleVirtAttachConfig,
-    client_in: FrameSource,
+    _client_in: FrameSource,
     server_out: FrameSink,
 ) -> Result<(), AttachError> {
-    use std::io::{Read, Write};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
 
     // 1. Spawn the VM. This is the slow part (boots the
     //    guest, waits for vsock connection, reads
@@ -542,7 +542,7 @@ pub fn run_session_blocking(
     let conn: Retained<VZVirtioSocketConnection> = *conn_box;
     let handle = AppleVirtAttachHandle {
         _vm,
-        conn,
+        _conn: conn,
         fd: parts.fd,
         port: parts.port,
         init_hello: parts.init_hello.clone(),
@@ -699,9 +699,7 @@ pub fn run_session_blocking(
             match std::io::Read::read(&mut &read_file, &mut payload[got..]) {
                 Ok(0) => {
                     warn!(got, total = len, "vsock EOF reading payload");
-                    let _ = server_out.send(Frame::Error(format!(
-                        "EOF reading payload"
-                    )));
+                    let _ = server_out.send(Frame::Error("EOF reading payload".to_string()));
                     break;
                 }
                 Ok(m) => got += m,
@@ -831,7 +829,7 @@ fn build_attach_vm_config(
         msg_send![VZSharedDirectory::class(), alloc]
     };
     let shared_dir = unsafe {
-        VZSharedDirectory::initWithURL_readOnly(allocated_sd, &*store_url, false)
+        VZSharedDirectory::initWithURL_readOnly(allocated_sd, &store_url, false)
     };
     let allocated_sh: Allocated<VZSingleDirectoryShare> = unsafe {
         msg_send![VZSingleDirectoryShare::class(), alloc]
@@ -848,7 +846,7 @@ fn build_attach_vm_config(
         msg_send![VZVirtioNetworkDeviceConfiguration::class(), alloc]
     };
     let net_device = unsafe { VZVirtioNetworkDeviceConfiguration::init(allocated_net) };
-    unsafe { net_device.setAttachment(Some(&*nat_attachment)) };
+    unsafe { net_device.setAttachment(Some(&nat_attachment)) };
     let net_array: Retained<NSArray<VZNetworkDeviceConfiguration>> =
         NSArray::from_retained_slice(&[net_device.into_super()]);
     unsafe { vm_config.setNetworkDevices(&net_array) };
@@ -858,7 +856,7 @@ fn build_attach_vm_config(
         let sock_super: Retained<VZSocketDeviceConfiguration> = sock.into_super();
         let sock_array: Retained<NSArray<VZSocketDeviceConfiguration>> =
             NSArray::from_retained_slice(&[sock_super]);
-        unsafe { vm_config.setSocketDevices(&*sock_array) };
+        unsafe { vm_config.setSocketDevices(&sock_array) };
     }
 
     // 7. Console device: a single virtio console port
@@ -874,9 +872,8 @@ fn build_attach_vm_config(
         // class method (avoids the more complex
         // initWithFileDescriptor: path).
         let path_str = NSString::from_str(&console_path.to_string_lossy());
-        let write_handle: Option<Retained<NSFileHandle>> = unsafe {
-            NSFileHandle::fileHandleForWritingAtPath(&path_str)
-        };
+        let write_handle: Option<Retained<NSFileHandle>> =
+            NSFileHandle::fileHandleForWritingAtPath(&path_str);
         let write_handle = match write_handle {
             Some(h) => h,
             None => return Err(format!(
@@ -887,9 +884,8 @@ fn build_attach_vm_config(
 
         // /dev/null for reading (the guest never reads from console).
         let null_str = NSString::from_str("/dev/null");
-        let null_handle: Option<Retained<NSFileHandle>> = unsafe {
-            NSFileHandle::fileHandleForReadingAtPath(&null_str)
-        };
+        let null_handle: Option<Retained<NSFileHandle>> =
+            NSFileHandle::fileHandleForReadingAtPath(&null_str);
         let null_handle = match null_handle {
             Some(h) => h,
             None => return Err("NSFileHandle::fileHandleForReadingAtPath(/dev/null) returned nil".into()),
@@ -933,7 +929,7 @@ fn build_attach_vm_config(
             Retained::into_super(console_dev);
         let console_array: Retained<NSArray<VZConsoleDeviceConfiguration>> =
             NSArray::from_retained_slice(&[console_device]);
-        unsafe { vm_config.setConsoleDevices(&*console_array) };
+        unsafe { vm_config.setConsoleDevices(&console_array) };
     }
 
     Ok(vm_config)
@@ -969,18 +965,10 @@ fn shell_quote(s: &str) -> String {
 
 // ---- Vsock delegate ------------------------------------------
 
+#[derive(Default)]
 struct DelegateIvars {
     conn_slot: Option<Arc<Mutex<Option<Retained<VZVirtioSocketConnection>>>>>,
     conn_cond: Option<Arc<Condvar>>,
-}
-
-impl Default for DelegateIvars {
-    fn default() -> Self {
-        Self {
-            conn_slot: None,
-            conn_cond: None,
-        }
-    }
 }
 
 define_class!(
@@ -993,7 +981,8 @@ define_class!(
 
     unsafe impl VZVirtioSocketListenerDelegate for VsockAcceptDelegate {
         #[unsafe(method(listener:shouldAcceptNewConnection:fromSocketDevice:))]
-        unsafe fn listener_shouldAcceptNewConnection_fromSocketDevice(
+        #[allow(clippy::useless_conversion)]
+        unsafe fn listener_should_accept_new_connection_from_socket_device(
             &self,
             _listener: &VZVirtioSocketListener,
             connection: &VZVirtioSocketConnection,

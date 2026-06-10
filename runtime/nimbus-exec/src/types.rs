@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -7,18 +8,13 @@ use serde::{Deserialize, Serialize};
 pub use nimbus_net::NetworkRule;
 use nimbus_store::Digest;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum RestartPolicy {
+    #[default]
     No,
     OnFailure,
     Always,
     UnlessStopped,
-}
-
-impl Default for RestartPolicy {
-    fn default() -> Self {
-        Self::No
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,17 +46,12 @@ impl Mount {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum NetworkMode {
+    #[default]
     Loopback,
     Bridge,
     Host,
-}
-
-impl Default for NetworkMode {
-    fn default() -> Self {
-        Self::Loopback
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +72,16 @@ impl Backend {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, String> {
+        s.parse()
+    }
+}
+
+impl FromStr for Backend {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "container" => Ok(Backend::Container),
             "container-rootless" => Ok(Backend::ContainerRootless),
@@ -249,6 +249,12 @@ pub struct ProcessHandle {
 #[derive(Debug, Clone, Default)]
 pub struct WorkloadStats {
     pub id: String,
+    /// Cumulative CPU time consumed (in seconds, as a float from
+    /// cgroup `usage_usec`). The field name matches the protobuf
+    /// wire format (`cpu_usage_percent` in the proto) for backward
+    /// compatibility, but the value is cumulative CPU seconds, NOT
+    /// a percentage. Compute `(t2 - t1) / interval` client-side for
+    /// a true percentage.
     pub cpu_usage_percent: f64,
     pub memory_bytes: u64,
     pub disk_bytes: u64,
@@ -268,6 +274,10 @@ pub struct HealthCheck {
 #[derive(Debug, Clone)]
 pub struct ExitStatus {
     pub exit_code: i32,
+    /// Unix signal number if the workload was killed by a signal.
+    /// Currently always `None` because runc does not expose the signal
+    /// through `runc state`. Future: parse wait status from runc's
+    /// per-container state file.
     pub signal: Option<i32>,
 }
 

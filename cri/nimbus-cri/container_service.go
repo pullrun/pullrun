@@ -96,10 +96,14 @@ func (c *criServer) ContainerStatus(ctx context.Context, req *runtimeapi.Contain
 	state := runtimeapi.ContainerState_CONTAINER_CREATED
 	if err == nil {
 		switch wl.State {
+		case "created", "scheduled":
+			state = runtimeapi.ContainerState_CONTAINER_CREATED
 		case "running":
 			state = runtimeapi.ContainerState_CONTAINER_RUNNING
 		case "exited", "stopped":
 			state = runtimeapi.ContainerState_CONTAINER_EXITED
+		default:
+			state = runtimeapi.ContainerState_CONTAINER_UNKNOWN
 		}
 	}
 

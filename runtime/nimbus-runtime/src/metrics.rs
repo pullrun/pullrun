@@ -64,6 +64,7 @@ pub mod names {
     pub const STORE_NODES: &str = "nimbus_store_nodes";
     pub const STORE_BYTES: &str = "nimbus_store_bytes";
     pub const BUILD_INFO: &str = "nimbus_build_info";
+    pub const SYNC_PEER_COUNT: &str = "nimbus_sync_peer_count";
 }
 
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -156,6 +157,10 @@ pub fn describe_metrics() {
     describe_gauge!(
         names::BUILD_INFO,
         "Build metadata, always 1; the version label is the only useful field"
+    );
+    describe_gauge!(
+        names::SYNC_PEER_COUNT,
+        "Current number of block sync peers known via mDNS / bloom gossip"
     );
 
     // Set the static build-info gauge once. Operators use this for
@@ -250,6 +255,12 @@ pub fn record_workload_exit(backend: &str, exit_code: Option<i32>) {
 pub fn record_store_stats(nodes: usize, bytes: u64) {
     gauge!(names::STORE_NODES).set(nodes as f64);
     gauge!(names::STORE_BYTES).set(bytes as f64);
+}
+
+/// Convenience: set the block sync peer count gauge. Called by the
+/// periodic updater in `run_daemon` (every 30s).
+pub fn record_sync_peer_count(count: usize) {
+    gauge!(names::SYNC_PEER_COUNT).set(count as f64);
 }
 
 /// RAII timer for `nimbus_pull_duration_seconds`. Construct at the

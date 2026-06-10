@@ -6,10 +6,10 @@ use serde::Serialize;
 use sha2::{Digest as Sha256Digest, Sha256};
 use tracing::{debug, info};
 
-use nimbus_store::MmapStore;
+use nimbus_store::{Digest, MmapStore};
 
 use crate::converter::{DirectoryEntry, ManifestData};
-use crate::puller::{OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest};
+use crate::puller::{OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest, OciRuntimeConfig, OciRootFs};
 
 /// Push a DAG image to an OCI-compatible registry.
 pub struct DagPusher {
@@ -137,7 +137,7 @@ impl DagPusher {
     /// Reconstruct an OCI layer tar.gz from a DAG layer node.
     fn reconstruct_layer(
         &self,
-        layer_digest: &str,
+        layer_digest: &Digest,
     ) -> Result<(Vec<u8>, String), OciError> {
         let mut tar_buf = Vec::new();
         let mut gz =
@@ -156,19 +156,18 @@ impl DagPusher {
 
     fn walk_tree_for_layer(
         &self,
-        node_digest: &str,
+        node_digest: &Digest,
         base_path: &str,
         tar: &mut tar::Builder<&mut flate2::write::GzEncoder<&mut Vec<u8>>>,
     ) -> Result<(), OciError> {
-        let d: String = node_digest.to_string();
-        let archived = self.store.get_archived(&d).map_err(|e| {
+        let archived = self.store.get_archived(node_digest).map_err(|e| {
             OciError::Other(format!("read node {node_digest}: {e}"))
         })?;
 
         if archived.is_layer() {
             let layer_path = String::from_utf8_lossy(&archived.inline_data).to_string();
             for edge in archived.edges.iter() {
-                let child = edge.as_str().to_string();
+                let child = Digest(*edge);
                 self.walk_tree_for_layer(&child, &layer_path, tar)?;
             }
             return Ok(());
@@ -204,7 +203,6 @@ impl DagPusher {
                         tar.append_data(&mut header, &entry_path, std::io::empty())?;
                         // Symlink target is stored in the link name by tar::Builder.
                         // We need to use append_link instead.
-                        drop(header);
                         // Re-add with correct link name
                         let mut h = tar::Header::new_gnu();
                         h.set_entry_type(tar::EntryType::Symlink);
@@ -215,8 +213,11 @@ impl DagPusher {
                 } else {
                     // Regular file: read blob content.
                     let blob_mmap = self.store.get(&entry.digest).map_err(|e| {
-                        OciError::Other(format!("read blob {}: {e}", entry.digest))
+                        OciError::Other(format!("read blob {}: {e}", entry.digest.as_hex()))
                     })?;
+                    // SAFETY: `blob_mmap` is a read-only mmap of a blob
+                    // written by the store's `put` path (rkyv-serialized).
+                    // The store guarantees no concurrent mutation.
                     let blob_node = unsafe {
                         rkyv::archived_root::<nimbus_store::DagNode>(&blob_mmap[..])
                     };
@@ -235,7 +236,7 @@ impl DagPusher {
 
         // Recurse into child trees.
         for edge in archived.edges.iter() {
-            let child: String = edge.as_str().to_string();
+            let child = Digest(*edge);
             if self.store.exists(&child) {
                 // Check if child is a tree node, not a blob.
                 if let Ok(child_archived) = self.store.get_archived(&child) {
@@ -264,7 +265,7 @@ impl DagPusher {
 
         // Check if blob already exists.
         let check_url = format!("{scheme}//{registry}/v2/{repository}/blobs/{digest}");
-        let check_resp = self.authorized_get(&check_url, token.clone()).send().await?;
+        let check_resp = self.authorized_get(&check_url, token).send().await?;
         if check_resp.status().is_success() {
             info!(%digest, "blob already exists in registry, skipping");
             return Ok(());
@@ -333,12 +334,13 @@ impl DagPusher {
         let token = self.get_token(&registry, &repository, "push,pull").await?;
 
         // Check if the root is a manifest list.
-        let rd = root_digest.to_string();
+        let rd = Digest::from_hex(root_digest)
+            .map_err(|e| OciError::Other(format!("invalid root digest: {e}")))?;
         let root_archived = self.store.get_archived(&rd).map_err(|e| {
             OciError::Other(format!("read node {root_digest}: {e}"))
         })?;
         if root_archived.is_manifest_list() {
-            return self.push_manifest_list(root_digest, target_ref).await;
+            return self.push_manifest_list(&rd, target_ref).await;
         }
 
         if !root_archived.is_manifest() {
@@ -349,7 +351,7 @@ impl DagPusher {
 
         // Single-arch: push the OCI manifest and tag it.
         let (oci_manifest, total_pushed) =
-            self.push_oci_manifest(root_digest, &registry, &repository, token.as_deref())
+            self.push_oci_manifest(&rd, &registry, &repository, token.as_deref())
                 .await?;
 
         let manifest_json = serde_json::to_vec(&oci_manifest)?;
@@ -379,13 +381,12 @@ impl DagPusher {
     /// `push()` and `push_manifest_list()`.
     async fn push_oci_manifest(
         &self,
-        manifest_digest: &str,
+        manifest_digest: &Digest,
         registry: &str,
         repository: &str,
         token: Option<&str>,
     ) -> Result<(OciManifest, i64), OciError> {
-        let md = manifest_digest.to_string();
-        let archived = self.store.get_archived(&md).map_err(|e| {
+        let archived = self.store.get_archived(manifest_digest).map_err(|e| {
             OciError::Other(format!("read manifest node {manifest_digest}: {e}"))
         })?;
         if !archived.is_manifest() {
@@ -396,13 +397,34 @@ impl DagPusher {
 
         let manifest_data: ManifestData =
             serde_json::from_slice(archived.inline_data.as_ref())?;
-        let oci_config: OciImageConfig =
-            serde_json::from_str(&manifest_data.config_json)?;
+        // Reconstruct the OCI image config from the manifest data fields.
+        let oci_config = OciImageConfig {
+            created: None,
+            author: None,
+            architecture: manifest_data.architecture.clone(),
+            os: manifest_data.os.clone(),
+            config: Some(OciRuntimeConfig {
+                user: None,
+                exposed_ports: None,
+                env: Some(manifest_data.env.clone()),
+                entrypoint: Some(manifest_data.entrypoint.clone()),
+                cmd: Some(manifest_data.cmd.clone()),
+                volumes: None,
+                working_dir: manifest_data.working_dir.clone(),
+                labels: None,
+                stop_signal: None,
+            }),
+            rootfs: OciRootFs {
+                diff_ids: vec![],
+                fs_type: "layers".to_string(),
+            },
+            history: None,
+        };
 
-        let layer_digests: Vec<String> = archived
+        let layer_digests: Vec<Digest> = archived
             .edges
             .iter()
-            .map(|e| e.as_str().to_string())
+            .map(|e| Digest(*e))
             .collect();
 
         let mut oci_layers = Vec::new();
@@ -455,13 +477,12 @@ impl DagPusher {
     /// (manifest list) at the requested tag.
     pub async fn push_manifest_list(
         &self,
-        list_digest: &str,
+        list_digest: &Digest,
         target_ref: &str,
     ) -> Result<(String, i64), OciError> {
         let (registry, repository, tag) = self.registry_for(target_ref);
 
-        let rd = list_digest.to_string();
-        let list_archived = self.store.get_archived(&rd).map_err(|e| {
+        let list_archived = self.store.get_archived(list_digest).map_err(|e| {
             OciError::Other(format!("read manifest list node {list_digest}: {e}"))
         })?;
         if !list_archived.is_manifest_list() {
@@ -471,10 +492,10 @@ impl DagPusher {
         }
 
         let token = self.get_token(&registry, &repository, "push,pull").await?;
-        let child_digests: Vec<String> = list_archived
+        let child_digests: Vec<Digest> = list_archived
             .edges
             .iter()
-            .map(|e| e.as_str().to_string())
+            .map(|e| Digest(*e))
             .collect();
 
         let mut total_pushed: i64 = 0;

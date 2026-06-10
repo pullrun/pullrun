@@ -1,17 +1,14 @@
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use nimbus_exec::types::{Backend, WorkloadSpec};
-use nimbus_exec::Executor;
 use nimbus_oci::{
-    build_dag_from_directory, build_dag_from_directory_with_platform, current_arch, DagDirectory,
+    build_dag_from_directory_with_platform, current_arch, DagDirectory,
     Dockerfile, Instruction, ManifestData, OciMaterializer, OciPuller,
 };
 use nimbus_store::{Digest, MmapStore};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Errors that can occur during DAG-native image builds.
 #[derive(Debug)]
@@ -68,11 +65,12 @@ pub struct DagBuilder {
     /// When set, overrides FROM --platform in the Dockerfile.
     platform: Option<String>,
     /// Track materialized rootfs paths per layer to reuse when possible.
+    #[allow(dead_code)]
     rootfs_cache: Arc<RwLock<HashMap<String, PathBuf>>>,
     /// Build layer cache: instruction_hash -> resulting_manifest_digest.
     /// Keyed by a content hash of the instruction + parent + inputs.
     /// A hit avoids re-executing the instruction.
-    layer_cache: Arc<RwLock<HashMap<String, String>>>,
+    layer_cache: Arc<RwLock<HashMap<String, Digest>>>,
 }
 
 impl DagBuilder {
@@ -138,7 +136,7 @@ impl DagBuilder {
                 Some(pf.clone()),
             );
             let result = builder.build(dockerfile, context_dir, build_args).await?;
-            manifest_digests.push(result.root_digest.clone());
+            manifest_digests.push(result.root_digest);
             results.push(result);
         }
 
@@ -194,11 +192,11 @@ impl DagBuilder {
             .map_err(|e| BuildError::Pull(format!("manifest {}: {e}", stage.from)))?;
 
         // Track build metadata
-        let mut current_manifest = base_manifest.clone();
+        let mut current_manifest = base_manifest;
         let mut manifest_data = manifest_data;
         let mut layer_count = 0usize;
         let mut total_nodes = 0usize;
-        let mut total_bytes = 0u64;
+        let total_bytes = 0u64;
 
         // 4. Execute each instruction (with layer caching)
         for instruction in &stage.instructions {
@@ -206,7 +204,7 @@ impl DagBuilder {
                 Instruction::Run { command } => {
                     let cache_key = self.cache_key_run(&current_manifest, command);
                     // Check cache
-                    let cached = self.layer_cache.read().await.get(&cache_key).cloned();
+                    let cached = self.layer_cache.read().await.get(&cache_key).copied();
                     if let Some(cached_digest) = cached {
                         info!("RUN {} [cached]", command.join(" "));
                         current_manifest = cached_digest;
@@ -221,13 +219,13 @@ impl DagBuilder {
                     self.layer_cache
                         .write()
                         .await
-                        .insert(cache_key, current_manifest.clone());
+                        .insert(cache_key, current_manifest);
                     layer_count += 1;
                 }
                 Instruction::Copy { sources, dest } => {
                     let cache_key = self.cache_key_copy(&current_manifest, context_dir, sources, dest);
                     // Check cache
-                    let cached = self.layer_cache.read().await.get(&cache_key).cloned();
+                    let cached = self.layer_cache.read().await.get(&cache_key).copied();
                     if let Some(cached_digest) = cached {
                         info!("COPY {:?} {} [cached]", sources, dest);
                         current_manifest = cached_digest;
@@ -248,12 +246,12 @@ impl DagBuilder {
                     self.layer_cache
                         .write()
                         .await
-                        .insert(cache_key, current_manifest.clone());
+                        .insert(cache_key, current_manifest);
                     layer_count += 1;
                 }
                 Instruction::Add { sources, dest } => {
                     let cache_key = self.cache_key_copy(&current_manifest, context_dir, sources, dest);
-                    let cached = self.layer_cache.read().await.get(&cache_key).cloned();
+                    let cached = self.layer_cache.read().await.get(&cache_key).copied();
                     if let Some(cached_digest) = cached {
                         info!("ADD {:?} {} [cached]", sources, dest);
                         current_manifest = cached_digest;
@@ -273,7 +271,7 @@ impl DagBuilder {
                     self.layer_cache
                         .write()
                         .await
-                        .insert(cache_key, current_manifest.clone());
+                        .insert(cache_key, current_manifest);
                     layer_count += 1;
                 }
                 Instruction::WorkDir(wd) => {
@@ -317,10 +315,7 @@ impl DagBuilder {
         }
 
         // 5. Compute final stats
-        let dig: Digest = current_manifest
-            .parse()
-            .map_err(|e| BuildError::Store(format!("invalid digest {current_manifest}: {e}")))?;
-        if let Ok(layers) = self.store.get_deserialized(&dig) {
+        if let Ok(layers) = self.store.get_deserialized(&current_manifest) {
             total_nodes += 1; // manifest
             for edge in &layers.edges {
                 total_nodes += 1; // layer
@@ -346,21 +341,18 @@ impl DagBuilder {
     /// Execute a RUN instruction: materialize, run in container, re-scan.
     async fn execute_run(
         &self,
-        current_manifest: &str,
+        current_manifest: &Digest,
         command: &[String],
         manifest_data: &mut ManifestData,
-    ) -> Result<String, BuildError> {
+    ) -> Result<Digest, BuildError> {
         let temp_dir = tempfile::tempdir()
             .map_err(BuildError::Io)?;
         let rootfs_dir = temp_dir.path().join("rootfs");
 
         // Materialize current state
-        let dig: Digest = current_manifest
-            .parse()
-            .map_err(|e| BuildError::Store(format!("bad digest: {e}")))?;
         let materializer = OciMaterializer::new(&self.store);
         materializer
-            .materialize_into(&dig, &rootfs_dir)
+            .materialize_into(current_manifest, &rootfs_dir)
             .await
             .map_err(|e| BuildError::Materialize(e.to_string()))?;
 
@@ -498,23 +490,20 @@ impl DagBuilder {
     /// Execute a COPY instruction: copy files from context into rootfs, re-scan.
     async fn execute_copy(
         &self,
-        current_manifest: &str,
+        current_manifest: &Digest,
         context_dir: &Path,
         sources: &[String],
         dest: &str,
         manifest_data: &mut ManifestData,
-    ) -> Result<String, BuildError> {
+    ) -> Result<Digest, BuildError> {
         let temp_dir = tempfile::tempdir()
             .map_err(BuildError::Io)?;
         let rootfs_dir = temp_dir.path().join("rootfs");
 
         // Materialize current state
-        let dig: Digest = current_manifest
-            .parse()
-            .map_err(|e| BuildError::Store(format!("bad digest: {e}")))?;
         let materializer = OciMaterializer::new(&self.store);
         materializer
-            .materialize_into(&dig, &rootfs_dir)
+            .materialize_into(current_manifest, &rootfs_dir)
             .await
             .map_err(|e| BuildError::Materialize(e.to_string()))?;
 
@@ -534,7 +523,7 @@ impl DagBuilder {
                 src.rsplit('/').next().unwrap_or(src),
             );
             copy_recursive(&src_path, &dest_path)
-                .map_err(|e| BuildError::Io(e))?;
+                .map_err(BuildError::Io)?;
         }
 
         // Re-scan the rootfs into DAG nodes
@@ -554,13 +543,10 @@ impl DagBuilder {
     /// Update the manifest node's config data (entrypoint/cmd/env/etc).
     async fn update_manifest(
         &self,
-        current_manifest: &str,
+        current_manifest: &Digest,
         manifest_data: &ManifestData,
-    ) -> Result<String, BuildError> {
-        let dig: Digest = current_manifest
-            .parse()
-            .map_err(|e| BuildError::Store(format!("bad digest: {e}")))?;
-        if let Ok(node) = self.store.get_deserialized(&dig) {
+    ) -> Result<Digest, BuildError> {
+        if let Ok(node) = self.store.get_deserialized(current_manifest) {
             let inline = serde_json::to_vec(manifest_data).unwrap_or_default();
             let new_node = nimbus_store::DagNode::manifest(node.edges.clone(), inline);
             let new_dig = self
@@ -582,11 +568,11 @@ impl DagBuilder {
     /// Compute a cache key for a RUN instruction.
     /// Includes the parent manifest digest and the full command so that
     /// changing either invalidates the cache.
-    fn cache_key_run(&self, parent_manifest: &str, command: &[String]) -> String {
+    fn cache_key_run(&self, parent_manifest: &Digest, command: &[String]) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(b"RUN:");
-        hasher.update(parent_manifest.as_bytes());
+        hasher.update(parent_manifest.as_hex().as_bytes());
         for arg in command {
             hasher.update(b"\0");
             hasher.update(arg.as_bytes());
@@ -600,7 +586,7 @@ impl DagBuilder {
     /// content invalidates the cache.
     fn cache_key_copy(
         &self,
-        parent_manifest: &str,
+        parent_manifest: &Digest,
         context_dir: &Path,
         sources: &[String],
         dest: &str,
@@ -608,7 +594,7 @@ impl DagBuilder {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(b"COPY:");
-        hasher.update(parent_manifest.as_bytes());
+        hasher.update(parent_manifest.as_hex().as_bytes());
         hasher.update(b":");
         hasher.update(dest.as_bytes());
         for src in sources {

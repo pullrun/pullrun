@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use nimbus_store::{DagNode, Digest, MmapStore};
+use nimbus_store::{DagNode, Digest, MmapStore, SMALL_FILE_THRESHOLD};
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
@@ -69,8 +69,8 @@ fn preprocess_lines(content: &str) -> Vec<String> {
             }
             continue;
         }
-        if line.ends_with('\\') {
-            current.push_str(&line[..line.len() - 1]);
+        if let Some(stripped) = line.strip_suffix('\\') {
+            current.push_str(stripped);
             current.push(' ');
         } else {
             current.push_str(line);
@@ -234,7 +234,7 @@ fn parse_copy_add(args: &str, _is_add: bool) -> Result<Instruction, String> {
     loop {
         let t = rest.trim_start();
         if t.starts_with("--") {
-            let end = t.find(|c: char| c == ' ').unwrap_or(t.len());
+            let end = t.find(' ').unwrap_or(t.len());
             rest = t[end..].trim();
         } else {
             break;
@@ -296,7 +296,7 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 // Directory → DAG walker
 // ---------------------------------------------------------------------------
 
-const SMALL_FILE_THRESHOLD: u64 = 4096;
+
 
 /// Result of scanning a directory into DAG nodes.
 /// The contained digest is a Manifest node pointing at the root layer.
@@ -358,7 +358,7 @@ pub async fn build_dag_from_directory_with_platform(
     let file_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
     let symlink_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    let store_ref: &MmapStore = &store;
+    let store_ref: &MmapStore = store;
     results.par_iter().for_each(|(rel, is_dir, is_symlink, _mode)| {
         if *is_dir {
             return;
@@ -385,15 +385,12 @@ pub async fn build_dag_from_directory_with_platform(
             return;
         }
         let node = DagNode::blob(data.clone());
-        match store_ref.put_blocking(&node) {
-            Ok(d) => {
-                if size > SMALL_FILE_THRESHOLD {
-                    let _ = store_ref.put_blob_blocking(&d, &data);
-                }
-                let mut map = file_results.lock().unwrap();
-                map.insert(rel.to_string(), (d, size));
+        if let Ok(d) = store_ref.put_blocking(&node) {
+            if size > SMALL_FILE_THRESHOLD {
+                let _ = store_ref.put_blob_blocking(&d, &data);
             }
-            Err(_) => {}
+            let mut map = file_results.lock().unwrap();
+            map.insert(rel.to_string(), (d, size));
         }
     });
 
@@ -420,9 +417,7 @@ pub async fn build_dag_from_directory_with_platform(
         .await?;
     node_count += 1;
 
-    let config_json_str = format!(r#"{{"architecture":"{architecture}","os":"{os}"}}"#);
     let manifest_data = crate::ManifestData {
-        config_json: config_json_str,
         entrypoint: vec![],
         cmd: vec![],
         env: vec![],
@@ -504,19 +499,19 @@ fn build_dir_entry_tree(
         let rel = path_to_rel(root, current);
         if is_symlink {
             if let Some((d, sz)) = symlink_results.get(&rel) {
-                (d.clone(), *sz)
+                (*d, *sz)
             } else {
-                (String::new(), 0)
+                (Digest([0u8; 32]), 0)
             }
         } else {
-            (String::new(), 0)
+            (Digest([0u8; 32]), 0)
         }
     } else {
         let rel = path_to_rel(root, current);
         if let Some((d, sz)) = file_results.get(&rel) {
-            (d.clone(), *sz)
+            (*d, *sz)
         } else {
-            (String::new(), 0)
+            (Digest([0u8; 32]), 0)
         }
     };
 
@@ -544,10 +539,10 @@ fn build_tree(
     blob_bytes: &mut u64,
 ) -> Result<Digest, OciError> {
     if !entry.is_dir {
-        if !entry.file_digest.is_empty() {
+        if entry.file_digest.0 != [0u8; 32] {
             *blob_bytes += entry.size;
         }
-        return Ok(entry.file_digest.clone());
+        return Ok(entry.file_digest);
     }
 
     let mut child_digests = Vec::new();
@@ -555,7 +550,7 @@ fn build_tree(
 
     for child in &entry.children {
         let d = build_tree(store, child, node_count, blob_bytes)?;
-        child_digests.push(d.clone());
+        child_digests.push(d);
 
         let entry_line = serde_json::json!({
             "name": child.name,

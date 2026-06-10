@@ -21,6 +21,7 @@ tempfile = "3.10"
 sha2 = "0.10"
 hex = "0.4"
 rkyv = { version = "0.7", features = ["validation"] }
+libc = "0.2"
 
 # macOS-only: Apple Virtualization framework bindings via the
 # `objc2` ecosystem. The dependency block is gated by target OS

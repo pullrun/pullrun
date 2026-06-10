@@ -1,6 +1,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(test)]
 use std::sync::Arc;
 
 use nimbus_oci::OciMaterializer;
@@ -188,6 +189,18 @@ fn create_sparse_file(path: &Path, size_mb: u64) -> Result<(), Ext4Error> {
 }
 
 fn format_ext4_from_dir(image: &Path, source_dir: &Path, label: Option<&str>) -> Result<(), Ext4Error> {
+    // Check mkfs.ext4 supports -d (e2fsprogs >= 1.47.0).
+    let version_output = Command::new("mkfs.ext4")
+        .arg("--version")
+        .output()
+        .map_err(|e| Ext4Error::MkfsNotFound(format!("mkfs.ext4 not found: {e}")))?;
+    let version_str = String::from_utf8_lossy(&version_output.stdout);
+    if !version_str.contains("1.47") && !version_str.contains("1.48") && !version_str.contains("1.49") {
+        warn!(
+            "mkfs.ext4 version may not support -d flag (requires e2fsprogs >= 1.47.0, got: {})",
+            version_str.lines().next().unwrap_or("unknown")
+        );
+    }
     let mut cmd = Command::new("mkfs.ext4");
     cmd.arg("-F"); // force (file exists)
     cmd.arg("-q"); // quiet

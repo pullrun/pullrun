@@ -1,5 +1,6 @@
 syntax = "proto3";
 package nimbus.sync;
+option go_package = "nimbus/protoapi/nimbus/sync;sync";
 
 service BlockSync {
   // Advertise which blobs this node has via bloom filter exchange.
@@ -38,4 +39,71 @@ message BlobChunk {
 message SyncBlob {
   string digest = 1;
   bytes data = 2;
+}
+
+// ─── Registrar Service ──────────────────────────────────────────
+// Optional centralized peer registry for clusters where mDNS is
+// impractical (cross-subnet, cloud, 1000+ nodes).  Nodes register
+// themselves and send periodic heartbeats.  Peers use Lookup or
+// ListPeers to discover each other.
+
+message PeerRegistration {
+  string node_id   = 1;
+  string sync_addr = 2;   // host:port of the BlockSync gRPC endpoint
+  int64  last_seen_unix_secs = 3;
+}
+
+message RegisterRequest {
+  string node_id   = 1;
+  string sync_addr = 2;
+}
+
+message RegisterResponse {
+  int32 peer_count = 1;
+}
+
+message LookupRequest {
+  string node_id = 1;
+}
+
+message LookupResponse {
+  PeerRegistration peer = 1;
+  bool             found = 2;
+}
+
+message ListPeersRequest {
+  // empty
+}
+
+message ListPeersResponse {
+  repeated PeerRegistration peers = 1;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+}
+
+message HeartbeatResponse {
+  int32 peer_count = 1;
+}
+
+message DeregisterRequest {
+  string node_id = 1;
+}
+
+message DeregisterResponse {
+  // empty
+}
+
+service Registrar {
+  // Register this node with the registrar.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Look up a single peer by node_id.
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+  // List all active (non-expired) peers.
+  rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+  // Refresh the TTL for this node.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  // Best-effort removal on clean shutdown.
+  rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
 }

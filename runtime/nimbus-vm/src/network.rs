@@ -47,7 +47,6 @@
 
 use std::fs::File;
 use std::net::Ipv4Addr;
-use std::os::fd::AsRawFd;
 use std::process::Command;
 
 use nimbus_net::Ipam;
@@ -175,11 +174,10 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
         _pad: [0u8; 22],
     };
 
-    extern "C" {
-        fn ioctl(fd: std::os::raw::c_int, request: std::os::raw::c_ulong, ...) -> std::os::raw::c_int;
-    }
-
-    let ret = unsafe { ioctl(tun.as_raw_fd(), TUNSETIFF, &mut req as *mut _ as *mut std::ffi::c_void) };
+    // SAFETY: `ioctl(TUNSETIFF)` is a standard Linux TUN/TAP operation.
+    // `tun.as_raw_fd()` is a valid open fd to `/dev/net/tun`. `req` is
+    // properly initialized and sized `sizeof(struct ifreq) = 40`.
+    let ret = unsafe { libc::ioctl(tun.as_raw_fd(), TUNSETIFF, &mut req as *mut _ as *mut std::ffi::c_void) };
     if ret < 0 {
         let err = std::io::Error::last_os_error();
         return Err(VmNetError::IpCommand(format!(
@@ -726,7 +724,8 @@ mod tests {
         // Skip if we don't have permission to manipulate the bridge.
         let probe = create_tap_ioctl("tap-probe");
         match probe {
-            Ok(()) => {
+            Ok(_file) => {
+                drop(_file);
                 let _ = Command::new("ip")
                     .args(["link", "del", "tap-probe"])
                     .output();
@@ -808,7 +807,10 @@ mod tests {
         // the bridge test uses.
         let probe = create_tap_ioctl("tap-probe");
         match probe {
-            Ok(()) => {
+            Ok(_file) => {
+                // Dropping _file destroys the tap device.
+                // Also try ip link del as a fallback.
+                drop(_file);
                 let _ = Command::new("ip")
                     .args(["link", "del", "tap-probe"])
                     .output();

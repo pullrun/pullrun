@@ -59,9 +59,7 @@ pub mod vsock_client;
 
 pub use vsock_client::VsockClient;
 
-use std::process::ExitCode;
-
-use tracing::{error, info};
+use tracing::info;
 
 /// Default port for the host-side vsock listener.
 pub use nimbus_vsock::DEFAULT_VSOCK_PORT as DEFAULT_HOST_VSOCK_PORT;
@@ -184,7 +182,7 @@ impl Workload {
             return Err(InitError::Exec("empty command".into()));
         }
 
-        let (mut command, rest) = self.command.split_first().unwrap();
+        let (command, rest) = self.command.split_first().unwrap();
         let args: Vec<&str> = rest.iter().map(String::as_str).collect();
 
         info!(
