@@ -8,7 +8,7 @@
 
 **Same OCI image. Any isolation level. No Docker daemon required.**
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/github/license/pullrun/pullrun)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org/)
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](https://golang.org/)
 [![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen.svg)](#testing)
