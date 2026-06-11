@@ -4,7 +4,7 @@
 
 # **Pullrun**
 
-### *A content-addressed workload execution system*
+### *Next-gen container runtime with zero-copy DAG storage and P2P image sync. Run OCI images as Linux containers, Firecracker microVMs, or Apple Silicon VMs.*
 
 **Same OCI image. Any isolation level. No Docker daemon required.**
 
