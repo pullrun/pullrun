@@ -42,30 +42,52 @@ Pullrun is a next-generation container runtime that treats **content-addressed s
 
 ---
 
-## 📦 Quick Start
+## 📦 Install
+
+### macOS (Homebrew)
+```bash
+brew tap pullrun/tap
+brew install pullrun
+```
+
+### Linux (APT — Debian/Ubuntu)
+```bash
+curl -fsSL https://pullrun.github.io/apt/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/pullrun.gpg
+echo "deb [signed-by=/usr/share/keyrings/pullrun.gpg] https://pullrun.github.io/apt stable main" | sudo tee /etc/apt/sources.list.d/pullrun.list
+sudo apt-get update && sudo apt-get install -y pullrun
+```
+
+### Any platform (curl | sh)
+```bash
+curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | sh
+```
+
+### From source
+```bash
+make build
+export PATH="$PWD/bin:$PATH"
+```
+
+---
+
+## 🚀 Quick Start
 
 ```bash
-# 1. Build everything (Rust runtime + Go CLI)
-make build
-
-# 2. Add binaries to PATH
-export PATH="$PWD/bin:$PATH"
-
-# 3. Pull an image (deduplicates into the on-disk DAG store)
+# 1. Pull an image (deduplicates into the on-disk DAG store)
 pullrun pull alpine:3.18
 
-# 4. Run it as a container OR a VM — same image, your choice
+# 2. Run it as a container OR a VM — same image, your choice
 pullrun run alpine:3.18 --backend container --cmd /bin/echo --cmd hello
 pullrun run alpine:3.18 --backend vm       --cmd /bin/echo --cmd hello
 
-# 5. Build natively without Docker
+# 3. Build natively without Docker
 pullrun build -t myapp:latest --platform linux/arm64
 
-# 6. Use encrypted secrets at runtime
+# 4. Use encrypted secrets at runtime
 pullrun secret create db_password secret data
 pullrun run myapp:latest --secret db_password
 
-# 7. Enable P2P block sync for multi-node clusters
+# 5. Enable P2P block sync for multi-node clusters
 pullrun-runtime daemon --sync-addr 0.0.0.0:9500
 ```
 
