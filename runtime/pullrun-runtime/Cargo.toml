@@ -43,6 +43,21 @@ rand.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3"
 
+[package.metadata.deb]
+maintainer = "Mohammed Boukaba <mo.boukaba@gmail.com>"
+copyright = "2026, Mohammed Boukaba"
+license-file = "../../LICENSE"
+depends = "runc"
+extended-description = """\
+A content-addressed workload execution system. Run OCI images as Linux \
+containers, Firecracker microVMs, or Apple Silicon VMs."""
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/pullrun-runtime", "usr/bin/pullrun-runtime", "755"],
+    ["../../deploy/pullrun-runtime.service", "lib/systemd/system/pullrun-runtime.service", "644"],
+]
+
 [build-dependencies]
 tonic-build = "0.11"
 

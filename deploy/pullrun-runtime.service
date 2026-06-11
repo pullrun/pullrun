@@ -1,0 +1,14 @@
+[Unit]
+Description=Pullrun Runtime Daemon
+Documentation=https://github.com/pullrun/pullrun
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pullrun-runtime daemon --store-root /var/lib/pullrun
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
