@@ -1,0 +1,30 @@
+[package]
+name = "pullrun-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pullrun-store = { path = "../pullrun-store" }
+pullrun-oci = { path = "../pullrun-oci" }
+tokio.workspace = true
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+rand.workspace = true
+bytes.workspace = true
+hex.workspace = true
+futures = "0.3"
+metrics.workspace = true
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[dev-dependencies]
+tempfile = "3"

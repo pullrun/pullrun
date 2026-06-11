@@ -1,9 +1,9 @@
 //! Standalone Apple Virtualization FFI smoke test.
 //!
-//! This binary exercises the `nimbus_vm::apple` module end-to-end on
-//! macOS. It is a *real* binary (not a test in the nimbus-vm crate)
+//! This binary exercises the `pullrun_vm::apple` module end-to-end on
+//! macOS. It is a *real* binary (not a test in the pullrun-vm crate)
 //! so it can be deployed to CI or a developer Mac and run without
-//! the rest of the nimbus workspace needing to be present.
+//! the rest of the pullrun workspace needing to be present.
 //!
 //! ## What it tests (v0)
 //!
@@ -26,7 +26,7 @@
 //!
 //! - **Workload execution.** Running an actual binary inside the
 //!   guest requires a Linux kernel *with* userspace (initramfs or
-//!   disk), a static `nimbus-runtime` binary in that userspace, and
+//!   disk), a static `pullrun-runtime` binary in that userspace, and
 //!   a vsock listener on port 42. The `apple.rs` module is not
 //!   wired with the vsock transport yet; that is the next session.
 //! - **End-to-end guest boot to login prompt.** Requires a kernel
@@ -46,20 +46,20 @@
 //! ```text
 //! # Pass a pre-staged kernel on disk
 //! ./apple-virt-smoke \
-//!   --kernel ~/.local/share/nimbus/vms/vmlinux \
-//!   --store  ~/.local/share/nimbus/store
+//!   --kernel ~/.local/share/pullrun/vms/vmlinux \
+//!   --store  ~/.local/share/pullrun/store
 //!
 //! # Or pull a kernel image from a registry (auto-materializes
 //! # /boot/vmlinux + /boot/initramfs.cpio.gz via OCI pull)
 //! ./apple-virt-smoke \
-//!   --kernel-image ghcr.io/nimbus/kernel-asahi:6.19.14 \
-//!   --store  ~/.local/share/nimbus/store
+//!   --kernel-image ghcr.io/pullrun/kernel-asahi:6.19.14 \
+//!   --store  ~/.local/share/pullrun/store
 //!
 //! # With initramfs and a custom pool size
 //! ./apple-virt-smoke \
-//!   --kernel     ~/.local/share/nimbus/vms/vmlinux \
-//!   --initramfs  ~/.local/share/nimbus/initramfs.cpio.gz \
-//!   --store      ~/.local/share/nimbus/store \
+//!   --kernel     ~/.local/share/pullrun/vms/vmlinux \
+//!   --initramfs  ~/.local/share/pullrun/initramfs.cpio.gz \
+//!   --store      ~/.local/share/pullrun/store \
 //!   --pool-size  3
 //! ```
 //!
@@ -74,9 +74,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::Parser;
-use nimbus_vm::apple::{AppleVirtError, AppleVirtPool, AppleVirtPoolConfig};
-use nimbus_vm::oci_kernel::{OciKernelError, StagedKernel};
-use nimbus_store::MmapStore;
+use pullrun_vm::apple::{AppleVirtError, AppleVirtPool, AppleVirtPoolConfig};
+use pullrun_vm::oci_kernel::{OciKernelError, StagedKernel};
+use pullrun_store::MmapStore;
 use tracing::{error, info};
 
 /// Default VM memory (MiB). Matches the kernel's compiled-in
@@ -96,8 +96,8 @@ struct Args {
     #[arg(long, conflicts_with = "kernel_image")]
     kernel: Option<PathBuf>,
 
-    /// OCI image reference for a Nimbus kernel image (e.g.
-    /// `ghcr.io/nimbus/kernel-asahi:6.19.14`). The image is
+    /// OCI image reference for a Pullrun kernel image (e.g.
+    /// `ghcr.io/pullrun/kernel-asahi:6.19.14`). The image is
     /// pulled, materialized, and `/boot/vmlinux` (plus
     /// optional `/boot/initramfs.cpio.gz`) is staged into a
     /// temp directory. Mutually exclusive with `--kernel`.
@@ -112,7 +112,7 @@ struct Args {
     initramfs: Option<PathBuf>,
 
     /// Host path to expose to the guest via VirtioFS as
-    /// `/mnt/nimbus-store` (guest-side tag: `nimbus-store`).
+    /// `/mnt/pullrun-store` (guest-side tag: `pullrun-store`).
     /// Must exist on disk. Defaults to a temp dir if absent
     /// (the framework requires the path to exist, but the
     /// contents are not validated).
@@ -170,7 +170,7 @@ fn main() -> ! {
     // is the queue the Apple Virtualization framework uses to
     // deliver its completion handlers.
     std::thread::Builder::new()
-        .name("nimbus-smoke-body".into())
+        .name("pullrun-smoke-body".into())
         .spawn(move || {
             let code = run_body(args);
             // The body thread is the only place that knows
@@ -366,7 +366,7 @@ fn stage_kernel(args: &Args) -> Result<StagedKernel, OciKernelError> {
 /// Poll the VM state for up to `timeout` waiting for it to
 /// reach `Running`. Returns true on success.
 fn wait_for_running(
-    vm: &nimbus_vm::apple::AcquiredVm,
+    vm: &pullrun_vm::apple::AcquiredVm,
     timeout: std::time::Duration,
 ) -> bool {
     let start = Instant::now();

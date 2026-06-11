@@ -1,15 +1,15 @@
 [workspace]
 members = [
-    "runtime/nimbus-store",
-    "runtime/nimbus-oci",
-    "runtime/nimbus-exec",
-    "runtime/nimbus-net",
-    "runtime/nimbus-vm",
-    "runtime/nimbus-vsock",
-    "runtime/nimbus-init",
-    "runtime/nimbus-policy",
-    "runtime/nimbus-sync",
-    "runtime/nimbus-runtime",
+    "runtime/pullrun-store",
+    "runtime/pullrun-oci",
+    "runtime/pullrun-exec",
+    "runtime/pullrun-net",
+    "runtime/pullrun-vm",
+    "runtime/pullrun-vsock",
+    "runtime/pullrun-init",
+    "runtime/pullrun-policy",
+    "runtime/pullrun-sync",
+    "runtime/pullrun-runtime",
 ]
 resolver = "2"
 

@@ -5,8 +5,8 @@ edition = "2021"
 publish = false
 
 # Standalone tool: not part of the workspace. Has its own dep tree
-# (no nimbus deps) so it builds in seconds on disk-constrained CI
-# hosts where the full nimbus workspace won't fit.
+# (no pullrun deps) so it builds in seconds on disk-constrained CI
+# hosts where the full pullrun workspace won't fit.
 [workspace]
 
 [[bin]]

@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "nimbus/protoapi/nimbus/control"
-	rpb "nimbus/protoapi/nimbus/runtime"
+	pb "pullrun/protoapi/pullrun/control"
+	rpb "pullrun/protoapi/pullrun/runtime"
 )
 
 // fileStore provides disk-backed persistence for the control plane's

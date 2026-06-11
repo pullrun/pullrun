@@ -1,4 +1,4 @@
-// Integration test: starts the nimbus-runtime daemon and the nimbus-cri shim,
+// Integration test: starts the pullrun-runtime daemon and the pullrun-cri shim,
 // then exercises the gRPC contracts to confirm they implement the CRI protocol.
 //
 // This is not a full end-to-end test (we don't actually launch a container),
@@ -26,7 +26,7 @@ import (
 )
 
 func main() {
-	tmpDir := flag.String("tmp", "/tmp/nimbus-cri-test", "Temp dir for runtime")
+	tmpDir := flag.String("tmp", "/tmp/pullrun-cri-test", "Temp dir for runtime")
 	keep := flag.Bool("keep", false, "Keep runtime + shim running after the test")
 	flag.Parse()
 
@@ -37,12 +37,12 @@ func main() {
 	criSock := filepath.Join(*tmpDir, "cri.sock")
 	storeRoot := filepath.Join(*tmpDir, "store")
 
-	// 1. Start nimbus-runtime
+	// 1. Start pullrun-runtime
 	rt := startRuntime(runtimeSock, storeRoot)
 	defer killIfAlive(rt)
 	log.Printf("runtime started (pid=%d)", rt.Process.Pid)
 
-	// 2. Start nimbus-cri
+	// 2. Start pullrun-cri
 	cri := startCRI(criSock, runtimeSock)
 	defer killIfAlive(cri)
 	log.Printf("CRI shim started (pid=%d)", cri.Process.Pid)
@@ -116,7 +116,7 @@ func main() {
 	}
 
 	// 4f. RunPodSandbox — exercises the full CRI path: pull + run.
-	// The pod will be created in the local sandbox store and a Nimbus
+	// The pod will be created in the local sandbox store and a Pullrun
 	// workload will be requested from the runtime.
 	runCtx, runCancel := context.WithTimeout(ctx, 15*time.Second)
 	runResp, runErr := client.RunPodSandbox(runCtx, &runtimeapi.RunPodSandboxRequest{
@@ -127,7 +127,7 @@ func main() {
 				Uid:       "smoke-uid-12345",
 			},
 			Annotations: map[string]string{
-				"nimbus.io/image": "alpine:latest",
+				"pullrun.io/image": "alpine:latest",
 			},
 		},
 	})
@@ -178,7 +178,7 @@ func main() {
 }
 
 func startRuntime(socketPath, storeRoot string) *exec.Cmd {
-	binary := findBinary("nimbus-runtime")
+	binary := findBinary("pullrun-runtime")
 	_ = os.RemoveAll(socketPath)
 	cmd := exec.Command(binary, "daemon",
 		"--socket", socketPath,
@@ -193,7 +193,7 @@ func startRuntime(socketPath, storeRoot string) *exec.Cmd {
 }
 
 func startCRI(socketPath, runtimeSock string) *exec.Cmd {
-	binary := findBinary("nimbus-cri")
+	binary := findBinary("pullrun-cri")
 	_ = os.RemoveAll(socketPath)
 	cmd := exec.Command(binary,
 		"--socket", socketPath,

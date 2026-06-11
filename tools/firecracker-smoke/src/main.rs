@@ -5,11 +5,11 @@
 //! microVM. Exits 0 on success, non-zero on failure.
 //!
 //! Required env:
-//!   NIMBUS_FC_BIN     — path to firecracker binary
-//!   NIMBUS_FC_VMLINUX — path to an uncompressed vmlinux ELF
+//!   PULLRUN_FC_BIN     — path to firecracker binary
+//!   PULLRUN_FC_VMLINUX — path to an uncompressed vmlinux ELF
 //!
 //! Optional:
-//!   NIMBUS_FC_TIMEOUT — seconds (default 30)
+//!   PULLRUN_FC_TIMEOUT — seconds (default 30)
 //!
 //! Reproduce on Ubuntu 24.04:
 //!
@@ -25,8 +25,8 @@
 //!   install -m 755 /tmp/release-v1.10.1-x86_64/firecracker-v1.10.1-x86_64 /usr/local/bin/firecracker
 //!
 //!   cd tools/firecracker-smoke
-//!   NIMBUS_FC_BIN=/usr/local/bin/firecracker \
-//!   NIMBUS_FC_VMLINUX=/tmp/vmlinux \
+//!   PULLRUN_FC_BIN=/usr/local/bin/firecracker \
+//!   PULLRUN_FC_VMLINUX=/tmp/vmlinux \
 //!   cargo run --release
 
 use std::path::{Path, PathBuf};
@@ -37,7 +37,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::BufReader;
 use tokio::process::Command as TokioCommand;
 
-const SMOKE_MARKER: &str = "nimbus-firecracker-smoke OK";
+const SMOKE_MARKER: &str = "pullrun-firecracker-smoke OK";
 
 fn main() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -54,16 +54,16 @@ async fn run() -> i32 {
         return 0;
     }
 
-    let bin = std::env::var("NIMBUS_FC_BIN").expect("NIMBUS_FC_BIN set");
-    let vmlinux = std::env::var("NIMBUS_FC_VMLINUX").expect("NIMBUS_FC_VMLINUX set");
-    let timeout_secs: u64 = std::env::var("NIMBUS_FC_TIMEOUT")
+    let bin = std::env::var("PULLRUN_FC_BIN").expect("PULLRUN_FC_BIN set");
+    let vmlinux = std::env::var("PULLRUN_FC_VMLINUX").expect("PULLRUN_FC_VMLINUX set");
+    let timeout_secs: u64 = std::env::var("PULLRUN_FC_TIMEOUT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
     let timeout = Duration::from_secs(timeout_secs);
     eprintln!("[firecracker-smoke] bin={bin} vmlinux={vmlinux} timeout={timeout_secs}s");
 
-    let stage_dir = std::env::var("NIMBUS_FC_STAGE").unwrap_or_else(|_| "/tmp/fc-smoke-stage".into());
+    let stage_dir = std::env::var("PULLRUN_FC_STAGE").unwrap_or_else(|_| "/tmp/fc-smoke-stage".into());
     let _ = std::fs::remove_dir_all(&stage_dir);
     std::fs::create_dir_all(&stage_dir).expect("stage dir");
     eprintln!("[firecracker-smoke] stage_dir={}", stage_dir);
@@ -199,7 +199,7 @@ async fn run() -> i32 {
     );
 
     // Always dump captured output to /tmp for postmortem when failing.
-    let dump_path = std::env::var("NIMBUS_FC_DUMP_PATH").unwrap_or_else(|_| "/tmp/fc-smoke.dump".into());
+    let dump_path = std::env::var("PULLRUN_FC_DUMP_PATH").unwrap_or_else(|_| "/tmp/fc-smoke.dump".into());
     let _ = std::fs::write(&dump_path, format!(
         "=== firecracker-smoke debug dump ===\nlines={} marker_seen={}\nlast_line={:?}\n",
         total_lines, marker_seen, last_line
@@ -221,14 +221,14 @@ fn skip_reason() -> Option<String> {
     if !Path::new("/dev/kvm").exists() {
         return Some("/dev/kvm missing".into());
     }
-    let bin = std::env::var("NIMBUS_FC_BIN").unwrap_or_else(|_| "firecracker".into());
+    let bin = std::env::var("PULLRUN_FC_BIN").unwrap_or_else(|_| "firecracker".into());
     if !Path::new(&bin).exists() && which(&bin).is_none() {
-        return Some(format!("firecracker binary not found (NIMBUS_FC_BIN={bin})"));
+        return Some(format!("firecracker binary not found (PULLRUN_FC_BIN={bin})"));
     }
-    match std::env::var("NIMBUS_FC_VMLINUX") {
+    match std::env::var("PULLRUN_FC_VMLINUX") {
         Ok(p) if !p.is_empty() && Path::new(&p).exists() => {}
-        Ok(p) => return Some(format!("NIMBUS_FC_VMLINUX={p} not found")),
-        Err(_) => return Some("NIMBUS_FC_VMLINUX not set".into()),
+        Ok(p) => return Some(format!("PULLRUN_FC_VMLINUX={p} not found")),
+        Err(_) => return Some("PULLRUN_FC_VMLINUX not set".into()),
     }
     None
 }
@@ -264,13 +264,13 @@ fn build_smoke_rootfs(target: &Path) -> Result<(), String> {
     };
 
     run(&["truncate", "-s", "128M", target.to_str().unwrap()])?;
-    run(&["mkfs.ext4", "-F", "-L", "nimbus", target.to_str().unwrap()])?;
+    run(&["mkfs.ext4", "-F", "-L", "pullrun", target.to_str().unwrap()])?;
     run(&["mount", "-o", "loop", target.to_str().unwrap(), mount.to_str().unwrap()])?;
 
     // Populate with alpine minirootfs (has /bin/sh via busybox).
-    // Source: dl-cdn.alpinelinux.org. Override with NIMBUS_FC_ROOTFS_TAR
+    // Source: dl-cdn.alpinelinux.org. Override with PULLRUN_FC_ROOTFS_TAR
     // to test offline.
-    let tar_url = std::env::var("NIMBUS_FC_ROOTFS_TAR").unwrap_or_else(|_|
+    let tar_url = std::env::var("PULLRUN_FC_ROOTFS_TAR").unwrap_or_else(|_|
         "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz".into()
     );
     eprintln!("[firecracker-smoke] fetching rootfs tarball: {tar_url}");
@@ -288,8 +288,8 @@ fn build_smoke_rootfs(target: &Path) -> Result<(), String> {
 mount -t proc none /proc 2>/dev/null
 mount -t sysfs none /sys 2>/dev/null
 mount -t devtmpfs none /dev 2>/dev/null
-echo "nimbus-firecracker-smoke OK at $(date)" > /dev/ttyS0
-echo "nimbus-firecracker-smoke OK at $(date)" > /dev/console
+echo "pullrun-firecracker-smoke OK at $(date)" > /dev/ttyS0
+echo "pullrun-firecracker-smoke OK at $(date)" > /dev/console
 sync
 echo o > /proc/sysrq-trigger 2>/dev/null
 sleep 1

@@ -1,8 +1,8 @@
 # Policy
 
-How Nimbus decides whether an image is allowed to be pulled
+How Pullrun decides whether an image is allowed to be pulled
 and run. The policy engine is the security boundary; the rest
-of Nimbus is plumbing.
+of Pullrun is plumbing.
 
 ## The default policy: deny-by-explicit-allow
 
@@ -73,7 +73,7 @@ The policy is configured at runtime startup. There is no
 runtime reload; restart the runtime to pick up a new policy.
 
 ```bash
-nimbus-runtime daemon \
+pullrun-runtime daemon \
     --require-signature \
     --require-sbom \
     --max-cvss 7.0 \
@@ -167,7 +167,7 @@ Every policy decision (allow or deny) is recorded in two
 places:
 
 1. The `policy_decisions` map on the workload state, returned
-   by `nimbusctl inspect`. The key is the policy name
+   by `pullrun inspect`. The key is the policy name
    (`"default"` in v0), the value is `"allow"` or
    `"deny: <reason>"`.
 

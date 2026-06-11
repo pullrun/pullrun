@@ -3,15 +3,15 @@
 # instance.
 #
 # `selector.matchLabels` must match the Service's labels. The
-# headless Service in runtime-daemon.yaml carries `app: nimbus-runtime`
+# headless Service in runtime-daemon.yaml carries `app: pullrun-runtime`
 # so this is the right selector.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: nimbus-runtime
-  namespace: nimbus
+  name: pullrun-runtime
+  namespace: pullrun
   labels:
-    app: nimbus-runtime
+    app: pullrun-runtime
     release: kube-prometheus-stack   # match the Operator's Helm release
 spec:
   # Scrape every 30s. Most production Prometheus deployments scrape
@@ -21,7 +21,7 @@ spec:
   scrapeTimeout: 10s
   selector:
     matchLabels:
-      app: nimbus-runtime
+      app: pullrun-runtime
   # Match the `metrics` named port on the headless Service. Endpoints
   # from a headless Service are one-per-pod, which is what we want
   # for a DaemonSet (we want to alert on *node*-level anomalies,
@@ -51,4 +51,4 @@ spec:
           action: drop
   namespaceSelector:
     matchNames:
-      - nimbus
+      - pullrun

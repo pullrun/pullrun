@@ -9,12 +9,12 @@ target-linux/
 *~
 
 # Go
-cli/nimbusctl/nimbusctl
-cli/nimbusctl/cli
-cmd/nimbus-compose/compose
-cri/nimbus-cri/cri
+cli/pullrun/pullrun
+cli/pullrun/cli
+cmd/pullrun-compose/compose
+cri/pullrun-cri/cri
 cri/test-harness/test-harness
-control-plane/nimbus-control-plane
+control-plane/pullrun-control-plane
 
 # IDE
 .idea/

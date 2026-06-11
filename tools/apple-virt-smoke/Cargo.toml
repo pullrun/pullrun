@@ -5,10 +5,10 @@ edition = "2021"
 publish = false
 
 # Standalone tool: not part of the workspace. Has its own target
-# dir and own dep tree beyond the nimbus-vm path dep. The path
-# dep on nimbus-vm pulls in only the macOS-gated `apple` module
-# (and the bare minimum of nimbus-store/nimbus-oci/nimbus-net
-# that nimbus-vm needs to compile). On macOS this is a few
+# dir and own dep tree beyond the pullrun-vm path dep. The path
+# dep on pullrun-vm pulls in only the macOS-gated `apple` module
+# (and the bare minimum of pullrun-store/pullrun-oci/pullrun-net
+# that pullrun-vm needs to compile). On macOS this is a few
 # seconds of incremental; on Linux the apple module is not
 # compiled and the tool fails to build (by design — this is a
 # macOS-only validator).
@@ -21,14 +21,14 @@ path = "src/main.rs"
 [dependencies]
 # Pull in the FFI module. On macOS this brings the objc2 stack.
 # On Linux the apple module is cfg-gated out, so this dep is
-# inert — but the tool still requires the rest of nimbus-vm to
+# inert — but the tool still requires the rest of pullrun-vm to
 # build (firecracker deps), so a Linux build will fail. We
 # document this in src/main.rs.
-nimbus-vm = { path = "../../runtime/nimbus-vm" }
+pullrun-vm = { path = "../../runtime/pullrun-vm" }
 
 # MmapStore is the OCI materializer's backing store. We need
 # it directly so we can build one for the OCI kernel pull.
-nimbus-store = { path = "../../runtime/nimbus-store" }
+pullrun-store = { path = "../../runtime/pullrun-store" }
 
 # CLI parsing.
 clap = { version = "4", features = ["derive"] }

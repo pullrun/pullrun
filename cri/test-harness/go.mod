@@ -1,4 +1,4 @@
-module nimbus/cri/test-harness
+module pullrun/cri/test-harness
 
 go 1.22.0
 

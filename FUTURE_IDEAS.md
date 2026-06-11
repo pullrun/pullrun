@@ -1,6 +1,6 @@
 # Future Ideas
 
-This document catalogs feasible, high-value directions for Nimbus beyond the current implementation. Each entry is self-contained — some are near-term, others are speculative but architecturally sound.
+This document catalogs feasible, high-value directions for Pullrun beyond the current implementation. Each entry is self-contained — some are near-term, others are speculative but architecturally sound.
 
 ---
 
@@ -19,14 +19,14 @@ This document catalogs feasible, high-value directions for Nimbus beyond the cur
 | 3rd (`opencode`) | ~50ms | ~2MB |
 | Nth | ~50ms | ~2MB each |
 
-**Why DAG makes this novel:** Kata Containers has an experimental "fcfs" (Firecracker Containers on Same VM) mode but uses in-guest overlayfs — each workload has a separate copy of shared libraries in the guest page cache. Nimbus DAG collapses storage at the host level: every workload `mmap`s the same host-resident DAG pages.
+**Why DAG makes this novel:** Kata Containers has an experimental "fcfs" (Firecracker Containers on Same VM) mode but uses in-guest overlayfs — each workload has a separate copy of shared libraries in the guest page cache. Pullrun DAG collapses storage at the host level: every workload `mmap`s the same host-resident DAG pages.
 
 **Workflow:**
 
 ```
-nimbus vm start --name base      # boots one VM with guest-runtime
-nimbus run nginx --vm base        # vsock → clone(CLONE_NEWNS|CLONE_NEWNET) + exec
-nimbus run opencode --vm base     # same VM, separate namespaces
+pullrun vm start --name base      # boots one VM with guest-runtime
+pullrun run nginx --vm base        # vsock → clone(CLONE_NEWNS|CLONE_NEWNET) + exec
+pullrun run opencode --vm base     # same VM, separate namespaces
 ```
 
 ---
@@ -54,11 +54,11 @@ nimbus run opencode --vm base     # same VM, separate namespaces
 
 ## 3. Docker Compose Drop-In Replacement
 
-**Idea:** `nimbus compose up` reads an unmodified `docker-compose.yml` and boots each `service` as a micro-VM instead of a container. Zero migration cost for developers.
+**Idea:** `pullrun compose up` reads an unmodified `docker-compose.yml` and boots each `service` as a micro-VM instead of a container. Zero migration cost for developers.
 
 **What maps directly:**
 
-| Compose | Nimbus |
+| Compose | Pullrun |
 |---|---|
 | `image:` | OCI pull → DAG → VM rootfs |
 | `ports:` | Proxy network port forwarding |
@@ -69,10 +69,10 @@ nimbus run opencode --vm base     # same VM, separate namespaces
 
 **What needs building:**
 - Compose file parser (existing `compose-go` library)
-- `nimbus compose [up|down|logs|ps]` CLI
+- `pullrun compose [up|down|logs|ps]` CLI
 - Per-project bridge network with DNS
 - Healthcheck polling over vsock
-- Build integration (`nimbus compose build` → DAG)
+- Build integration (`pullrun compose build` → DAG)
 
 **Why it matters:** Lowest-friction path to micro-VM adoption. Developers don't rewrite YAML; they change one command.
 
@@ -82,7 +82,7 @@ nimbus run opencode --vm base     # same VM, separate namespaces
 
 ### 4a. Massive-scale serverless cold starts
 
-Docker/Podman pull layers → decompress → extract → overlayfs before starting. Nimbus boots a VM from a DAG root and **lazy-loads files on page fault** — the binary starts executing while the rest of the rootfs is still being pulled.
+Docker/Podman pull layers → decompress → extract → overlayfs before starting. Pullrun boots a VM from a DAG root and **lazy-loads files on page fault** — the binary starts executing while the rest of the rootfs is still being pulled.
 
 ### 4b. N-way A/B testing with zero storage overhead
 
@@ -171,7 +171,7 @@ Already partially implemented: kernel is an OCI image in the DAG. Security CVE h
 
 ## 10. Cross-Platform Remote Execution
 
-**Idea:** `nimbus exec --arch aarch64 --os linux` compiles on an arm64 Linux CI runner while the developer works on x86 macOS. The DAG stores both platform's files for the same image — deduped at the file level where identical.
+**Idea:** `pullrun exec --arch aarch64 --os linux` compiles on an arm64 Linux CI runner while the developer works on x86 macOS. The DAG stores both platform's files for the same image — deduped at the file level where identical.
 
 **Already partially supported:** OCI image index with platform selection exists in the puller.
 
@@ -198,4 +198,4 @@ Already partially implemented: kernel is an OCI image in the DAG. Security CVE h
 
 ## Principles
 
-Ideas in this document share a common thread: **make the DAG the universal storage substrate.** Every proposal extracts more value from the fact that Nimbus stores files by content hash, not by layer tarball. The more workloads share the same DAG store, the more they benefit from each other's cached data — a network effect that layer-based systems cannot replicate.
+Ideas in this document share a common thread: **make the DAG the universal storage substrate.** Every proposal extracts more value from the fact that Pullrun stores files by content hash, not by layer tarball. The more workloads share the same DAG store, the more they benefit from each other's cached data — a network effect that layer-based systems cannot replicate.

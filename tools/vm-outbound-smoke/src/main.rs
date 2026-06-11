@@ -5,7 +5,7 @@
 //! prints the response body to the serial console.
 //!
 //! On the host, we:
-//!  1. Create the `nimbus-br0` bridge (idempotent) and install the
+//!  1. Create the `pullrun-br0` bridge (idempotent) and install the
 //!     iptables MASQUERADE + FORWARD rules for outbound NAT.
 //!  2. Bind a one-shot HTTP server to `10.42.0.1:9999` (the bridge
 //!     gateway) that returns the marker body. The host's kernel routes
@@ -20,21 +20,21 @@
 //! HTTP server replied. The reply traveled back as RELATED,ESTABLISHED.
 //!
 //! This is a self-contained alternative to the Rust integration test
-//! in `runtime/nimbus-vm/tests/firecracker_outbound.rs` — same logic,
-//! no nimbus dependencies, builds in seconds.
+//! in `runtime/pullrun-vm/tests/firecracker_outbound.rs` — same logic,
+//! no pullrun dependencies, builds in seconds.
 //!
 //! ## Required env vars
 //!
-//! - `NIMBUS_FC_BIN`     — path to a firecracker v1.10+ binary
-//! - `NIMBUS_FC_VMLINUX` — path to an uncompressed vmlinux ELF
+//! - `PULLRUN_FC_BIN`     — path to a firecracker v1.10+ binary
+//! - `PULLRUN_FC_VMLINUX` — path to an uncompressed vmlinux ELF
 //!
 //! ## Optional env vars
 //!
-//! - `NIMBUS_FC_ROOTFS_TAR` — alpine minirootfs URL (default below)
-//! - `NIMBUS_FC_STAGE`      — staging directory (default /tmp/vm-out-smoke)
-//! - `NIMBUS_FC_TIMEOUT`    — boot timeout in seconds (default 60)
-//! - `NIMBUS_FC_GUEST_IP`   — guest IP (default 10.42.88.88)
-//! - `NIMBUS_FC_HOST_PORT`  — host-side HTTP server port (default 9999)
+//! - `PULLRUN_FC_ROOTFS_TAR` — alpine minirootfs URL (default below)
+//! - `PULLRUN_FC_STAGE`      — staging directory (default /tmp/vm-out-smoke)
+//! - `PULLRUN_FC_TIMEOUT`    — boot timeout in seconds (default 60)
+//! - `PULLRUN_FC_GUEST_IP`   — guest IP (default 10.42.88.88)
+//! - `PULLRUN_FC_HOST_PORT`  — host-side HTTP server port (default 9999)
 
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -46,10 +46,10 @@ use tokio::net::TcpListener;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::oneshot;
 
-const OUTBOUND_MARKER: &str = "nimbus-vm-outbound OK";
+const OUTBOUND_MARKER: &str = "pullrun-vm-outbound OK";
 const DEFAULT_ALPINE_URL: &str =
     "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz";
-const BRIDGE_NAME: &str = "nimbus-br0";
+const BRIDGE_NAME: &str = "pullrun-br0";
 const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(10, 42, 0, 1);
 const NETMASK: Ipv4Addr = Ipv4Addr::new(255, 255, 0, 0);
 
@@ -74,16 +74,16 @@ fn skip_if_unavailable() -> Option<String> {
     if !std::path::Path::new("/dev/kvm").exists() {
         return Some("/dev/kvm missing".into());
     }
-    let bin = std::env::var("NIMBUS_FC_BIN").unwrap_or_else(|_| "firecracker".into());
+    let bin = std::env::var("PULLRUN_FC_BIN").unwrap_or_else(|_| "firecracker".into());
     if !std::path::Path::new(&bin).exists() && which(&bin).is_none() {
         return Some(format!(
-            "firecracker binary not found (NIMBUS_FC_BIN={bin})"
+            "firecracker binary not found (PULLRUN_FC_BIN={bin})"
         ));
     }
-    match std::env::var("NIMBUS_FC_VMLINUX") {
+    match std::env::var("PULLRUN_FC_VMLINUX") {
         Ok(p) if !p.is_empty() && std::path::Path::new(&p).exists() => {}
-        Ok(p) => return Some(format!("NIMBUS_FC_VMLINUX={p} not found")),
-        Err(_) => return Some("NIMBUS_FC_VMLINUX not set".into()),
+        Ok(p) => return Some(format!("PULLRUN_FC_VMLINUX={p} not found")),
+        Err(_) => return Some("PULLRUN_FC_VMLINUX not set".into()),
     }
     if which("iptables").is_none() {
         return Some("iptables not on PATH (required for outbound NAT)".into());
@@ -345,7 +345,7 @@ fn build_outbound_rootfs(
         "mkfs.ext4",
         "-F",
         "-L",
-        "nimbus-out",
+        "pullrun-out",
         target.to_str().unwrap(),
     ])?;
     run(&[
@@ -357,7 +357,7 @@ fn build_outbound_rootfs(
     ])?;
 
     let tar_url =
-        std::env::var("NIMBUS_FC_ROOTFS_TAR").unwrap_or_else(|_| DEFAULT_ALPINE_URL.into());
+        std::env::var("PULLRUN_FC_ROOTFS_TAR").unwrap_or_else(|_| DEFAULT_ALPINE_URL.into());
     eprintln!("[vm-outbound-smoke] fetching rootfs tarball: {tar_url}");
     let bytes = if tar_url.starts_with("http") {
         fetch_url(&tar_url)?
@@ -519,17 +519,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let bin = std::env::var("NIMBUS_FC_BIN").expect("NIMBUS_FC_BIN set");
-    let vmlinux = std::env::var("NIMBUS_FC_VMLINUX").expect("NIMBUS_FC_VMLINUX set");
-    let timeout_secs: u64 = std::env::var("NIMBUS_FC_TIMEOUT")
+    let bin = std::env::var("PULLRUN_FC_BIN").expect("PULLRUN_FC_BIN set");
+    let vmlinux = std::env::var("PULLRUN_FC_VMLINUX").expect("PULLRUN_FC_VMLINUX set");
+    let timeout_secs: u64 = std::env::var("PULLRUN_FC_TIMEOUT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(60);
-    let host_port: u16 = std::env::var("NIMBUS_FC_HOST_PORT")
+    let host_port: u16 = std::env::var("PULLRUN_FC_HOST_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(9999);
-    let guest_ip: Ipv4Addr = std::env::var("NIMBUS_FC_GUEST_IP")
+    let guest_ip: Ipv4Addr = std::env::var("PULLRUN_FC_GUEST_IP")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(Ipv4Addr::new(10, 42, 88, 88));
@@ -553,7 +553,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_handle = tokio::spawn(serve_marker(listener, OUTBOUND_MARKER, rx));
 
     // 3. Tap.
-    let stage_dir = std::env::var("NIMBUS_FC_STAGE").unwrap_or_else(|_| "/tmp/vm-out-smoke".into());
+    let stage_dir = std::env::var("PULLRUN_FC_STAGE").unwrap_or_else(|_| "/tmp/vm-out-smoke".into());
     let _ = std::fs::remove_dir_all(&stage_dir);
     std::fs::create_dir_all(&stage_dir).expect("stage dir");
     eprintln!("[vm-outbound-smoke] stage_dir={stage_dir}");

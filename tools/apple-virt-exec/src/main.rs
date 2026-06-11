@@ -1,11 +1,11 @@
 //! Standalone Apple Virtualization "exec" tool.
 //!
 //! Boots a single Apple Virt VM with a Linux kernel + initramfs
-//! containing `nimbus-init` (PID 1 inside the guest), then talks
+//! containing `pullrun-init` (PID 1 inside the guest), then talks
 //! to the guest over vsock to run a single command and stream
 //! its stdio. This is the **minimal end-to-end** test for the
-//! Apple Virt + nimbus-init + vsock transport path — no gRPC
-//! service, no nimbus-runtime, no nimbusctl.
+//! Apple Virt + pullrun-init + vsock transport path — no gRPC
+//! service, no pullrun-runtime, no pullrun.
 //!
 //! ## What it does
 //!
@@ -14,10 +14,10 @@
 //!    `--kernel-image`).
 //! 2. Builds an `AppleVirtAttachConfig` (kernel, rootfs
 //!    VirtioFS share, command, env, working dir) and calls
-//!    `nimbus_vm::run_session_blocking` to:
+//!    `pullrun_vm::run_session_blocking` to:
 //!    - Boot the VM.
 //!    - Register a `VZVirtioSocketListener` on port 42.
-//!    - Wait for the `nimbus-init` guest to connect.
+//!    - Wait for the `pullrun-init` guest to connect.
 //!    - Send a `WorkloadSpec` frame (placeholder; the real
 //!      spec is on the kernel command line).
 //! 3. Pumps frames between vsock and the body thread:
@@ -64,10 +64,10 @@
 //!
 //! ```text
 //! ./apple-virt-exec \
-//!     --kernel     ~/.nimbus/kernels/vmlinux-3.31.0 \
-//!     --initramfs  /tmp/nimbus-initramfs.cpio.gz \
+//!     --kernel     ~/.pullrun/kernels/vmlinux-3.31.0 \
+//!     --initramfs  /tmp/pullrun-initramfs.cpio.gz \
 //!     --rootfs     /tmp/alpine-rootfs \
-//!     --store      /tmp/nimbus-store \
+//!     --store      /tmp/pullrun-store \
 //!     --timeout    30 \
 //!     --cmd        /bin/uname -- -a
 //! ```
@@ -97,10 +97,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use nimbus_vm::apple::AppleVirtError;
-use nimbus_vm::oci_kernel::{OciKernelError, StagedKernel};
-use nimbus_vm::{run_session_blocking, AppleVirtAttachConfig};
-use nimbus_vsock::Frame;
+use pullrun_vm::apple::AppleVirtError;
+use pullrun_vm::oci_kernel::{OciKernelError, StagedKernel};
+use pullrun_vm::{run_session_blocking, AppleVirtAttachConfig};
+use pullrun_vsock::Frame;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info};
 
@@ -112,7 +112,7 @@ const DEFAULT_VM_MEM_MIB: u32 = 512;
 const DEFAULT_VM_CPUS: u8 = 1;
 
 /// Vsock port the guest connects to. Must match
-/// `nimbus-init`'s `DEFAULT_VSOCK_PORT`.
+/// `pullrun-init`'s `DEFAULT_VSOCK_PORT`.
 const VSOCK_PORT: u32 = 42;
 
 /// Default session timeout. The whole VM boot +
@@ -131,7 +131,7 @@ struct Args {
     #[arg(long, conflicts_with = "kernel_image")]
     kernel: Option<PathBuf>,
 
-    /// OCI image reference for a Nimbus kernel image. The
+    /// OCI image reference for a Pullrun kernel image. The
     /// image is pulled, materialized, and `/boot/vmlinux`
     /// (+ `/boot/initramfs.cpio.gz`) is staged into a temp
     /// dir. Mutually exclusive with `--kernel`.
@@ -139,7 +139,7 @@ struct Args {
     kernel_image: Option<String>,
 
     /// Path to an initramfs (cpio+gz) that contains
-    /// `/sbin/nimbus-init` and an `/init` shell script that
+    /// `/sbin/pullrun-init` and an `/init` shell script that
     /// `exec`s it. Required when `--kernel` is used. Ignored
     /// when `--kernel-image` is used (initramfs is read
     /// from the OCI image instead).
@@ -147,17 +147,17 @@ struct Args {
     initramfs: Option<PathBuf>,
 
     /// Host directory exposed to the guest via VirtioFS as
-    /// `nimbus-rootfs`. The guest sees this as the
-    /// `nimbus-rootfs` mount (e.g. `/mnt/host` if the guest
+    /// `pullrun-rootfs`. The guest sees this as the
+    /// `pullrun-rootfs` mount (e.g. `/mnt/host` if the guest
     /// mounts it there). Required: the VM config will not
     /// build without a real directory.
     #[arg(long)]
     rootfs: PathBuf,
 
     /// Host directory for a second VirtioFS share tagged
-    /// `nimbus-store`. Optional; used by some workloads to
+    /// `pullrun-store`. Optional; used by some workloads to
     /// pull artifacts at runtime. If omitted, the
-    /// `nimbus-store` share is configured to point at the
+    /// `pullrun-store` share is configured to point at the
     /// same path as `--rootfs`.
     #[arg(long)]
     store: Option<PathBuf>,
@@ -200,8 +200,8 @@ struct Args {
 
     /// Path to a file the guest's kernel+init console
     /// output gets written to. Truncated on each run.
-    /// Defaults to `/tmp/nimbus-exec-console.log`.
-    #[arg(long, default_value = "/tmp/nimbus-exec-console.log")]
+    /// Defaults to `/tmp/pullrun-exec-console.log`.
+    #[arg(long, default_value = "/tmp/pullrun-exec-console.log")]
     console_log: PathBuf,
 }
 
@@ -240,7 +240,7 @@ fn main() -> ! {
     // Spawn body thread. Main thread pumps the dispatch
     // queue; body thread does the work.
     std::thread::Builder::new()
-        .name("nimbus-exec-body".into())
+        .name("pullrun-exec-body".into())
         .spawn(move || {
             let code = run_body(args);
             unsafe { libc::_exit(code as i32) };
@@ -344,9 +344,9 @@ fn run_body(args: Args) -> i32 {
     //    dedicated thread for the session runner, and
     //    this thread for the message pump + stdin reader.
     let (session_result_tx, session_result_rx) =
-        std::sync::mpsc::channel::<Result<(), nimbus_vm::AttachError>>();
+        std::sync::mpsc::channel::<Result<(), pullrun_vm::AttachError>>();
     let session_thread = std::thread::Builder::new()
-        .name("nimbus-exec-session".into())
+        .name("pullrun-exec-session".into())
         .spawn(move || {
             let r = run_session_blocking(cfg, client_in_rx, server_out_tx);
             let _ = session_result_tx.send(r);
@@ -379,7 +379,7 @@ fn run_body(args: Args) -> i32 {
         }
         Err(_) => {
             error!("session thread panicked");
-            Err(nimbus_vm::AttachError::Vm(
+            Err(pullrun_vm::AttachError::Vm(
                 AppleVirtError::InvalidState("session thread panic".into()).to_string(),
             ))
         }
@@ -398,12 +398,25 @@ fn run_body(args: Args) -> i32 {
             // already i32.
             *exit_code
         }
-        (Err(e), _) | (_, Err(e)) => {
-            error!(
-                elapsed_ms = elapsed.as_millis() as u64,
-                error = %e,
-                "FAIL: exec session failed"
-            );
+        (pump_err, session_err) => {
+            let desc = match (pump_err, session_err) {
+                (Err(e), _) => format!("pump: {e}"),
+                (_, Err(e)) => format!("session: {e}"),
+                _ => "unknown error".to_string(),
+            };
+            if let (Err(p), Err(s)) = (pump_err, session_err) {
+                error!(
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    pump = %p, session = %s,
+                    "FAIL: exec session failed"
+                );
+            } else {
+                error!(
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    error = %desc,
+                    "FAIL: exec session failed"
+                );
+            }
             1
         }
     }
@@ -415,7 +428,7 @@ fn run_body(args: Args) -> i32 {
 async fn run_stdio_pump(
     client_in_tx: std::sync::mpsc::Sender<Frame>,
     server_out_rx: std::sync::mpsc::Receiver<Frame>,
-) -> Result<i32, nimbus_vm::AttachError> {
+) -> Result<i32, pullrun_vm::AttachError> {
     // Spawn the stdin → client_in task. We poll process
     // stdin asynchronously and forward each chunk to the
     // guest. On EOF, we send StdinEof and the task ends.
@@ -497,7 +510,7 @@ async fn run_stdio_pump(
             }
             Frame::Error(msg) => {
                 error!(message = %msg, "guest reported error");
-                return Err(nimbus_vm::AttachError::Workload(msg));
+                return Err(pullrun_vm::AttachError::Workload(msg));
             }
             Frame::InitHello { .. } => {
                 // We don't care about InitHello at the
@@ -511,7 +524,7 @@ async fn run_stdio_pump(
     }
 
     if !got_exit {
-        return Err(nimbus_vm::AttachError::Workload(
+        return Err(pullrun_vm::AttachError::Workload(
             "session ended without WorkloadExit".into(),
         ));
     }
@@ -534,7 +547,7 @@ fn stage_kernel(args: &Args) -> Result<StagedKernel, OciKernelError> {
             .join("apple-virt-exec-store")
             .join("oci-store");
         std::fs::create_dir_all(&store_dir).map_err(OciKernelError::Io)?;
-        let store = Arc::new(nimbus_store::MmapStore::new(store_dir));
+        let store = Arc::new(pullrun_store::MmapStore::new(store_dir));
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

@@ -1,18 +1,18 @@
 # Architecture
 
-A deep dive into how Nimbus stores, addresses, and executes OCI
+A deep dive into how Pullrun stores, addresses, and executes OCI
 workloads. This is the long-form companion to the README's
 high-level diagram.
 
-## 1. The content-addressed store (`nimbus-store`)
+## 1. The content-addressed store (`pullrun-store`)
 
 ### The on-disk format
 
-Every Nimbus node is an OCI artifact represented in the DAG as a
+Every Pullrun node is an OCI artifact represented in the DAG as a
 `DagNode`:
 
 ```rust
-// runtime/nimbus-store/src/node.rs
+// runtime/pullrun-store/src/node.rs
 pub struct DagNode {
     pub kind: NodeKind,         // Blob | Tree | Layer | Manifest
     pub edges: Vec<Digest>,     // child digests
@@ -27,7 +27,7 @@ of the node's serialized form.
 A node lives on disk as a single file, named by its digest:
 
 ```
-$ ls /var/lib/nimbus/
+$ ls /var/lib/pullrun/
 12a3...e4  <- root manifest
 8b7f...9c  <- a tree node
 ...
@@ -40,7 +40,7 @@ allocate` step; the page cache gives us pages, rkyv gives us
 field access.
 
 ```rust
-// runtime/nimbus-store/src/store.rs
+// runtime/pullrun-store/src/store.rs
 pub fn get_archived(&self, digest: &Digest) -> Result<&ArchivedDagNode, StoreError> {
     let mmap = self.get(digest)?;          // DashMap<_, Arc<Mmap>>
     let archived = unsafe { rkyv::archived_root::<DagNode>(&mmap[..]) };
@@ -100,7 +100,7 @@ The blob store is a thin wrapper around a content-addressed
 filesystem. v0 has no separate namespace — blobs live under
 `<store_root>/blobs/<digest>`.
 
-## 2. The OCI pipeline (`nimbus-oci`)
+## 2. The OCI pipeline (`pullrun-oci`)
 
 ```
 HTTP GET /v2/<name>/manifests/<ref>  (with bearer token)
@@ -120,16 +120,16 @@ HTTP GET /v2/<name>/manifests/<ref>  (with bearer token)
 The puller is a minimal OCI distribution v2 client: token auth,
 manifest fetch, layer fetch, all streaming. The converter walks
 the OCI image (which is a manifest → config + layers) and
-produces a DAG of Nimbus nodes. The config blob becomes a `Blob`
+produces a DAG of Pullrun nodes. The config blob becomes a `Blob`
 node, each layer becomes a `Layer` node, and the manifest itself
 becomes a `Manifest` node whose edges point at the config and the
 layers.
 
 If the converter encounters a digest that already exists in the
 store, the `put()` is a no-op. This is what makes
-`nimbusctl pull` idempotent and free for re-pulls.
+`pullrun pull` idempotent and free for re-pulls.
 
-## 3. The executor model (`nimbus-exec`, `nimbus-vm`)
+## 3. The executor model (`pullrun-exec`, `pullrun-vm`)
 
 The runtime defines an executor trait that abstracts over
 isolation level:
@@ -156,7 +156,7 @@ name, optional PID, optional internal IP.
 
 A thin wrapper around `runc`. v0 calls `runc create` + `runc
 start` + `runc delete`; the work of pulling the OCI image is
-already done by Nimbus, so runc only sees a Nimbus-formatted OCI
+already done by Pullrun, so runc only sees a Pullrun-formatted OCI
 bundle on disk.
 
 The container's rootfs is *materialized* from the DAG on demand:
@@ -173,7 +173,7 @@ Firecracker process boots from it. The kernel and the
 initrd/rootfs are passed via Firecracker's block-device config.
 
 Networking for the VM uses a tap device attached to the shared
-`nimbus-br0` bridge — same L2 segment as the containers. The
+`pullrun-br0` bridge — same L2 segment as the containers. The
 guest gets a static IP via the kernel's `ip=` boot arg, with a
 deterministic MAC derived from the IP (so two VMs can't collide).
 
@@ -185,14 +185,14 @@ A small dispatcher that holds both executors and routes by
 names a VM but the VM backend isn't configured (returns
 `BackendNotAvailable`).
 
-## 4. The shared network model (`nimbus-net`)
+## 4. The shared network model (`pullrun-net`)
 
-This is the most opinionated design decision in Nimbus: **all
+This is the most opinionated design decision in Pullrun: **all
 workloads, regardless of backend, live on the same L2 segment**
 behind a single userspace proxy.
 
 ```
-                  ┌──────── nimbus-br0 (Linux bridge, 10.42.0.0/16) ────────┐
+                  ┌──────── pullrun-br0 (Linux bridge, 10.42.0.0/16) ────────┐
                   │                                                          │
    container A    │   container B     VM C         VM D                      │
    10.42.0.5      │   10.42.0.6      10.42.0.7    10.42.0.8                │
@@ -232,7 +232,7 @@ The proxy listens on `10.42.0.1:<port>` for each declared
 at the host on that port, the proxy DNATs it to the workload's
 internal IP, opens a TCP connection (or UDP association)
 through the bridge, and bi-directionally shuttles bytes. This
-is the `nimbus_net::proxy` module.
+is the `pullrun_net::proxy` module.
 
 The proxy is *not* a full implementation of `iptables` / nft
 semantics in v0 — it's a list of explicit port mappings. See
@@ -245,15 +245,15 @@ Containers in v0 share the host's network namespace for outbound
 traffic (or use `NetworkMode::Host` directly). VMs need NAT
 because their tap devices only see the bridge.
 
-Nimbus writes three iptables rules at boot (and on every
+Pullrun writes three iptables rules at boot (and on every
 `ensure_bridge` call, idempotently):
 
 ```bash
 iptables -t nat -A POSTROUTING \
     -s 10.42.0.0/16 ! -d 10.42.0.0/16 \
     -j MASQUERADE
-iptables -A FORWARD -i nimbus-br0 -o <outbound_iface> -j ACCEPT
-iptables -A FORWARD -i <outbound_iface> -o nimbus-br0 \
+iptables -A FORWARD -i pullrun-br0 -o <outbound_iface> -j ACCEPT
+iptables -A FORWARD -i <outbound_iface> -o pullrun-br0 \
     -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
@@ -265,7 +265,7 @@ and most home routers.
 
 The alternative — one bridge per workload, with cross-workload
 traffic going through a router — adds latency and operational
-complexity for no real security win in the common case. Nimbus
+complexity for no real security win in the common case. Pullrun
 workloads are *not* multi-tenant; they're all owned by the same
 operator. The isolation boundary is the executor (container vs
 VM), not the network.
@@ -275,7 +275,7 @@ workload can't talk to another workload's declared ports unless
 the operator added a `NetworkRule` for it). In v1 we'll add
 per-workload nftables sets to enforce this at the kernel level.
 
-## 5. The policy engine (`nimbus-policy`)
+## 5. The policy engine (`pullrun-policy`)
 
 See [docs/POLICY.md](./POLICY.md) for the full picture. Briefly:
 
@@ -292,11 +292,11 @@ See [docs/POLICY.md](./POLICY.md) for the full picture. Briefly:
 The engine is synchronous (`tokio::task::spawn_blocking`)
 because signature verification and SBOM parsing are CPU-bound.
 
-## 6. The runtime service (`nimbus-runtime`)
+## 6. The runtime service (`pullrun-runtime`)
 
 The runtime is a `tonic` gRPC server. The service is
 `RuntimeService`; the gRPC trait is generated from
-`proto/nimbus/runtime.proto` at compile time.
+`proto/pullrun/runtime.proto` at compile time.
 
 ### gRPC methods (v0)
 
@@ -354,24 +354,24 @@ only. The full picture is:
 
 ```
                             ┌──────────────────┐
-                            │  nimbus-controller │
+                            │  pullrun-controller │
                             │  (control plane)   │
                             └──────────┬────────┘
                                        │ gRPC
                             ┌──────────▼────────┐
-                            │   nimbus-agent    │   one per node
+                            │   pullrun-agent    │   one per node
                             │   (deploys,       │
                             │    introspects)   │
                             └──────────┬────────┘
                                        │ gRPC
                             ┌──────────▼────────┐
-                            │  nimbus-runtime   │   on each node
+                            │  pullrun-runtime   │   on each node
                             │  (gRPC daemon)    │
                             └───────────────────┘
 ```
 
 Persistence (etcd), cross-node service discovery
-(`.nimbus.local` DNS), and admission control are all v1 work.
+(`.pullrun.local` DNS), and admission control are all v1 work.
 The wire protocol is stable; only the server-side state
 management changes.
 
@@ -390,7 +390,7 @@ A deliberate split:
   runtime — the CLI talks to the runtime over gRPC just like
   any other client.
 - **Single source of truth for the wire format:**
-  `proto/nimbus/runtime.proto` (and `control.proto` for the
+  `proto/pullrun/runtime.proto` (and `control.proto` for the
   multi-node API). Rust generates from it at compile time
   (`tonic-build`); Go generates from it at `make proto` time
   (the shared `proto-go/` module).

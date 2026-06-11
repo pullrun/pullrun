@@ -1,0 +1,53 @@
+[package]
+name = "pullrun-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pullrun-runtime"
+path = "src/main.rs"
+
+[dependencies]
+pullrun-store = { path = "../pullrun-store" }
+pullrun-oci = { path = "../pullrun-oci" }
+pullrun-exec = { path = "../pullrun-exec" }
+pullrun-net = { path = "../pullrun-net" }
+pullrun-vm = { path = "../pullrun-vm" }
+pullrun-vsock = { path = "../pullrun-vsock" }
+pullrun-policy = { path = "../pullrun-policy" }
+pullrun-sync = { path = "../pullrun-sync" }
+libc.workspace = true
+bytes = "1"
+tokio.workspace = true
+tonic.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { version = "4.5", features = ["derive"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-util = { version = "0.7", features = ["io"] }
+futures = "0.3"
+tempfile = "3"
+hex.workspace = true
+sha2.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+axum.workspace = true
+aes-gcm = "0.10"
+rand.workspace = true
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[dev-dependencies]
+ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
+rand = "0.8"
+base64 = "0.22"
+rkyv = { version = "0.7", features = ["validation"] }

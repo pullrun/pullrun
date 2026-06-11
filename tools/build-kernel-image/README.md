@@ -1,6 +1,6 @@
 # tools/build-kernel-image
 
-Builds a **Nimbus kernel image** for the Apple Virtualization guest
+Builds a **Pullrun kernel image** for the Apple Virtualization guest
 ABI (Asahi Linux) and packages it as an OCI image. The output can
 be loaded with `docker load` or pushed to any OCI registry and
 consumed by the Apple Virt smoke tool or the runtime.
@@ -8,12 +8,12 @@ consumed by the Apple Virt smoke tool or the runtime.
 ## What this is
 
 The Apple Virtualization framework (`objc2-virtualization`) takes a
-host path to an uncompressed Linux kernel ELF. Nimbus treats the
+host path to an uncompressed Linux kernel ELF. Pullrun treats the
 kernel as just another content-addressed OCI artifact — the same
-`nimbus-oci` pipeline that pulls a `docker.io/library/alpine`
-image pulls a `nimbus/kernel-asahi:6.19.14` image. The runtime
+`pullrun-oci` pipeline that pulls a `docker.io/library/alpine`
+image pulls a `pullrun/kernel-asahi:6.19.14` image. The runtime
 stages it into a temp dir via `StagedKernel::from_image` (see
-`runtime/nimbus-vm/src/oci_kernel.rs`) and hands the host paths
+`runtime/pullrun-vm/src/oci_kernel.rs`) and hands the host paths
 to the framework.
 
 This directory is the **build side** of that contract: it produces
@@ -21,17 +21,17 @@ the OCI image that lives in the registry.
 
 ## Image layout
 
-A nimbus kernel image has a well-known shape. The layer tarball
+A pullrun kernel image has a well-known shape. The layer tarball
 contains:
 
 ```
 /boot/vmlinux                # required — uncompressed ELF
 /boot/initramfs.cpio.gz      # optional — initramfs
-/usr/lib/nimbus/nimbus-runtime  # optional, future
+/usr/lib/pullrun/pullrun-runtime  # optional, future
 ```
 
 The OCI image config labels MUST include
-`org.nimbus.image.kind=kernel` so the policy engine can
+`org.pullrun.image.kind=kernel` so the policy engine can
 distinguish kernel images from container images.
 
 ## Build
@@ -44,24 +44,24 @@ git checkout asahi-6.19
 
 # 2. Build the kernel + the OCI image
 ASAHI_TREE=~/src/linux-asahi \
-NIMBUS_RUNTIME_BIN=$(pwd)/../../runtime/nimbus-runtime/target/release/nimbus-runtime \
+PULLRUN_RUNTIME_BIN=$(pwd)/../../runtime/pullrun-runtime/target/release/pullrun-runtime \
 ./build.sh 6.19.14
 ```
 
-The output is `nimbus-kernel-asahi-6.19.14.tar` (single-file
+The output is `pullrun-kernel-asahi-6.19.14.tar` (single-file
 `docker load` format).
 
 ## Publish
 
 ```sh
 # Option A: docker
-docker load -i nimbus-kernel-asahi-6.19.14.tar
-docker tag nimbus/kernel-asahi:6.19.14 ghcr.io/nimbus/kernel-asahi:6.19.14
-docker push ghcr.io/nimbus/kernel-asahi:6.19.14
+docker load -i pullrun-kernel-asahi-6.19.14.tar
+docker tag pullrun/kernel-asahi:6.19.14 ghcr.io/pullrun/kernel-asahi:6.19.14
+docker push ghcr.io/pullrun/kernel-asahi:6.19.14
 
 # Option B: skopeo (no daemon)
-skopeo copy docker-archive:nimbus-kernel-asahi-6.19.14.tar \
-    docker://ghcr.io/nimbus/kernel-asahi:6.19.14
+skopeo copy docker-archive:pullrun-kernel-asahi-6.19.14.tar \
+    docker://ghcr.io/pullrun/kernel-asahi:6.19.14
 ```
 
 ## Consume
@@ -69,11 +69,11 @@ skopeo copy docker-archive:nimbus-kernel-asahi-6.19.14.tar \
 ```sh
 # Via the smoke tool
 ./../apple-virt-smoke/target/release/apple-virt-smoke \
-  --kernel-image nimbus/kernel-asahi:6.19.14 \
+  --kernel-image pullrun/kernel-asahi:6.19.14 \
   --pool-size 1
 
 # Via the runtime (future; once the executor takes an image ref)
-nimbus runtime start --image nimbus/kernel-asahi:6.19.14 \
+pullrun runtime start --image pullrun/kernel-asahi:6.19.14 \
   --workload-image alpine:3.18 -- /bin/sh
 ```
 

@@ -1,4 +1,4 @@
-# Nimbus — Development Warnings & Gotchas
+# Pullrun — Development Warnings & Gotchas
 
 > **Read this before resuming work.** This file documents non-obvious pitfalls
 > discovered during development that have caused or could cause real damage.
@@ -16,11 +16,12 @@ symptoms "looked like" something we'd already hit:
 
 | Symptom                                                  | False-positive diagnosis we chased | Actual cause |
 |----------------------------------------------------------|------------------------------------|--------------|
-| `spawn /bin/sh: No such file or directory` in guest     | "the cpio symlinks are broken"     | `Command::current_dir("")` in nimbus-init |
+| `spawn /bin/sh: No such file or directory` in guest     | "the cpio symlinks are broken"     | `Command::current_dir("")` in pullrun-init |
 | `vsock read EOF on header` after writing WorkloadSpec   | "the framework's listener is on the wrong thread" | (it was — but we fixed that, and the EOF was then from a different cause: the `current_dir` bug above) |
 | `AF_VSOCK connect failed; trying Unix fallback`         | "the host's listener isn't set up"  | (it was the first time we hit it; on subsequent runs it was a side-effect of the guest having already crashed once and the kernel panicking) |
 | `vm.state() returns 0 instead of 1` after start         | "the framework's queue is wrong"    | we were reading the state value from the wrong thread |
-| InitHello received but WorkloadSpec response is EOF     | "the framework's connection got reset" | (it did — but the *reason* was that the guest's spawn failed, nimbus-init exited, the kernel panicked, and the framework's state was now weird) |
+| InitHello received but WorkloadSpec response is EOF     | "the framework's connection got reset" | (it did — but the *reason* was that the guest's spawn failed, pullrun-init exited, the kernel panicked, and the framework's state was now weird) |
+| Interactive shell output appears only after `exit` (no real-time streaming) | "O_NONBLOCK on the PTY master fd is wrong" / "n=0 in write_task is the root cause" / "h2 is buffering the response" | The drainer used `recv_timeout(10ms)` on a `std::sync::mpsc::Receiver` inside a `tokio::spawn` task; on a `current-thread` runtime this blocked the only worker thread for 10ms at a time, starving the gRPC response stream poll. Fix: move the blocking loop to `tokio::task::spawn_blocking`. |
 
 ### The rule
 
@@ -38,7 +39,7 @@ Concretely:
    first time we did this we found the `spawn /bin/sh: No
    such file or directory` immediately, but only after we'd
    already wasted an hour on cpio symlink formats.
-2. **Add `tracing::info!` / `eprintln!` to the GUEST** (nimbus-init)
+2. **Add `tracing::info!` / `eprintln!` to the GUEST** (pullrun-init)
    so you can see what it sees. The kernel log is great for
    the kernel, but it doesn't tell you what user-space is
    doing.
@@ -68,77 +69,21 @@ Concretely:
   found. Verify with `stat` first.
 
 ---
+## ✅ Go module paths (`pullrun/cli`, `pullrun/protoapi/...`)
 
-## ⚠️ DO NOT use `github.com/nimbus/nimbus` (or any `github.com/nimbus/*`) as a Go module path
-
-**Severity:** HIGH — this has caused real-world confusion in this project.
-
-### What happened
-
-`github.com/nimbus/nimbus` is the path of an **unrelated, real, existing project
-on GitHub**. It is not our project. Our project lives at `/Users/YACINE/nimbus`
-locally and has no canonical public home.
-
-When our proto files declared:
-
-```proto
-option go_package = "github.com/nimbus/nimbus/control-plane/api/proto/.../runtime;runtime";
-```
-
-…and our Go modules were named `module github.com/nimbus/nimbus/...`, several
-bad things happened:
-
-1. `go mod tidy` resolved `github.com/nimbus/nimbus` from the public module
-   proxy and pulled down `v0.1.33` of the *real* nimbus project — silently
-   shadowing any work-in-progress in this repo.
-2. Generated `.pb.go` files claimed import paths that, to a tool or human
-   outside this machine, point to a public project they don't belong to.
-3. The risk of pushing any of this code to a public remote and having it
-   collide with — or be mistaken for — the real `github.com/nimbus/nimbus` is
-   real and would be a public-relations disaster.
-
-### The rule
-
-**Never use a `github.com/...` path for any module, proto `go_package`, or
-generated stub in this project unless this project actually lives at that
-GitHub URL.** This project does not. Until a real public home is chosen:
-
-- **Module paths:** use `nimbus/...` (e.g. `nimbus/cli`, `nimbus/controlplane`).
-  `go.mod` does not require a domain; the path can be any unique string.
-- **Proto `go_package`:** use `nimbus/<subdir>/proto/...` paths that match
-  where the generated stubs actually live in this repo.
-- **Never prefix with `github.com/`, `gitlab.com/`, `bitbucket.org/`, or any
-  other real forge.** Use a path that is clearly local (e.g. just `nimbus/...`)
-  until a canonical home is decided.
-
-### How to spot this mistake
-
-```bash
-# Should print nothing:
-rg -n 'github\.com/(nimbus|nimbus-)' .
-rg -n '"go_package":\s*"github\.com/' proto/
-```
-
-If either command prints anything, the mistake has been re-introduced and
-must be fixed before continuing.
-
-### Current canonical scheme
-
-| Module                              | Path in repo                 |
-| ----------------------------------- | ---------------------------- |
-| `nimbus`                            | (root, used as a prefix only)|
-| `nimbus/cli`                        | `cli/nimbusctl/`             |
-| `nimbus/controlplane`               | `control-plane/api/`         |
-| `nimbus/cri`                        | `cri/nimbus-cri/`            |
-
-Proto `go_package` for `nimbus/runtime.proto`:
+The Go module path is `pullrun/cli` and the generated protobuf `go_package`
+is `pullrun/protoapi/pullrun/runtime;runtime` (etc.). These paths do not
+reference any external GitHub project — they resolve via `replace`
+directives in `go.mod`:
 
 ```
-nimbus/controlplane/proto/nimbus/runtime;runtime
+replace pullrun/protoapi => ../../proto-go
 ```
 
-Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
-`go.mod` to point at a local copy of the generated stubs.
+If you ever need to change the canonical Go module path for public
+consumption (e.g. `github.com/pullrun/cli`), update both the `module`
+line in `go.mod` and the `option go_package` in each `.proto` file, then
+re-generate the Go protobuf code with `make protoc-go`.
 
 ---
 
@@ -174,7 +119,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### TAP device creation via `ioctl(TUNSETIFF)` (replaces `ip tuntap add`)
 
-- Nimbus creates TAP devices via direct `ioctl(TUNSETIFF)` on `/dev/net/tun`,
+- Pullrun creates TAP devices via direct `ioctl(TUNSETIFF)` on `/dev/net/tun`,
   NOT via the `ip tuntap add` subprocess. This eliminates the need for
   ambient capabilities.
 - The binary must have `setcap cap_net_admin=eip` for rootless operation.
@@ -188,7 +133,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   appears. Include a `_pad: [u8; 22]` field after `ifr_flags`.
 - `TUNSETIFF` = `_IOW('T', 202, int)` = `0x400454CA` on x86_64 Linux.
 - The legacy `ip tuntap add dev <name> mode tap` and `ip tuntap add name
-  <name> mode tap` syntax is **no longer used by Nimbus**. The iproute2
+  <name> mode tap` syntax is **no longer used by Pullrun**. The iproute2
   note below is kept for reference in case manual TAP creation is needed
   during debugging.
 
@@ -201,9 +146,9 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### Linux bridge kernel dataplane: `ip link add type bridge` needs no special perms
 
-- `ip link add name nimbus-br0 type bridge` works in any container with
-  `CAP_NET_ADMIN`. Same for `ip addr add 10.42.0.1/16 dev nimbus-br0`.
-- `ip link set <tap> master nimbus-br0` requires `CAP_NET_ADMIN` and a
+- `ip link add name pullrun-br0 type bridge` works in any container with
+  `CAP_NET_ADMIN`. Same for `ip addr add 10.42.0.1/16 dev pullrun-br0`.
+- `ip link set <tap> master pullrun-br0` requires `CAP_NET_ADMIN` and a
   kernel that supports bridge netfilter; if the guest has no network,
   check `dmesg | tail` on the host for `bridge: filtering` errors.
 - IPv4 forwarding (`/proc/sys/net/ipv4/ip_forward = 1`) is best-effort:
@@ -215,10 +160,10 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 - `IFNAMSIZ = 16` (15 chars + NUL). Any ifname longer than 15 chars
   is rejected with `ENAMETOOLONG` or, via iproute2, with a misleading
   `"name" not a valid ifname` error.
-- This bit us on a `tap-nimbus-test-1` (17 chars) probe. Use
+- This bit us on a `tap-pullrun-test-1` (17 chars) probe. Use
   short names: `tap-np`, `tap-vm-test`, `tap-{id8}`.
 - For workload-specific tap devices, use a 12-char hex hash of the
-  workload id (as `tap_name_for` does in `nimbus-vm/src/lib.rs`).
+  workload id (as `tap_name_for` does in `pullrun-vm/src/lib.rs`).
 
 ### Firecracker `--log-path` requires the target file to exist
 
@@ -253,14 +198,14 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### `iptables` MASQUERADE for VM outbound NAT
 
-- `nimbus-vm::network::enable_nat()` installs three rules. Each is
+- `pullrun-vm::network::enable_nat()` installs three rules. Each is
   checked first with `iptables -C` and only appended with `-A` if
   absent, so the call is safe to invoke on every VM boot.
 - The rules are:
   1. `iptables -t nat -A POSTROUTING -s 10.42.0.0/16 ! -d 10.42.0.0/16
      -o <outbound_iface> -j MASQUERADE`
-  2. `iptables -A FORWARD -i nimbus-br0 -o <outbound_iface> -j ACCEPT`
-  3. `iptables -A FORWARD -i <outbound_iface> -o nimbus-br0 -m state
+  2. `iptables -A FORWARD -i pullrun-br0 -o <outbound_iface> -j ACCEPT`
+  3. `iptables -A FORWARD -i <outbound_iface> -o pullrun-br0 -m state
      --state RELATED,ESTABLISHED -j ACCEPT`
 - `<outbound_iface>` is the first `dev <iface>` token from
   `ip route show default`. If parsing fails (no default route), we log
@@ -277,7 +222,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   `10.42.0.1:3128` for HTTP/HTTPS and either per-VM nftables cgroup
   rules or an outbound SOCKS proxy for raw TCP.
 - If iptables-persistent isn't installed, the rules don't survive a
-  host reboot. The next Nimbus VM boot will re-install them
+  host reboot. The next Pullrun VM boot will re-install them
   (idempotent), but other workloads on the bridge lose outbound until
   then. Fix: `apt install iptables-persistent` and `netfilter-persistent save`.
 - Verify rules after boot with:
@@ -294,7 +239,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 - Use `OnceLock::get_or_init` for the install path so concurrent
   callers all receive a clone of the same handle and only the
   *first* call does the actual install. The `metrics::install_recorder()`
-  function in `nimbus-runtime/src/metrics.rs` is the canonical
+  function in `pullrun-runtime/src/metrics.rs` is the canonical
   pattern; copy it, don't reinvent.
 - For tests: don't `set_global_default` directly. Always go through
   the `install_recorder()` wrapper, and write the test so that
@@ -303,10 +248,10 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   with N>1, so the install call has to be reentrant.
 - `metrics-exporter-prometheus` will not emit a counter or gauge
   series until at least one observation has been recorded. A
-  freshly-started daemon's `/metrics` will show only `nimbus_build_info`
-  and the `nimbus_store_*` gauges (which are written once at install
+  freshly-started daemon's `/metrics` will show only `pullrun_build_info`
+  and the `pullrun_store_*` gauges (which are written once at install
   and every 60s thereafter). Don't panic when the first scrape
-  doesn't include `nimbus_pulls_total` — the counter simply hasn't
+  doesn't include `pullrun_pulls_total` — the counter simply hasn't
   fired yet.
 
 ### `metrics-exporter-prometheus` default features pull in protobuf
@@ -350,7 +295,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 - Adding a Rust method to the `impl Runtime for RuntimeService`
   block is **not enough** — `tonic-build` regenerates the trait
-  at compile time from `proto/nimbus/runtime.proto`. If the
+  at compile time from `proto/pullrun/runtime.proto`. If the
   method is missing from the proto, you'll get a confusing
   `error[E0407]: method X is not a member of trait Runtime`.
 - The build error is misleading: the trait is generated, but
@@ -422,7 +367,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   2. On the main thread, call `dispatch_main()`.
   3. The side thread uses `tokio::task::spawn_blocking` → Apple Virt FFI,
      which dispatches completion handlers to the main queue.
-- For the `nimbus-runtime` daemon, this means:
+- For the `pullrun-runtime` daemon, this means:
   - `main()` is a plain function (not `#[tokio::main]`).
   - macOS: side thread runs tokio, main thread parks on `dispatch_main()`.
   - Linux: tokio stays on the main thread (no Apple Virt).
@@ -514,7 +459,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   code path interpreted as EOF.
 - The fix: `libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK)`
   on the dup'd fd before any blocking read. (`read_init_hello_blocking`
-  in `runtime/nimbus-vm/src/apple/attach.rs` does this.)
+  in `runtime/pullrun-vm/src/apple/attach.rs` does this.)
 
 ### `VZVirtioSocketConnectionDelegate` connection callback signature: `connection:` is the third arg, not the second
 
@@ -543,7 +488,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   `ECONNRESET` (errno 104) on the guest's `connect(2)`).
 - **Per-VM attach resolves the 2nd-boot case**: the warm-pool
   scenario where a kernel panics and reboots into a second
-  nimbus-init is no longer relevant — each workload gets a
+  pullrun-init is no longer relevant — each workload gets a
   fresh VM. The first-connect race is mitigated by the 5×200ms
   guest-side retry.
 - The guest-side fix is to retry `connect()` with a short
@@ -566,7 +511,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   `VZVirtioConsolePortConfiguration` (set `isConsole=true`)
   attached to a host file via `VZFileHandleSerialPortAttachment`
   (write → log file, read → /dev/null). See
-  `runtime/nimbus-vm/src/apple/attach.rs:build_attach_vm_config`
+  `runtime/pullrun-vm/src/apple/attach.rs:build_attach_vm_config`
   for the working implementation.
 
 ### `VZVirtioConsoleDeviceConfiguration.setPorts:` doesn't exist; use the indexed-subscript pattern
@@ -758,19 +703,19 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### Image layout: `/boot/vmlinux` + optional `/boot/initramfs.cpio.gz`
 
-- A nimbus kernel image is a normal OCI image whose layer
+- A pullrun kernel image is a normal OCI image whose layer
   tarball(s) contain:
   ```
   /boot/vmlinux                # required — uncompressed ELF
   /boot/initramfs.cpio.gz      # optional — initramfs
-  /usr/lib/nimbus/nimbus-runtime  # optional, future
+  /usr/lib/pullrun/pullrun-runtime  # optional, future
   ```
 - `StagedKernel::from_image` reads these two well-known paths
   (`KERNEL_VMLINUX_PATH = "boot/vmlinux"` and
   `KERNEL_INITRAMFS_PATH = "boot/initramfs.cpio.gz"` in
-  `runtime/nimbus-vm/src/oci_kernel.rs`). If `/boot/vmlinux`
+  `runtime/pullrun-vm/src/oci_kernel.rs`). If `/boot/vmlinux`
   is missing, the error is `OciKernelError::MissingFile`
-  with a message asking whether this is a nimbus kernel
+  with a message asking whether this is a pullrun kernel
   image.
 - The kernel MUST be an **uncompressed ELF**, not a bzImage
   or zImage. `VZLinuxBootLoader::initWithKernelURL:` rejects
@@ -779,10 +724,10 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   `aarch64-linux-gnu-strip -s ... arch/arm64/boot/Image -o
   /boot/vmlinux` to produce the right format.
 
-### Image config labels: `org.nimbus.image.kind=kernel`
+### Image config labels: `org.pullrun.image.kind=kernel`
 
 - The OCI image config MUST carry
-  `org.nimbus.image.kind=kernel` so the policy engine can
+  `org.pullrun.image.kind=kernel` so the policy engine can
   tell kernel images apart from container images. The
   runtime rejects (or falls back to defaults for) images
   that are missing the label.
@@ -862,11 +807,11 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ---
 
-## nimbus-vsock protocol
+## pullrun-vsock protocol
 
 ### Frame type discriminants are public
 
-- `nimbus_vsock::FrameType::from_u8(byte)` is `pub` so
+- `pullrun_vsock::FrameType::from_u8(byte)` is `pub` so
   guests and hosts can decode a type tag they read from
   the wire. It is the inverse of `Frame::frame_type()`.
 - All 8 frame types are in the 0x01..=0x08 range; values
@@ -880,17 +825,17 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   `ProtocolError::PayloadTooLarge { size }` before
   allocating.
 - Real workload I/O is fragmented by the writer into
-  8–64 KiB chunks (see `nimbus_init::vsock_client`'s
+  8–64 KiB chunks (see `pullrun_init::vsock_client`'s
   8192-byte read buffer). 16 MiB is the hard upper
   bound — do not raise it without thinking about
   allocation amplification under attack.
 
 ### `encode` is infallible; `decode` is fallible
 
-- `nimbus_vsock::encode(&Frame) -> Bytes` cannot fail
+- `pullrun_vsock::encode(&Frame) -> Bytes` cannot fail
   because `Bytes` is unbounded. The function signature
   is `pub fn encode(&Frame) -> Bytes` (no `Result`).
-- `nimbus_vsock::decode(&[u8], FrameType) -> Result<Frame, ProtocolError>`
+- `pullrun_vsock::decode(&[u8], FrameType) -> Result<Frame, ProtocolError>`
   is fallible because the payload may be truncated,
   malformed, or contain invalid UTF-8 in string fields.
 - If you find yourself writing `let bytes = encode(&f)?;`
@@ -898,13 +843,13 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ---
 
-## nimbus-init (guest PID 1)
+## pullrun-init (guest PID 1)
 
 ### ⚠️ `tokio::process::Command::current_dir("")` (empty string) makes `spawn()` return `ENOENT` for an otherwise-valid command
 
 - **Severity: HIGH — this caused the longest single debugging session in
   the whole end-to-end VM attach effort (~2 hours of false positives).**
-- `nimbus-init` accepts a `WorkloadSpec { working_dir: String, ... }`.
+- `pullrun-init` accepts a `WorkloadSpec { working_dir: String, ... }`.
   When the host doesn't specify a working dir, the spec's
   `working_dir` is the empty string `""`.
 - The natural code is:
@@ -918,7 +863,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   even though `stat /bin/sh` from the same guest shell shows the
   file exists, has the right size, mode 0755, and is a regular
   executable. The initramfs is correct. The symlink is correct.
-  `nimbus-init` just can't `exec()` it.
+  `pullrun-init` just can't `exec()` it.
 - **Root cause:** `current_dir("")` is interpreted as a relative
   path of length zero. The kernel resolves this against the
   current dir (probably `/`), and somewhere in the chdir/exec
@@ -945,7 +890,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
      "No such file or directory").
   7. Inspecting busybox's own stat output — it shows the file is
      present, 1.1 MB, mode 0755.
-- Eventually we added more `info!()` logging to nimbus-init and
+- Eventually we added more `info!()` logging to pullrun-init and
   noticed the spec was being received correctly, the spec's
   `working_dir` was `""`, and removing the `current_dir` call
   made the spawn succeed immediately.
@@ -962,8 +907,8 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 - The `connect_vsock` private fn is `#[cfg(target_os = "linux")]`.
 - On macOS, the only path is the Unix-domain-socket
-  fallback (`$NIMBUS_VSOCK_FALLBACK_UNIX`,
-  default `/tmp/nimbus-init.sock`).
+  fallback (`$PULLRUN_VSOCK_FALLBACK_UNIX`,
+  default `/tmp/pullrun-init.sock`).
 - The `VsockClient::connect` API returns
   `VsockError::VsockConnect(io::Error)` on Linux if
   the kernel module isn't loaded or the host isn't
@@ -1017,7 +962,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 - We picked `String` to match the wire format
   (length-prefixed) and to keep the on-wire size small.
-- Inside nimbus-init, we just pass it to
+- Inside pullrun-init, we just pass it to
   `tokio::process::Command::current_dir(&str)`, which
   accepts `impl AsRef<Path>`.
 
@@ -1035,20 +980,20 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### Tests must be `#[serial]` (or run in isolation)
 
-- Both nimbus-init tests set
-  `NIMBUS_VSOCK_FALLBACK_UNIX` to a tempdir path.
+- Both pullrun-init tests set
+  `PULLRUN_VSOCK_FALLBACK_UNIX` to a tempdir path.
   Concurrent tests would race on the env var and
   potentially try to bind the same path.
 - Mark with `#[serial_test::serial]`. The
   `serial_test = "3"` dev-dep is in
-  `runtime/nimbus-init/Cargo.toml`.
+  `runtime/pullrun-init/Cargo.toml`.
 
 ### Binary will be statically linked
 
-- When we ship nimbus-init into the initramfs, it must
+- When we ship pullrun-init into the initramfs, it must
   be built with:
   ```bash
-  cargo build -p nimbus-init \
+  cargo build -p pullrun-init \
       --target aarch64-unknown-linux-musl \
       --release
   ```
@@ -1065,7 +1010,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### Symptom (pre-fix)
 
-- `nimbusctl pull alpine:3.18` on macOS failed with
+- `pullrun pull alpine:3.18` on macOS failed with
   ```
   pull alpine:3.18: rpc error: code = Internal
   desc = pull failed: HTTP error: error decoding
@@ -1141,14 +1086,14 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
   mis-encoded, or that the symlink target string was getting
   corrupted, or that we needed to use a relative vs. absolute
   path for the target.
-- The actual issue was in `nimbus-init`'s `Command::current_dir("")`
-  call (see the nimbus-init section above). The symlinks were
+- The actual issue was in `pullrun-init`'s `Command::current_dir("")`
+  call (see the pullrun-init section above). The symlinks were
   always correct, the cpio was always correctly formatted, and
   the kernel was always correctly extracting them. We confirmed
   this with `stat` from inside the guest:
   ```
-  $ busybox stat /sbin/nimbus-init
-    File: /sbin/nimbus-init
+  $ busybox stat /sbin/pullrun-init
+    File: /sbin/pullrun-init
     Size: 2568296   Blocks: 5024   IO Block: 4096   regular file
   Device: 2h/2d   Inode: 14   Links: 1
   Access: (0755/-rwxr-xr-x)
@@ -1162,7 +1107,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ### Why busybox?
 
-- The workload's `nimbus-init` is statically linked
+- The workload's `pullrun-init` is statically linked
   and doesn't need busybox. But:
   - The kernel mounts `/proc` and `/sys` before
     `exec`'ing `/init`; those mount points need to
@@ -1180,7 +1125,7 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 - `tools/build-initramfs/Cargo.toml` declares
   `[workspace]` (empty) so it's its own sub-workspace
-  and doesn't pull in the parent nimbus workspace
+  and doesn't pull in the parent pullrun workspace
   deps. This is the standard pattern for standalone
   tools; see `tools/apple-virt-smoke/Cargo.toml` and
   `tools/build-kernel-image/build.sh` for the same
@@ -1188,18 +1133,18 @@ Consumers (`nimbusctl`, `nimbus-cri`) use a `replace` directive in their
 
 ---
 
-## nimbusctl workload run / nimbusctl run --attach
+## pullrun workload run / pullrun run --attach
 
 ### `--attach` is the preferred single-step pattern
 
-`nimbusctl run <image> --attach` (or `-a`) combines spawn and attach
+`pullrun run <image> --attach` (or `-a`) combines spawn and attach
 into one command — equivalent to `docker run -it`. For the VM backend
 it opens an AttachWorkload bidi stream; for the container backend it
 polls for exit and propagates the exit code (container stdout/stderr
 capture is not yet implemented).
 
-`nimbusctl workload run <id>` is the two-step equivalent for attaching
-to an already-running workload. Prefer `nimbusctl run --attach` when
+`pullrun workload run <id>` is the two-step equivalent for attaching
+to an already-running workload. Prefer `pullrun run --attach` when
 starting new workloads.
 
 ### Generated proto types are pointer-wrapped oneofs
@@ -1238,15 +1183,15 @@ starting new workloads.
 
 ### SIGINT during attach detaches, doesn't kill the workload
 
-- Both `nimbusctl workload run <id>` and `nimbusctl run --attach`
+- Both `pullrun workload run <id>` and `pullrun run --attach`
   install a SIGINT handler that cancels the context,
   which closes the gRPC stream. The runtime service
   then sends `StdinEof` to the workload's stdin pipe
   and waits for natural exit.
 - This is "detach" behavior, not "stop" behavior.
-  Use `nimbusctl stop <id>` to forcefully kill the
+  Use `pullrun stop <id>` to forcefully kill the
   workload.
-- v0 doesn't have a `nimbusctl workload kill`
+- v0 doesn't have a `pullrun workload kill`
   command; use `stop`.
 
 ### Bidi streams need BOTH goroutines to return
@@ -1270,6 +1215,119 @@ starting new workloads.
   a real `tty: true` option that asks the runtime
   to allocate a pty.
 
+### ⚠️ `recv_timeout` in a `tokio::spawn` task blocks the `current-thread` worker, starving gRPC response-stream polls
+
+**Severity: HIGH — this was the root cause of the "no real-time echo in interactive shell" bug that took ~3 hours to diagnose and fix.**
+
+#### Symptom
+
+`./bin/pullrun run alpine:latest -t -a --backend=vm --cmd /bin/sh` boots the VM,
+shows the shell prompt, accepts commands — but **all output appears at once only
+after the user types `exit`**. No characters, echo, or program output is visible
+until the session ends. The session itself works (commands execute, exit code is
+returned correctly), but real-time streaming is broken.
+
+#### Root cause
+
+The daemon runs on a `current-thread` tokio runtime (required because Apple's
+Virtualization framework needs `dispatch_main()` on the main thread; the tokio
+runtime runs on a side thread). The bidi gRPC `AttachWorkload` handler has
+three concurrent tasks:
+
+1. **Forwarder** (`tokio::spawn`): reads gRPC inbound stream (stdin from CLI),
+   sends to `std::sync::mpsc` → vsock → guest.
+2. **Drainer** (`tokio::spawn`): receives frames from `std::sync::mpsc` (vsock
+   reader → guest stdout), forwards to `tokio::sync::mpsc` → gRPC response stream.
+3. **Session** (`tokio::task::spawn_blocking`): boots VM, runs vsock read loop.
+
+The drainer was written as:
+
+```rust
+let drainer = tokio::spawn(async move {
+    loop {
+        let frame = server_out_rx.recv_timeout(Duration::from_millis(10));
+        // ...
+        tx_drain.send(msg).await;
+    }
+});
+```
+
+`std::sync::mpsc::Receiver::recv_timeout(10ms)` blocks the **calling OS thread**
+(via a `Condvar` wait) for up to 10ms. On a `current-thread` runtime, the calling
+thread IS the tokio worker thread. Every 10ms drain of the loop blocks the worker
+for a full 10ms, during which **no other task can run** — including the gRPC
+response stream poll. The `tx_drain` tokio mpsc channel (capacity 64) fills up;
+`send().await` then suspends the drainer (freeing the worker), but by then the
+channel is full and any new frames never make it to the client until the next
+`recv_timeout` returns.
+
+The window between `recv_timeout` returning `Timeout` (10ms later) and the next
+loop iteration calling `recv_timeout` again is the only time the gRPC stream can
+be polled — a race window measured in microseconds. In practice, frames pile up
+until the session ends, at which point the channel is drained in one batch.
+
+#### Obvious fixes that did NOT work
+
+| Attempt | Why it didn't work |
+|---------|-------------------|
+| Removing `O_NONBLOCK` from the PTY master fd in `pullrun-init` | `AsyncFd` requires `O_NONBLOCK`; removing it makes tokio reject the fd. The PTY path was fine. |
+| Fixing the `n=0` infinite loop in `pullrun-init`'s `write_task` | That was a real bug (infinite spin on `read=0` from a closed pipe), but it only affects stdin writes, not stdout reads. |
+| Blaming h2/HTTP-2 buffering in tonic | The Go CLI writes directly to `os.Stdout` (unbuffered). The buffering was entirely on the daemon side. |
+
+#### The real fix
+
+Move the entire blocking `recv_timeout` loop into `tokio::task::spawn_blocking`,
+which runs on a separate OS thread in tokio's blocking thread pool. The tokio
+worker thread stays free to poll the gRPC response stream continuously:
+
+```rust
+let drainer = tokio::spawn(async move {
+    tokio::task::spawn_blocking(move || {
+        loop {
+            let frame = match server_out_rx.recv_timeout(Duration::from_millis(10)) {
+                Ok(f) => f,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => return,
+            };
+            let msg = frame_to_attach_message(frame);
+            // blocking_send parks the blocking thread, NOT the worker:
+            if tx_drain.blocking_send(Ok(msg)).is_err() {
+                return;
+            }
+        }
+    })
+    .await
+    .ok();
+});
+```
+
+`blocking_send` parks the blocking thread (from the blocking pool), not the
+tokio worker. The worker is free to poll the gRPC stream, consume messages
+from `rx`, and unblock `blocking_send` via `thread::unpark`.
+
+See `runtime/pullrun-runtime/src/service.rs:2939-2964` (drainer task).
+
+#### Verification
+
+The drainer's debug logs show 2-second intervals matching `sleep 2` commands:
+
+```
+drainer: forwarding WorkloadStdout bytes=7 total=7    # line1
+drainer: forwarding WorkloadStdout bytes=7 total=14   # line2 (2s later)
+drainer: forwarding WorkloadStdout bytes=7 total=21   # line3 (2s later)
+```
+
+#### Rule
+
+**Never call a blocking API (`recv_timeout`, `sleep`, `Mutex::lock`, etc.)
+inside a `tokio::spawn` task on a `current-thread` runtime.** The single
+worker thread is the entire process's progress. Block it and everything
+stops. Always offload blocking operations to `tokio::task::spawn_blocking`.
+
+This applies doubly when the blocking operation is in a HOT LOOP that
+blocks repeatedly (like a drainer loop). A single `recv_timeout` per
+iteration means the worker is blocked most of the time.
+
 ---
 
 ## Phase 7: Codebase audit findings
@@ -1283,7 +1341,7 @@ starting new workloads.
 
 ### Root required for loop device mount
 
-- `materialize_ext4_rootfs()` in `runtime/nimbus-vm/src/ext4.rs` calls
+- `materialize_ext4_rootfs()` in `runtime/pullrun-vm/src/ext4.rs` calls
   `Command::new("mount")` with `-o loop` to mount the ext4 image before
   populating it via `OciMaterializer::materialize_into()`.
 - This requires either root or `CAP_SYS_ADMIN`. The runtime daemon must run
@@ -1293,7 +1351,7 @@ starting new workloads.
 
 ### Double materialization for Firecracker
 
-- `runtime/nimbus-runtime/src/service.rs:run_workload()` unconditionally
+- `runtime/pullrun-runtime/src/service.rs:run_workload()` unconditionally
   calls `materialize_rootfs()` (plain directory → `rootfs_cache`) BEFORE
   calling `executor.create()`.
 - For Firecracker VMs, `FirecrackerExecutor::create()` then re-materializes
@@ -1311,15 +1369,88 @@ starting new workloads.
 - OCI container images (e.g. `alpine:latest`) have `ENTRYPOINT`/`CMD` but
   no `/init` executable. The kernel would panic when it cannot find `/init`.
 - The `build-initramfs` tool creates a proper `/init` that execs
-  `/sbin/nimbus-init`, but that's only for the initramfs — the runtime's
+  `/sbin/pullrun-init`, but that's only for the initramfs — the runtime's
   `materialize_ext4_rootfs()` path doesn't inject any `/init`.
-- Fix: inject a `/init` shim script (or nimbus-init binary) into the ext4
+- Fix: inject a `/init` shim script (or pullrun-init binary) into the ext4
   rootfs that reads the image's ENTRYPOINT/CMD from the DAG manifest and
   execs it.
 
+### `runc exec -t` fails when daemon has no terminal
+
+- `runc exec -t` requires a real PTY on the host. When the daemon spawns
+  `runc exec -t` with piped stdio (no controlling terminal), runc fails
+  with: `open /dev/tty: no such device or address`.
+- **Fix (runtime side):** The daemon allocates a host PTY pair via
+  `posix_openpt`/`grantpt`/`unlockpt` and passes the slave fd as
+  stdin/stdout/stderr to `runc exec -t`. The master fd is used for I/O
+  forwarding. See `runtime/pullrun-runtime/src/service.rs:allocate_pty()`.
+- **`--console-socket` approach does not work** on Ubuntu's runc 1.3.4:
+  even with `-t` and `-d` flags, runc rejects `--console-socket` with
+  "cannot use console socket if runc will not detach or allocate tty".
+  The host PTY allocation replaces this approach entirely.
+
+### `pullrun exec` — `--` separator and `-t` placement
+
+- `pullrun exec <id> -t -- /bin/sh` — the `-t` flag works after the
+  workload ID (docker-exec style). The CLI manually extracts `-t`/`--tty`
+  from positional args when cobra doesn't parse them.
+- `pullrun exec -t <id> -- /bin/sh` — also works (cobra parses `-t`
+  as a flag normally).
+- The `--` separator between `pullrun exec` flags and the command is
+  **optional** — the CLI strips it automatically. Include `--` when the
+  command contains its own flags (e.g. `exec <id> -- echo -n hello`).
+- See `cli/pullrun/cmd/commands.go:NewExecCommand`.
+
+### `exec` works from all lifecycle states
+
+- `pullrun exec <id> -t -- /bin/sh` works regardless of whether the
+  workload is `pending` (VM not booted yet), `running` (active VM), or
+  `exited` (VM has stopped).
+- **pending** → boots the VM via Apple Virtualization `spawn_vm()`.
+- **exited** → boots a fresh VM from the same placeholder config.
+- All transitions (`pending`→`running`→`exited`) update the checkpoint
+  file on disk for crash recovery.
+
+### Workload lifecycle — persistence semantics
+
+All backends share three states. What `exited` means depends on whether
+the backend preserves filesystem state across restarts:
+
+| Backend | pending rootfs | exited rootfs | `--volume` mounts on restart |
+|---------|---------------|---------------|------------------------------|
+| Container (runc) | N/A (no pending) | Ephemeral — fresh OCI image | ✅ Same source path |
+| VM (Apple Virt) | Clean OCI materialization | ✅ Modified — VirtioFS shared the host directory directly | ✅ Same VirtioFS share |
+| VM (Firecracker) | Clean ext4 image | ✅ Modified — ext4 was written in-place | ✅ Same ext4 image |
+
+Key takeaway: `pending` means "never touched, clean from the image."
+`exited` means "was running, all file writes are preserved" for VMs,
+but "ephemeral rootfs, only mounts survive" for containers.
+
+### Implementation details (macOS Apple Virt)
+
+- **pending:** `record_workload_state()` creates a `WorkloadState` with
+  `status:"pending"`. Image pulled, rootfs materialized. No VM process.
+- **running:** `spawn_vm()` boots the VM via Apple Virtualization.
+  The background thread is named `vm-{workload_id}`.
+- **exited:** VM background thread exits. `on_exit` callback updates
+  status to `"exited"`, writes a checkpoint, removes from `persistent_vms`,
+  emits `WorkloadExited` event.
+- Watcher skips `"pending"` and `backend=="vm"` workloads.
+- Checkpoint recovery excludes `backend=="vm"` from crash-exit marking,
+  so VM workloads survive daemon restarts in their last known state.
+
+### Thread naming for Apple Virt VM threads
+
+- The VM background thread is named `vm-{workload_id}` via
+  `std::thread::Builder::new().name(...)`.
+- Visible in `thread list` (LLDB), `sample`, and `top -F -R -nTHREADS`.
+- The process name (`pullrun-runtime`) is not modified — the host process
+  is shared by all VMs. Individual VM threads are identified by workload
+  ID.
+
 ### Firecracker has no OCI-based kernel path
 
-- `oci_kernel.rs` in `nimbus-vm` provides `StagedKernel::from_image()`:
+- `oci_kernel.rs` in `pullrun-vm` provides `StagedKernel::from_image()`:
   pulls an OCI kernel image, extracts `/boot/vmlinux`, stores in
   `MmapStore`. This is **only used by the Apple Virt path**.
 - Firecracker still requires `--vm-kernel` pointing to a pre-downloaded
@@ -1350,18 +1481,18 @@ Total: **~128 `unsafe { }` blocks** across the workspace.
 
 | File | Blocks | Primary category | Safety comments |
 |------|--------|-----------------|-----------------|
-| `runtime/nimbus-vm/src/apple/attach.rs` | 62 | objc2 FFI | Partial (raw ptrs + Box::from_raw + Retained::retain documented) |
-| `runtime/nimbus-vm/src/apple.rs` | 37 | objc2 FFI | Partial (raw ptrs + alloc documented) |
-| `runtime/nimbus-store/src/store.rs` | 10 | mmap + rkyv | Added June 2026 |
-| `runtime/nimbus-init/src/vsock_client.rs` | 6 | libc FFI | Yes — thorough per-block comments |
+| `runtime/pullrun-vm/src/apple/attach.rs` | 62 | objc2 FFI | Partial (raw ptrs + Box::from_raw + Retained::retain documented) |
+| `runtime/pullrun-vm/src/apple.rs` | 37 | objc2 FFI | Partial (raw ptrs + alloc documented) |
+| `runtime/pullrun-store/src/store.rs` | 10 | mmap + rkyv | Added June 2026 |
+| `runtime/pullrun-init/src/vsock_client.rs` | 6 | libc FFI | Yes — thorough per-block comments |
 | `tools/apple-virt-exec/src/main.rs` | 3 | libc `_exit` | Contextual |
-| `runtime/nimbus-runtime/src/service.rs` | 2 | libc FFI | Added June 2026 |
-| `runtime/nimbus-exec/src/rootless.rs` | 2 | libc `geteuid` | Added June 2026 |
+| `runtime/pullrun-runtime/src/service.rs` | 2 | libc FFI | Added June 2026 |
+| `runtime/pullrun-exec/src/rootless.rs` | 2 | libc `geteuid` | Added June 2026 |
 | `tools/apple-virt-smoke/src/main.rs` | 2 | libc `_exit` | Contextual |
-| `runtime/nimbus-policy/src/sbom.rs` | 1 | rkyv | Added June 2026 |
-| `runtime/nimbus-policy/src/lib.rs` | 1 | rkyv | Added June 2026 |
-| `runtime/nimbus-vm/src/network.rs` | 1 | libc `ioctl` | Added June 2026 |
-| `runtime/nimbus-oci/src/push.rs` | 1 | rkyv | Added June 2026 |
+| `runtime/pullrun-policy/src/sbom.rs` | 1 | rkyv | Added June 2026 |
+| `runtime/pullrun-policy/src/lib.rs` | 1 | rkyv | Added June 2026 |
+| `runtime/pullrun-vm/src/network.rs` | 1 | libc `ioctl` | Added June 2026 |
+| `runtime/pullrun-oci/src/push.rs` | 1 | rkyv | Added June 2026 |
 
 ### Action items
 

@@ -1,9 +1,9 @@
 {
-  "title": "Nimbus Runtime",
-  "uid": "nimbus-runtime",
+  "title": "Pullrun Runtime",
+  "uid": "pullrun-runtime",
   "schemaVersion": 38,
   "version": 1,
-  "tags": ["nimbus", "runtime"],
+  "tags": ["pullrun", "runtime"],
   "timezone": "",
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
@@ -19,7 +19,7 @@
         "name": "backend",
         "type": "query",
         "datasource": "$datasource",
-        "query": "label_values(nimbus_workloads_started_total, backend)",
+        "query": "label_values(pullrun_workloads_started_total, backend)",
         "refresh": 1,
         "multi": true,
         "includeAll": true,
@@ -36,7 +36,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "sum by (registry, status) (rate(nimbus_pulls_total[$__rate_interval]))",
+          "expr": "sum by (registry, status) (rate(pullrun_pulls_total[$__rate_interval]))",
           "legendFormat": "{{registry}} / {{status}}",
           "refId": "A"
         }
@@ -56,7 +56,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "sum by (backend) (nimbus_workloads_running{backend=~\"$backend\"})",
+          "expr": "sum by (backend) (pullrun_workloads_running{backend=~\"$backend\"})",
           "legendFormat": "{{backend}}",
           "refId": "A"
         }
@@ -72,17 +72,17 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(nimbus_pull_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(pullrun_pull_duration_seconds_bucket[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(nimbus_pull_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(pullrun_pull_duration_seconds_bucket[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(nimbus_pull_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(pullrun_pull_duration_seconds_bucket[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -97,7 +97,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(nimbus_workload_start_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(pullrun_workload_start_duration_seconds_bucket[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "A"
         }
@@ -112,7 +112,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [
         {
-          "expr": "sum by (exit_code) (rate(nimbus_workloads_exited_total[$__rate_interval]))",
+          "expr": "sum by (exit_code) (rate(pullrun_workloads_exited_total[$__rate_interval]))",
           "legendFormat": "exit {{exit_code}}",
           "refId": "A"
         }
@@ -127,12 +127,12 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "targets": [
         {
-          "expr": "nimbus_store_bytes",
+          "expr": "pullrun_store_bytes",
           "legendFormat": "bytes",
           "refId": "A"
         },
         {
-          "expr": "nimbus_store_nodes",
+          "expr": "pullrun_store_nodes",
           "legendFormat": "nodes",
           "refId": "B"
         }

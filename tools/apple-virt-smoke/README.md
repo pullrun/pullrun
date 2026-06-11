@@ -1,10 +1,10 @@
 # `apple-virt-smoke` — Apple Virtualization FFI round-trip validator
 
 A standalone binary that exercises the
-[`nimbus_vm::apple`](../../runtime/nimbus-vm/src/apple.rs) module
+[`pullrun_vm::apple`](../../runtime/pullrun-vm/src/apple.rs) module
 end-to-end on macOS. It is **not** an integration test in the
-nimbus-vm crate — it is a separate binary so it can be run on
-CI or a developer Mac without the rest of the nimbus
+pullrun-vm crate — it is a separate binary so it can be run on
+CI or a developer Mac without the rest of the pullrun
 workspace needing to be present.
 
 ## What it does
@@ -27,7 +27,7 @@ workspace needing to be present.
 ## What it does **not** do
 
 - **Run a workload inside the guest.** That requires a Linux
-  kernel with userspace, a static `nimbus-runtime` binary
+  kernel with userspace, a static `pullrun-runtime` binary
   inside the initramfs, and a vsock transport. See
   [Apple Virt warm pool roadmap](../../PROGRESS.md).
 - **Test end-to-end guest boot to login prompt.** Requires a
@@ -66,13 +66,13 @@ The first build pulls in the `objc2` stack (~150 MiB of
 ```bash
 # Minimal — store path defaults to a temp dir
 ./target/release/apple-virt-smoke \
-  --kernel ~/.local/share/nimbus/vms/vmlinux
+  --kernel ~/.local/share/pullrun/vms/vmlinux
 
 # With initramfs + a custom store path
 ./target/release/apple-virt-smoke \
-  --kernel     ~/.local/share/nimbus/vms/vmlinux \
-  --initramfs  ~/.local/share/nimbus/initramfs.cpio.gz \
-  --store      ~/.local/share/nimbus/store \
+  --kernel     ~/.local/share/pullrun/vms/vmlinux \
+  --initramfs  ~/.local/share/pullrun/initramfs.cpio.gz \
+  --store      ~/.local/share/pullrun/store \
   --pool-size  3
 ```
 

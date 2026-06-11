@@ -92,9 +92,9 @@ dependencies = [
  "clap",
  "dispatch2",
  "libc",
- "nimbus-store",
- "nimbus-vm",
- "nimbus-vsock",
+ "pullrun-store",
+ "pullrun-vm",
+ "pullrun-vsock",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1233,118 +1233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nimbus-exec"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "libc",
- "nimbus-net",
- "nimbus-oci",
- "nimbus-store",
- "nix 0.28.0",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-net"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "ipnet",
- "libc",
- "nix 0.28.0",
- "rand 0.8.6",
- "rtnetlink",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-oci"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "flate2",
- "hex",
- "nimbus-store",
- "rayon",
- "reqwest",
- "rkyv",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "walkdir",
-]
-
-[[package]]
-name = "nimbus-store"
-version = "0.1.0"
-dependencies = [
- "dashmap",
- "hex",
- "memmap2",
- "rkyv",
- "serde",
- "sha2",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-vm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "block2",
- "dispatch2",
- "hex",
- "libc",
- "nimbus-exec",
- "nimbus-net",
- "nimbus-oci",
- "nimbus-store",
- "nimbus-vsock",
- "objc2",
- "objc2-foundation",
- "objc2-virtualization",
- "rkyv",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tonic",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-vsock"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "nix"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1578,6 +1466,118 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "pullrun-exec"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "libc",
+ "nix 0.28.0",
+ "pullrun-net",
+ "pullrun-oci",
+ "pullrun-store",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-net"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "ipnet",
+ "libc",
+ "nix 0.28.0",
+ "rand 0.8.6",
+ "rtnetlink",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-oci"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "flate2",
+ "hex",
+ "pullrun-store",
+ "rayon",
+ "reqwest",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "pullrun-store"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "hex",
+ "memmap2",
+ "rkyv",
+ "serde",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-vm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "block2",
+ "dispatch2",
+ "hex",
+ "libc",
+ "objc2",
+ "objc2-foundation",
+ "objc2-virtualization",
+ "pullrun-exec",
+ "pullrun-net",
+ "pullrun-oci",
+ "pullrun-store",
+ "pullrun-vsock",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-vsock"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

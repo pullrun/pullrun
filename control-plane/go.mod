@@ -1,10 +1,10 @@
-module nimbus/controlplane
+module pullrun/controlplane
 
 go 1.22
 
 require (
 	google.golang.org/grpc v1.64.0
-	nimbus/protoapi v0.0.0-00010101000000-000000000000
+	pullrun/protoapi v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -15,4 +15,4 @@ require (
 	google.golang.org/protobuf v1.34.1 // indirect
 )
 
-replace nimbus/protoapi => ../proto-go
+replace pullrun/protoapi => ../proto-go

@@ -3,6 +3,8 @@
 # Default target
 all: build
 
+BIN_DIR = $(CURDIR)/bin
+
 # Build everything
 build: build-rust build-go
 
@@ -10,13 +12,15 @@ build: build-rust build-go
 build-rust:
 	@echo "=== Building Rust workspace ==="
 	cargo build --workspace
+	@mkdir -p $(BIN_DIR)
+	cp target/debug/pullrun-runtime $(BIN_DIR)/pullrun-runtime
 
 build-rust-release:
 	cargo build --workspace --release
 
 build-go:
 	@echo "=== Building Go CLI ==="
-	cd cli/nimbusctl && go build -o ../../bin/nimbusctl ./...
+	cd cli/pullrun && go build -o $(BIN_DIR)/pullrun .
 
 # Test
 test: test-rust test-go
@@ -30,14 +34,14 @@ test-rust-include-integration:
 
 test-go:
 	@echo "=== Testing Go CLI ==="
-	cd cli/nimbusctl && go test ./...
+	cd cli/pullrun && go test ./...
 
 # Check
 check: fmt lint test
 
 fmt:
 	cargo fmt --all -- --check
-	cd cli/nimbusctl && go fmt ./...
+	cd cli/pullrun && go fmt ./...
 
 lint:
 	cargo clippy --workspace -- -D warnings
@@ -47,30 +51,30 @@ proto:
 	@echo "=== Generating protobuf code (Go) ==="
 	@mkdir -p proto-go
 	# Clean stale generated files
-	@rm -rf proto-go/nimbus
-	# Rust proto: handled by `tonic-build` in runtime/nimbus-runtime/build.rs
+	@rm -rf proto-go/pullrun
+	# Rust proto: handled by `tonic-build` in runtime/pullrun-runtime/build.rs
 	# at compile time, so we don't run protoc --tonic_out here. Running it
 	# manually requires `protoc-gen-tonic` from cargo, which emits files in
 	# a different (nested) layout that conflicts with the build.rs version.
 	# Go proto (grpc) — single shared module at proto-go/; all three Go binaries
-	# import it via `replace nimbus/protoapi => ../proto-go` in their go.mod.
+	# import it via `replace pullrun/protoapi => ../proto-go` in their go.mod.
 	protoc \
 		--proto_path=proto \
 		--go_out=proto-go \
 		--go_opt=paths=import \
-		--go_opt=Mruntime.proto=nimbus/protoapi/nimbus/runtime \
-		--go_opt=Mcontrol.proto=nimbus/protoapi/nimbus/control \
+		--go_opt=Mruntime.proto=pullrun/protoapi/pullrun/runtime \
+		--go_opt=Mcontrol.proto=pullrun/protoapi/pullrun/control \
 		--go-grpc_out=proto-go \
 		--go-grpc_opt=paths=import \
-		--go-grpc_opt=Mruntime.proto=nimbus/protoapi/nimbus/runtime \
-		--go-grpc_opt=Mcontrol.proto=nimbus/protoapi/nimbus/control \
-		proto/nimbus/runtime.proto proto/nimbus/control.proto
+		--go-grpc_opt=Mruntime.proto=pullrun/protoapi/pullrun/runtime \
+		--go-grpc_opt=Mcontrol.proto=pullrun/protoapi/pullrun/control \
+		proto/pullrun/runtime.proto proto/pullrun/control.proto
 	# Flatten: move generated files from <import-path-mirror> to <subdir>
 	@cd proto-go && \
-		mkdir -p nimbus/runtime nimbus/control && \
-		mv nimbus/protoapi/nimbus/runtime/* nimbus/runtime/ 2>/dev/null && \
-		mv nimbus/protoapi/nimbus/control/* nimbus/control/ 2>/dev/null && \
-		rm -rf nimbus/protoapi
+		mkdir -p pullrun/runtime pullrun/control && \
+		mv pullrun/protoapi/pullrun/runtime/* pullrun/runtime/ 2>/dev/null && \
+		mv pullrun/protoapi/pullrun/control/* pullrun/control/ 2>/dev/null && \
+		rm -rf pullrun/protoapi
 	@echo "=== Proto generation complete (Go only; Rust via tonic-build) ==="
 
 # Check if protoc is available
@@ -91,20 +95,20 @@ install-rust-proto:
 clean:
 	cargo clean
 	rm -rf bin/
-	rm -rf cli/nimbusctl/proto/
+	rm -rf cli/pullrun/proto/
 
 # Run the runtime
 run-runtime:
-	cargo run -p nimbus-runtime -- daemon --socket /tmp/nimbus.sock
+	cargo run -p pullrun-runtime -- daemon --socket /tmp/pullrun.sock
 
 # Run the CLI
 run-cli:
-	cd cli/nimbusctl && go run . $(ARGS)
+	cd cli/pullrun && go run . $(ARGS)
 
 # Install binaries
 install:
-	cargo install --path runtime/nimbus-runtime
-	cd cli/nimbusctl && go install ./...
+	cargo install --path runtime/pullrun-runtime
+	cd cli/pullrun && go install ./...
 
 # Install a Linux kernel image for VM-backed workloads.
 # Default: Kata Containers' static-linked vmlinux.container
@@ -112,24 +116,24 @@ install:
 # Override KATA_VERSION to pin a different release.
 KATA_VERSION ?= 3.31.0
 KATA_ARCH ?= arm64
-NIMBUS_KERNEL_DIR ?= $(HOME)/.nimbus/kernels
+PULLRUN_KERNEL_DIR ?= $(HOME)/.pullrun/kernels
 # PATH is exported because the `tar --use-compress-program`
 # plugin may resolve `zstd` from /opt/homebrew/bin on macOS,
 # which is not always in the default PATH for `make`.
 export PATH := /opt/homebrew/bin:/usr/local/bin:$(PATH)
 install-kernel:
-	@mkdir -p $(NIMBUS_KERNEL_DIR)
+	@mkdir -p $(PULLRUN_KERNEL_DIR)
 	@echo "Downloading Kata Containers $(KATA_VERSION) ($(KATA_ARCH))..."
-	cd $(NIMBUS_KERNEL_DIR) && \
+	cd $(PULLRUN_KERNEL_DIR) && \
 		curl -fL --retry 3 -o kata-static.tar.zst \
 		https://github.com/kata-containers/kata-containers/releases/download/$(KATA_VERSION)/kata-static-$(KATA_VERSION)-$(KATA_ARCH).tar.zst && \
 		which zstd >/dev/null || (echo "zstd not in PATH; install with: brew install zstd" && exit 1) && \
 		tar --use-compress-program=zstd -xf kata-static.tar.zst opt/kata/share/kata-containers/vmlinux.container && \
 		mv opt/kata/share/kata-containers/vmlinux.container vmlinux-$(KATA_VERSION) && \
 		rm -rf opt kata-static.tar.zst
-	@echo "Installed: $(NIMBUS_KERNEL_DIR)/vmlinux-$(KATA_VERSION)"
-	@echo "Set NIMBUS_KERNEL_PATH to use it:"
-	@echo "  export NIMBUS_KERNEL_PATH=$(NIMBUS_KERNEL_DIR)/vmlinux-$(KATA_VERSION)"
+	@echo "Installed: $(PULLRUN_KERNEL_DIR)/vmlinux-$(KATA_VERSION)"
+	@echo "Set PULLRUN_KERNEL_PATH to use it:"
+	@echo "  export PULLRUN_KERNEL_PATH=$(PULLRUN_KERNEL_DIR)/vmlinux-$(KATA_VERSION)"
 
 # Sign the apple-virt-smoke binary with the
 # com.apple.security.virtualization entitlement so the
@@ -156,24 +160,29 @@ apple-smoke-signed: apple-sign-smoke
 build-apple-smoke:
 	cd tools/apple-virt-smoke && cargo build
 
-NIMBUS_RUNTIME = $(CURDIR)/target/debug/nimbus-runtime
+PULLRUN_RUNTIME = $(CURDIR)/target/debug/pullrun-runtime
 
 build-initramfs:
-	@echo "=== Building initramfs (busybox + nimbus-init) ==="
+	@echo "=== Building initramfs (busybox + pullrun-init) ==="
 	@if [ ! -f /tmp/busybox-aarch64 ]; then \
-		echo "Downloading busybox static binary..."; \
-		curl -fL -o /tmp/busybox-aarch64 \
-			https://busybox.net/downloads/binaries/1.35.0-aarch64-linux-musl/busybox; \
+		echo "Downloading busybox static binary (Alpine aarch64)..."; \
+		curl -fL -o /tmp/busybox-static-aarch64.apk \
+			https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64/busybox-static-1.37.0-r31.apk; \
+		cd /tmp && rm -rf busybox-extract && mkdir busybox-extract; \
+		cd /tmp/busybox-extract && tar -xzf /tmp/busybox-static-aarch64.apk; \
+		cp /tmp/busybox-extract/bin/busybox.static /tmp/busybox-aarch64; \
+		rm -rf /tmp/busybox-extract /tmp/busybox-static-aarch64.apk; \
 		chmod +x /tmp/busybox-aarch64; \
+		echo "Downloaded: $$(/tmp/busybox-aarch64 --help 2>&1 | head -1)"; \
 	fi
-	@mkdir -p $(HOME)/.nimbus/initramfs
-	cargo build -p nimbus-init --target aarch64-unknown-linux-musl --release
+	@mkdir -p $(HOME)/.pullrun/initramfs
+	cargo build -p pullrun-init --target aarch64-unknown-linux-musl --release
 	cd tools/build-initramfs && cargo build
 	./tools/build-initramfs/target/debug/build-initramfs \
 		--busybox /tmp/busybox-aarch64 \
-		--nimbus-init $(CURDIR)/target/aarch64-unknown-linux-musl/release/nimbus-init \
-		--out $(HOME)/.nimbus/initramfs/nimbus-initramfs.cpio.gz
-	@echo "Initramfs built: $(HOME)/.nimbus/initramfs/nimbus-initramfs.cpio.gz"
+		--pullrun-init $(CURDIR)/target/aarch64-unknown-linux-musl/release/pullrun-init \
+		--out $(HOME)/.pullrun/initramfs/pullrun-initramfs.cpio.gz
+	@echo "Initramfs built: $(HOME)/.pullrun/initramfs/pullrun-initramfs.cpio.gz"
 apple-sign-daemon:
 	@if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "apple-sign-daemon only runs on macOS"; \
@@ -182,12 +191,19 @@ apple-sign-daemon:
 	codesign --force --sign - \
 		--entitlements $(APPLE_ENTITLEMENTS) \
 		--options runtime \
-		$(NIMBUS_RUNTIME)
-	@echo "Signed $(NIMBUS_RUNTIME) with com.apple.security.virtualization"
+		$(PULLRUN_RUNTIME)
+	@if [ -f "$(BIN_DIR)/pullrun-runtime" ]; then \
+		codesign --force --sign - \
+			--entitlements $(APPLE_ENTITLEMENTS) \
+			--options runtime \
+			$(BIN_DIR)/pullrun-runtime; \
+		echo "Signed $(BIN_DIR)/pullrun-runtime"; \
+	fi
+	@echo "Signed $(PULLRUN_RUNTIME) with com.apple.security.virtualization"
 
 # Help
 help:
-	@echo "Nimbus Build System"
+	@echo "Pullrun Build System"
 	@echo ""
 	@echo "Targets:"
 	@echo "  all                  Build everything (default)"
@@ -196,10 +212,10 @@ help:
 	@echo "  check                Format + lint + test"
 	@echo "  proto                Generate protobuf code"
 	@echo "  clean                Remove build artifacts"
-	@echo "  run-runtime          Start nimbus-runtime daemon"
-	@echo "  run-cli              Run nimbusctl (set ARGS for command)"
+	@echo "  run-runtime          Start pullrun-runtime daemon"
+	@echo "  run-cli              Run pullrun (set ARGS for command)"
 	@echo "  install              Install binaries to PATH"
-	@echo "  install-kernel       Download Kata's vmlinux.container to ~/.nimbus/kernels"
-	@echo "  build-initramfs      Build initramfs (busybox + nimbus-init) to ~/.nimbus/initramfs"
+	@echo "  install-kernel       Download Kata's vmlinux.container to ~/.pullrun/kernels"
+	@echo "  build-initramfs      Build initramfs (busybox + pullrun-init) to ~/.pullrun/initramfs"
 	@echo "  apple-sign-smoke     Sign tools/apple-virt-smoke with the virt entitlement"
-	@echo "  apple-sign-daemon    Sign nimbus-runtime with the virt entitlement (macOS VM)"
+	@echo "  apple-sign-daemon    Sign pullrun-runtime with the virt entitlement (macOS VM)"

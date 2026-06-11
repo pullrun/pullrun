@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Prerequisites:
 #   1. docker (to run registry:2)
-#   2. nimbus-runtime + nimbusctl installed
+#   2. pullrun-runtime + pullrun installed
 #
 # Usage:
 #   bash hack/test-push-auth.sh
@@ -13,20 +13,20 @@ set -euo pipefail
 
 REGISTRY_PORT="${REGISTRY_PORT:-5000}"
 REGISTRY="localhost:${REGISTRY_PORT}"
-SOCKET="${SOCKET:-/tmp/nimbus.sock}"
-NIMBUSCTL="nimbusctl --socket ${SOCKET}"
+SOCKET="${SOCKET:-/tmp/pullrun.sock}"
+NIMBUSCTL="pullrun --socket ${SOCKET}"
 
 cleanup() {
   echo "=== Cleaning up ==="
-  docker stop nimbus-test-registry 2>/dev/null || true
-  docker rm nimbus-test-registry 2>/dev/null || true
+  docker stop pullrun-test-registry 2>/dev/null || true
+  docker rm pullrun-test-registry 2>/dev/null || true
 }
 
 trap cleanup EXIT
 
 echo "=== Step 1: Start registry:2 (plain HTTP) ==="
 docker run -d --rm \
-  --name nimbus-test-registry \
+  --name pullrun-test-registry \
   -p "${REGISTRY_PORT}:5000" \
   registry:2
 
@@ -40,14 +40,14 @@ done
 
 # Make sure daemon is configured
 echo "=== Step 2: Ensure daemon has --insecure-registry ${REGISTRY} ==="
-if ! ps aux | grep -q "nimbus-runtime.*daemon.*insecure-registry.*${REGISTRY}"; then
+if ! ps aux | grep -q "pullrun-runtime.*daemon.*insecure-registry.*${REGISTRY}"; then
   echo "  Restarting daemon with --insecure-registry ${REGISTRY}"
-  pkill -f "nimbus-runtime" 2>/dev/null || true
+  pkill -f "pullrun-runtime" 2>/dev/null || true
   sleep 1
   rm -f "${SOCKET}" 2>/dev/null
   env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    nohup /usr/local/bin/nimbus-runtime daemon \
-      --insecure-registry "${REGISTRY}" > /var/log/nimbus.log 2>&1 &
+    nohup /usr/local/bin/pullrun-runtime daemon \
+      --insecure-registry "${REGISTRY}" > /var/log/pullrun.log 2>&1 &
   sleep 2
   echo "  Daemon restarted"
 fi

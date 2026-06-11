@@ -1,8 +1,8 @@
-// Module: nimbus/protoapi
-// Contains Go bindings for all .proto files in /Users/YACINE/nimbus/proto/nimbus/.
-// This is a shared library imported by the three Go binaries (nimbusctl,
-// controlplane, nimbus-cri) via `replace` directives in their go.mod.
-module nimbus/protoapi
+// Module: pullrun/protoapi
+// Contains Go bindings for all .proto files in /Users/YACINE/pullrun/proto/pullrun/.
+// This is a shared library imported by the three Go binaries (pullrun,
+// controlplane, pullrun-cri) via `replace` directives in their go.mod.
+module pullrun/protoapi
 
 go 1.22
 

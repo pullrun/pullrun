@@ -12,7 +12,7 @@ This means:
 - **No registry needed for peer transfers.** The digest identifies the content uniquely. You don't need a signed manifest; you just need the hash.
 - **Delta sync falls out for free.** If node A has blobs `[a, b, c, d]` and node B has `[a, e, f]`, syncing image `x` whose blob set is `[a, b, c]` costs exactly 2 block transfers (b and c), not a full layer pull.
 
-Docker/containerd distributes images per-node — each kubelet pulls independently from the registry. BuildKit needs a shared remote cache to get cross-node dedup. **Nimbus doesn't.** The DAG store already deduplicates across images on a single node; `BlockSync` extends that dedup horizon to the cluster.
+Docker/containerd distributes images per-node — each kubelet pulls independently from the registry. BuildKit needs a shared remote cache to get cross-node dedup. **Pullrun doesn't.** The DAG store already deduplicates across images on a single node; `BlockSync` extends that dedup horizon to the cluster.
 
 ## Architecture
 
@@ -54,14 +54,14 @@ Docker/containerd distributes images per-node — each kubelet pulls independent
 
 | Component | Responsibility | File |
 |-----------|---------------|------|
-| `BlockSync` | gRPC service: `HaveBlobs`, `GetBlobs`, `SyncBlobs` RPCs | `runtime/nimbus-sync/src/block_sync.rs` |
-| `SyncPuller` | `OciPuller` wrapper that queries peers before registry | `runtime/nimbus-sync/src/sync_puller.rs` |
-| `BloomFilter` | Compact block set advertisement (1% false positive, 1 KB per 10 K blobs) | `runtime/nimbus-sync/src/bloom.rs` |
-| `Discovery` | mDNS (UDP multicast, 30s heartbeat, 90s timeout) | `runtime/nimbus-sync/src/discovery.rs` |
-| `BloomGossip` | Periodic bloom filter exchange with random peers (60s interval) | `runtime/nimbus-sync/src/gossip.rs` |
-| `PeerBloomCache` | Peer bloom filter cache with 5-minute TTL | `runtime/nimbus-sync/src/gossip.rs` |
-| `Registrar` | Optional centralized gRPC registry (Register/Lookup/ListPeers/Heartbeat/Deregister) | `runtime/nimbus-sync/src/registrar.rs` |
-| `DeltaSync` | Given two bloom filters, computes the minimal transfer set | `runtime/nimbus-sync/src/delta.rs` |
+| `BlockSync` | gRPC service: `HaveBlobs`, `GetBlobs`, `SyncBlobs` RPCs | `runtime/pullrun-sync/src/block_sync.rs` |
+| `SyncPuller` | `OciPuller` wrapper that queries peers before registry | `runtime/pullrun-sync/src/sync_puller.rs` |
+| `BloomFilter` | Compact block set advertisement (1% false positive, 1 KB per 10 K blobs) | `runtime/pullrun-sync/src/bloom.rs` |
+| `Discovery` | mDNS (UDP multicast, 30s heartbeat, 90s timeout) | `runtime/pullrun-sync/src/discovery.rs` |
+| `BloomGossip` | Periodic bloom filter exchange with random peers (60s interval) | `runtime/pullrun-sync/src/gossip.rs` |
+| `PeerBloomCache` | Peer bloom filter cache with 5-minute TTL | `runtime/pullrun-sync/src/gossip.rs` |
+| `Registrar` | Optional centralized gRPC registry (Register/Lookup/ListPeers/Heartbeat/Deregister) | `runtime/pullrun-sync/src/registrar.rs` |
+| `DeltaSync` | Given two bloom filters, computes the minimal transfer set | `runtime/pullrun-sync/src/delta.rs` |
 
 ### gRPC protocol
 
@@ -144,7 +144,7 @@ message DeregisterResponse {}
 kubelet → CRI shim → ImageService::PullImage
                           │
                           ▼
-              nimbus-runtime PullImage handler
+              pullrun-runtime PullImage handler
               (auto-detects block sync availability)
                           │
                           ├──► SyncPuller::pull(ref_name, platform)
@@ -177,7 +177,7 @@ The current implementation applies delta sync at **pull time** — nodes pull mi
 Future push-side delta would work as follows (not yet implemented):
 
 ```
-nimbusctl push myimage:latest
+pullrun push myimage:latest
         │
         ▼
   DagPusher::push(root_digest)
@@ -232,9 +232,9 @@ nimbusctl push myimage:latest
 └──────────────────────────────────────────────┘
 ```
 
-## Integration with nimbus-runtime daemon
+## Integration with pullrun-runtime daemon
 
-**Zero changes to Kubernetes.** The CRI shim (`cri/nimbus-cri`) already implements `RuntimeService` and `ImageService`. The block sync integration is entirely in the nimbus-runtime daemon:
+**Zero changes to Kubernetes.** The CRI shim (`cri/pullrun-cri`) already implements `RuntimeService` and `ImageService`. The block sync integration is entirely in the pullrun-runtime daemon:
 
 ```rust
 // In main.rs (simplified):
@@ -270,8 +270,8 @@ The `SyncPuller` is a drop-in wrapper that implements the same `ImagePuller` tra
 ### RuntimeClass flow (unchanged)
 
 ```
-Pod (runtimeClassName: nimbus-container)
-  → kubelet → CRI → nimbus-cri
+Pod (runtimeClassName: pullrun-container)
+  → kubelet → CRI → pullrun-cri
       → ImageService::PullImage (now via SyncPuller)
       → RuntimeService::RunPodSandbox
       → RuntimeService::CreateContainer
@@ -280,7 +280,7 @@ Pod (runtimeClassName: nimbus-container)
 
 ## Performance characteristics
 
-| Scenario | Docker/K8s (registry pull) | Nimbus (block sync) |
+| Scenario | Docker/K8s (registry pull) | Pullrun (block sync) |
 |----------|---------------------------|---------------------|
 | 1 node, 1 image | 1 full pull | 1 full pull (same) |
 | 10 nodes, 1 image | 10 full pulls | 1 full pull + 9 delta syncs |
@@ -294,7 +294,7 @@ The key metric: **bytes transferred from registry**. Block sync reduces registry
 
 ### ✅ Phase 1: BlockSync protocol + mDNS discovery *(complete)*
 
-- [x] `runtime/nimbus-sync/` — new crate
+- [x] `runtime/pullrun-sync/` — new crate
 - [x] `BloomFilter` — compact set representation with configurable FP rate
 - [x] `BlockSyncService` — gRPC server (HaveBlobs, GetBlobs, SyncBlobs)
 - [x] `mDNS discovery` — UPD multicast (`239.255.0.100:54321`, 30s heartbeat, 90s timeout)
@@ -314,7 +314,7 @@ The key metric: **bytes transferred from registry**. Block sync reduces registry
 - [x] Optional `Registrar` gRPC service (Register/Lookup/ListPeers/Heartbeat/Deregister)
 - [x] `--registrar-addr` flag to host registrar, `--registrar-connect` to register remotely
 - [x] Background TTL-based peer eviction (120s default)
-- [x] Prometheus metrics: `bytes_sent`, `bytes_received`, `blob_requests` counters, `nimbus_sync_peer_count` gauge
+- [x] Prometheus metrics: `bytes_sent`, `bytes_received`, `blob_requests` counters, `pullrun_sync_peer_count` gauge
 - [x] Graceful degrade: registry fallback when peers unavailable
 - [x] 4 registrar e2e tests (register+list, lookup, heartbeat, deregister)
 - [x] 126 Rust + 9 Go tests — all passing
@@ -345,7 +345,7 @@ The BlockSync protocol is ~20–30 KB of Rust gRPC code with zero external runti
 |-------|---------|--------|-----------|
 | 1 | BlockSync protocol + mDNS | ✅ | `block_sync.rs`, `bloom.rs`, `discovery.rs`, `sync_puller.rs` |
 | 2 | Gossip bloom exchange + PeerBloomCache | ✅ | `gossip.rs` |
-| 3a | Prometheus metrics | ✅ | `block_sync.rs` (`BlockSyncMetrics`), `metrics.rs` (`nimbus_sync_peer_count`) |
+| 3a | Prometheus metrics | ✅ | `block_sync.rs` (`BlockSyncMetrics`), `metrics.rs` (`pullrun_sync_peer_count`) |
 | 3b | Optional Registrar service | ✅ | `registrar.rs` |
 
 ## Open questions

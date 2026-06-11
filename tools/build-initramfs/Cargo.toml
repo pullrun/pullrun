@@ -3,7 +3,7 @@ name = "build-initramfs"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Assemble a Nimbus microVM initramfs (cpio+gzip) from a busybox static binary + nimbus-init static binary."
+description = "Assemble a Pullrun microVM initramfs (cpio+gzip) from a busybox static binary + pullrun-init static binary."
 
 [workspace]
 

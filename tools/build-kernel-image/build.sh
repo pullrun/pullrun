@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# build.sh — build a Nimbus kernel image (Asahi Apple-Virt ABI)
+# build.sh — build a Pullrun kernel image (Asahi Apple-Virt ABI)
 #             and produce an OCI image layout.
 #
 # This script is a thin wrapper around the Asahi kernel build,
 # post-processing the output into the layout `StagedKernel::from_image`
-# expects (see ../../runtime/nimbus-vm/src/oci_kernel.rs):
+# expects (see ../../runtime/pullrun-vm/src/oci_kernel.rs):
 #
 #   /boot/vmlinux                (required)
 #   /boot/initramfs.cpio.gz      (optional)
-#   /usr/lib/nimbus/nimbus-runtime (optional, future)
+#   /usr/lib/pullrun/pullrun-runtime (optional, future)
 #
 # The result is a tarball you can `docker load` or push to any
-# OCI registry as a nimbus kernel image.
+# OCI registry as a pullrun kernel image.
 #
 # Requirements:
 #   - Linux host (Apple Silicon cross-compile is fine)
@@ -23,13 +23,13 @@
 #
 # Usage:
 #   ASAHI_TREE=~/src/linux-asahi \
-#   NIMBUS_RUNTIME_BIN=../nimbus-runtime/target/release/nimbus-runtime \
+#   PULLRUN_RUNTIME_BIN=../pullrun-runtime/target/release/pullrun-runtime \
 #   ./build.sh 6.19.14
 #
 # Output:
-#   nimbus-kernel-asahi-<version>.tar
-#       (load with `docker load -i nimbus-kernel-asahi-<version>.tar`)
-#   nimbus-kernel-asahi-<version>.oci/
+#   pullrun-kernel-asahi-<version>.tar
+#       (load with `docker load -i pullrun-kernel-asahi-<version>.tar`)
+#   pullrun-kernel-asahi-<version>.oci/
 #       (raw OCI layout for skopeo/diff tools)
 
 set -euo pipefail
@@ -42,15 +42,15 @@ fi
 
 KERNEL_VERSION="$1"; shift
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORK_DIR="$(mktemp -d -t nimbus-kernel-build.XXXXXX)"
+WORK_DIR="$(mktemp -d -t pullrun-kernel-build.XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 ASAHI_TREE="${ASAHI_TREE:?ASAHI_TREE must point to the Asahi kernel tree}"
-NIMBUS_RUNTIME_BIN="${NIMBUS_RUNTIME_BIN:-}"
+PULLRUN_RUNTIME_BIN="${PULLRUN_RUNTIME_BIN:-}"
 
 echo "==> Building Asahi kernel $KERNEL_VERSION in $ASAHI_TREE"
 echo "    output staging: $WORK_DIR/staging"
-echo "    final tarball: nimbus-kernel-asahi-$KERNEL_VERSION.tar"
+echo "    final tarball: pullrun-kernel-asahi-$KERNEL_VERSION.tar"
 
 # 1. Build the kernel + DTBs + modules.
 #    We don't `make install` — we stage files manually into
@@ -64,7 +64,7 @@ make -C "$ASAHI_TREE" -j"$(nproc)" \
 
 # 2. Stage the files into the OCI image layout.
 STAGING="$WORK_DIR/staging"
-mkdir -p "$STAGING/boot" "$STAGING/usr/lib/nimbus"
+mkdir -p "$STAGING/boot" "$STAGING/usr/lib/pullrun"
 
 # Stripped uncompressed ELF (the format VZLinuxBootLoader
 # accepts). The Asahi `make Image` target produces this.
@@ -75,8 +75,8 @@ aarch64-linux-gnu-strip -s \
 # Empty initramfs if the caller didn't supply one. A real
 # workload will bring its own initramfs (e.g. via a separate
 # image); the kernel image alone is the v0 contract.
-if [ -n "${NIMBUS_INITRAMFS:-}" ] && [ -f "$NIMBUS_INITRAMFS" ]; then
-    cp "$NIMBUS_INITRAMFS" "$STAGING/boot/initramfs.cpio.gz"
+if [ -n "${PULLRUN_INITRAMFS:-}" ] && [ -f "$PULLRUN_INITRAMFS" ]; then
+    cp "$PULLRUN_INITRAMFS" "$STAGING/boot/initramfs.cpio.gz"
 else
     # /dev/null | gzip is the canonical "empty cpio.gz".
     gzip -c /dev/null > "$STAGING/boot/initramfs.cpio.gz"
@@ -86,9 +86,9 @@ fi
 # actually use it from inside the guest (the vsock transport
 # is not wired yet), but the file path is part of the
 # documented image layout.
-if [ -n "$NIMBUS_RUNTIME_BIN" ] && [ -f "$NIMBUS_RUNTIME_BIN" ]; then
-    cp "$NIMBUS_RUNTIME_BIN" "$STAGING/usr/lib/nimbus/nimbus-runtime"
-    chmod 0755 "$STAGING/usr/lib/nimbus/nimbus-runtime"
+if [ -n "$PULLRUN_RUNTIME_BIN" ] && [ -f "$PULLRUN_RUNTIME_BIN" ]; then
+    cp "$PULLRUN_RUNTIME_BIN" "$STAGING/usr/lib/pullrun/pullrun-runtime"
+    chmod 0755 "$STAGING/usr/lib/pullrun/pullrun-runtime"
 fi
 
 # 3. Build the OCI image with a hand-rolled Dockerfile.
@@ -96,16 +96,16 @@ fi
 #    without external dependencies; `skopeo` and `umoci` are
 #    alternatives but heavier.
 echo "==> Building OCI image"
-TARBALL="nimbus-kernel-asahi-$KERNEL_VERSION.tar"
+TARBALL="pullrun-kernel-asahi-$KERNEL_VERSION.tar"
 
 # Write a temporary Dockerfile. Doing it inline keeps
 # `build.sh` self-contained — no auxiliary files in
 # the repo to keep in sync.
 cat >"$WORK_DIR/Dockerfile" <<EOF
 FROM scratch
-LABEL org.nimbus.image.kind="kernel" \\
-      org.nimbus.image.kernel.version="$KERNEL_VERSION" \\
-      org.nimbus.image.kernel.vendor="asahi"
+LABEL org.pullrun.image.kind="kernel" \\
+      org.pullrun.image.kernel.version="$KERNEL_VERSION" \\
+      org.pullrun.image.kernel.vendor="asahi"
 COPY boot/ /boot/
 COPY usr/ /usr/
 EOF
@@ -175,13 +175,13 @@ EOF
 #    `manifest.json` and a `repositories` file at the root.
 REPOS_JSON="$WORK_DIR/repositories"
 cat >"$REPOS_JSON" <<EOF
-{"nimbus/kernel-asahi":{"$KERNEL_VERSION":"$CONFIG_DIGEST"}}
+{"pullrun/kernel-asahi":{"$KERNEL_VERSION":"$CONFIG_DIGEST"}}
 EOF
 
 tar -C "$WORK_DIR" \
-    --transform 's,^manifest.json,nimbus/kernel-asahi/$KERNEL_VERSION/manifest.json,' \
-    --transform 's,^config.json,nimbus/kernel-asahi/$KERNEL_VERSION/config.json,' \
-    --transform 's,^layer.tar,nimbus/kernel-asahi/$KERNEL_VERSION/layer.tar,' \
+    --transform 's,^manifest.json,pullrun/kernel-asahi/$KERNEL_VERSION/manifest.json,' \
+    --transform 's,^config.json,pullrun/kernel-asahi/$KERNEL_VERSION/config.json,' \
+    --transform 's,^layer.tar,pullrun/kernel-asahi/$KERNEL_VERSION/layer.tar,' \
     --transform 's,^repositories,repositories,' \
     -cf "$TARBALL" \
     manifest.json config.json layer.tar repositories
@@ -190,6 +190,6 @@ echo
 echo "==> Done."
 echo "  Tarball:       $TARBALL"
 echo "  Load with:     docker load -i $TARBALL"
-echo "  Then run:      docker run --rm nimbus/kernel-asahi:$KERNEL_VERSION \\"
+echo "  Then run:      docker run --rm pullrun/kernel-asahi:$KERNEL_VERSION \\"
 echo "                     ls /boot"
-echo "  Or pull via:   apple-virt-smoke --kernel-image nimbus/kernel-asahi:$KERNEL_VERSION"
+echo "  Or pull via:   apple-virt-smoke --kernel-image pullrun/kernel-asahi:$KERNEL_VERSION"

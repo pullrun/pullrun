@@ -1,11 +1,11 @@
-# Nimbus runtime DaemonSet — one pod per node.
+# Pullrun runtime DaemonSet — one pod per node.
 #
 # This is the production-grade deployment. For a single-host dev
 # environment, the same image can be run as a Deployment with
 # replicas: 1.
 #
 # The container runs as root because:
-#   1. It manages the `nimbus-br0` Linux bridge and tap devices
+#   1. It manages the `pullrun-br0` Linux bridge and tap devices
 #      (CAP_NET_ADMIN, no namespace restriction).
 #   2. It uses runc (CAP_SYS_ADMIN) to spawn container workloads.
 #   3. It uses KVM (/dev/kvm, 0666 mode) to spawn Firecracker VMs.
@@ -16,18 +16,18 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: nimbus-runtime
-  namespace: nimbus
+  name: pullrun-runtime
+  namespace: pullrun
   labels:
-    app: nimbus-runtime
+    app: pullrun-runtime
 spec:
   selector:
     matchLabels:
-      app: nimbus-runtime
+      app: pullrun-runtime
   template:
     metadata:
       labels:
-        app: nimbus-runtime
+        app: pullrun-runtime
       annotations:
         # Prometheus Operator discovers pods by these annotations
         # (or by the ServiceMonitor below — both work).
@@ -35,21 +35,21 @@ spec:
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: nimbus-runtime
+      serviceAccountName: pullrun-runtime
       hostNetwork: true
       hostPID: true
       containers:
-        - name: nimbus-runtime
-          image: ghcr.io/nimbus/nimbus-runtime:v0.1.0
+        - name: pullrun-runtime
+          image: ghcr.io/pullrun/pullrun-runtime:v0.1.0
           imagePullPolicy: IfNotPresent
           args:
             - daemon
-            - --socket=/var/run/nimbus/nimbus.sock
-            - --store-root=/var/lib/nimbus
+            - --socket=/var/run/pullrun/pullrun.sock
+            - --store-root=/var/lib/pullrun
             - --metrics-addr=0.0.0.0:9090
             # VM backend (uncomment if /dev/kvm is available on the node)
             # - --vm-firecracker=/usr/local/bin/firecracker
-            # - --vm-kernel=/var/lib/nimbus/vmlinux
+            # - --vm-kernel=/var/lib/pullrun/vmlinux
           ports:
             - name: metrics
               containerPort: 9090
@@ -64,11 +64,11 @@ spec:
           env:
             - name: RUST_LOG
               value: info
-            - name: NIMBUS_POD_NAME
+            - name: PULLRUN_POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: NIMBUS_NODE_NAME
+            - name: PULLRUN_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
@@ -96,9 +96,9 @@ spec:
             runAsUser: 0
           volumeMounts:
             - name: store
-              mountPath: /var/lib/nimbus
+              mountPath: /var/lib/pullrun
             - name: run
-              mountPath: /var/run/nimbus
+              mountPath: /var/run/pullrun
             - name: dev-kvm
               mountPath: /dev/kvm
             - name: cgroup
@@ -108,15 +108,15 @@ spec:
               mountPath: /lib/modules
               readOnly: true
             - name: rootfs
-              mountPath: /var/lib/nimbus/vm
+              mountPath: /var/lib/pullrun/vm
       volumes:
         - name: store
           hostPath:
-            path: /var/lib/nimbus
+            path: /var/lib/pullrun
             type: DirectoryOrCreate
         - name: run
           hostPath:
-            path: /var/run/nimbus
+            path: /var/run/pullrun
             type: DirectoryOrCreate
         - name: dev-kvm
           hostPath:
@@ -130,7 +130,7 @@ spec:
             path: /lib/modules
         - name: rootfs
           hostPath:
-            path: /var/lib/nimbus/vm
+            path: /var/lib/pullrun/vm
             type: DirectoryOrCreate
       tolerations:
         # Allow scheduling on nodes tainted for system workloads.
@@ -140,15 +140,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nimbus-runtime
-  namespace: nimbus
+  name: pullrun-runtime
+  namespace: pullrun
   labels:
-    app: nimbus-runtime
+    app: pullrun-runtime
 spec:
   # headless: we want one endpoint per pod, not a cluster IP.
   clusterIP: None
   selector:
-    app: nimbus-runtime
+    app: pullrun-runtime
   ports:
     - name: metrics
       port: 9090

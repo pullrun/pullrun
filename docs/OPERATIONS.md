@@ -1,6 +1,6 @@
 # Operations
 
-A guide for running Nimbus in production: deploying on
+A guide for running Pullrun in production: deploying on
 Kubernetes, configuring the policy engine, monitoring, and
 troubleshooting common failure modes.
 
@@ -8,7 +8,7 @@ troubleshooting common failure modes.
 
 ### Direct mode (single host, development)
 
-The simplest deployment: run `nimbusctl` on a single Linux host
+The simplest deployment: run `pullrun` on a single Linux host
 with `/dev/kvm` (for the VM backend). The CLI spawns the
 runtime as a child process over a Unix domain socket; no daemon
 to manage.
@@ -16,26 +16,26 @@ to manage.
 ```bash
 # Build
 cargo build --release
-ls target/release/nimbus-runtime target/release/nimbusctl
+ls target/release/pullrun-runtime target/release/pullrun
 
 # Run
-./target/release/nimbusctl pull alpine:3.18
-./target/release/nimbusctl run sha256:6a... --backend container
-./target/release/nimbusctl list
-./target/release/nimbusctl inspect wl-abc123
+./target/release/pullrun pull alpine:3.18
+./target/release/pullrun run sha256:6a... --backend container
+./target/release/pullrun list
+./target/release/pullrun inspect wl-abc123
 ```
 
 For a long-lived runtime on a single host, run the runtime
 daemon directly:
 
 ```bash
-./target/release/nimbus-runtime daemon \
-    --socket /var/run/nimbus.sock \
-    --store-root /var/lib/nimbus \
+./target/release/pullrun-runtime daemon \
+    --socket /var/run/pullrun.sock \
+    --store-root /var/lib/pullrun \
     --metrics-addr 0.0.0.0:9090
 
 # Then point the CLI at it
-./target/release/nimbusctl --socket /var/run/nimbus.sock --direct=false list
+./target/release/pullrun --socket /var/run/pullrun.sock --direct=false list
 ```
 
 ### Kubernetes (DaemonSet, production)
@@ -60,12 +60,12 @@ To use the VM backend in Kubernetes, register a RuntimeClass:
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: nimbus-vm
-handler: nimbus-vm
+  name: pullrun-vm
+handler: pullrun-vm
 ```
 
-Then any pod with `spec.runtimeClassName: nimbus-vm` will be
-scheduled on a Nimbus node and executed as a Firecracker
+Then any pod with `spec.runtimeClassName: pullrun-vm` will be
+scheduled on a Pullrun node and executed as a Firecracker
 microVM. The CRI shim handles the translation.
 
 ### Required host setup
@@ -84,12 +84,12 @@ microVM. The CRI shim handles the translation.
   autoloads on first use.
 - **Disk space.** A pull of `alpine:3.18` uses ~3 MB; a full
   Ubuntu image with apt cache uses ~700 MB. The store grows
-  monotonically; the `NimbusStoreGrowingFast` alert fires
+  monotonically; the `PullrunStoreGrowingFast` alert fires
   before it fills the disk.
 
 ### Rootless operation
 
-Nimbus can run most VM operations without root:
+Pullrun can run most VM operations without root:
 
 | Operation | Rootless? | How |
 |---|---|---|
@@ -102,9 +102,9 @@ Nimbus can run most VM operations without root:
 
 To enable rootless TAP creation:
 ```bash
-sudo setcap cap_net_admin=eip /usr/local/bin/nimbus-runtime
-getcap /usr/local/bin/nimbus-runtime
-# Expected: /usr/local/bin/nimbus-runtime cap_net_admin=eip
+sudo setcap cap_net_admin=eip /usr/local/bin/pullrun-runtime
+getcap /usr/local/bin/pullrun-runtime
+# Expected: /usr/local/bin/pullrun-runtime cap_net_admin=eip
 ```
 
 ## Configuration
@@ -113,8 +113,8 @@ getcap /usr/local/bin/nimbus-runtime
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--socket` | `/tmp/nimbus.sock` | gRPC UDS path |
-| `--store-root` | `/var/lib/nimbus` | Where the DAG lives |
+| `--socket` | `/tmp/pullrun.sock` | gRPC UDS path |
+| `--store-root` | `/var/lib/pullrun` | Where the DAG lives |
 | `--metrics-addr` | (none) | Bind Prometheus `/metrics` HTTP; pass no value to use 127.0.0.1:9090 |
 | `--require-signature` | false | Reject unsigned images |
 | `--require-sbom` | false | Reject images without a CycloneDX SBOM |
@@ -129,7 +129,7 @@ getcap /usr/local/bin/nimbus-runtime
 
 ### Environment variables
 
-- `NIMBUS_STORE` — overrides `--store-root` for the CLI.
+- `PULLRUN_STORE` — overrides `--store-root` for the CLI.
   Useful for shared dev environments.
 
 ## Monitoring
@@ -138,14 +138,14 @@ getcap /usr/local/bin/nimbus-runtime
 
 | Metric | Type | Labels | What it tells you |
 |---|---|---|---|
-| `nimbus_pulls_total` | counter | `registry`, `status` | Pull throughput; ratio of `failed`/`denied` to `success` |
-| `nimbus_pull_duration_seconds` | histogram | — | Pull latency distribution (p50/p95/p99) |
-| `nimbus_workloads_started_total` | counter | `backend` | How many workloads have started per backend |
-| `nimbus_workloads_running` | gauge | `backend` | Live workload count |
-| `nimbus_workload_start_duration_seconds` | histogram | — | Workload start latency (create + start) |
-| `nimbus_workload_exits_total` | counter | `backend`, `code` | Exit code distribution; `code=137` is SIGKILL (OOM) |
-| `nimbus_store_nodes` | gauge | — | Number of DAG nodes currently cached |
-| `nimbus_store_bytes` | gauge | — | Total bytes cached |
+| `pullrun_pulls_total` | counter | `registry`, `status` | Pull throughput; ratio of `failed`/`denied` to `success` |
+| `pullrun_pull_duration_seconds` | histogram | — | Pull latency distribution (p50/p95/p99) |
+| `pullrun_workloads_started_total` | counter | `backend` | How many workloads have started per backend |
+| `pullrun_workloads_running` | gauge | `backend` | Live workload count |
+| `pullrun_workload_start_duration_seconds` | histogram | — | Workload start latency (create + start) |
+| `pullrun_workload_exits_total` | counter | `backend`, `code` | Exit code distribution; `code=137` is SIGKILL (OOM) |
+| `pullrun_store_nodes` | gauge | — | Number of DAG nodes currently cached |
+| `pullrun_store_bytes` | gauge | — | Total bytes cached |
 
 `status` on pulls has four values: `started`, `success`, `failed`,
 `denied`. The `denied` counter is a security signal — a non-zero
@@ -156,18 +156,18 @@ rate means a workload tried to run an image that violated policy.
 The shipped alerts target the most common operational
 concerns. Tune them to your environment:
 
-- `NimbusRuntimeDown` (2m, critical) — the daemon is not
+- `PullrunRuntimeDown` (2m, critical) — the daemon is not
   scraping. The host is probably down or `/dev/kvm` is gone.
-- `NimbusPullFailureRate` (5m, warning) — more than 25% of
+- `PullrunPullFailureRate` (5m, warning) — more than 25% of
   pulls are failing. Often a transient registry issue; check
   the runtime's stderr for HTTP errors.
-- `NimbusWorkloadCrashLoop` (10m, warning) — exit codes other
+- `PullrunWorkloadCrashLoop` (10m, warning) — exit codes other
   than 0/137/unknown are firing at > 0.1/s. Something is
   crashing repeatedly; check the logs.
-- `NimbusPullLatencyHigh` (10m, warning) — p95 > 30s. Usually
+- `PullrunPullLatencyHigh` (10m, warning) — p95 > 30s. Usually
   network-bound; the histogram buckets will tell you whether
   it's tail latency or a uniformly slow pull.
-- `NimbusStoreGrowingFast` (30m, info) — store growing > 1
+- `PullrunStoreGrowingFast` (30m, info) — store growing > 1
   GB/hour. Warns before the disk fills. v0 has no GC, so this
   is a "plan more disk" signal.
 
@@ -180,10 +180,10 @@ concerns. Tune them to your environment:
 3. Pull + start latency p50/p95/p99
 4. Exit code distribution
 5. Store size + node count
-6. Per-node runtime up (`up{job="nimbus-runtime"}`)
+6. Per-node runtime up (`up{job="pullrun-runtime"}`)
 
 Import the JSON; the panel queries assume a Prometheus
-scrape job named `nimbus-runtime`.
+scrape job named `pullrun-runtime`.
 
 ## Troubleshooting
 
@@ -205,7 +205,7 @@ a public registry.
 
 Tracked as a v0.1 known issue.
 
-### "VM boot times out, no `nimbus-vm-outbound OK` in the log"
+### "VM boot times out, no `pullrun-vm-outbound OK` in the log"
 
 Three things to check, in order:
 
@@ -218,22 +218,22 @@ Three things to check, in order:
    where VM rootfs blobs can be materialized. Both are
    passed as CLI flags.
 
-3. **The bridge is up.** `ip link show nimbus-br0` should show
+3. **The bridge is up.** `ip link show pullrun-br0` should show
    the bridge with `state UP`. If it doesn't, the runtime
    will print an iptables error on the next operation.
    
    **Note:** `ip link show <bridge>` returns exit code 0 even
    when the bridge doesn't exist (writes "does not exist" to
-   stderr). Nimbus uses `ip link add` with "File exists"
+   stderr). Pullrun uses `ip link add` with "File exists"
    tolerance instead. If you suspect the bridge is missing
    despite the runtime saying it exists, check with
-   `ip -d link show nimbus-br0` which shows bridge-specific
+   `ip -d link show pullrun-br0` which shows bridge-specific
    details only when the device actually exists.
 
 Use `tools/vm-outbound-smoke/` as a standalone reproducer. It
 boots a minimal Alpine VM and runs a single `wget` against a
 host-bound HTTP server; a successful run prints
-`nimbus-vm-outbound OK` to the guest's serial console.
+`pullrun-vm-outbound OK` to the guest's serial console.
 
 ### "Container starts but I can't reach it on its IP"
 
@@ -247,7 +247,7 @@ For a workload to be reachable from outside the host, add a
 listening port:
 
 ```bash
-nimbusctl run sha256:... \
+pullrun run sha256:... \
     --allow-inbound 8080 \
     --cmd my-server
 ```
@@ -259,7 +259,7 @@ host's public interface, you need an additional
 --to-destination 10.42.0.1:8080` (not done automatically in v0;
 left to the operator's firewall automation).
 
-### "Prometheus shows `up == 0` for `nimbus-runtime`"
+### "Prometheus shows `up == 0` for `pullrun-runtime`"
 
 The runtime's HTTP server isn't reachable from Prometheus. In
 order of likelihood:
@@ -290,7 +290,7 @@ killed`) for the actual culprit. To prevent it, raise
 
 v0 has no garbage collection. The store grows monotonically as
 you pull images. To reclaim space, manually delete the store
-directory (`rm -rf /var/lib/nimbus`) — the next pull will
+directory (`rm -rf /var/lib/pullrun`) — the next pull will
 rebuild it. v1 will add an LRU eviction policy based on
 last-access time of each DAG node.
 

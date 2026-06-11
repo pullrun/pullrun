@@ -1,4 +1,4 @@
-name: nimbus-demo
+name: pullrun-demo
 services:
   sleeper:
     image: busybox:latest

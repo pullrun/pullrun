@@ -16,7 +16,7 @@
 
 ---
 
-## Rust — nimbus-store
+## Rust — pullrun-store
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -27,9 +27,9 @@
 | 🟠 | `node_count()` only counts cached entries, not total stored | `store.rs:273-275` | Rename to `cached_node_count()` | ✅ |
 | 🟠 | Blob import trusts filename as digest — no content verification | `dag_import.rs:87-99` | Compute SHA256 of entry data, compare to filename digest | ✅ |
 | 🟡 | `path_for` string slicing on byte indices of hex string | `store.rs` | Validate hex characters before slicing, or use `is_char_boundary` | ✅ |
-| 🟡 | Doubled `SMALL_FILE_THRESHOLD` constant | `converter.rs:14` + `dockerfile.rs:299` | Move to a shared constant in `nimbus-store` | ✅ |
+| 🟡 | Doubled `SMALL_FILE_THRESHOLD` constant | `converter.rs:14` + `dockerfile.rs:299` | Move to a shared constant in `pullrun-store` | ✅ |
 
-## Rust — nimbus-oci
+## Rust — pullrun-oci
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -41,7 +41,7 @@
 | 🟡 | `ManifestData.config_json` double-encoded JSON | `converter.rs` | Flatten `OciImageConfig` fields into manifest node | ✅ |
 | 🔵 | `Box::pin` instead of `async fn` for recursive futures | `puller.rs` | Convert to `async fn` or use `#[async_recursion]` | ⬜ |
 
-## Rust — nimbus-exec
+## Rust — pullrun-exec
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -54,7 +54,7 @@
 | 🟡 | `ExitStatus::signal` is always `None` | `types.rs` | Document as future work | ✅ |
 | 🟡 | `cpu_usage_percent` is actually CPU-seconds | `container.rs` | Document the semantic mismatch in field doc | ✅ |
 
-## Rust — nimbus-sync
+## Rust — pullrun-sync
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -69,7 +69,7 @@
 | 🟡 | `g_i` wrapping_mul can zero bloom filter rows | `bloom.rs` | Document that 0 is a valid bit position; add doc comment | ✅ |
 | 🟡 | `compute_delta` / `approximate_missing` are identical duplicates | `delta.rs` | Remove `approximate_missing` | ✅ |
 
-## Rust — nimbus-runtime
+## Rust — pullrun-runtime
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -86,7 +86,7 @@
 | 🟡 | `SecretRef`/`ConfigRef` unused imports (now removed in cleanup) | `service.rs` | Already fixed ✅ | ✅ |
 | 🟡 | `warn` unused import in secrets.rs | `secrets.rs` | Already fixed ✅ | ✅ |
 
-## Rust — nimbus-vm / nimbus-vsock
+## Rust — pullrun-vm / pullrun-vsock
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -96,7 +96,7 @@
 | 🟡 | `mkfs.ext4 -d` may not exist on older e2fsprogs | `ext4.rs` | Check version at runtime; warn if e2fsprogs < 1.47 | ✅ |
 | 🟡 | `tap_fds` Mutex held across `teardown_tap` (sync, fast — acceptable) | `lib.rs` | Document the pattern | ✅ |
 
-## Go — CLI (`cli/nimbusctl/cmd/`)
+## Go — CLI (`cli/pullrun/cmd/`)
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|
@@ -107,7 +107,7 @@
 | 🟡 | Duplicate `envVars` parsing | `commands.go`+`workload_run.go` | Factor into `parseEnvVars()` helper | ✅ |
 | 🟡 | Signal goroutine survives after `spawnRuntime` returns | `commands.go:613-620` | Close `doneCh` when socket appears; call `signal.Stop` | ✅ |
 
-## Go — CRI Shim (`cri/nimbus-cri/`)
+## Go — CRI Shim (`cri/pullrun-cri/`)
 
 | Pri | Issue | File:Line | Fix | Status |
 |-----|-------|-----------|-----|--------|

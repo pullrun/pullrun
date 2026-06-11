@@ -7,12 +7,12 @@ publish = false
 # Standalone tool: not part of the workspace. Has its own target
 # dir. Modeled on `apple-virt-smoke` but with a different goal:
 # boot a single VM with an initramfs that contains
-# `nimbus-init`, then talk to it over vsock and run a command.
+# `pullrun-init`, then talk to it over vsock and run a command.
 #
 # This is the *minimal* end-to-end test for the Apple Virt +
-# nimbus-init + vsock transport path. It does not require the
-# `nimbus-runtime` gRPC service, the OCI runtime spec
-# translation, or the `nimbusctl` CLI. You give it a kernel +
+# pullrun-init + vsock transport path. It does not require the
+# `pullrun-runtime` gRPC service, the OCI runtime spec
+# translation, or the `pullrun` CLI. You give it a kernel +
 # initramfs + a command line, and it prints whatever the
 # command prints (and exits with the command's exit code).
 #
@@ -20,10 +20,10 @@ publish = false
 #
 # ```text
 # ./apple-virt-exec \
-#     --kernel     ~/.nimbus/kernels/vmlinux-3.31.0 \
-#     --initramfs  /tmp/nimbus-initramfs.cpio.gz \
+#     --kernel     ~/.pullrun/kernels/vmlinux-3.31.0 \
+#     --initramfs  /tmp/pullrun-initramfs.cpio.gz \
 #     --rootfs     /tmp/alpine-rootfs \
-#     --store      /tmp/nimbus-store \
+#     --store      /tmp/pullrun-store \
 #     --cmd        /bin/uname -- -a
 # ```
 #
@@ -37,13 +37,13 @@ path = "src/main.rs"
 
 [dependencies]
 # Pull in the FFI module + the per-VM attach API.
-nimbus-vm = { path = "../../runtime/nimbus-vm" }
+pullrun-vm = { path = "../../runtime/pullrun-vm" }
 
 # MmapStore is the OCI materializer's backing store.
-nimbus-store = { path = "../../runtime/nimbus-store" }
+pullrun-store = { path = "../../runtime/pullrun-store" }
 
 # Frame codec for the host<->guest vsock protocol.
-nimbus-vsock = { path = "../../runtime/nimbus-vsock" }
+pullrun-vsock = { path = "../../runtime/pullrun-vsock" }
 
 # CLI parsing.
 clap = { version = "4", features = ["derive"] }
@@ -54,7 +54,7 @@ clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util"] }
 
 # Bytes wrapper for stdin chunks. Re-exported as a dep
-# from nimbus-vsock, but we use it directly.
+# from pullrun-vsock, but we use it directly.
 bytes = "1"
 
 # Logging.

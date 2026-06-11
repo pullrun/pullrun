@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	pb "nimbus/protoapi/nimbus/control"
+	pb "pullrun/protoapi/pullrun/control"
 )
 
 func TestNewFileStore_CreatesDirs(t *testing.T) {

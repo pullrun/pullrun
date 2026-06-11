@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "nimbus/protoapi/nimbus/control"
+	pb "pullrun/protoapi/pullrun/control"
 )
 
 type WorkloadRecord struct {
@@ -40,7 +40,7 @@ type NodeRecord struct {
 
 func main() {
 	listen := ":8080"
-	storeRoot := "/var/lib/nimbus/control-plane"
+	storeRoot := "/var/lib/pullrun/control-plane"
 
 	// Create file-backed store (survives restarts, no etcd needed for v0).
 	store := newFileStore(storeRoot)

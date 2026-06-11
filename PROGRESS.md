@@ -1,238 +1,801 @@
-# Nimbus — Build Progress
+# Pullrun — Master Progress Tracker
 
-**Last updated:** 2026-06-09
-**Status:** ✅ Full Docker-like workflow on both platforms. nimbusctl CLI (Go) works identically on macOS and Linux for all store/sync/policy operations. Container backend (runc) and Firecracker VM backend (KVM) work on Linux. Apple Virt standalone tools work on macOS. Cross-compilation: Go CLI statically linked for any target; Rust musl targets supported. P2P DAG block sync (Phases 1-3) fully implemented.
-**Tests:** 118 Rust + 9 Go — all passing.
+**Last updated:** 2026-06-11  
+**Current overall status:** v0.1.x — Docker CE feature parity complete. Beginning Phase 1 (Operational Hardening).  
+**Current test count:** 126 Rust tests + 9 Go tests — all passing.
 
-**New (Secret/Config support — Docker `--secret`/`--config` equivalent):** Proto additions (8 new RPCs + `SecretRef`/`ConfigRef` messages in `RunRequest`). `SecretStore` module with AES-256-GCM encrypted storage for secrets, plain text for configs, auto-generated key at `/var/lib/nimbus/secret.key`. Service handler implementations for create/list/inspect/remove. Container mount integration: bind-mounts staged files at `/run/secrets/<name>`; cleanup on stop/prune. Go CLI: `nimbusctl secret create/ls/inspect/rm`, `nimbusctl config create/ls/inspect/rm`, `--secret`/`--config` flags on `run` command. All proto and Go stubs regenerated; zero breaking changes to existing APIs.
+### Recent fixes
 
-**New (Manifest list DAG node + multi-arch build+push):** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each to DAG + creates `ManifestList` node. `DagBuilder::build_multi()` builds N platforms serially (shared store dedups layers automatically) and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects manifest vs manifest list and dispatches accordingly.
-
-**New (Cross-node DAG block sync Phase 1 — P2P image distribution):** `runtime/nimbus-sync` crate with `BloomFilter` (optimal sizing, serialization, merge), `BlockSync` gRPC service (HaveBlobs/GetBlobs/SyncBlobs), mDNS peer discovery (UDP multicast `239.255.0.100:54321`), and `SyncPuller` (peer-aware OciPuller wrapper). Added `resolve_image()` and `fetch_blob_by_digest()` to `OciPuller` as non-breaking public API. Daemon accepts `--sync-addr` flag; BlockSync server + discovery start when port is non-zero. `PullImage` handler auto-detects block sync availability and uses `SyncPuller` (peer→local→registry blob resolution). See `docs/cross-node-dag-sync.md`.
-
-**New (Cross-node DAG block sync Phase 2 — gossip-based bloom filter exchange):** `BloomGossip` background task exchanges bloom filters with random peers every 60s via `HaveBlobs` RPC. `PeerBloomCache` maintains a node_id → (bloom_filter, sync_addr) map with 5-minute TTL. `SyncPuller` now uses `PeerBloomCache` to identify which peers likely have each blob, then dynamically connects to those peers via `BlockSyncClient`. No more querying every peer for every blob — O(1) bloom filter lookup per blob, O(N) gossip rounds per minute. `BlockSyncService::insert_bloom_digest()` enables incremental bloom filter updates. See `docs/cross-node-dag-sync.md`.
-
-**New (Cross-node DAG block sync Phase 3 — metrics + registrar):** Prometheus metrics counters added to `BlockSyncService`: `bytes_sent`, `bytes_received`, `blob_requests` per GetBlobs/SyncBlobs handlers. `nimbus_sync_peer_count` gauge published every 30s from PeerBloomCache. Optional `Registrar` gRPC service (Register/Lookup/ListPeers/Heartbeat/Deregister + background TTL-based eviction) — hosted via `--registrar-addr`, remote registration via `--registrar-connect`. 4 e2e tests for registrar, 4 e2e tests for block sync P2P blob transfer — all passing.
-
-**Previously (Cross-arch run — the "better than Docker" gap):** Binfmt extraction — `ensure_cross_arch_binfmt` moved from `builder.rs` to shared `binfmt.rs` module. Daemon startup auto-registers qemu handlers for arm64, arm, ppc64le, s390x, riscv64. `run_workload` reads image architecture from stored manifest; if it differs from host arch (and backend isn't VM), registers the handler on-demand before container creation. **No manual setup step required.** All 53 cross-package tests pass.
-
-**Previously (Multi-arch build + pull):** `--platform` flag on `nimbusctl pull/build/run`. Dockerfile `FROM --platform=...` parsed and honored. Puller resolves multi-arch image indexes for any platform, not just host native. Builder passes target platform through to base image pull, RUN/COPY layer creation, and manifest metadata. Cross-arch RUN execution: auto-detects architecture mismatch, registers qemu-user-static binfmt handlers when needed.
-
-**Previously (Gap 5):** Proxy TCP reset fix — auto-promote to bridge mode when inbound ports requested; bridge always gets host-side IP (`10.42.0.1/16`) so kernel has a route to containers. Verified: `curl http://localhost:80` → proxy → `10.42.0.2:80` → nginx returns 200.
-**Previously (Gap 4):** `nimbusctl network create/rm/ls` — user-defined bridge networks with persistent registry, deterministic /24 subnet allocation from 10.43.0.0/16.
-**Previously (Gap 3):** `nimbusctl info` (runtime version, uptime, store stats) + `nimbusctl version`.
-**Previously (Gap 2):** `nimbusctl commit <id> [tag]` (running-container snapshot → DAG layer) + `nimbusctl diff <id>` (added/modified/deleted file listing vs original image).
-**Previously (Gap 1):** `--restart` flag (`no`/`on-failure`/`always`/`unless-stopped`) with exponential backoff watcher, race-fixed status check.
-**Previously:** Bridge fix deployed, resource limits (`--cpu`/`--memory`), volumes, compose auth, live stats, health checks, docker cp, build layer caching.
-
-## Docker feature gap analysis
-
-All Docker CLI features that remain unimplemented are **community-edition features** — none require Docker Enterprise:
-
-| Feature | Docker CE | Docker EE | Status | Notes |
-|---------|-----------|-----------|--------|-------|
-| Multi-arch pull | ✅ | ✅ | ✅ Nimbus | `--platform linux/arm64` + `pull_all()` |
-| Multi-arch build | ✅ | ✅ | ✅ Nimbus | `--platform` + `build_multi()` |
-| Multi-arch run | ✅ `qemu-user-static` | ✅ | ✅ Nimbus | **Auto-registered** — no manual step |
-| Manifest list creation | ✅ `docker manifest` | ✅ | ✅ Nimbus | `DagBuilder::build_multi()` + `OciToDagConverter::convert_list()` |
-| Multi-arch push | ✅ `docker buildx build --push` | ✅ | ✅ Nimbus | `DagPusher::push_manifest_list()` + auto-dispatch in `push()` |
-| Secret / Config | ✅ | ✅ | ✅ Nimbus | AES-256-GCM encrypted (secrets) / plain (configs); bind-mount into containers; `nimbusctl secret/config create/ls/inspect/rm`; `--secret`/`--config` flags on `run` |
-| Multi-node orchestration | ✅ Swarm | ✅ | ✅ Nimbus | P2P DAG block sync (not Swarm clone) — Phase 1-3 complete: BlockSync gRPC, mDNS + gossip bloom exchange, SyncPuller, optional Registrar, Prometheus metrics. See `docs/cross-node-dag-sync.md` |
+| Bug | Root cause | Fix | Status |
+|-----|-----------|-----|--------|
+| `runc exec -t` fails with "open /dev/tty: no such device or address" | Daemon has no terminal; `runc exec -t` requires a host PTY | Allocate host PTY via `posix_openpt`/`grantpt`/`unlockpt` and pass slave fd as stdin/stdout/stderr to `runc exec -t`. Replaced broken `--console-socket` approach (blocked on Ubuntu runc 1.3.4). | ✅ Fixed in `service.rs:allocate_pty()` |
+| `pullrun list` shows all workloads as `exited` on macOS | Watcher marks backend=="vm" workload as exited after 5s | Skip VM workloads in watcher error handler (`service.rs:645`) and checkpoint recovery (`service.rs:490`) | ✅ Fixed |
+| VM lifecycle has no state machine | `record_workload_state` sets `status:"running"` for un-booted VMs; status never transitions | Initial status = `"pending"`. `AttachWorkload` transitions `pending`→`running` on VM boot. `on_exit` callback transitions `running`→`exited` on VM exit. Checkpoint written at every transition. | ✅ Fixed in `service.rs`, `pullrun-vm/src/attach.rs` |
+| `exec -t` after workload ID not parsed as flag | Cobra `SetInterspersed(false)` treats `-t` after ID as positional arg | Remove `SetInterspersed(false)` and manually scan command args for `-t`/`--tty`. Both `exec <id> -t -- <cmd>` and `exec -t <id> -- <cmd>` work. | ✅ Fixed in `commands.go` |
+| `spawn_vm` has no exit notification mechanism | Runtime service cannot detect when VM background thread exits | Add `on_exit: Option<Box<dyn FnOnce() + Send>>` parameter to `spawn_vm`. Callback fires after background thread cleanup, updates status to `exited` and removes from `persistent_vms`. | ✅ Fixed in `pullrun-vm/src/attach.rs` |
+| Daemon not signed with Virtualization entitlement | `cargo build` strips code signatures | Document `make apple-sign-daemon`. Run it after every build. | ✅ Documented in README.md + Makefile |
 
 ---
 
-## What's Done (Docker-independent feature surface)
-
-### Image management
-- `pull` — OCI pull from any registry (Docker Hub, private, insecure), Docker Hub gzip fix, image index support
-- **Multi-arch pull** — `--platform linux/arm64` resolves multi-arch indexes for any platform, not just host native (`puller.rs:326-463`)
-- `push` — DAG-to-OCI layer reconstruction + registry upload via OCI distribution API (monolithic PUT)
-- `save` — DAG-native tar export (BFS walk, serializes all nodes+blobs, **not** OCI format)
-- `load` — Tar import with content-addressed dedup
-- `list` — List images in store
-- `inspect` — Inspect DAG nodes, image config, layers
-- `build` — Native DAG-aware builder: Dockerfile parser, RUN execution via runc, COPY/ADD, layer snapshotting
-- **Multi-arch build** — `--platform linux/arm64` overrides Dockerfile's `FROM --platform`; binfmt_misc registration for cross-arch RUN execution; architecture/os preserved in all manifest nodes (`builder.rs:145-155`, `dockerfile.rs:424-432`)
-- **Build layer caching** — SHA256 instruction cache in DagBuilder for RUN/COPY/ADD; incremental builds reuse cached layers
-- `login/logout` — Registry auth stored in `~/.nimbus/auth.json` (0600 perms), auto-attached to pull/push
-- **Docker-independent** — No Docker daemon, `docker` CLI, containerd, or overlayfs anywhere
-
-### Running workloads
-- `run` — Run containers (runc) or VMs (Firecracker / Apple Virt)
-- `stop` — Graceful stop with timeout
-- `exec` — Exec into running container
-- `logs` — Stream stdout/stderr logs
-- `attach` — Attach to running workload (bidi stdio via gRPC stream)  
-  `nimbusctl run --attach` / `-a` combines spawn + attach in one step
-- `port-forward` — CRI shim dials workload IP over bridge (SPDY→TCP bridge)
-- `compose up/down/ps/logs` — Full compose support with dependency ordering, port mapping, per-project bridge isolation
-- **`update`** — Live resource limit updates via `runc update` + UpdateWorkload RPC + `nimbusctl update --cpu --memory`
-- **`stats`** — Cgroupfs-based live CPU/memory reporting + GetWorkloadStats RPC + `nimbusctl stats <id>`
-- **`cp`** — CopyFile RPC + `nimbusctl cp <id>:<path> <local>` / `nimbusctl cp <local> <id>:<path>` (docker cp equivalent)
-- **Health checks** — Executor::exec() background watcher loop, health state machine (starting/healthy/unhealthy), `--health-cmd` CLI flags
-- **Volume/bind mounts** — Proto Mount + CLI `--volume`/`-v` + compose volume translation; wire HostPath through executors
-
-### Networking
-- Bridge networking (`nimbus-br0`, 10.42.0.0/16) with veth pairs for containers
-- Per-project bridge isolation (deterministic /24 from bridge name hash)
-- TAP devices for VM networking via direct `ioctl(TUNSETIFF)` (no `ip tuntap add`)
-- Userspace TCP inbound proxy (port mapping)
-- iptables MASQUERADE for VM outbound NAT (graceful if unavailable)
-- IPAM (atomic allocate/release, 10.42.0.0/16)
-- DNS proxy (local `.nimbus.local` records, upstream forwarding)
-- Rootless container networking (pasta/slirp4netns)
-
-### Execution backends
-- **Container** — runc, bridge networking (veth+IP+route), proxy port mapping
-- **Container (rootless)** — runc + user namespace + pasta/slirp4netns, auto-detected when EUID != 0
-- **Firecracker VM** — ext4 rootfs via `mkfs.ext4 -d` (rootless), TAP+bridge networking, `/init` shim for OCI images
-- **Apple Virt VM** — macOS Virtualization.framework, vsock attach, 3-VM pool, console logging
-
-### Storage
-- Zero-copy DAG store (rkyv + memmap2 + DashMap, lock-free concurrent reads)
-- File-level dedup across images (two images sharing identical files store them once)
-- LRU eviction (512 MB default cache cap)
-- No decompress-on-pull (DAG stores blobs as-is)
-- Instant snapshots (32-byte root digest = complete snapshot; rollback is O(1))
-
-### Container compatibility
-- `/tmp` and `/dev/shm` tmpfs mounts auto-configured
-- `/etc/hosts` and `/etc/resolv.conf` auto-creation inside container rootfs
-
-### Performance
-- **Parallel DAG directory scan** — `build_dag_from_directory` now uses `walkdir` (efficient directory discovery) + `rayon` (parallel file I/O). Files are read and stored as DAG blobs concurrently across CPU cores, drastically reducing `nimbusctl build` time for large directories.
-
-### Bugfixes
-- **Bridge creation fix** — `ensure_bridge_exists` now uses `ip link add ... type bridge` ignoring "File exists" instead of `ip link show` which returned exit code 0 for nonexistent bridges; bridges were silently never created in prior versions
-- **runc path fix** — `build_image` checks `is_file()` not `exists()` to avoid resolving directory as binary
-- **Materializer layer order** — removed `.rev()` so layers apply base→top (fixed nginx:alpine)
-- **Proxy TCP reset fix** — `ensure_bridge_exists` now assigns `10.42.0.1/16` to `nimbus-br0` on every call so the host kernel has a route to containers; auto-promotes network mode from Loopback to Bridge when inbound ports are set
-- **`fs_usage` cross-compile fix** — replaced non-existent `MetadataExt::blocks()+avail()` with `libc::statvfs` for correct filesystem usage on Linux
-
-### Observability
-- Prometheus `/metrics` endpoint (pull rate, workload latency/exit, store size)
-- Grafana dashboard (6 panels, 5 alert rules)
-- K8s deployment manifests (DaemonSet, ServiceMonitor, PrometheusRule)
-- Healthz endpoint
-
-### Policy & security
-- Cosign Ed25519 signature verification (per-image, `--require-signature`)
-- CycloneDX SBOM scanning (CVSS score gates, `--max-cvss`)
-- License deny list (`--deny-license`)
-- Readonly rootfs, no-new-privileges enforcement
-- Architecture moat: per-VM kernel isolation eliminates overlayfs CVEs (CVE-2026-31431, CVE-2023-0386, CVE-2023-32629)
-
-### Kubernetes integration
-- CRI shim (UDS listener, full RuntimeService + ImageService)
-- RuntimeClass mapping (`nimbus-container`, `nimbus-vm`)
-- `kubectl exec`, `kubectl attach`, `kubectl port-forward` (all via bridge)
-- PodSandbox create/stop/remove, Container create/start/stop/remove
-- Persistent sandbox store (file-backed JSON survives restart)
-
-### Control plane
-- gRPC API server + agent
-- Network-aware scheduling (image locality scoring)
-- Pull-through cache
-- File-backed persistence
-- Build/push/save/load RPCs in proto v4
-
-### Compose integration
-- **Compose auth** — reads `~/.nimbus/auth.json` for compose pulls; no Docker dependency
-- **Compose volume translation** — docker-compose volume bind mounts translated to proto Mount and wired through executors
-- **Compose build** — `nimbus compose build` invokes native DAG-aware builder
+> **How to use this document**  
+> This file is the single source of truth for what has been built and what must be built next. Each Phase section below contains numbered sub-items with one of these statuses:  
+> -  `🔄 NOT STARTED` — we have not touched this yet.  
+> -  `⏳ IN PROGRESS` — someone is working on it right now (add your name and date).  
+> -  `✅ DONE` — code merged, tests passing, fully integrated.  
+> -  `📝 TODO` — decreed as needed but not yet assigned or scheduled.  
+>
+> When a session ends, update every `⏳ IN PROGRESS` you touched to `✅ DONE` (or back to `🔄 NOT STARTED` if not finished), update the "Last updated" line, and update the test count.
 
 ---
 
-## Gaps vs Docker (what nimbus doesn't do yet)
+## Phase 0 — COMPLETED (Pre-2026-06-09)
 
-| Feature | Docker | Nimbus | Notes |
-|---------|--------|--------|-------|
-| **Build** | `docker build` | ✅ | Native DAG-aware builder with layer caching (SHA256 instruction cache). No Docker needed. |
-| **Tag** | `docker tag` | Not needed | Content-addressed; root digest IS the tag |
-| **Commit** | `docker commit` | ✅ | `nimbusctl commit <id>` — running-container snapshot into DAG via `build_dag_from_directory` |
-| **Diff** | `docker diff` | ✅ | `nimbusctl diff <id>` — added/modified/deleted file listing vs original image tree |
-| **Volume** | `docker volume` | ✅ | Bind mounts via `--volume`/`-v` + compose volumes translation |
-| **Network create** | `docker network` | ✅ | `nimbusctl network create/rm/ls` — user-defined bridge networks with persistent registry |
-| **Login** | `docker login` | ✅ | `nimbusctl login`/`logout` stores in `~/.nimbus/auth.json`, 0600, auto-used by pull/push/compose |
-| **CP** | `docker cp` | ✅ | `nimbusctl cp` via CopyFile RPC with path-escape validation |
-| **Stats** | `docker stats` | ✅ | `nimbusctl stats` via GetWorkloadStats RPC + cgroupfs |
-| **Export/Import** | `docker export/import` | Different | Nimbus has `save`/`load` in DAG-native format |
-| **Info / Version** | `docker info` / `--version` | ✅ | `nimbusctl info` (version, uptime, store, workloads) + `nimbusctl version` |
-| **Secret / Config** | `docker secret` | ✅ | AES-256-GCM encrypted secrets, plain configs; `nimbusctl secret/config create/ls/inspect/rm`; mount via `--secret`/`--config` |
-| **Healthcheck** | HEALTHCHECK | ✅ | Executor::exec() watcher loop + health state machine + `--health-cmd` |
-| **Restart policy** | `--restart` | ✅ | `--restart no|on-failure|always|unless-stopped` with exponential backoff watcher |
-| **Resource limits** | `--memory --cpus` | ✅ | CPU/memory limits + live update via `runc update` + `nimbusctl update --cpu --memory` |
-| **Native build** | Dockerfile → layer cache | ✅ | SHA256 instruction cache in DagBuilder for RUN/COPY/ADD |
-| **Port forwarding** | `-p host:container` | ✅ | Proxy auto-promotes to bridge mode; assigns `10.42.0.1/16` to bridge so kernel has a route to container subnet. Verified: `curl localhost:80` → nginx 200 via proxy |
-| **Multi-node** | Swarm / Compose | ✅ | P2P DAG block sync — Phase 1-3 complete: BlockSync gRPC, mDNS + gossip bloom exchange, SyncPuller, optional Registrar, Prometheus metrics. See `docs/cross-node-dag-sync.md`. |
-| **VM backend** | ❌ (Docker Desktop WSL2 only) | ✅ | Firecracker (Linux KVM) + Apple Virt (macOS) — same OCI image, no rebuild |
-| **Bridge networking** | ✅ | ✅ | veth pairs for containers, TAP for VMs; bridge fix deployed (was silently broken) |
+This section archives everything that existed *before* we started the phased roadmap. It is locked-read-only; do not edit. Every item listed here was completed and merged before this file was created.
+
+### Functionality completed pre-Phase-1
+
+| Feature | Status | Key files / notes |
+|---------|--------|-------------------|
+| Docker CE feature parity | ✅ DONE | All `docker` CLI commands replicated in `pullrun` |
+| `pullrun pull` | ✅ DONE | OCI pull, multi-arch via `--platform` |
+| `pullrun push` | ✅ DONE | DAG-to-OCI layer reconstruction |
+| `pullrun build` | ✅ DONE | DAG-aware Dockerfile builder |
+| `pullrun run/stop/exec/logs/attach` | ✅ DONE | Full workload lifecycle |
+| `pullrun inspect/list` | ✅ DONE | DAG introspection |
+| `pullrun stats` | ✅ DONE | Live cgroupfs CPU/memory |
+| `pullrun update` | ✅ DONE | Live `runc update` for CPU/memory |
+| `pullrun cp` | ✅ DONE | `CopyFile` RPC, host↔container |
+| `pullrun commit` | ✅ DONE | Snapshot running container → DAG layer |
+| `pullrun diff` | ✅ DONE | File-level diff vs original image tree |
+| `pullrun save/load` | ✅ DONE | DAG-native tar export/import |
+| `pullrun secret/config` | ✅ DONE | AES-256-GCM secrets, plain configs, `--secret` / `--config` on run |
+| `pullrun network` | ✅ DONE | User-defined bridge networks, /24 allocation from 10.43.0.0/16 |
+| `pullrun login/logout` | ✅ DONE | Registry auth in `~/.pullrun/auth.json` (0600) |
+| `pullrun compose` | ✅ DONE | `up/down/ps/logs/build`, dependency ordering, per-project bridge isolation |
+| `pullrun info/version` | ✅ DONE | Runtime version, uptime, store stats |
+| Multi-arch pull | ✅ DONE | `--platform`, resolves multi-arch image indexes |
+| Multi-arch build | ✅ DONE | `--platform` + `FROM --platform`, binfmt_misc auto-registration |
+| Multi-arch run | ✅ DONE | Cross-arch via qemu-user-static, auto-registered on daemon start |
+| Manifest list as DAG node | ✅ DONE | `NodeKind::ManifestList`, `build_multi()`, `push_manifest_list()` |
+| Cross-arch push | ✅ DONE | `DagPusher::push()` auto-detects manifest vs manifest list |
+| Health checks | ✅ DONE | `Executor::exec()` watcher, state machine, `--health-cmd` |
+| Restart policies | ✅ DONE | `no/on-failure/always/unless-stopped`, exponential backoff |
+| Volume/bind mounts | ✅ DONE | Proto `Mount`, CLI `--volume`/`-v`, compose volume translation |
+| Bridge networking (single segment) | ✅ DONE | `pullrun-br0` 10.42.0.0/16, veth pairs, TAP for VMs |
+| Userspace TCP/UDP proxy | ✅ DONE | Inbound port mapping, auto-promote to bridge mode |
+| iptables MASQUERADE | ✅ DONE | VM outbound NAT, auto-detect outbound interface |
+| IPAM | ✅ DONE | Atomic allocate/release, 10.42.0.0/16 |
+| DNS proxy | ✅ DONE | `.pullrun.local` records, upstream forwarding |
+| Rootless containers | ✅ DONE | runc + user namespace + pasta/slirp4netns |
+| Firecracker VM backend | ✅ DONE | ext4 rootfs via `mkfs.ext4 -d`, TAP+bridge, `/init` shim |
+| Apple Virt VM backend | ✅ DONE | macOS Virtualization.framework, vsock attach, 3-VM pool |
+| Volume mounts (VirtioFS) | ✅ DONE | Host→VM directory sharing via `VZVirtioFileSystemDeviceConfiguration`. Persistent data across VM restarts. Read-only (`:ro`) support. |
+| Zero-copy DAG store | ✅ DONE | rkyv + memmap2 + DashMap, lock-free reads |
+| LRU in-memory cache (256 MB each) | ✅ DONE | Node cache + blob cache with `VecDeque` LRU |
+| Content-addressed dedup | ✅ DONE | File-level dedup across images, automatic on write |
+| Layer materialization | ✅ DONE | Hardlinks → shared on-disk bytes |
+| P2P DAG block sync (Phases 1-3) | ✅ DONE | BlockSync gRPC, mDNS, gossip bloom exchange, SyncPuller, Registrar |
+| Cosign signature verification | ✅ DONE | Ed25519, per-image, `--require-signature` |
+| SBOM scanning | ✅ DONE | CycloneDX, CVSS gates, license deny list |
+| Policy engine | ✅ DONE | `PolicyEngine::evaluate_for_image()`, signature + SBOM + seccomp |
+| CRI shim | ✅ DONE | RuntimeService + ImageService, `pullrun-container` / `pullrun-vm` RuntimeClass |
+| K8s integration | ✅ DONE | `kubectl exec/attach/port-forward`, PodSandbox + Container lifecycle |
+| Prometheus metrics | ✅ DONE | `/metrics` endpoint, pull rate, workload latency/exit, store size |
+| Grafana dashboard | ✅ DONE | 6 panels, 5 alert rules |
+| K8s manifests | ✅ DONE | DaemonSet, ServiceMonitor, PrometheusRule |
 
 ---
 
-## Architecture notes
+## Phase 1 — Operational Hardening & Performance (Target: 8 weeks)
 
-### Key decisions
-- **No Docker dependency anywhere.** All build/push/save/load, networking, execution are self-contained.
-- **DAG-native save/load format** (`nimbus-nodes/<digest>`, `nimbus-blobs/<digest>`): preserves per-file dedup, faster than OCI tar round-trips. Push to registries reconstructs OCI layers.
-- **Bridge networking for all backends**: containers (veth pairs), VMs (tap devices). Shared IPAM (10.42.0.0/16), same bridge.
-- **Rootless by default**: ext4 via `mkfs.ext4 -d` (no loop-mount), TAP via `ioctl(TUNSETIFF)` (no `ip tuntap add`), containers via runc + user namespace + pasta. Only iptables NAT rules still need root.
-- **PortForward: CRI shim dials workload IP directly** over bridge (10.42.0.0/16). No Rust runtime changes needed.
-- **Materializer applies layers in manifest order** (base → top). Critical: the `.rev()` call that reversed layers was removed, fixing images like nginx:alpine that depend on correct layer ordering.
-- **Use `env PATH=... nimbus-runtime daemon`** when starting via nohup over SSH, because PATH is not inherited over SSH non-interactive sessions.
-- **runc binary check**: `build_image` handler uses `is_file()` not `exists()` to avoid resolving the `/var/lib/nimbus/runc` directory as the binary path.
-- **Bridge creation fix**: `ensure_bridge_exists` now uses `ip link add ... type bridge` and ignores "File exists" errors, instead of `ip link show` which returned exit code 0 for nonexistent bridges. Bridges were silently never created in prior versions.
+> **Goal:** Transform pullrun from a developer tool into a production-grade daemon that can run unattended for months without manual intervention.
 
-### Cross-compilation
+### 1.1 DAG Store Garbage Collection & Pruning
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Implement reference-counted garbage collection for the DAG store to prevent unbounded storage growth. The store currently grows monotonically — every pull, build, commit, and load adds nodes that are never removed.
+
+**Sub-tasks:**
+
+- [ ] Create new crate `runtime/pullrun-gc` with the following core types:
+  - `GcPolicy` enum with variants:
+    - `ReachableOnly` — keep nodes reachable from any tagged image or running workload
+    - `LruBytes(u64)` — evict least-recently-used nodes when total store size exceeds threshold
+    - `TimeBased(Duration)` — remove unreferenced nodes older than TTL
+    - `Hybrid { max_bytes: u64, protect_tags: bool }` — LRU + tag protection (default)
+  - `GarbageCollector` struct with:
+    - `store: Arc<MmapStore>`
+    - `policy: GcPolicy`
+    - `protected: RwLock<HashSet<Digest>>` — roots that must never be collected
+    - `background_interval: Duration` — how often to run (default: 1 hour)
+
+- [ ] Build reachability analysis:
+  - BFS from all protected roots (tagged images → manifests → configs → layers → trees → blobs)
+  - Track visited digests in a `HashSet<Digest>`
+  - Any digest not in the visited set is a candidate for deletion
+
+- [ ] Implement safe deletion:
+  - Remove node files from disk (`<store_root>/aa/bb/.../node.rkyv`)
+  - Remove blob files from disk (`<store_root>/aa/bb/.../blob.raw`)
+  - Evict from in-memory caches (`DashMap::remove`)
+  - Must be atomic: either fully deleted or not touched (no partial state)
+
+- [ ] CLI integration:
+  - `pullrun prune` — manual trigger, respects policy
+  - `pullrun prune --dry-run` — report what would be deleted without deleting
+  - `pullrun prune --force` — ignore policy, delete everything unreachable
+  - Daemon flag `--gc-interval <seconds>` (default: 3600)
+
+- [ ] Daemon background task:
+  - Spawn `tokio::spawn` loop that runs GC at `gc_interval`
+  - Skip if store size is below a threshold (e.g. < 100 MB — no point)
+  - Emit Prometheus metric `pullrun_gc_runs_total` (counter) and `pullrun_gc_freed_bytes` (gauge)
+  - Log at INFO level: freed bytes, nodes removed, duration
+
+- [ ] Tests:
+  - Unit: `GarbageCollector::collect()` on a synthetic store with known orphaned nodes
+  - Unit: verify protected roots are never deleted
+  - Integration: run `pullrun pull`, `pullrun prune --dry-run`, verify no false positives
+  - Integration: run `pullrun pull`, `pullrun stop`, `pullrun prune`, verify orphaned layers are removed
+
+**Tests to add:** 5 Rust unit + 2 integration  
+**Estimated effort:** 2 weeks  
+
+---
+
+### 1.2 Write-Ahead Logging (WAL) for Crash Recovery
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Add a lightweight WAL to `MmapStore` to ensure crash-atomicity of writes. A crash during `put()` or `put_blob()` can leave partially-written files or stale in-memory cache state.
+
+**Sub-tasks:**
+
+- [ ] Create new module `runtime/pullrun-store/src/wal.rs`:
+  - `WriteAheadLog` struct with:
+    - `log_path: PathBuf` (e.g. `<store_root>/.pullrun/wal`)
+    - `pending: Vec<WalEntry>` (buffered entries)
+  - `WalEntry` enum:
+    - `PutNode { digest: Digest, path: PathBuf }`
+    - `PutBlob { digest: Digest, path: PathBuf }`
+    - `Delete { digest: Digest }`
+
+- [ ] WAL write protocol:
+  - Before writing any node or blob: append serialized `WalEntry` to WAL file
+  - `fsync()` the WAL (guarantees durability)
+  - Perform the actual file write (node.rkyv or blob.raw)
+  - After successful write: remove the WAL entry (truncate or mark as committed)
+  - On failure: WAL entry remains, will be replayed on next startup
+
+- [ ] WAL replay on startup:
+  - In `MmapStore::new()`, check if WAL file exists
+  - If yes: replay each uncommitted entry
+    - For `PutNode` / `PutBlob`: re-attempt the write (idempotent — store is content-addressed)
+    - For `Delete`: re-attempt the deletion
+  - After replay: truncate WAL to empty
+  - If replay fails: log FATAL and refuse to start (corruption detected)
+
+- [ ] Performance considerations:
+  - WAL is append-only, not a database log (no LSM tree needed)
+  - Use `std::fs::OpenOptions::append(true)` + `std::os::unix::fs::OpenOptionsExt::sync_all(true)`
+  - Batch frequent small writes: buffer entries for up to 10ms or 1MB, then fsync
+
+- [ ] Tests:
+  - Unit: simulate crash after WAL append but before file write → replay recovers
+  - Unit: simulate crash during file write → replay re-attempts, dedup prevents duplicate
+  - Integration: `SIGKILL` the daemon mid-pull → restart, verify store is consistent
+
+**Tests to add:** 4 Rust unit + 1 integration  
+**Estimated effort:** 1 week  
+
+---
+
+### 1.3 Async I/O & Parallelization for Store Operations
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Replace all blocking file I/O in `MmapStore` with async `tokio::fs` and add batch/parallel operations. Currently some paths (especially in `put_blocking`, `get`) use blocking syscalls inside async contexts, which starves the tokio runtime.
+
+**Sub-tasks:**
+
+- [ ] Audit all blocking I/O in `MmapStore`:
+  - `put_blocking()` → convert to async `put()`
+  - `put_blob_blocking()` → convert to async `put_blob()`
+  - `get()` → the `mmap()` itself is inherently blocking; wrap in `tokio::task::spawn_blocking` or use `tokio::fs::read` for small entries
+  - `get_blob()` → same as above
+
+- [ ] Add batch operations:
+  - `put_batch(nodes: &[DagNode]) -> Vec<Result<Digest, StoreError>>`
+    - Spawns `tokio::spawn` per node for true concurrency
+    - Use `futures::future::join_all` to await
+    - Limit concurrency with `tokio::sync::Semaphore` (default: CPU count)
+  - `get_batch(digests: &[Digest]) -> Vec<Result<Arc<Mmap>, StoreError>>`
+    - Same pattern
+
+- [ ] Replace callers:
+  - `DagBuilder::build()` — parallelize RUN/COPY/ADD layer creation
+  - `OciToDagConverter::convert()` — parallelize layer conversion
+  - `pullrun-runtime/src/service.rs` — async gRPC handlers should not call blocking methods
+
+- [ ] Cache eviction improvements:
+  - Current LRU uses `VecDeque` + `Mutex`, which serializes all cache ops
+  - Consider `dashmap` for LRU head tracking, or replace with `schnellru` / `lru` crate (tested, proven)
+  - Goal: `get()` should be lock-free in the hot path ( DashMap hit )
+
+- [ ] Tests:
+  - Benchmark: `put_batch` vs serial `put` for 100 nodes (expect 3-5x speedup on SSD)
+  - Benchmark: `get_batch` vs serial `get` for 100 digests
+  - Stress test: 1000 concurrent `get()` calls on same digest (no deadlock, no cache corruption)
+
+**Tests to add:** 3 Rust unit + 2 benchmark  
+**Estimated effort:** 1 week  
+
+---
+
+### 1.4 NFTables/iptables Abstraction & Rootless Networking Completion
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+The current networking code hardcodes `iptables` for NAT and forwarding. This requires root for NAT and is incompatible with modern distros moving to `nftables` (Fedora, RHEL, Debian-testing). We need a pluggable `NetBackend` trait plus a true rootless fallback.
+
+**Sub-tasks:**
+
+- [ ] Create new module `runtime/pullrun-net/src/backend.rs`:
+  - `NetBackend` trait (async_trait):
+    - `setup_masquerade(subnet: &str, bridge: &str) -> Result<(), NetError>`
+    - `add_forward_rule(from: &str, to: &str, port: u16) -> Result<String, NetError>` (returns rule ID)
+    - `remove_rule(rule_id: &str) -> Result<(), NetError>`
+    - `list_rules() -> Result<Vec<Rule>, NetError>`
+
+- [ ] Implement backends:
+  - `IptablesBackend` — current behavior, extracted from `container.rs`
+  - `NftablesBackend` — uses `nft` CLI with equivalent rules (handle both `nftables` and `iptables-nft`)
+  - `RootlessBackend` — no iptables/nftables at all; relies on `pasta` / `slirp4netns` for everything (NAT, port forwarding resolved via socket activation)
+
+- [ ] Auto-detection on daemon startup:
+  - Check `which iptables` → if present and works, use `IptablesBackend`
+  - Else check `which nft` → if present, use `NftablesBackend`
+  - Else if EUID != 0, try `RootlessBackend` (requires `pasta` or `slirp4netns`)
+  - If none available: log warning, run in loopback-only mode (no outbound NAT, no port forwarding)
+
+- [ ] Rootless TAP creation:
+  - Already partially working: `ioctl(TUNSETIFF)` on `/dev/net/tun` with `cap_net_admin`
+  - Ensure `setcap cap_net_admin=eip` is documented and tested in CI
+  - Bridge creation still needs `CAP_NET_ADMIN`; document that `pasta` can replace bridge for rootless
+
+- [ ] Tests:
+  - Unit: each backend produces equivalent iptables/nftables rules for same input
+  - Integration: start daemon with each backend, verify VM can reach internet (outbound NAT)
+  - Integration: rootless mode — start daemon as non-root, verify `pullrun run` works
+
+**Tests to add:** 4 Rust unit + 3 integration  
+**Estimated effort:** 2 weeks  
+
+### Phase 1 Summary
+
+| Sub-task | Status | Effort | Tests | Entry point |
+|----------|--------|--------|-------|-------------|
+| 1.1 DAG GC | `🔄 NOT STARTED` | 2 wks | 5 + 2 | `runtime/pullrun-gc` |
+| 1.2 WAL | `🔄 NOT STARTED` | 1 wk | 4 + 1 | `runtime/pullrun-store/src/wal.rs` |
+| 1.3 Async I/O | `🔄 NOT STARTED` | 1 wk | 3 + 2 | `runtime/pullrun-store/src/store.rs` |
+| 1.4 Net backends | `🔄 NOT STARTED` | 2 wks | 4 + 3 | `runtime/pullrun-net/src/backend.rs` |
+| **Total** | | **6 wks** | **16 + 8 = 24** | |
+
+**Definition of done for Phase 1:**
+- `pullrun prune` works and is documented
+- Daemon survives simulated `kill -9` and restarts cleanly (WAL replay)
+- `cargo test --workspace` passes with new tests added
+- Rootless mode works on Linux without root (documented, not experimental)
+
+---
+
+## Phase 2 — Enterprise Readiness (Target: 10 weeks)
+
+> **Goal:** Make pullrun deployable in regulated, multi-team Kubernetes environments with standard operational tooling.
+
+### 2.1 CNI Plugin Mode
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Package the pullrun network stack as a CNI plugin binary (`pullrun-cni`) that can be dropped into any Kubernetes cluster. Currently pullrun networking works for direct-mode workloads but is not a CNI plugin — kubelet cannot delegate to it.
+
+**Sub-tasks:**
+
+- [ ] Create new crate `runtime/pullrun-cni`:
+  - Binary target: `pullrun-cni` (installed to `/opt/cni/bin/`)
+  - Reads CNI config from stdin (JSON per CNI spec)
+  - Config file location: `/etc/cni/net.d/10-pullrun.conf`
+  - Communicates with `pullrun-runtime` gRPC over UDS at `/var/run/pullrun/pullrun-cni.sock`
+
+- [ ] CNI ADD flow:
+  1. `pullrun-cni` invoked by kubelet/cni with env vars `CNI_COMMAND=ADD`, `CNI_CONTAINERID`, `CNI_NETNS`
+  2. Parse CNI config JSON, extract `name` (network name), `runtimeSocket` (optional)
+  3. gRPC `CniAddRequest { container_id, netns_path, network_name }` to runtime
+  4. Runtime: IPAM allocation for this network namespace → create veth pair → move one end into netns → attach other to bridge → return `CniAddResult`
+  5. `pullrun-cni` returns standard CNI result JSON: `{ "cniVersion": "1.0.0", "ips": [...], "routes": [...] }`
+
+- [ ] CNI DEL flow:
+  1. `CNI_COMMAND=DEL` → gRPC `CniDelRequest { container_id }`
+  2. Runtime: delete veth pair, release IPAM, clean up any iptables/nftables rules
+  3. Return empty success JSON
+
+- [ ] CNI CHECK flow (optional, CNI spec v1.0):
+  - Verify the container's network state matches what was configured
+  - If mismatch, return error so kubelet can restart the pod
+
+- [ ] Packaging:
+  - Default CNI config template in `deploy/cni/10-pullrun.conf`
+  - Helm chart / DaemonSet that installs `pullrun-cni` and the config
+  - Tested with `kind` (Kubernetes in Docker) and `k3s`
+
+- [ ] Tests:
+  - Unit: parse CNI input JSON correctly
+  - Integration: `kind` cluster with pullrun CNI, verify pod-to-pod communication
+  - Integration: `kubectl exec` into pod, verify network is functional
+
+**Tests to add:** 3 Rust unit + 3 integration (kind cluster)  
+**Estimated effort:** 3 weeks  
+
+---
+
+### 2.2 Multi-Tenant Workload Namespaces
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Add a `Namespace` concept to isolate workloads, networks, and resources per team/project. Currently everything shares the global `pullrun-br0` and single IPAM pool — no multi-tenancy.
+
+**Sub-tasks:**
+
+- [ ] Proto additions (`proto/pullrun/runtime.proto`):
+  - `message Namespace { string name; map<string, string> labels; NetworkConfig network; bytes resource_quota; }`
+  - Add `string namespace = 1;` to `RunRequest`, `ListWorkloadsRequest`, etc.
+  - New RPCs: `CreateNamespace`, `DeleteNamespace`, `ListNamespaces`
+
+- [ ] Store schema:
+  - Namespaces are lightweight metadata, not DAG nodes
+  - Store in JSON files: `<store_root>/namespaces/<name>.json`
+  - Fields: `name`, `created_at`, `subnet`, `labels`, `resource_quota`
+
+- [ ] Network isolation:
+  - Each namespace gets its own bridge (e.g. `pullrun-br-<namespace>`) or VLAN-tagged veths on a shared bridge
+  - IPAM per namespace: allocate a /24 from a configurable supernet (default 10.43.0.0/16)
+  - Cross-namespace traffic: denied by default, can be allowed via `NetworkPolicy`-like rules (v2.3)
+
+- [ ] Resource quotas:
+  - `ResourceQuota` message: max_cpu_millicores, max_memory_bytes, max_workloads, max_storage_bytes
+  - Enforced at `RunWorkload` time: reject if quota would be exceeded
+  - Periodically enforced (e.g. kill lowest-priority workload if over quota)
+
+- [ ] CLI integration:
+  - `pullrun namespace create <name> [--subnet <CIDR>] [--cpu <mcores>] [--memory <bytes>]`
+  - `pullrun namespace rm <name>` (fails if workloads still running)
+  - `pullrun namespace ls`
+  - `--namespace <name>` flag on all workload commands (default: `default`)
+
+- [ ] Tests:
+  - Unit: namespace creation / deletion
+  - Unit: quota enforcement (reject over-quota workload)
+  - Integration: two namespaces, verify workloads cannot communicate (unless allowed)
+  - Integration: delete namespace with running workloads → error
+
+**Tests to add:** 5 Rust unit + 3 integration  
+**Estimated effort:** 2 weeks  
+
+---
+
+### 2.3 Workload Quotas & Resource Accounting (Cgroups v2)
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Replace the current `runc` resource limit integration with direct cgroups v2 control for finer-grained and more reliable enforcement. Currently limits are passed to `runc` which writes cgroups; we want to own the cgroup hierarchy.
+
+**Sub-tasks:**
+
+- [ ] Create new module `runtime/pullrun-exec/src/cgroups.rs`:
+  - `CgroupManager` struct with methods:
+    - `create_cgroup(path: &Path, spec: &ResourceQuota) -> Result<(), ExecError>`
+    - `apply_limits(path: &Path, spec: &ResourceQuota) -> Result<(), ExecError>`
+    - `read_stats(path: &Path) -> Result<WorkloadStats, ExecError>`
+    - `destroy_cgroup(path: &Path) -> Result<(), ExecError>`
+
+- [ ] Cgroups v2 files to manage:
+  - `cpu.max` — CPU quota/period (e.g. "500000 1000000" = 0.5 cores)
+  - `cpu.weight` — CPU weight (1-10000)
+  - `memory.max` — hard memory limit
+  - `memory.high` — throttling threshold (soft limit)
+  - `memory.swap.max` — swap limit
+  - `pids.max` — max processes
+  - `io.weight` — I/O weight
+
+- [ ] Integration with `LinuxContainerExecutor`:
+  - Before `runc create`: create cgroup at `/sys/fs/cgroup/pullrun/<namespace>/<workload_id>`
+  - Pass `--cgroup-path` to runc so it does not try to create its own
+  - After `runc delete`: destroy the cgroup
+
+- [ ] Integration with `pullrun-exec/src/types.rs`:
+  - Extend `WorkloadSpec` with `ResourceQuota` field
+  - `pullrun run --cpu-shares`, `--cpu-quota`, `--io-weight`, `--pids-limit`
+
+- [ ] Prometheus metrics:
+  - `pullrun_cgroup_cpu_usage_seconds_total` — per workload
+  - `pullrun_cgroup_memory_usage_bytes` — per workload
+  - `pullrun_cgroup_oom_events_total` — counter of OOM kills
+
+- [ ] Tests:
+  - Unit: write/read cgroups v2 files, verify parsing
+  - Integration: run `stress` workload with `--memory 100M`, verify killed at ~100M
+  - Integration: run CPU-bound workload with `--cpu-quota 50%`, verify throttling in cgroup stats
+
+**Tests to add:** 4 Rust unit + 2 integration  
+**Estimated effort:** 2 weeks  
+
+---
+
+### 2.4 External Secret Vault Integration
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Replace the monolithic `SecretStore` with a pluggable `SecretProvider` trait so secrets can live in external vaults (HashiCorp Vault, AWS Secrets Manager, Kubernetes secrets) rather than the local AES-256-GCM store.
+
+**Sub-tasks:**
+
+- [ ] Create new trait in `runtime/pullrun-policy/src/secrets.rs`:
+  ```rust
+  #[async_trait]
+  pub trait SecretProvider: Send + Sync {
+      async fn get(&self, name: &str) -> Result<Vec<u8>, SecretError>;
+      async fn put(&self, name: &str, value: &[u8]) -> Result<(), SecretError>;
+      async fn delete(&self, name: &str) -> Result<(), SecretError>;
+      async fn list(&self) -> Result<Vec<String>, SecretError>;
+  }
+  ```
+
+- [ ] Implement providers:
+  - `FileSecretProvider` — current AES-256-GCM implementation (default, backward compatible)
+  - `HashicorpVaultProvider` — HTTP API to Vault KV v2
+  - `KubernetesSecretProvider` — K8s API (`kubectl`-less, uses in-cluster service account)
+  - `AwsSecretsManagerProvider` — AWS SDK v2 (optional feature flag)
+
+- [ ] Mount semantics (unchanged):
+  - At workload creation: `SecretProvider::get(name)` → write to tmpfs at `/run/secrets/<name>`
+  - On workload stop: unmount and delete tmpfs
+  - No change to container interface — only the source changes
+
+- [ ] Configuration:
+  - Runtime flag: `--secret-provider <type> [--secret-provider-url <url>] [--secret-provider-auth <method>]`
+  - Per-namespace override: namespace config can specify its own vault provider provider per provider
+
+- [ ] Tests:
+  - Unit: `FileSecretProvider` roundtrip (encrypt/decrypt, list, delete)
+  - Integration with `vault` dev server (HashiCorp Vault in dev mode)
+  - Mock provider for unit tests of `SecretProvider` trait
+
+**Tests to add:** 4 Rust unit + 2 integration  
+**Estimated effort:** 2 weeks  
+
+### Phase 2 Summary
+
+| Sub-task | Status | Effort | Tests | Entry point |
+|----------|--------|--------|-------|-------------|
+| 2.1 CNI plugin | `🔄 NOT STARTED` | 3 wks | 3 + 3 | `runtime/pullrun-cni` |
+| 2.2 Namespaces | `🔄 NOT STARTED` | 2 wks | 5 + 3 | `runtime/pullrun-runtime/src/namespace.rs` |
+| 2.3 Cgroups v2 | `🔄 NOT STARTED` | 2 wks | 4 + 2 | `runtime/pullrun-exec/src/cgroups.rs` |
+| 2.4 Secret vaults | `🔄 NOT STARTED` | 2 wks | 4 + 2 | `runtime/pullrun-policy/src/secrets.rs` |
+| **Total** | | **9 wks** | **16 + 10 = 26** | |
+
+**Definition of done for Phase 2:**
+- `kind` cluster with pullrun CNI, pods can communicate
+- Two namespaces cannot see each other's workloads (unless explicitly allowed)
+- Workload killed at cgroup memory limit (no silent OOM)
+- Secrets can be stored in HashiCorp Vault and read at runtime
+
+---
+
+## Phase 3 — Cloud-Native Differentiation (Target: 14 weeks)
+
+> **Goal:** Build features that no existing container platform (Docker, containerd, K8s) offers, making pullrun the clear choice for specific high-value use cases.
+
+### 3.1 Live Migration for VM Workloads
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Expose Firecracker's snapshot/restore capability through pullrun to enable zero-downtime workload migration across nodes. This is only possible with the VM backend (containers cannot be live-migrated).
+
+**Sub-tasks:**
+
+- [ ] Extend `Executor` trait:
+  ```rust
+  #[async_trait]
+  pub trait VmExecutor: Executor {
+      async fn snapshot(&self, id: &str, path: &Path) -> Result<(), ExecError>;
+      async fn restore(&self, path: &Path) -> Result<ProcessHandle, ExecError>;
+      async fn migrate(&self, id: &str, target: &str) -> Result<(), ExecError>;
+  }
+  ```
+
+- [ ] Snapshot implementation:
+  - Use Firecracker's `PUT /snapshot/create` API
+  - Output: `snapshot.mem` + `snapshot.vmstate` files
+  - These are just blobs — store them in the DAG store (!) as a single `Snapshot` node
+  - Content-addressed snapshot = can be block-synced to target node automatically
+
+- [ ] Restore implementation:
+  - Target node: download snapshot via P2P sync (same blob sync already built)
+  - Use Firecracker's `PUT /snapshot/load` API
+  - VM resumes from exact memory state and disk state
+
+- [ ] Migration orchestration:
+  - `pullrun migrate <id> --to <target_node>`
+  - Source: `snapshot()` → upload to target via sync
+  - Target: `restore()` → start VM
+  - Update network endpoint: new IP (or same IP if using shared storage for MAC persistence)
+  - Gracefully redirect traffic (via proxy or DNS update)
+  - Source: `stop()` and cleanup
+
+- [ ] Caveats and constraints:
+  - Guest kernel must have `CONFIG_KVM_GUEST` and migration-aware drivers
+  - Source and target must have same CPU architecture (x86→x86, arm64→arm64)
+  - Network state (TCP connections) is NOT preserved — clients must reconnect (document this)
+  - Best for stateless or checkpoint-friendly workloads
+
+- [ ] Tests:
+  - Integration: create VM workload, take snapshot, restore on same node, verify state preserved
+  - Integration: two-node test, migrate workload, verify it runs on target
+  - Stress: rapid snapshot/restore cycles (100x), verify no memory leaks
+
+**Tests to add:** 2 Rust unit + 4 integration  
+**Estimated effort:** 4 weeks  
+
+---
+
+### 3.2 WebAssembly (WASM) Executor Backend
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+Add a WASM executor as a third backend alongside containers and VMs. WASM modules start in <10ms, have near-native performance for compute, and provide stronger sandboxing than containers (memory-safe, no shared kernel).
+
+**Sub-tasks:**
+
+- [ ] Create new crate `runtime/pullrun-wasm`:
+  - Depends on `wasmtime` (JIT compiler, not interpreter — performance)
+  - `WasmExecutor` struct implementing `Executor`
+  - `WasiContext` for system interface (filesystem, network, clocks)
+
+- [ ] OCI image → WASM module conversion:
+  - Detect when an image contains a `.wasm` file (or an OCI artifact with `application/wasm` media type)
+  - Materialize WASM module from DAG blob directly into `wasmtime` memory (no disk write needed)
+
+- [ ] WASI integration:
+  - Map workload `command` to WASM module entry point
+  - Environment variables → WASI env
+  - Volume mounts → WASI preopened directories
+  - Network → WASI sockets (TCP/UDP via wasmtime-wasi)
+  - stdin/stdout/stderr → WASI stdio (already mapped to gRPC streams)
+
+- [ ] Resource limits:
+  - `wasmtime` fuel metering for CPU limiting
+  - Memory limit via `wasmtime::Config::memory_limit`
+  - No cgroup needed (WASM is already sandboxed)
+
+- [ ] Security:
+  - Capabilities model: explicitly allow filesystem, network, env access per workload
+  - Disallow `wasi-nn`, `wasi-crypto` unless explicitly enabled (supply-chain risk)
+
+- [ ] CLI integration:
+  - `pullrun run <image> --backend wasm` (auto-detects if image contains `.wasm`)
+  - `pullrun build --target wasm32-wasi` (if/when we add WASM build targets)
+
+- [ ] Tests:
+  - Unit: `WasmExecutor::create()` with a simple "hello world" WASM module
+  - Integration: run `wasmtime` hello-world, verify stdout captured
+  - Integration: run WASI HTTP server in WASM, verify port mapping works
+  - Performance: benchmark startup time vs container vs VM
+
+**Tests to add:** 4 Rust unit + 3 integration  
+**Estimated effort:** 3 weeks  
+
+---
+
+### 3.3 Greenland Mode (Event-Driven Serverless)
+
+**Status:** `🔄 NOT STARTED`  
+**Owner:** —  
+**Started:** —  
+**Completed:** —  
+
+**What to build:**
+
+A serverless function platform on top of pullrun. Workloads are started on-demand in response to events (HTTP, message queue, cron) and scaled to zero when idle. This is a new layer above the existing runtime, not a replacement.
+
+**Sub-tasks:**
+
+- [ ] Create new crate `runtime/pullrun-greenland` (or module in `pullrun-runtime`):
+  - `FunctionController` struct:
+    - `triggers: Vec<Trigger>`
+    - `scaling: ScalingPolicy`
+    - `warm_pool: HashMap<String, Vec<ProcessHandle>>` — idle instances kept alive
+  - `Trigger` enum:
+    - `Http { path: String, method: String, port: u16 }`
+    - `Queue { topic: String, broker: String, consumer_group: String }`
+    - `Cron { schedule: String, timezone: String }`
+    - `Webhook { url: String, secret: String }`
+
+- [ ] Event ingestion:
+  - HTTP: embed `axum` router in `pullrun-greenland`, route by path prefix to function
+  - Queue: use `rdkafka` or equivalent to consume from Kafka, NATS, etc.
+  - Cron: use `tokio::time::interval` + `cron-parser` crate
+  - Webhook: `axum` route with HMAC verification
+
+- [ ] Scaling logic:
+  - `ColdStart` — no idle instances, create from DAG (slow, 400ms-4s depending on backend)
+  - `WarmStart` — reuse idle instance from warm pool (fast, <50ms for WASM, <200ms for container)
+  - `ScaleToZero` — after `idle_timeout` (default 5 min), stop instance, keep only DAG root
+  - `ConcurrencyLimit` — max concurrent invocations per function (default: 100)
+
+- [ ] Request routing:
+  - Event arrives → find matching `Trigger` → lookup function image (DAG root digest)
+  - Check warm pool for that function:
+    - Match available → route request, mark instance as "busy"
+    - No match → cold-start from DAG materialization
+  - Return response (for HTTP) or ack (for queue)
+
+- [ ] Billing / metering (optional but valuable):
+  - Track per-function: invocation count, cold-start count, total CPU ms, total memory GB-seconds
+  - Export as Prometheus metrics or to external billing system
+
+- [ ] CLI integration:
+  - `pullrun function create <name> --image <ref> --trigger http --path /api/hello`
+  - `pullrun function ls`
+  - `pullrun function invoke <name> --data '{"key":"value"}'`
+  - `pullrun function scale <name> --min 2 --max 10`
+
+- [ ] Tests:
+  - Integration: create function, invoke via HTTP, verify response
+  - Integration: invoke 1000 times rapidly, verify warm pool sizing
+  - Integration: wait for idle timeout, verify scale-to-zero, next call is cold start
+  - Integration: queue trigger — publish to Kafka topic, verify function executes
+
+**Tests to add:** 3 Rust unit + 4 integration  
+**Estimated effort:** 6 weeks  
+
+### Phase 3 Summary
+
+| Sub-task | Status | Effort | Tests | Entry point |
+|----------|--------|--------|-------|-------------|
+| 3.1 Live migration | `🔄 NOT STARTED` | 4 wks | 2 + 4 | `runtime/pullrun-vm/src/snapshot.rs` |
+| 3.2 WASM executor | `🔄 NOT STARTED` | 3 wks | 4 + 3 | `runtime/pullrun-wasm` |
+| 3.3 Serverless mode | `🔄 NOT STARTED` | 6 wks | 3 + 4 | `runtime/pullrun-greenland` |
+| **Total** | | **13 wks** | **9 + 11 = 20** | |
+
+**Definition of done for Phase 3:**
+- VM workload can be migrated between two nodes with `pullrun migrate`
+- WASM workload runs with `--backend wasm`, starts in <50ms
+- HTTP function deployed via `pullrun function create`, auto-scales to zero, scales back on request
+
+---
+
+## Global Test Ledger
+
+Track the test count here. Update after every merge.
+
+| Date | Rust unit | Rust integ | Go unit | Total |
+|------|-----------|------------|---------|-------|
+| 2026-06-09 (baseline) | 118 | 8 | 9 | 135 |
+| After Phase 1.1 | +5 | +2 | — | +7 |
+| After Phase 1.2 | +4 | +1 | — | +5 |
+| After Phase 1.3 | +3 | +2 (bench) | — | +5 |
+| After Phase 1.4 | +4 | +3 | — | +7 |
+| After Phase 2.1 | +3 | +3 | — | +6 |
+| After Phase 2.2 | +5 | +3 | — | +8 |
+| After Phase 2.3 | +4 | +2 | — | +6 |
+| After Phase 2.4 | +4 | +2 | — | +6 |
+| After Phase 3.1 | +2 | +4 | — | +6 |
+| After Phase 3.2 | +4 | +3 | — | +7 |
+| After Phase 3.3 | +3 | +4 | — | +7 |
+| **Projected total** | **148** | **31** | **9** | **188** |
+
+---
+
+## Session-to-Session Handoff Checklist
+
+When a session ends and you need to resume later, ensure:
+
+1. [ ] Every `⏳ IN PROGRESS` section is updated to `✅ DONE` (if completed) or back to `🔄 NOT STARTED` (if incomplete)
+2. [ ] The "Last updated" field at the top of this file is set to today's date
+3. [ ] The test count in the **Global Test Ledger** is updated
+4. [ ] Any new findings, blockers, or changes in scope are noted in the affected sub-tasks as blockquotes:
+   > **Blocker discovered:** `rkyv` v0.8 breaks archive format; must pin v0.7 or upgrade before Phase 3.2
+5. [ ] Commit this file: `git add PROGRESS.md && git commit -m "docs: update progress after <work-done>"`
+
+---
+
+## Appendix: Quick Reference
+
+### Running the project
 ```bash
-docker run --platform linux/amd64 \
-  -v /Users/YACINE/nimbus:/nimbus -w /nimbus \
-  rust:latest bash -c 'apt-get update -qq && apt-get install -y -qq protobuf-compiler && cargo build --release -p nimbus-runtime'
+# Full workspace test (baseline: 126 Rust + 9 Go)
+cargo test --workspace
+go test ./cli/pullrun/...
+
+# Build everything
+make build
+
+# Start the daemon
+make run-runtime
+# or
+cargo run -p pullrun-runtime -- daemon --socket /tmp/pullrun.sock
+
+# Build the CLI
+make build-go
 ```
-Go CLI cross-compile: `GOOS=linux GOARCH=amd64 go build -o nimbusctl-linux ./cli/nimbusctl/`
 
-### Test status
-```bash
-cargo test --workspace   # 113 Rust tests (all pass)
-go test ./cli/nimbusctl/...   # 9 Go tests
+### Useful file paths
+```
+Runtime entry:          runtime/pullrun-runtime/src/main.rs
+Store core:             runtime/pullrun-store/src/store.rs
+Executor trait:         runtime/pullrun-exec/src/types.rs
+Networking:             runtime/pullrun-net/src/
+Sync (P2P):             runtime/pullrun-sync/src/
+Policy:                 runtime/pullrun-policy/src/
+CLI:                    cli/pullrun/
+Protos:                 proto/pullrun/runtime.proto
+Deploy manifests:       deploy/
 ```
 
----
-
-### Manifest list as first-class DAG node — ✅ implemented
-
-**Changes:** `NodeKind::ManifestList` added to `nimbus-store`. `OciPuller::pull_all()` fetches all platforms from a multi-arch index. `OciToDagConverter::convert_list()` converts each platform to DAG and creates a `ManifestList` node with edges to each manifest. `DagBuilder::build_multi()` builds an image for N platforms and stitches a manifest list. `DagPusher::push_manifest_list()` walks the DAG, pushes each platform's layers/config/manifest, then pushes the OCI image index at the requested tag. `DagPusher::push()` auto-detects whether the root is a single manifest or a manifest list and dispatches accordingly.
-
-All 126 Rust + 9 Go tests pass.
-
-## Next steps — Docker gaps (all CE, no EE required)
-
-### ✅ Manifest list — implemented
-
-- `NodeKind::ManifestList` → `OciPuller::pull_all()` → `OciToDagConverter::convert_list()` → manifest list DAG node
-- `DagBuilder::build_multi()` builds N platforms, stitches manifest list
-- `DagPusher::push_manifest_list()` walks DAG, pushes all platforms + image index
-- `DagPusher::push()` auto-detects manifest vs manifest list
-- Shared store means cross-arch layer dedup is **free** — BuildKit requires remote cache config
-
-### Additional improvements
-
-- **Push auth test** — Deploy local `registry:2` on server, verify `push` + `pull` round-trip with auth.
-- **Port mapping syntax** — Add `--publish host:container` (e.g. `-p 8080:80`) to complement `--allow-inbound hostPort`.
-- **Disk management** — GC / prune policies: delete old bundles, evict least-recently-used images from DAG store, clean runc container state.
-
-### ✅ Cross-node DAG block sync (Phase 1-3 complete)
-
-**Key insight:** The DAG is already content-addressed (SHA256). Every blob has a unique address derived from its content. This makes P2P block distribution trivial — content-addressed BitTorrent for OCI/DAG blobs.
-
-**Not a Swarm clone.** No control plane reimplementation. No scheduler. No DNS. No consensus. Nimbus already has Kubernetes CRI integration (`nimbus-container`, `nimbus-vm` RuntimeClasses). The missing piece is **cross-node image distribution** — and the DAG makes it dramatically cheaper than Docker/K8s.
-
-| Approach | Pull N images across M nodes |
-|----------|-----------------------------|
-| Docker/K8s (per-node registry pull) | N × M full pulls |
-| BuildKit with remote cache | N × M layer pulls (cache hits help) |
-| **Nimbus DAG block sync** | 1 full pull + (M−1) delta syncs |
-
-**Implementation:** `BlockSync` gRPC service (HaveBlobs/GetBlobs/SyncBlobs), mDNS discovery (UDP multicast), gossip-based bloom filter exchange (BloomGossip + PeerBloomCache, 60s/5min TTL), SyncPuller (peer→local→registry blob resolution), optional Registrar gRPC service (--registrar-addr, --registrar-connect), Prometheus metrics (bytes sent/received, blob requests, peer count). Wired into daemon start-up and `PullImage` handler. 126 Rust + 9 Go tests passing.
-
-See `docs/cross-node-dag-sync.md` for the full design.
+### Key design decisions to preserve
+1. **Zero-copy store**: All reads via `rkyv::archived_root()` + `memmap2::Mmap`; never deserialize on hot path
+2. **Content-addressing**: File names are SHA256 digests; dedup is automatic
+3. **No Docker/containerd dependency**: All build/pull/run/network/exec are self-contained
+4. **Language split**: Rust = data plane (performance, zero-copy, async); Go = control plane (CLI, gRPC stubs, CRI)
+5. **Bridge networking for all backends**: Containers (veth), VMs (TAP), same L2 segment, same IPAM pool

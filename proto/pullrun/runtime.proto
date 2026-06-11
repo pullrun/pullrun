@@ -1,0 +1,812 @@
+syntax = "proto3";
+package pullrun.runtime;
+option go_package = "pullrun/protoapi/pullrun/runtime;runtime";
+
+service Runtime {
+    rpc PullImage(PullImageRequest) returns (PullImageResponse);
+    rpc RunWorkload(RunRequest) returns (RunResponse);
+    rpc StopWorkload(StopRequest) returns (StopResponse);
+    rpc GetWorkload(GetWorkloadRequest) returns (WorkloadStatus);
+    rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
+    rpc StreamLogs(StreamLogsRequest) returns (stream LogChunk);
+    rpc StreamEvents(StreamEventsRequest) returns (stream Event);
+    rpc ExecInWorkload(ExecRequest) returns (ExecResponse);
+    rpc InspectWorkload(InspectRequest) returns (InspectResponse);
+    // Interactive attach to a workload's stdio. The first request
+    // opens the stream; subsequent messages carry stdin/eof
+    // (client -> server) and stdout/stderr/exit (server -> client).
+    // Used by `pullrun workload run alpine:3.18 -- /bin/sh` and
+    // similar interactive workloads on microVM backends.
+    rpc AttachWorkload(stream AttachMessage) returns (stream AttachMessage);
+
+    // --- CRI support RPCs (Phase A) ---
+
+    // Image management
+    rpc HasImage(HasImageRequest) returns (HasImageResponse);
+    rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+    rpc RemoveImage(RemoveImageRequest) returns (RemoveImageResponse);
+    rpc DagStoreInfo(DagStoreInfoRequest) returns (DagStoreInfoResponse);
+
+    // Port forwarding
+    rpc PortForward(PortForwardRequest) returns (stream PortForwardData);
+
+    // Workload resource updates
+    rpc UpdateWorkload(UpdateWorkloadRequest) returns (UpdateWorkloadResponse);
+
+    // Workload statistics
+    rpc GetWorkloadStats(GetWorkloadStatsRequest) returns (WorkloadStats);
+
+    // --- Image build/push/save/load (Phase D) ---
+
+    // Build an OCI image from a Dockerfile and import into the
+    // DAG store. v0 delegates to `docker build` + `PullImage`.
+    rpc BuildImage(BuildImageRequest) returns (BuildImageResponse);
+
+    // Push a DAG image to an OCI-compatible registry. Walks the
+    // DAG root, reconstructs OCI tar.gz layers from file blobs,
+    // computes OCI digests, and uploads the config + manifest.
+    rpc PushImage(PushImageRequest) returns (PushImageResponse);
+
+    // Export a DAG root as a tar archive. The archive contains
+    // the serialized DAG nodes and their blob data, suitable for
+    // backup or transfer. Streamed so large images don't require
+    // a single in-memory buffer on the server.
+    rpc ExportImage(ExportImageRequest) returns (stream ExportImageChunk);
+
+    // Import a tar archive previously exported via ExportImage.
+    // Nodes are deduplicated against existing content in the
+    // store (content-addressed). Returns the root digest and
+    // storage statistics.
+    rpc ImportImage(stream ImportImageChunk) returns (ImportImageResponse);
+
+    // --- Compose support (Phase D) ---
+
+    // Batch-launch multiple services from a Compose project.
+    // Services are created in dependency order (depends_on).
+    // On first failure, returns the error; already-started
+    // workloads are NOT automatically stopped (the client
+    // should call StopWorkload for rollback).
+    rpc RunCompose(RunComposeRequest) returns (RunComposeResponse);
+
+    // Copy a file into or out of a running workload (docker cp equivalent).
+    // Direction "out": reads a file from the container's rootfs and returns
+    // its content. Direction "in": writes content into the container's rootfs.
+    rpc CopyFile(CopyFileRequest) returns (CopyFileResponse);
+
+    // --- Commit / Diff (Gap 2) ---
+
+    // Commit a running workload as a new image layer (docker commit equivalent).
+    // Walks the container rootfs, creates new DAG tree/layer/manifest nodes,
+    // and stores the result in the DAG store. The new image inherits the
+    // original image's entrypoint, cmd, env, and working dir.
+    rpc CommitImage(CommitImageRequest) returns (CommitImageResponse);
+
+    // Diff a running workload against its original image (docker diff equivalent).
+    // Returns lists of files that were added, modified, or deleted.
+    rpc DiffWorkload(DiffRequest) returns (DiffResponse);
+
+    // --- Info / Version (Gap 3) ---
+
+    // Return runtime info: version, uptime, store statistics, workload counts.
+    rpc RuntimeInfo(InfoRequest) returns (InfoResponse);
+
+    // --- Network management (Gap 4) ---
+
+    // Create a user-defined bridge network (docker network create equivalent).
+    // Creates a Linux bridge device and registers it in the runtime's network
+    // registry. Workloads can attach by setting bridge_name on RunRequest.
+    rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse);
+
+    // Remove a user-defined bridge network. Deletes the Linux bridge device.
+    rpc RemoveNetwork(RemoveNetworkRequest) returns (RemoveNetworkResponse);
+
+    // List all registered networks.
+    rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse);
+
+    // Prune removes stopped workloads, stale bundles, and temporary
+    // materialized rootfs directories to reclaim disk space.
+    rpc Prune(PruneRequest) returns (PruneResponse);
+
+    // --- Secret / Config management (docker secret/config equivalent) ---
+
+    // Secret CRUD.
+    rpc CreateSecret(CreateSecretRequest) returns (CreateSecretResponse);
+    rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse);
+    rpc InspectSecret(InspectSecretRequest) returns (InspectSecretResponse);
+    rpc RemoveSecret(RemoveSecretRequest) returns (RemoveSecretResponse);
+
+    // Config CRUD (identical shape to secrets, stored unencrypted).
+    rpc CreateConfig(CreateConfigRequest) returns (CreateConfigResponse);
+    rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse);
+    rpc InspectConfig(InspectConfigRequest) returns (InspectConfigResponse);
+    rpc RemoveConfig(RemoveConfigRequest) returns (RemoveConfigResponse);
+}
+
+// --- Compose messages (Phase D) ---
+
+message Mount {
+    string type = 1;     // "bind", "volume", "tmpfs"
+    string source = 2;   // host path or volume name
+    string destination = 3; // container path
+    repeated string options = 4; // e.g. ["rbind", "ro", "nosuid"]
+}
+
+message ComposeService {
+    string name = 1;
+    string image = 2;
+    repeated string command = 3;
+    map<string, string> environment = 4;
+    repeated ComposePort ports = 5;
+    string working_dir = 6;
+    map<string, string> labels = 7;
+    string network_mode = 8;
+    uint64 cpu_millicores = 9;
+    uint64 memory_bytes = 10;
+    // Services that must be running before this one starts.
+    repeated string depends_on = 11;
+    // Root digest of the already-pulled image (optional).
+    // If empty, the runtime will pull the image first.
+    string root_digest = 12;
+    // Per-project bridge for network isolation.
+    // Defaults to the global bridge when empty.
+    string bridge_name = 13;
+    // Volume/bind mount specifications for this service.
+    repeated Mount mounts = 14;
+    // Health check configuration for this service.
+    HealthCheck health_check = 15;
+}
+
+message ComposePort {
+    uint32 container_port = 1;
+    uint32 host_port = 2;
+    string protocol = 3;  // "tcp" or "udp"
+}
+
+message RunComposeRequest {
+    string project_name = 1;
+    repeated ComposeService services = 2;
+}
+
+message RunComposeResponse {
+    repeated string workload_ids = 1;
+    map<string, string> service_to_id = 2;
+}
+
+message PullImageRequest {
+    string image_ref = 1;
+    string registry = 2;
+    // Registry credentials are transmitted in plaintext over gRPC.
+    // This is acceptable for UDS connections (default) where the
+    // socket is file-system-protected. For non-UDS deployments
+    // (e.g. --sync-addr), a TLS wrapper or mTLS must be added.
+    string registry_username = 3;
+    string registry_password = 4;
+    string registry_token = 5;
+    // Target platform, e.g. "linux/amd64" or "linux/arm64".
+    // When empty, the host's native architecture is used.
+    // When set, multi-arch image indexes are resolved for this
+    // platform instead of the host native one.
+    string platform = 6;
+}
+
+message PullImageResponse {
+    string root_digest = 1;
+    int64 bytes_stored = 2;
+    int64 bytes_deduplicated = 3;
+}
+
+message RunRequest {
+    string id = 1;
+    string root_digest = 2;
+    string backend = 3;
+    repeated string command = 4;
+    map<string, string> env = 5;
+    uint64 cpu_millicores = 6;
+    uint64 memory_bytes = 7;
+    string network_mode = 8;
+    repeated NetworkRule network_rules = 9;
+    // OCI image ref for the kernel. Required when
+    // backend="vm". The runtime stages the kernel via the
+    // standard OCI pipeline and stores it in an in-memory
+    // kernel cache so the subsequent AttachWorkload RPC
+    // can boot the same VM.
+    //
+    // Format: "registry/repo:tag" (e.g.
+    // "pullrun/kernel-asahi:6.19.14" or
+    // "ghcr.io/pullrun/kernel:6.19.14"). The image MUST
+    // have the label "org.pullrun.image.kind=kernel" and
+    // contain /boot/vmlinux (and optionally
+    // /boot/initramfs.cpio.gz).
+    string kernel_image = 10;
+    // Working directory inside the workload. Defaults to
+    // "/" if empty. The guest's pullrun-init changes to
+    // this directory before exec'ing the command.
+    string working_dir = 11;
+    // Custom bridge name for per-project network isolation.
+    // When set, the runtime creates a bridge with this name
+    // (and a deterministic /24 subnet derived from the name)
+    // instead of using the default global "pullrun-br0".
+    // Compose projects set this to isolate workload traffic.
+    string bridge_name = 12;
+    // Volume/bind mount specifications. These are added to the
+    // OCI config.json 'mounts' array at container creation time.
+    repeated Mount mounts = 13;
+    // Health check configuration. When set, the runtime periodically
+    // executes the probe command and reports health status.
+    HealthCheck health_check = 14;
+    // Restart policy for this workload.
+    // Controls whether the runtime automatically re-creates the workload
+    // after it exits. Defaults to RESTART_NO.
+    RestartPolicy restart_policy = 15;
+    // Secrets to mount inside the container (docker --secret equivalent).
+    // Mounted at `/run/secrets/<name>` by default, or at target_path if set.
+    repeated SecretRef secrets = 16;
+    // Configs to mount inside the container (docker --config equivalent).
+    // Mounted at `/<name>` by default, or at target_path if set.
+    repeated ConfigRef configs = 17;
+}
+
+enum RestartPolicy {
+    RESTART_UNSPECIFIED = 0;  // treated as RESTART_NO
+    RESTART_NO = 1;
+    RESTART_ON_FAILURE = 2;
+    RESTART_ALWAYS = 3;
+    RESTART_UNLESS_STOPPED = 4;
+}
+
+message NetworkRule {
+    string direction = 1;
+    string protocol = 2;
+    uint32 port = 3;
+    string to_host = 4;
+    repeated string from_cidrs = 5;
+    uint32 host_port = 6;
+}
+
+message RunResponse {
+    string id = 1;
+    uint32 pid = 2;
+    string backend_used = 3;
+    string internal_ip = 4;
+}
+
+message StopRequest {
+    string id = 1;
+}
+
+message StopResponse {
+    bool success = 1;
+}
+
+message GetWorkloadRequest {
+    string id = 1;
+}
+
+message WorkloadStatus {
+    string id = 1;
+    string state = 2;
+    string backend = 3;
+    uint32 exit_code = 4;
+    int64 start_time = 5;
+    string internal_ip = 6;
+    bool network_isolated = 7;
+    // Health status: "healthy", "unhealthy", "starting", "" (none configured).
+    string health = 8;
+    // Restart policy for this workload.
+    RestartPolicy restart_policy = 9;
+    // Number of times this workload has been automatically restarted.
+    uint32 restart_count = 10;
+}
+
+message ListWorkloadsRequest {}
+
+message ListWorkloadsResponse {
+    repeated WorkloadStatus workloads = 1;
+}
+
+message StreamLogsRequest {
+    string id = 1;
+    bool follow = 2;
+    int64 tail = 3;
+    int64 since = 4;
+}
+
+message LogChunk {
+    bytes data = 1;
+    bool stderr = 2;
+    int64 timestamp = 3;
+}
+
+message StreamEventsRequest {
+    repeated string event_types = 1;
+}
+
+message Event {
+    string id = 1;
+    string kind = 2;
+    int64 timestamp = 3;
+    map<string, string> metadata = 4;
+}
+
+message ExecRequest {
+    string id = 1;
+    repeated string command = 2;
+}
+
+message ExecResponse {
+    int32 exit_code = 1;
+    bytes stdout = 2;
+    bytes stderr = 3;
+}
+
+// One message in the bidirectional AttachWorkload stream. The
+// first message from the client MUST be AttachOpen. After that,
+// the client may send AttachStdin/AttachStdinEof, and the server
+// will send AttachStdout/AttachStderr/AttachExit.
+//
+// This is the gRPC projection of the in-VM vsock protocol
+// (see runtime/pullrun-vsock/src/lib.rs). The wire shape is
+// identical except that one stream of bytes is split into
+// repeated bytes messages, which is what gRPC wants.
+message AttachMessage {
+    // Exactly one of these is set per message.
+    oneof body {
+        AttachOpen open = 1;
+        AttachStdin stdin = 2;
+        AttachStdinEof stdin_eof = 3;
+        AttachStdout stdout = 4;
+        AttachStderr stderr = 5;
+        AttachExit exit = 6;
+        AttachError error = 7;
+        AttachWindowSize window_size = 8;
+    }
+}
+
+// Open the stream. Tells the runtime which workload to attach to
+// and what command to run (overrides the workload's default
+// command, if any). Sent exactly once, as the first message.
+message AttachOpen {
+    string workload_id = 1;
+    repeated string command = 2;
+    map<string, string> env = 3;
+    string working_dir = 4;
+    bool tty = 5;
+    uint32 initial_rows = 6;
+    uint32 initial_cols = 7;
+}
+
+// Bytes to feed into the workload's stdin.
+message AttachStdin {
+    bytes data = 1;
+}
+
+// Signals that no more stdin will arrive. The runtime will close
+// the workload's stdin pipe and the workload will see EOF.
+message AttachStdinEof {}
+
+// Bytes from the workload's stdout.
+message AttachStdout {
+    bytes data = 1;
+}
+
+// Bytes from the workload's stderr.
+message AttachStderr {
+    bytes data = 1;
+}
+
+// The workload exited.
+message AttachExit {
+    int32 exit_code = 1;   // 0 if exited normally with code 0
+    int32 signal = 2;      // 0 if not killed by signal
+    bool has_exit_code = 3;
+    bool has_signal = 4;
+}
+
+// Hard error from the runtime (e.g. "VM died", "workload not
+// found", "policy denied"). The stream is terminated after this.
+message AttachError {
+    string message = 1;
+}
+
+// Client → server. Update the PTY window size (rows × cols).
+// The runtime forwards this to the guest if the workload has a
+// PTY allocated (tty=true). Ignored otherwise.
+message AttachWindowSize {
+    uint32 rows = 1;
+    uint32 cols = 2;
+}
+
+// --- CRI support messages (Phase A) ---
+
+message HasImageRequest {
+    string image_ref = 1;  // e.g. "alpine:latest" or "sha256:`<digest>`"
+}
+
+message HasImageResponse {
+    bool exists = 1;
+    string root_digest = 2;
+}
+
+message ListImagesRequest {}
+
+message ListImagesResponse {
+    repeated ImageInfo images = 1;
+}
+
+message ImageInfo {
+    string image_ref = 1;
+    string root_digest = 2;
+    int64 size_bytes = 3;
+    int64 created_at = 4;  // unix seconds
+}
+
+message RemoveImageRequest {
+    string root_digest = 1;
+}
+
+message RemoveImageResponse {
+    bool success = 1;
+    int64 bytes_freed = 2;
+}
+
+message DagStoreInfoRequest {}
+
+message DagStoreInfoResponse {
+    string mountpoint = 1;
+    int64 total_bytes = 2;
+    int64 total_nodes = 3;
+    int64 used_bytes = 4;     // approximate; best-effort
+    int64 inodes_used = 5;    // approximate; best-effort
+}
+
+message PortForwardRequest {
+    string workload_id = 1;
+    string protocol = 2;       // "tcp" or "udp"
+    uint32 port = 3;
+}
+
+message PortForwardData {
+    bytes data = 1;
+}
+
+message HealthCheck {
+    // Command to run inside the container (e.g. ["CMD-SHELL", "curl -f http://localhost"]).
+    // Supports the same format as Docker HEALTHCHECK: ["CMD", "command", "arg"]
+    // or ["CMD-SHELL", "shell command"].
+    repeated string test = 1;
+    // How often to run the check (seconds). Default 30.
+    uint32 interval_seconds = 2;
+    // Maximum time for the check to complete (seconds). Default 30.
+    uint32 timeout_seconds = 3;
+    // Consecutive failures needed to mark unhealthy. Default 3.
+    uint32 retries = 4;
+    // Grace period before checks start (seconds). Default 0.
+    uint32 start_period_seconds = 5;
+}
+
+message UpdateWorkloadRequest {
+    string id = 1;
+    uint64 cpu_millicores = 2;
+    uint64 memory_bytes = 3;
+}
+
+message UpdateWorkloadResponse {
+    bool success = 1;
+}
+
+message GetWorkloadStatsRequest {
+    string id = 1;
+}
+
+message WorkloadStats {
+    string id = 1;
+    double cpu_usage_percent = 2;
+    uint64 memory_bytes = 3;
+    uint64 disk_bytes = 4;
+    uint64 network_rx_bytes = 5;
+    uint64 network_tx_bytes = 6;
+}
+
+// --- Build/Push/Save/load messages ---
+
+message BuildImageRequest {
+    string dockerfile = 1;        // path to Dockerfile on the server
+    string context_dir = 2;       // build context directory on the server
+    string tag = 3;               // image tag (e.g. "myapp:latest")
+    map<string, string> build_args = 4;
+    // Target platform, e.g. "linux/amd64" or "linux/arm64".
+    // Overrides FROM --platform in the Dockerfile. When empty,
+    // falls back to the Dockerfile's --platform if present,
+    // then to the host's native architecture.
+    string platform = 5;
+    // Multi-platform override: list of target platforms.
+    // When set, builds each platform and produces a manifest list.
+    // Overrides the single `platform` field above.
+    repeated string platforms = 6;
+    // Push the built image (or manifest list) to the registry
+    // after a successful build. The `tag` field is used as the
+    // push target (registry/repo:tag).
+    bool push = 7;
+}
+
+message BuildImageResponse {
+    string root_digest = 1;
+    string tag = 2;
+}
+
+message PushImageRequest {
+    string root_digest = 1;
+    string target_ref = 2;        // e.g. "registry.example.com/myapp:latest"
+    string registry_username = 3;
+    string registry_password = 4;
+    string registry_token = 5;
+}
+
+message PushImageResponse {
+    string manifest_digest = 1;   // OCI manifest digest (sha256:…)
+    int64 bytes_pushed = 2;
+}
+
+message ExportImageRequest {
+    string root_digest = 1;
+    // Format: "dag" (default, preserves per-file dedup) or "oci"
+    // (standard OCI layout). DAG format is faster and smaller for
+    // round-trips through pullrun; OCI is for interop with other tools.
+    string format = 2;
+}
+
+message ExportImageChunk {
+    bytes data = 1;
+}
+
+message ImportImageChunk {
+    bytes data = 1;
+}
+
+message ImportImageResponse {
+    string root_digest = 1;
+    int64 bytes_stored = 2;
+    int64 bytes_deduplicated = 3;
+}
+
+// Deep inspection of a workload. The DAG path is the ordered list of
+// `digest:kind` nodes from the root manifest down to the leaf blobs,
+// so operators can see the image's exact composition at a glance.
+message InspectRequest {
+    string id = 1;
+}
+
+message DagNode {
+    string digest = 1;
+    string kind = 2;        // "manifest" | "tree" | "layer" | "blob"
+    int64 size_bytes = 3;   // best-effort; 0 if unknown
+}
+
+message InspectResponse {
+    string id = 1;
+    string state = 2;        // "running" | "stopped" | "exited" | "failed"
+    string backend = 3;
+    string image_root = 4;
+    string internal_ip = 5;
+    uint32 pid = 6;
+    int64 start_time = 7;    // unix seconds
+    int64 exit_time = 8;     // unix seconds; 0 if still running
+    uint32 exit_code = 9;    // 0 if still running
+    repeated string command = 10;
+    repeated NetworkRule network_rules = 11;
+    // DAG traversal: ordered list of `digest:kind` from root manifest
+    // down to the leaf blobs. BFS, so the manifest is always first.
+    repeated DagNode dag_path = 12;
+    // Per-policy decision log: rule -> "allow" | "deny: `<reason>`".
+    // Populated at pull and at run time. v0 only writes a single
+    // entry per decision.
+    map<string, string> policy_decisions = 13;
+    // Whether the workload is currently in the runtime's view of
+    // the workloads map. False iff the workload has been GC'd.
+    bool found = 14;
+    // Restart policy for this workload.
+    RestartPolicy restart_policy = 15;
+    // Number of times this workload has been automatically restarted.
+    uint32 restart_count = 16;
+}
+
+// --- File copy (docker cp equivalent) ---
+
+message CopyFileRequest {
+    string id = 1;                        // Workload ID
+    string container_path = 2;            // Path inside the container
+    // Direction: "in" copies content from this request into the container;
+    // "out" reads from the container and returns content in the response.
+    string direction = 3;                 // "in" or "out"
+    bytes content = 4;                    // File content for "in" direction
+    uint32 mode = 5;                      // File mode (e.g. 0644); 0 means default
+}
+
+message CopyFileResponse {
+    string id = 1;
+    string container_path = 2;
+    bytes content = 3;                    // File content for "out" direction
+    uint32 mode = 4;                      // Detected file mode
+    uint64 size = 5;                      // File size in bytes
+}
+
+// --- Commit (docker commit equivalent) ---
+
+message CommitImageRequest {
+    // Workload ID to commit from.
+    string id = 1;
+    // Optional tag for the new image (e.g. "myapp:latest").
+    // If empty, only the root digest is returned.
+    string tag = 2;
+    // Optional message/annotation describing this commit.
+    string message = 3;
+    // Optional author of this commit.
+    string author = 4;
+}
+
+message CommitImageResponse {
+    // Root digest of the new committed image (sha256:...).
+    string root_digest = 1;
+    // Tag assigned (same as request.tag, if provided).
+    string tag = 2;
+    // Number of new nodes stored in the DAG (may be 0 if no changes
+    // detected and dedup covered everything).
+    uint64 new_nodes = 3;
+}
+
+// --- Network management ---
+
+message CreateNetworkRequest {
+    // Name of the network (used as bridge name for device creation).
+    string name = 1;
+    // Optional custom subnet in CIDR notation (e.g. "10.43.1.0/24").
+    // If empty, a /24 subnet is auto-allocated from 10.43.0.0/16.
+    string subnet = 2;
+}
+
+message CreateNetworkResponse {
+    bool success = 1;
+    string bridge_name = 2;
+    string subnet = 3;
+}
+
+message RemoveNetworkRequest {
+    string name = 1;
+}
+
+message RemoveNetworkResponse {
+    bool success = 1;
+}
+
+message ListNetworksRequest {}
+
+message NetworkInfo {
+    string name = 1;
+    string bridge_name = 2;
+    string subnet = 3;
+    // Number of workloads currently attached to this network.
+    uint64 attached_workloads = 4;
+}
+
+message ListNetworksResponse {
+    repeated NetworkInfo networks = 1;
+}
+
+// --- Info / Version ---
+
+message InfoRequest {}
+
+message InfoResponse {
+    // Runtime version string (e.g. "0.1.0").
+    string version = 1;
+    // Runtime uptime in seconds.
+    uint64 uptime_seconds = 2;
+    // Number of workloads currently tracked.
+    uint64 workload_count = 3;
+    // DAG store mountpoint.
+    string store_mountpoint = 4;
+    // Total bytes on the store filesystem.
+    uint64 store_total_bytes = 5;
+    // Used bytes on the store filesystem.
+    uint64 store_used_bytes = 6;
+    // Total nodes in the DAG store.
+    uint64 store_total_nodes = 7;
+    // Go runtime version string.
+    string go_version = 8;
+}
+
+// --- Prune ---
+
+message PruneRequest {}
+message PruneResponse {
+    int64 bundles_removed = 1;
+    int64 bytes_freed = 2;
+    repeated string errors = 3;
+}
+
+// --- Diff (docker diff equivalent) ---
+
+message DiffRequest {
+    // Workload ID to diff.
+    string id = 1;
+}
+
+message DiffResponse {
+    // Files that exist in the container but not in the original image.
+    repeated string added = 1;
+    // Files that exist in the original image but not in the container.
+    repeated string deleted = 2;
+    // Files that exist in both but have different content.
+    repeated string modified = 3;
+}
+
+// --- Secret / Config management ---
+
+message SecretRef {
+    string name = 1;
+    string target_path = 2;   // default: `/run/secrets/<name>`
+}
+
+message ConfigRef {
+    string name = 1;
+    string target_path = 2;   // default: `/<name>`
+}
+
+message SecretInfo {
+    string name = 1;
+    int64 created_at = 2;      // unix seconds
+    int64 size_bytes = 3;
+}
+
+message CreateSecretRequest {
+    string name = 1;
+    bytes data = 2;
+}
+message CreateSecretResponse {}
+
+message ListSecretsRequest {}
+message ListSecretsResponse {
+    repeated SecretInfo secrets = 1;
+}
+
+message InspectSecretRequest {
+    string name = 1;
+}
+message InspectSecretResponse {
+    SecretInfo secret = 1;
+}
+
+message RemoveSecretRequest {
+    string name = 1;
+}
+message RemoveSecretResponse {}
+
+// Config messages (same shape, distinct type names for wire clarity).
+message ConfigInfo {
+    string name = 1;
+    int64 created_at = 2;
+    int64 size_bytes = 3;
+}
+
+message CreateConfigRequest {
+    string name = 1;
+    bytes data = 2;
+}
+message CreateConfigResponse {}
+
+message ListConfigsRequest {}
+message ListConfigsResponse {
+    repeated ConfigInfo configs = 1;
+}
+
+message InspectConfigRequest {
+    string name = 1;
+}
+message InspectConfigResponse {
+    ConfigInfo config = 1;
+}
+
+message RemoveConfigRequest {
+    string name = 1;
+}
+message RemoveConfigResponse {}

@@ -1521,224 +1521,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nimbus-exec"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "libc",
- "nimbus-net",
- "nimbus-oci",
- "nimbus-store",
- "nix 0.28.0",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-init"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "libc",
- "nimbus-vsock",
- "serial_test",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "nimbus-net"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "ipnet",
- "libc",
- "nix 0.28.0",
- "rand 0.8.6",
- "rtnetlink",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-oci"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "flate2",
- "hex",
- "nimbus-store",
- "rayon",
- "reqwest",
- "rkyv",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "walkdir",
-]
-
-[[package]]
-name = "nimbus-policy"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "ed25519-dalek",
- "hex",
- "nimbus-store",
- "rand 0.8.6",
- "rkyv",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-runtime"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "axum 0.7.9",
- "base64 0.22.1",
- "bytes",
- "clap",
- "dispatch2",
- "ed25519-dalek",
- "futures",
- "hex",
- "libc",
- "metrics",
- "metrics-exporter-prometheus",
- "nimbus-exec",
- "nimbus-net",
- "nimbus-oci",
- "nimbus-policy",
- "nimbus-store",
- "nimbus-sync",
- "nimbus-vm",
- "nimbus-vsock",
- "prost",
- "rand 0.8.6",
- "rkyv",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tonic",
- "tonic-build",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "nimbus-store"
-version = "0.1.0"
-dependencies = [
- "dashmap",
- "hex",
- "memmap2",
- "rand 0.8.6",
- "rkyv",
- "serde",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-sync"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures",
- "hex",
- "metrics",
- "nimbus-oci",
- "nimbus-store",
- "prost",
- "rand 0.8.6",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-build",
- "tracing",
-]
-
-[[package]]
-name = "nimbus-vm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "block2",
- "dispatch2",
- "flate2",
- "hex",
- "libc",
- "nimbus-exec",
- "nimbus-net",
- "nimbus-oci",
- "nimbus-store",
- "nimbus-vsock",
- "objc2",
- "objc2-foundation",
- "objc2-virtualization",
- "rkyv",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tonic",
- "tracing",
- "ureq",
-]
-
-[[package]]
-name = "nimbus-vsock"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures-lite",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "nix"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2076,6 +1858,225 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "pullrun-exec"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "libc",
+ "nix 0.28.0",
+ "pullrun-net",
+ "pullrun-oci",
+ "pullrun-store",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-init"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "libc",
+ "pullrun-vsock",
+ "serial_test",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "pullrun-net"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "ipnet",
+ "libc",
+ "nix 0.28.0",
+ "rand 0.8.6",
+ "rtnetlink",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-oci"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "flate2",
+ "hex",
+ "pullrun-store",
+ "rayon",
+ "reqwest",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
+name = "pullrun-policy"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek",
+ "hex",
+ "pullrun-store",
+ "rand 0.8.6",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-runtime"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "axum 0.7.9",
+ "base64 0.22.1",
+ "bytes",
+ "clap",
+ "dispatch2",
+ "ed25519-dalek",
+ "futures",
+ "hex",
+ "libc",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "prost",
+ "pullrun-exec",
+ "pullrun-net",
+ "pullrun-oci",
+ "pullrun-policy",
+ "pullrun-store",
+ "pullrun-sync",
+ "pullrun-vm",
+ "pullrun-vsock",
+ "rand 0.8.6",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "pullrun-store"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "hex",
+ "memmap2",
+ "rand 0.8.6",
+ "rkyv",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-sync"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "hex",
+ "metrics",
+ "prost",
+ "pullrun-oci",
+ "pullrun-store",
+ "rand 0.8.6",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tracing",
+]
+
+[[package]]
+name = "pullrun-vm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "block2",
+ "bytes",
+ "dispatch2",
+ "flate2",
+ "hex",
+ "libc",
+ "objc2",
+ "objc2-foundation",
+ "objc2-virtualization",
+ "pullrun-exec",
+ "pullrun-net",
+ "pullrun-oci",
+ "pullrun-store",
+ "pullrun-vsock",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tonic",
+ "tracing",
+ "ureq",
+]
+
+[[package]]
+name = "pullrun-vsock"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures-lite",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

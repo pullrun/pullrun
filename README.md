@@ -1,247 +1,349 @@
-# Nimbus
+<div align="center">
 
-> **A content-addressed workload execution system. Containers or VMs from the same OCI image. No Docker required.**
+<img src="https://raw.githubusercontent.com/pullrun/pullrun/main/assets/logo.png" alt="Pullrun Logo" width="400">
 
-Nimbus pulls OCI images, deduplicates them into a zero-copy on-disk DAG
-(rkyv + memmap2), and runs them in **whichever execution backend the
-operator chooses** — Linux containers (runc), Firecracker microVMs, or
-Apple Virtualization on macOS. The same image content can be
-booted as a container or as a VM; the only thing that changes is the
-backend.
+# **Pullrun**
 
-**All Docker CE features covered** — multi-arch, secrets/configs, health
-checks, restart policies, user-defined networks, resource limits, live
-stats, compose, commit, cp, diff, and cross-node P2P image distribution
-via DAG block sync. See [PROGRESS.md](PROGRESS.md) for the gap analysis.
+### *A content-addressed workload execution system*
 
-## Quick start
+**Same OCI image. Any isolation level. No Docker daemon required.**
+
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org/)
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](https://golang.org/)
+[![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen.svg)](#testing)
+
+</div>
+
+---
+
+## 🚀 What is Pullrun?
+
+Pullrun is a next-generation container runtime that treats **content-addressed storage** as a first-class primitive. It pulls OCI images, deduplicates them into a zero-copy on-disk DAG ([rkyv](https://github.com/rkyv/rkyv) + [memmap2](https://github.com/danburkert/memmap-rs)), and runs them in whichever execution backend you choose.
+
+| Backend | Isolation | Best For |
+|---------|-----------|----------|
+| 🐧 **Linux Containers** (runc) | Process-level | Developer workflows, CI/CD dense packing |
+| 🔥 **Firecracker microVMs** (KVM) | Per-VM kernel | Multi-tenant, untrusted workloads, compliance |
+| 🍎 **Apple Virtualization** (macOS) | Per-VM kernel | macOS dev environments, Apple Silicon CI |
+
+> **The same image content can be booted as a container or as a VM — the only thing that changes is the backend.**
+
+---
+
+## ✨ Why Pullrun?
+
+| Feature | Pullrun Advantage |
+|---------|-------------------|
+| **Zero-copy DAG store** | OCI layers stored as-is. No tar extraction, no overlayfs, no `dockerd`. Just `mmap()` and go. |
+| **P2P image distribution** | Nodes share image blocks directly via gRPC + Bloom filters. One node pulls; the rest delta-sync peer-to-peer. |
+| **Same image, any backend** | No separate "VM image" build step. The OCI manifest **IS** the VM rootfs. |
+| **No overlayfs CVEs** | CVE-2026-31431, CVE-2023-0386, CVE-2023-32629 — all eliminated by per-VM kernel isolation. |
+
+---
+
+## 📦 Quick Start
 
 ```bash
-# Build nimbusctl (once)
-make build-go
-# or: cd cli/nimbusctl && go build -o ../../bin/nimbusctl .
+# 1. Build everything (Rust runtime + Go CLI)
+make build
 
-# 1. Pull an image (deduplicates into the on-disk DAG store).
-nimbusctl pull alpine:3.18
+# 2. Add binaries to PATH
+export PATH="$PWD/bin:$PATH"
 
-# 2. Pull for a different architecture (resolves multi-arch image indexes):
-nimbusctl pull alpine:3.18 --platform linux/arm64
+# 3. Pull an image (deduplicates into the on-disk DAG store)
+pullrun pull alpine:3.18
 
-# 3. Run it as a container (Linux) or Apple Virt VM (macOS, no --kernel-image needed):
-nimbusctl run alpine:3.18 --backend container --cmd echo hello   # Linux only
-nimbusctl run alpine:3.18 --backend vm       --cmd echo hello    # Linux+KVM or macOS+AppleVirt
+# 4. Run it as a container OR a VM — same image, your choice
+pullrun run alpine:3.18 --backend container --cmd /bin/echo --cmd hello
+pullrun run alpine:3.18 --backend vm       --cmd /bin/echo --cmd hello
 
-# 4. (macOS) Sign daemon once, then use --attach for single-step VM run:
-make apple-sign-daemon
-nimbusctl run alpine:3.18 --backend vm --cmd /bin/echo hello --attach
+# 5. Build natively without Docker
+pullrun build -t myapp:latest --platform linux/arm64
 
-# 5. Native DAG-aware build (--platform overrides FROM --platform):
-nimbusctl build -t myapp:latest --platform linux/arm64
+# 6. Use encrypted secrets at runtime
+pullrun secret create db_password secret data
+pullrun run myapp:latest --secret db_password
 
-# 6. Secrets and configs (Docker --secret/--config equivalent):
-nimbusctl secret create db_password secret data
-nimbusctl run myapp:latest --secret db_password
-
-# 7. Enable peer-to-peer block sync for multi-node image distribution:
-nimbus-runtime daemon --sync-addr 0.0.0.0:9500
+# 7. Enable P2P block sync for multi-node clusters
+pullrun-runtime daemon --sync-addr 0.0.0.0:9500
 ```
 
-The CLI uses `--direct` mode by default: it spawns the runtime as a
-child process over a Unix domain socket. Use `--server host:port` to
-talk to a long-lived runtime. Cross-platform: Go CLI runs everywhere.
-
-## Architecture
-
-```
-                               ┌─────────────────────────────────┐
-                               │       nimbusctl (Go)            │
-                               │  pull · run · inspect · build   │
-                               │  compose · stats · cp · update  │
-                               │  secret · config · network      │
-                               └────────────┬────────────────────┘
-                                            │ gRPC (UDS or TCP)
-                                            ▼
-   ┌─────────────────────────────────────────────────────────────────────┐
-   │                          nimbus-runtime                              │
-   │                                                                      │
-   │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  │
-   │   │  pull_image │  │ run_workload│  │UpdateWorkload│  │CopyFile  │  │
-   │   │  + policy   │─▶│  + policy   │  │  + stats     │  │ RPC      │  │
-   │   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └────┬─────┘  │
-   │          │                │                │              │         │
-   │          ▼                ▼                ▼              ▼         │
-   │   ┌─────────────────────────────────────────────────────────────┐   │
-   │   │                  MmapStore (rkyv + memmap2)                 │   │
-   │   │  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐  │   │
-   │   │  │ Manifest │─▶│   Tree   │─▶│ Layer / Blob DAG + Cache │  │   │
-   │   │  └──────────┘  └──────────┘  └──────────────────────────┘  │   │
-   │   │     content-addressed, lock-free DashMap cache              │   │
-   │   └─────────────────────────────────────────────────────────────┘   │
-   │          │                │                │                        │
-   │          ▼                ▼                ▼                        │
-   │   ┌──────────────┐  ┌────────────────┐  ┌──────────────────────┐  │
-   │   │  LinuxContai-│  │ Firecracker    │  │  Health check        │  │
-   │   │  nerExecutor │  │ Executor       │  │  watcher loop        │  │
-   │   │   (runc)     │  │   (KVM)        │  │  (exec + state M/C)  │  │
-   │   └──────┬───────┘  └──────┬─────────┘  └──────────────────────┘  │
-   │          │                 │                                       │
-   │          ▼                 ▼                                       │
-   │   ┌──────────────────────────────────────────────────────────────┐ │
-   │   │               ProxyNetwork (10.42.0.0/16)                    │ │
-   │   │   userspace TCP/UDP proxy + DNS + IPAM + iptables            │ │
-   │   │   cgroupfs stats reader + resource limit updater             │ │
-   │   └──────────────────────────────────────────────────────────────┘ │
-   └─────────────────────────────────────────────────────────────────────┘
-                                            │
-                                            ▼
-   ┌─────────────────────────────────────────────────────────────────────┐
-   │      Kubernetes integration (CRI shim, RuntimeClass)                 │
-   │      Prometheus metrics (axum /metrics, ServiceMonitor)              │
-   │      Grafana dashboard (6 panels, 5 alerts)                         │
-   └─────────────────────────────────────────────────────────────────────┘
-```
-
-**The single most important property**: a `sha256:` digest of an OCI
-image is the *same* on every node that has pulled it. The DAG nodes
-are content-addressed; the on-disk file names are the digests. Two
-nodes that have pulled `alpine:3.18` will have byte-identical files
-on disk. This is what makes a workload reproducible across the
-cluster — and it's what makes **cross-node block sync** trivial:
-content-addressed blocks can be verified without trust, transferred
-delta-only without a registry, and deduplicated across all images
-and all nodes automatically.
-
-```
-   Node A: [a, b, c, d]          Node B: [a, e, f]
-              │                         │
-              ▼                         ▼
-      ┌─────────────────┐      ┌─────────────────┐
-      │  BlockSync       │◄────►│  BlockSync       │  gRPC bidirectional
-      │  + Bloom filter  │      │  + Bloom filter  │  (have_blobs, get_blobs)
-      └─────────────────┘      └─────────────────┘
-              │                         │
-              ▼                         ▼
-         Upstream Registry         (fallback only)
-```
-
-When a kubelet requests an image pull via CRI, the puller first
-queries peer nodes via `BlockSync` for missing blobs, then falls
-back to the upstream registry. One node pulls the full image; the
-rest of the cluster delta-syncs. See `docs/cross-node-dag-sync.md`.
-
-## CLI features
-
-| Command | What it does |
-|---------|-------------|
-| `nimbusctl pull` | Pull OCI image from any registry (Docker Hub, private, insecure) |
-| `nimbusctl push` | Push DAG to OCI registry |
-| `nimbusctl build` | Native DAG-aware Dockerfile builder (no Docker needed) |
-| `nimbusctl run` | Run workload in container or VM (`--attach` for single-step run+attach) |
-| `nimbusctl stop` | Graceful stop with timeout |
-| `nimbusctl exec` | Exec into running container |
-| `nimbusctl logs` | Stream stdout/stderr |
-| `nimbusctl workload run` | Bidi stdio attach to running workload (vm backend) |
-| `nimbusctl inspect` | Inspect image or workload details |
-| `nimbusctl list` | List images and workloads |
-| `nimbusctl stats` | Live CPU/memory cgroup stats |
-| `nimbusctl update` | Live resource limit updates |
-| `nimbusctl cp` | Copy files between host and container |
-| `nimbusctl commit` | Snapshot running container as DAG layer |
-| `nimbusctl diff` | Show changed files vs original image |
-| `nimbusctl save` / `load` | DAG-native tar export/import |
-| `nimbusctl secret` | Create/list/inspect/remove secrets (AES-256-GCM encrypted) |
-| `nimbusctl config` | Create/list/inspect/remove configs (plain text) |
-| `nimbusctl network` | Create/remove/list user-defined bridge networks |
-| `nimbusctl login` / `logout` | Registry auth storage |
-| `nimbusctl compose` | Compose up/down/ps/logs/build |
-| `nimbusctl info` / `version` | System info and version |
-
-## Kubernetes integration
-
-Nimbus registers as a CRI runtime. Pods can request a `RuntimeClass`
-to choose the backend:
-
-```yaml
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: nimbus-vm
-handler: nimbus-vm
 ---
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: nimbus-container
-handler: nimbus-container
+
+## 🍎 macOS — Apple VM Backend
+
+Run any OCI image as a lightweight VM on Apple Silicon — no separate VM image build required.
+
+```bash
+# One-time setup
+make install-kernel         # Download kata arm64 kernel
+make build-initramfs        # Build initramfs with busybox + pullrun-init
+make apple-sign-daemon      # Sign pullrun-runtime for Apple Virtualization
+
+# Run any OCI image as a VM
+pullrun pull alpine:3.18
+pullrun run alpine:3.18 --backend vm \
+    --cmd /bin/echo --cmd 'hello from pullrun VM' \
+    --attach
+
+# Interactive persistent shell with data volumes
+pullrun run alpine:3.18 --backend vm \
+    --volume /tmp/data:/mnt/data \
+    --tty --attach --cmd /bin/sh
 ```
 
-A pod that wants the VM isolation level just specifies
-`runtimeClassName: nimbus-vm`. **No code change to the pod; no
-custom admission webhook.**
+**Key macOS notes:**
+- **Persistent VMs** — survive detach (Ctrl-P Ctrl-Q), re-attach with `pullrun exec <id>`
+- **VirtioFS volumes** — host directories shared natively, no FUSE proxy
+- **Auto kernel discovery** — from `~/.pullrun/kernels/`, no `--kernel-image` needed
+- **Re-sign after `cargo build`** — `make apple-sign-daemon` restores entitlements
 
-Prometheus metrics (`/metrics`), a Grafana dashboard (6 panels, 5
-alert rules), and K8s deployment manifests are in `deploy/`.
+---
 
-## What lives where
+## 🐧 Linux — Container & Firecracker VM Backends
 
-| Crate / module | Purpose |
-|---|---|
-| `runtime/nimbus-store` | rkyv-encoded DAG nodes in mmap'd files; DashMap cache |
-| `runtime/nimbus-oci` | OCI registry client + DAG converter |
-| `runtime/nimbus-exec` | Execution backends: LinuxContainerExecutor (runc) + trait |
-| `runtime/nimbus-vm` | Firecracker (KVM) + Apple Virt (macOS) executors |
-| `runtime/nimbus-net` | IPAM, userspace TCP/UDP proxy, DNS, iptables |
-| `runtime/nimbus-sync` | P2P DAG block sync: BloomFilter, BlockSync gRPC, mDNS, SyncPuller, gossip, registrar |
-| `runtime/nimbus-policy` | Cosign signatures, CycloneDX SBOM, CVSS/license gates, seccomp |
-| `runtime/nimbus-runtime` | The gRPC daemon: pulls, runs, inspect, events, metrics, health, stats, secrets, configs |
-| `cli/nimbusctl` | Go CLI; thin wrapper over the gRPC API |
-| `cri/nimbus-cri` | Kubernetes CRI shim with RuntimeClass support |
-| `proto-go/` | Shared Go proto module (`nimbus/protoapi`) |
-| `deploy/` | K8s manifests: DaemonSet, ServiceMonitor, PrometheusRule, Grafana |
-| `proto/` | Protobuf service definitions (single source of truth) |
-| `control-plane/` | Node registry (being superseded by P2P block sync) |
+```bash
+# Container backend (requires runc)
+pullrun run alpine:3.18 --backend container --tty --attach --cmd /bin/sh
 
-## Performance highlights
+# Firecracker VM backend (requires KVM + vmlinux kernel)
+pullrun run alpine:3.18 --backend vm --tty --attach --cmd /bin/sh
+```
+
+See [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) for kernel setup and full Linux configuration.
+
+---
+
+## 🖥️ Interactive Shells & Persistent Workloads
+
+Both backends support interactive shells with **detach/re-attach** via `Ctrl-P Ctrl-Q`:
+
+```bash
+# Start an interactive shell
+pullrun run alpine:3.18 --backend container --tty --attach --cmd /bin/sh
+# Ctrl-P Ctrl-Q → detach, workload keeps running
+# Re-attach: pullrun exec <id> -t /bin/sh
+```
+
+---
+
+## 📦 Compose (Multi-Service Stacks)
+
+Native Compose support — no separate `docker compose` or `docker-compose` binary needed:
+
+```bash
+# Start a multi-service stack
+pullrun compose up -f myapp/compose.yml
+
+# View service logs
+pullrun compose logs -f
+
+# Rebuild and restart a specific service
+pullrun compose build web
+pullrun compose up -d web
+
+# Stop everything
+pullrun compose down
+```
+
+Compose files follow the standard format with support for build, volumes, ports, environment, secrets, networks, health checks, restart policies, and service dependencies. Each service runs as a container or VM depending on its `--backend` label.
+
+---
+
+## 🔐 Secrets & Configs
+
+First-class encrypted secrets — data is AES-256-GCM encrypted at rest and only decrypted into the workload's tmpfs at runtime:
+
+```bash
+# Create an encrypted secret
+pullrun secret create db_password secret data   # stdin
+pullrun secret create api_key --file key.txt     # from file
+
+# List and inspect
+pullrun secret list
+pullrun secret inspect db_password
+
+# Use in a workload
+pullrun run myapp:latest --secret db_password
+
+# Create a config file (mounted into the workload)
+pullrun config create nginx.conf --file ./nginx.conf
+pullrun run nginx:latest --config nginx.conf
+```
+
+Secrets survive host reboots and are scoped to the daemon's store. They can be shared across services in a compose stack.
+
+---
+
+## 🌐 P2P Image Distribution
+
+Nodes share image blocks peer-to-peer — only one node pulls from the registry, the rest sync delta blocks via gRPC:
+
+```bash
+# Node A: start daemon with sync enabled
+pullrun-runtime daemon --sync-addr 0.0.0.0:9500
+
+# Node B: connect and fetch blocks from Node A
+pullrun-runtime daemon --sync-addr 0.0.0.0:9501 \
+  --sync-peers node-a.example.com:9500
+```
+
+Each block is verified by content hash before acceptance — no trust required. The Bloom filter cache avoids redundant transfers for blocks already seen. See [docs/cross-node-dag-sync.md](docs/cross-node-dag-sync.md) for the full design.
+
+---
+
+## 🏗️ Build & Push
+
+Native Dockerfile build engine — no Docker daemon required:
+
+```bash
+# Build a single-platform image
+pullrun build -t myapp:latest .
+
+# Build for multiple platforms
+pullrun build -t myapp:latest --platform linux/amd64,linux/arm64 .
+
+# Push to a registry
+pullrun push myapp:latest
+
+# Export/import for air-gapped environments
+pullrun export myapp:latest > myapp.tar
+pullrun import < myapp.tar
+```
+
+Builds use the DAG store directly — layers are content-addressed and deduplicated across images automatically. Export produces a single OCI-compatible tarball.
+
+---
+
+## 📊 Performance
 
 | Metric | Value |
-|---|---|
-| Firecracker VM boot (kernel + exit) | **4.9 s** |
-| Apple Virt VM boot (kernel + exit, macOS) | **~160 ms** |
-| `alpine:3.18` pull (first time) | **968 ms** — ~2x faster than Docker |
+|--------|-------|
+| First `alpine:3.18` pull | **968 ms** (~2× faster than Docker) |
 | Container run latency | **~400 ms** |
-| gRPC ListWorkloads (warm) | **< 1 ms** |
+| Apple Virt VM boot | **~160 ms** |
+| gRPC `ListWorkloads` (warm) | **< 1 ms** |
 | Daemon RSS at idle | **24.6 MiB** |
 | Release binary size | **12 MB** |
-| Test suite | **126 Rust + 9 Go — all passing** |
+| Test coverage | **126 Rust + 9 Go** |
 
-**Architectural moat** — per-VM kernel isolation eliminates overlayfs
-CVEs (CVE-2026-31431, CVE-2023-0386, CVE-2023-32629) that Docker
-cannot fix.
+---
 
-## Repository layout
+## 🔧 Feature Comparison
+
+| Feature | Docker CE | Pullrun |
+|---------|:---------:|:-------:|
+| Multi-arch pull/push/run | ✅ | ✅ |
+| Multi-arch build | ✅ | ✅ |
+| Secrets / Configs | ✅ | ✅ (AES-256-GCM encrypted) |
+| Health checks | ✅ | ✅ |
+| Restart policies | ✅ | ✅ |
+| User-defined networks | ✅ | ✅ |
+| Compose (up/down/ps/logs/build) | ✅ | ✅ |
+| **P2P image distribution** | ❌ | ✅ |
+| **VM backend from OCI** | WSL2 only | ✅ (Firecracker + Apple Virt) |
+| **Cosign / SBOM gating** | ❌ | ✅ |
+
+Full gap analysis: [PROGRESS.md](PROGRESS.md)
+
+---
+
+## 🏗️ Architecture
 
 ```
-proto/            Protobuf definitions (single source of truth)
-proto-go/         Generated Go protobuf code
-runtime/          Rust workspace: store, oci, net, policy, exec, vm, sync, runtime
-cli/nimbusctl/    Go CLI (cobra)
-cri/nimbus-cri/   Go CRI shim
-control-plane/    Node registry stub
-deploy/           Kubernetes manifests, Grafana dashboard
-tools/            Standalone smoke-test binaries
-docs/             Architecture, operations, policy docs
+                               pullrun (Go CLI)
+                    pull · run · build · compose · inspect
+                               │
+                               │ gRPC (UDS or TCP)
+                               ▼
+                    ┌────────────────────────────────────┐
+                    │        pullrun-runtime             │
+                    │  ┌────────┐    ┌─────────────┐     │
+                    │  │ store  │    │  executor   │     │
+                    │  │ (DAG)  │    │ (runc / VM) │     │
+                    │  └──┬───┘    └──────┬──────┘     │
+                    │     │                │            │
+                    │  ┌──┴────────────────┴──┐         │
+                    │  │     ProxyNetwork     │         │
+                    │  │  IPAM · DNS · TCP/UDP │         │
+                    │  └──────────────────────┘         │
+                    └────────────────────────────────────┘
+                               │
+                    ┌──────────┴──────────┐
+                    │     Kubernetes      │
+                    │  CRI shim · Runtime │
+                    │  Class · Prometheus │
+                    └─────────────────────┘
 ```
 
-## How to contribute / what to read next
+> **Core invariant:** A `sha256:` digest is globally consistent. Every node that has pulled `alpine:3.18` stores byte-identical files on disk. This makes cross-node block sync trivial: content-addressed blocks can be verified without trust, transferred delta-only, and deduplicated across the entire cluster automatically.
 
-- **`docs/ARCHITECTURE.md`** — the zero-copy store, executor trait, network model
-- **`docs/OPERATIONS.md`** — deploying, monitoring, troubleshooting
-- **`docs/POLICY.md`** — policy engine (cosign, SBOM, CVSS, license)
-- **`docs/cross-node-dag-sync.md`** — P2P block sync architecture
-- **`PROGRESS.md`** — gap analysis and what's next
-- **`WARNINGS.md`** — known pitfalls
+---
 
-## License
+## 📋 Prerequisites
 
-TBD. The codebase is currently unlicensed; please contact the
-maintainers before redistributing.
+| Tool | Required For | Minimum Version | Install |
+|------|-------------|-----------------|---------|
+| Rust + Cargo | Runtime daemon, store, networking | 1.77+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` |
+| Go | CLI, CRI shim | 1.22+ | `brew install go` or `apt install golang` |
+| protoc | Regenerating protobuf bindings | 3.0+ | `brew install protobuf` or `apt install protobuf-compiler` |
+
+---
+
+## 📁 Project Layout
+
+```
+proto/            # Protobuf definitions (single source of truth)
+proto-go/         # Generated Go protobuf code
+runtime/          # Rust workspace (core data plane)
+  pullrun-store/   # zero-copy DAG store
+  pullrun-oci/     # OCI client + DAG converter
+  pullrun-exec/    # executor trait + runc wrapper
+  pullrun-vm/      # Firecracker + Apple Virt backends
+  pullrun-net/     # IPAM, proxy, DNS, iptables
+  pullrun-sync/    # P2P block sync (Bloom, mDNS, gossip)
+  pullrun-policy/  # cosign, SBOM, seccomp gates
+  pullrun-runtime/ # gRPC daemon
+cli/pullrun/      # Go CLI (cobra)
+cri/pullrun-cri/  # Kubernetes CRI shim
+deploy/           # K8s manifests, Grafana dashboard, alerts
+docs/             # Architecture, operations, policy
+```
+
+---
+
+## 📚 Documentation
+
+| Document | What You'll Find |
+|----------|-----------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Zero-copy store design, executor trait, network model |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Deploying, monitoring, troubleshooting |
+| [docs/POLICY.md](docs/POLICY.md) | Policy engine (cosign, SBOM, CVSS, license) |
+| [docs/cross-node-dag-sync.md](docs/cross-node-dag-sync.md) | P2P block sync design |
+| [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide for all platforms |
+| [PROGRESS.md](PROGRESS.md) | Roadmap, test ledger, session handoffs |
+| [WARNINGS.md](WARNINGS.md) | Known pitfalls and version constraints |
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our documentation for:
+- Architecture deep-dives
+- Operations guides
+- Policy engine details
+
+---
+
+## 📄 License
+
+Apache 2.0 — see [LICENSE](LICENSE). Contributions are subject to the terms of [CLA.md](CLA.md).
+
+---
+
+<div align="center">
+
+**Built with Rust 🦀 and Go 🐹**
+
+</div>

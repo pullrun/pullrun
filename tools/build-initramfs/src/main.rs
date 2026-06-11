@@ -1,6 +1,6 @@
 //! # build-initramfs
 //!
-//! Assemble a Nimbus microVM initramfs.
+//! Assemble a Pullrun microVM initramfs.
 //!
 //! ## What it produces
 //!
@@ -8,8 +8,8 @@
 //! containing:
 //!
 //! ```text
-//! /init                  -> shell script that execs /sbin/nimbus-init
-//! /sbin/nimbus-init      -> the static nimbus-init binary
+//! /init                  -> shell script that execs /sbin/pullrun-init
+//! /sbin/pullrun-init      -> the static pullrun-init binary
 //! /bin/busybox           -> busybox static binary (mount, sh, etc.)
 //! /dev/console           -> device node (Linux 5.x+ allows this in cpio)
 //! /dev/null              -> device node
@@ -21,7 +21,7 @@
 //!
 //! ## Why busybox?
 //!
-//! The guest's nimbus-init binary is statically linked and
+//! The guest's pullrun-init binary is statically linked and
 //! does not need busybox. But the kernel mounts `/proc` and
 //! `/sys` BEFORE exec'ing `/init`, and the workload command
 //! inside the VM may want to do basic things like
@@ -37,7 +37,7 @@
 //! ```text
 //! build-initramfs \
 //!     --busybox /path/to/busybox-static \
-//!     --nimbus-init /path/to/nimbus-init \
+//!     --pullrun-init /path/to/pullrun-init \
 //!     --out /path/to/initramfs.cpio.gz
 //! ```
 //!
@@ -75,7 +75,7 @@ use tracing::{error, info};
 #[derive(Parser, Debug)]
 #[command(
     name = "build-initramfs",
-    about = "Assemble a Nimbus microVM initramfs from busybox + nimbus-init",
+    about = "Assemble a Pullrun microVM initramfs from busybox + pullrun-init",
     long_about = None,
 )]
 struct Args {
@@ -84,10 +84,10 @@ struct Args {
     #[arg(long, value_name = "PATH")]
     busybox: PathBuf,
 
-    /// Path to the nimbus-init STATIC binary. Build it with:
-    ///   cargo build -p nimbus-init --target aarch64-unknown-linux-musl --release
+    /// Path to the pullrun-init STATIC binary. Build it with:
+    ///   cargo build -p pullrun-init --target aarch64-unknown-linux-musl --release
     #[arg(long, value_name = "PATH")]
-    nimbus_init: PathBuf,
+    pullrun_init: PathBuf,
 
     /// Output path for the initramfs (cpio.gz).
     #[arg(long, value_name = "PATH")]
@@ -98,13 +98,13 @@ struct Args {
     no_gzip: bool,
 
     /// Path to a shell script to use as `/init` instead of
-    /// the default. The default just execs /sbin/nimbus-init.
+    /// the default. The default just execs /sbin/pullrun-init.
     #[arg(long, value_name = "PATH")]
     init_script: Option<PathBuf>,
 }
 
 const DEFAULT_INIT_SCRIPT: &str = "#!/bin/sh\n\
-exec /sbin/nimbus-init\n";
+exec /sbin/pullrun-init\n";
 
 fn main() -> std::process::ExitCode {
     tracing_subscriber::fmt()
@@ -142,7 +142,7 @@ enum BuildError {
 fn run(args: &Args) -> Result<(), BuildError> {
     // Validate inputs
     validate_input(&args.busybox, "busybox")?;
-    validate_input(&args.nimbus_init, "nimbus-init")?;
+    validate_input(&args.pullrun_init, "pullrun-init")?;
 
     // Open the output. We wrap in a gzip::Encoder unless
     // --no-gzip is set.
@@ -172,7 +172,7 @@ fn run(args: &Args) -> Result<(), BuildError> {
     const DEV_TTY: (u32, u32) = (5, 0); // /dev/tty
 
     // 1. Directories first.
-    for path in &["/proc", "/sys", "/dev", "/bin", "/sbin", "/etc"] {
+    for path in &["/proc", "/sys", "/dev", "/bin", "/sbin", "/etc", "/mnt", "/tmp"] {
         write_newc_entry(
             &mut writer,
             path,
@@ -246,17 +246,17 @@ fn run(args: &Args) -> Result<(), BuildError> {
     )?;
     ino += 1;
 
-    // 5. /sbin/nimbus-init binary.
-    let nimbus_init_data = std::fs::read(&args.nimbus_init)?;
-    info!(bytes = nimbus_init_data.len(), "nimbus-init read");
+    // 5. /sbin/pullrun-init binary.
+    let pullrun_init_data = std::fs::read(&args.pullrun_init)?;
+    info!(bytes = pullrun_init_data.len(), "pullrun-init read");
     write_newc_entry(
         &mut writer,
-        "/sbin/nimbus-init",
+        "/sbin/pullrun-init",
         ino,
         S_IFREG | MODE_EXEC,
         0,
         0,
-        &nimbus_init_data,
+        &pullrun_init_data,
     )?;
     ino += 1;
 
@@ -320,7 +320,7 @@ fn validate_input(path: &Path, label: &str) -> Result<(), BuildError> {
     let perms = meta.permissions();
     if perms.mode() & 0o111 == 0 {
         eprintln!(
-            "warning: {} ({}) is not executable; nimbus-init won't be able to run it",
+            "warning: {} ({}) is not executable; pullrun-init won't be able to run it",
             label,
             path.display()
         );
