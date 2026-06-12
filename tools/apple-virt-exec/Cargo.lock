@@ -1548,6 +1548,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "block2",
+ "bytes",
  "dispatch2",
  "hex",
  "libc",
