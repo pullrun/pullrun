@@ -47,6 +47,7 @@ Pullrun is a next-generation container runtime that treats **content-addressed s
 ### macOS (Homebrew)
 ```bash
 brew tap pullrun/tap
+brew trust pullrun/tap
 brew install pullrun
 ```
 
