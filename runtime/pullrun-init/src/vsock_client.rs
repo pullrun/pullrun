@@ -158,10 +158,16 @@ impl VsockClient {
         if duped < 0 {
             return Err(std::io::Error::last_os_error());
         }
-        // Build a sync UnixStream from the duped fd (takes
-        // ownership), then convert to a tokio UnixStream.
+        // Set non-blocking before wrapping so tokio doesn't reject
+        // a socket created via from_raw_fd.
+        let flags = unsafe { libc::fcntl(duped, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        if unsafe { libc::fcntl(duped, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
         let std_stream = unsafe { StdUnixStream::from_raw_fd(duped) };
-        std_stream.set_nonblocking(false).ok();
         UnixStream::from_std(std_stream)
     }
 
