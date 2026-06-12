@@ -28,7 +28,7 @@
   <a href="#quick-start"><b>🚀 Quick Start</b></a> •
   <a href="#why-pullrun-over-docker"><b>🎯 Why Not Docker?</b></a> •
   <a href="#features"><b>🗺️ Feature Map</b></a> •
-  <a href="#kubernetes-cri"><b>☸️ Kubernetes</b></a> •
+  <a href="#kubernetes"><b>☸️ Kubernetes</b></a> •
   <a href="#mcp-ai-integration"><b>🤖 AI Agents</b></a>
 </p>
 
