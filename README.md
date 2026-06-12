@@ -4,7 +4,7 @@
 
 # **Pullrun**
 
-### *Next-gen container runtime with zero-copy DAG storage and P2P image sync. Run OCI images as Linux containers, Firecracker microVMs, or Apple Silicon VMs.*
+### *Next-gen container runtime with zero-copy DAG storage, P2P image sync, and native AI agent integration via MCP. Run OCI images as Linux containers, Firecracker microVMs, or Apple Silicon VMs.*
 
 **Same OCI image. Any isolation level. No Docker daemon required.**
 
@@ -16,6 +16,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.77+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
 [![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen?logo=checkmarx)](#testing)
+[![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
@@ -43,6 +44,7 @@ Pullrun is a next-generation container runtime that treats **content-addressed s
 | **Zero-copy DAG store** | OCI layers stored as-is. No tar extraction, no overlayfs, no `dockerd`. Just `mmap()` and go. |
 | **P2P image distribution** | Nodes share image blocks directly via gRPC + Bloom filters. One node pulls; the rest delta-sync peer-to-peer. |
 | **Same image, any backend** | No separate "VM image" build step. The OCI manifest **IS** the VM rootfs. |
+| **MCP native integration** | Exposes every runtime operation as an MCP tool — AI agents (opencode, Claude Code, Cursor) can pull, run, exec, inspect, and manage workloads through natural language. |
 | **No overlayfs CVEs** | CVE-2026-31431, CVE-2023-0386, CVE-2023-32629 — all eliminated by per-VM kernel isolation. |
 
 ---
@@ -330,6 +332,7 @@ Builds use the DAG store directly — layers are content-addressed and deduplica
 | **P2P image distribution** | ❌ | ✅ |
 | **VM backend from OCI** | WSL2 only | ✅ (Firecracker + Apple Virt) |
 | **Cosign / SBOM gating** | ❌ | ✅ |
+| **MCP native integration** | ❌ | ✅ |
 
 Full feature comparison: [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md)
 
