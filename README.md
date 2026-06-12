@@ -73,21 +73,79 @@ export PATH="$PWD/bin:$PATH"
 ## 🚀 Quick Start
 
 ```bash
-# 1. Pull an image (deduplicates into the on-disk DAG store)
+# ── Pull & Run ─────────────────────────────────────────────────────
+
+# Pull an image (deduplicates into the on-disk DAG store)
 pullrun pull alpine:3.18
 
-# 2. Run it as a container OR a VM — same image, your choice
-pullrun run alpine:3.18 --backend container --cmd /bin/echo --cmd hello
-pullrun run alpine:3.18 --backend vm       --cmd /bin/echo --cmd hello
+# Run as a container (default) — exits after command completes
+pullrun run alpine:3.18 --cmd /bin/echo --cmd 'hello pullrun'
 
-# 3. Build natively without Docker
-pullrun build -t myapp:latest --platform linux/arm64
+# Run as a VM — same image, different backend
+pullrun run alpine:3.18 --backend vm --cmd /bin/echo --cmd 'hello pullrun'
 
-# 4. Use encrypted secrets at runtime
+# Interactive shell with detach/re-attach
+pullrun run alpine:3.18 --tty --attach --cmd /bin/sh
+#   Ctrl-P Ctrl-Q  → detach (workload keeps running)
+#   pullrun list   → find the workload ID
+#   pullrun exec <id> -t /bin/sh → re-attach
+
+# Run in background (daemon mode)
+pullrun run alpine:3.18 --cmd /bin/sleep --cmd 3600
+
+# ── Lifecycle ──────────────────────────────────────────────────────
+
+# List all workloads (pending / running / exited)
+pullrun list
+
+# Stop a workload
+pullrun stop <id>
+
+# Execute a command in a running workload
+pullrun exec <id> /bin/echo hello
+
+# Execute with TTY (works even on exited workloads — boots fresh)
+pullrun exec <id> -t /bin/sh
+
+# Attach to a workload's stdio
+pullrun attach <id>
+
+# ── Build & Push ───────────────────────────────────────────────────
+
+# Build an image from a Dockerfile (no Docker daemon needed)
+pullrun build -t myapp:latest .
+
+# Multi-platform build
+pullrun build -t myapp:latest --platform linux/amd64,linux/arm64 .
+
+# Push to a registry
+pullrun push myapp:latest
+
+# Export/import for air-gapped environments
+pullrun export myapp:latest > myapp.tar
+pullrun import < myapp.tar
+
+# ── Compose ────────────────────────────────────────────────────────
+
+pullrun compose up -f myapp/compose.yml
+pullrun compose logs -f
+pullrun compose down
+
+# ── Secrets & Configs ──────────────────────────────────────────────
+
 pullrun secret create db_password secret data
 pullrun run myapp:latest --secret db_password
 
-# 5. Enable P2P block sync for multi-node clusters
+pullrun config create nginx.conf --file ./nginx.conf
+pullrun run nginx:latest --config nginx.conf
+
+# ── Networking ─────────────────────────────────────────────────────
+
+pullrun network create my-net
+pullrun run alpine:3.18 --network my-net
+
+# ── P2P Sync ───────────────────────────────────────────────────────
+
 pullrun-runtime daemon --sync-addr 0.0.0.0:9500
 ```
 
