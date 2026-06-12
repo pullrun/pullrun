@@ -50,7 +50,7 @@ pub fn get_archived(&self, digest: &Digest) -> Result<&ArchivedDagNode, StoreErr
 
 (The `unsafe` is safe because rkyv's `#[archive(check_bytes)]` on
 the type verifies the bytes are well-formed at write time, and
-reads require no mutation. See `WARNINGS.md` for the pitfalls of
+reads require no mutation. See `docs/PULLRUN_GUIDE.md` for the pitfalls of
 `check_bytes` in v0.)
 
 ### The in-memory cache

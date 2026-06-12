@@ -1,5 +1,5 @@
 // Module: pullrun/protoapi
-// Contains Go bindings for all .proto files in /Users/YACINE/pullrun/proto/pullrun/.
+// Contains Go bindings for all .proto files in proto/pullrun/.
 // This is a shared library imported by the three Go binaries (pullrun,
 // controlplane, pullrun-cri) via `replace` directives in their go.mod.
 module pullrun/protoapi

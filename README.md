@@ -326,7 +326,7 @@ Builds use the DAG store directly — layers are content-addressed and deduplica
 | **VM backend from OCI** | WSL2 only | ✅ (Firecracker + Apple Virt) |
 | **Cosign / SBOM gating** | ❌ | ✅ |
 
-Full gap analysis: [PROGRESS.md](PROGRESS.md)
+Full feature comparison: [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md)
 
 ---
 
@@ -403,8 +403,7 @@ docs/             # Architecture, operations, policy
 | [docs/POLICY.md](docs/POLICY.md) | Policy engine (cosign, SBOM, CVSS, license) |
 | [docs/cross-node-dag-sync.md](docs/cross-node-dag-sync.md) | P2P block sync design |
 | [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide for all platforms |
-| [PROGRESS.md](PROGRESS.md) | Roadmap, test ledger, session handoffs |
-| [WARNINGS.md](WARNINGS.md) | Known pitfalls and version constraints |
+| [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide, lifecycle, persistence |
 
 ---
 
