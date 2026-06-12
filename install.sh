@@ -21,7 +21,7 @@ if [ "$OS" = "darwin" ]; then
   if command -v brew &>/dev/null; then
     info "Installing via Homebrew..."
     brew tap pullrun/tap
-    if brew trust pullrun/tap 2>/dev/null; then : ; fi
+    brew trust pullrun/tap || true
     brew install pullrun
     info "Done! Run 'pullrun --help' to get started."
     exit 0
