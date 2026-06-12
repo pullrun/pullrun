@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package mcp implements an MCP (Model Context Protocol) server for pullrun.
 //
 // It exposes pullrun runtime operations as MCP tools so that AI agents

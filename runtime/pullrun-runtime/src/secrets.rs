@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

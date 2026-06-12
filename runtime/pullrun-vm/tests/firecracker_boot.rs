@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! End-to-end Firecracker boot smoke test.
 //!
 //! This test boots a real Firecracker microVM with a tiny Alpine ext4

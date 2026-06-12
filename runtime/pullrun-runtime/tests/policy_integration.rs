@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! End-to-end policy integration tests.
 //!
 //! These tests exercise the full pipeline: a `RuntimeService` is built

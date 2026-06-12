@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 use async_trait::async_trait;
 use tracing::{debug, info};
 

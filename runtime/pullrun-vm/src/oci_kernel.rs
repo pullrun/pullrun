@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! OCI image-based kernel staging for the Apple Virtualization pool.
 //!
 //! This module bridges the gap between the OCI artifact pipeline

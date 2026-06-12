@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Standalone Apple Virtualization "exec" tool.
 //!
 //! Boots a single Apple Virt VM with a Linux kernel + initramfs

@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-side network plumbing for Firecracker VMs.
 //!
 //! This module is the VM-side counterpart to `pullrun_net::ProxyNetwork`.

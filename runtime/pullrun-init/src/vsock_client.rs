@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Guest-side vsock client.
 //!
 //! On Linux, the guest connects to the host's vsock listener

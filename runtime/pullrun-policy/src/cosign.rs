@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cosign-style signature verification for OCI image DAGs.
 //!
 //! A signature is a small DAG blob containing:

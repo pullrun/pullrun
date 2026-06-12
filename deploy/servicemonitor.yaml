@@ -1,3 +1,6 @@
+# Copyright 2026 Mohammed Boukaba.
+# SPDX-License-Identifier: Apache-2.0
+
 # ServiceMonitor for Prometheus Operator. The Operator creates
 # scrape configs from this resource and adds them to the Prometheus
 # instance.

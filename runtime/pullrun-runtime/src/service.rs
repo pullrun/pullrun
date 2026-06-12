@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Runtime service: the gRPC server side of pullrun-runtime.
 //!
 //! This module wires the policy engine into the pull and run paths. The

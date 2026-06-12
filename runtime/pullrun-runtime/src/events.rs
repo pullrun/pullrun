@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! In-process event bus for the Nimbus runtime.
 //!
 //! `EventBus` is a thin wrapper over `tokio::sync::broadcast` that

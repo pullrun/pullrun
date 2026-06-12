@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::bloom::BloomFilter;
 
 /// Compute which digests from `local_blobs` are NOT present in the

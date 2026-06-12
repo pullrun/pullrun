@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 use sha2::{Digest, Sha256};
 
 const DEFAULT_FP_RATE: f64 = 0.01;

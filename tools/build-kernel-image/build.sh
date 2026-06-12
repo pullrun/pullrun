@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Mohammed Boukaba.
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # build.sh — build a Pullrun kernel image (Asahi Apple-Virt ABI)
 #             and produce an OCI image layout.

@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package main implements the Pullrun CRI shim.
 //
 // Maps the Kubernetes Container Runtime Interface (CRI) onto the pullrun-runtime

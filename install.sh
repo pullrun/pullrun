@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Mohammed Boukaba.
+# SPDX-License-Identifier: Apache-2.0
+
 set -eu
 
 REPO="pullrun/pullrun"

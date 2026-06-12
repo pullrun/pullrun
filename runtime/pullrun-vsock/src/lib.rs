@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Wire protocol for host-guest communication over Virtio socket (vsock).
 //!
 //! Pullrun uses a length-prefixed binary frame protocol on top of a

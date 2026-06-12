@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Per-VM attach primitives for microVM workloads.
 //!
 //! This module exposes the lower-level building blocks that

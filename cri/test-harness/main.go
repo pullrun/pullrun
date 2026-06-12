@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 // Integration test: starts the pullrun-runtime daemon and the pullrun-cri shim,
 // then exercises the gRPC contracts to confirm they implement the CRI protocol.
 //

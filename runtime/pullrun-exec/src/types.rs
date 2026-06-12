@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;

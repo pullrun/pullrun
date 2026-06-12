@@ -1,3 +1,6 @@
+// Copyright 2026 Mohammed Boukaba.
+// SPDX-License-Identifier: Apache-2.0
+
 //! Standalone Firecracker boot smoke test.
 //!
 //! Builds a tiny ext4 rootfs whose `/init` script writes a marker
