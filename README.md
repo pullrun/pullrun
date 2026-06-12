@@ -44,24 +44,23 @@ Pullrun is a next-generation container runtime that treats **content-addressed s
 
 ## 📦 Install
 
-### macOS (Homebrew)
+### macOS (Homebrew — pre-built binary, no Xcode/build deps)
 ```bash
 brew tap pullrun/tap
-brew trust pullrun/tap
 brew install pullrun
 ```
+> The formula downloads a pre-built ~18 MB tarball — no Rust, Go, LLVM, or Xcode required.
 
-### Linux (APT — Debian/Ubuntu)
-```bash
-curl -fsSL https://pullrun.github.io/apt/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/pullrun.gpg
-echo "deb [signed-by=/usr/share/keyrings/pullrun.gpg] https://pullrun.github.io/apt stable main" | sudo tee /etc/apt/sources.list.d/pullrun.list
-sudo apt-get update && sudo apt-get install -y pullrun
-```
-
-### Any platform (curl | sh)
+### Linux (APT — Debian/Ubuntu) — *coming soon*
 ```bash
 curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | sh
 ```
+
+### Any platform (direct download)
+```bash
+curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | sh
+```
+Detects the platform and installs via Homebrew (macOS) or direct binary download.
 
 ### From source
 ```bash
@@ -366,9 +365,11 @@ Full feature comparison: [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md)
 
 | Tool | Required For | Minimum Version | Install |
 |------|-------------|-----------------|---------|
-| Rust + Cargo | Runtime daemon, store, networking | 1.77+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` |
-| Go | CLI, CRI shim | 1.22+ | `brew install go` or `apt install golang` |
+| Rust + Cargo | Building runtime from source | 1.77+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` |
+| Go | Building CLI from source | 1.22+ | `brew install go` or `apt install golang` |
 | protoc | Regenerating protobuf bindings | 3.0+ | `brew install protobuf` or `apt install protobuf-compiler` |
+
+> **Binary users:** You only need `pullrun` and `pullrun-runtime` from the release tarball. The tools above are only for compiling from source.
 
 ---
 
