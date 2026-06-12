@@ -186,7 +186,7 @@ impl Workload {
     fn mount_volumes(&self) -> Result<(), InitError> {
         for m in &self.mounts {
             std::fs::create_dir_all(&m.destination)
-                .map_err(|e| InitError::Io(e))?;
+                .map_err(InitError::Io)?;
             let tag_c = std::ffi::CString::new(m.tag.as_bytes())
                 .map_err(|_| InitError::Exec(format!("NUL in mount tag: {}", m.tag)))?;
             let dest_c = std::ffi::CString::new(m.destination.as_bytes())
@@ -269,18 +269,18 @@ impl Workload {
         // `/dev/ptmx`, so we create them on demand.
         #[cfg(target_os = "linux")]
         unsafe {
-            let _ = libc::mkdir("/dev/pts\0".as_ptr() as *const libc::c_char, 0o755);
+            let _ = libc::mkdir(c"/dev/pts".as_ptr(), 0o755);
             libc::mount(
-                "devpts\0".as_ptr() as *const libc::c_char,
-                "/dev/pts\0".as_ptr() as *const libc::c_char,
-                "devpts\0".as_ptr() as *const libc::c_char,
+                c"devpts".as_ptr(),
+                c"/dev/pts".as_ptr(),
+                c"devpts".as_ptr(),
                 0,
                 std::ptr::null(),
             );
-            let _ = libc::unlink("/dev/ptmx\0".as_ptr() as *const libc::c_char);
+            let _ = libc::unlink(c"/dev/ptmx".as_ptr());
             libc::symlink(
-                "pts/ptmx\0".as_ptr() as *const libc::c_char,
-                "/dev/ptmx\0".as_ptr() as *const libc::c_char,
+                c"pts/ptmx".as_ptr(),
+                c"/dev/ptmx".as_ptr(),
             );
         }
         // On macOS the host provides devfs with ptmx already
@@ -427,7 +427,10 @@ impl Workload {
 
                     // 4. Set the controlling terminal explicitly
                     //    (belt-and-suspenders with step 2).
+                    #[cfg(not(target_os = "linux"))]
                     libc::ioctl(0, libc::TIOCSCTTY.into(), 0);
+                    #[cfg(target_os = "linux")]
+                    libc::ioctl(0, libc::TIOCSCTTY, 0);
 
                     // 5. Set the working directory if specified.
                     if !self.working_dir.is_empty() {

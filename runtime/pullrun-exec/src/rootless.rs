@@ -325,7 +325,7 @@ mod tests {
             gid_map_base: 100_000,
             gid_map_size: 65_536,
         };
-        let mut cmd = rootless_runc_command(&cfg, "test", Path::new("/tmp/bundle"));
+        let cmd = rootless_runc_command(&cfg, "test", Path::new("/tmp/bundle"));
         let dbg = format!("{:?}", cmd);
         assert!(dbg.contains("run"));
         assert!(dbg.contains("test"));
