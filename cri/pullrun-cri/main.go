@@ -31,7 +31,7 @@ const (
 	// PullrunVMRuntimeClass is the RuntimeClass name for VM workloads.
 	PullrunVMRuntimeClass = "pullrun-vm"
 	// PullrunCRIVersion is the reported CRI version.
-	PullrunCRIVersion = "0.2.0"
+	PullrunCRIVersion = "0.3.0"
 	// DefaultPauseImage is the standard K8s sandbox image (no-op container).
 	DefaultPauseImage = "registry.k8s.io/pause:3.9"
 	// AnnotationPullrunImage overrides the image to run in a pod sandbox.
