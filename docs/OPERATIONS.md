@@ -121,11 +121,73 @@ getcap /usr/local/bin/pullrun-runtime
 | `--max-cvss <SCORE>` | (none) | Reject images with vulnerabilities above this CVSS |
 | `--readonly-rootfs` | false | Declare the rootfs must be read-only |
 | `--no-new-privileges` | false | Set `no_new_privs` on the container |
+| `--seccomp-profile <PROFILE>` | `default` | Seccomp profile: `default`, `unconfined`, or path to custom JSON |
+| `--insecure-registry <HOST>` | (none) | Allow plain-HTTP connections to this registry (repeatable) |
 | `--vm-firecracker <path>` | (none) | Path to the `firecracker` binary |
 | `--vm-kernel <path>` | (none) | Path to the Linux kernel image for VMs |
 | `--vm-root <path>` | (none) | Where VM rootfs blobs are materialized |
 | `--vm-vcpus <N>` | 1 | Default vCPUs per VM |
 | `--vm-mem <MiB>` | 512 | Default memory per VM |
+
+### Health checks
+
+Workloads with `--health-cmd` are monitored by a background
+watcher inside the runtime. The watcher runs the health command
+inside the workload every 30s (configurable via the workload
+spec). A health check is:
+- **Passing** — the command exits 0.
+- **Failing** — the command exits non-zero, times out (default
+  10s), or the workload is unreachable.
+
+Health state is surfaced in:
+- `pullrun inspect <id>` — `"health": "healthy" | "unhealthy" | "starting"`
+- `pullrun events --types=WORKLOAD_UNHEALTHY` — stream of state
+  transitions
+- Prometheus gauge `pullrun_workload_health_status` (1 = healthy,
+  0 = unhealthy, per workload)
+
+There is no automatic action on health failure in v0 (no
+auto-restart unless combined with `--restart`). The health state
+is informational — the operator or an external watcher can act
+on it.
+
+### Restart policies
+
+Controlled by `--restart` on `pullrun run`:
+
+| Policy | Behavior |
+|--------|----------|
+| `no` (default) | Never restart. Workload runs once and stays `exited`. |
+| `on-failure` | Restart if the workload exits with a non-zero code. Uses exponential backoff (1s → 2s → 4s → ... → 30s cap) to avoid restart loops. |
+| `always` | Restart unconditionally on exit, regardless of exit code. |
+| `unless-stopped` | Same as `always`, but if the operator explicitly runs `pullrun stop`, the workload stays stopped until manually started again. |
+
+Restart limits:
+- The daemon tracks restart count per workload in an in-memory
+  counter (cleared on daemon restart).
+- After 5 consecutive failures within 120s, the workload enters
+  `CrashLoopBackOff` state and no further automatic restarts
+  occur until the operator intervenes (`pullrun stop` clears the
+  backoff).
+
+### VM state persistence
+
+VM workloads preserve their rootfs across `exited → exec`
+transitions. This is a key operational difference from containers:
+
+| Backend | Rootfs persists? | Mechanism |
+|---------|-----------------|-----------|
+| **Container** (runc) | ❌ — fresh OCI rootfs on each boot | Rootfs is materialized from the DAG each time. Only `--volume` mounts survive. |
+| **Apple Virt VM** | ✅ | VirtioFS shares the host directory directly. Every write hits the host filesystem; the same directory is shared on re-attach. |
+| **Firecracker VM** | ✅ (within same daemon session) | The ext4 image file is retained on disk and reused. `exec` from `exited` boots the same image. |
+
+Operationally, this means:
+- A VM that crashes mid-update can be inspected by re-attaching
+  with `pullrun exec <id> -t /bin/sh` — the broken filesystem
+  state is still there.
+- OS package installations inside a VM survive stop/restart cycles.
+- To reset a VM to its image state, use `pullrun stop` followed
+  by a fresh `pullrun run` (not `exec`).
 
 ### Environment variables
 

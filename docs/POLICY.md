@@ -191,6 +191,68 @@ places:
   restart. v1 will support a key registry with retirement
   dates.
 
+## Runtime hardening primitives
+
+Alongside the image-level policy (cosign, SBOM), the runtime
+enforces per-workload hardening flags that are evaluated at
+`run_workload` time:
+
+### `--seccomp-profile`
+
+Controls the seccomp BPF filter applied to the workload:
+
+| Value | Behavior |
+|-------|----------|
+| `default` | A curated allowlist of ~50 syscalls (read, write, mmap, openat, etc.). Blocks raw I/O, kernel module loading, user-namespace creation, and other high-risk syscalls. |
+| `unconfined` | No seccomp filter. Required for workloads that need cloned children, user-namespace operations, or uncommon syscalls. |
+| custom JSON path | A user-supplied seccomp profile as a JSON file. The runtime passes it directly to runc's `--seccomp-policy`; for VMs it is embedded in the kernel command line via `lsm=seccomp`. |
+
+The `default` profile is the recommended production setting. It
+blocks ~250 syscalls that are unnecessary for typical container
+workloads while allowing the ~50 that POSIX, Linux ABI, and
+common runtimes require.
+
+### `--readonly-rootfs`
+
+When set, the workload's rootfs is mounted read-only. Writes that
+would modify image content (e.g. apt-get install, pip install)
+fail at the filesystem level. Only explicitly mounted `--volume`
+paths and `/run/secrets/` are writable.
+
+This is the primary defense against runtime tampering: even if
+an attacker gains code execution inside the workload, they
+cannot `chmod +s /bin/sh` or modify system libraries.
+
+### `--no-new-privileges`
+
+Sets the `no_new_privs` process attribute on the workload's
+initial process. This prevents `setuid` binary escalation,
+`capset` with new capabilities, and `LSM`-based privilege gains.
+It is inherited by all child processes and cannot be unset.
+
+In container backends, this maps directly to runc's
+`"noNewPrivileges": true`. In VM backends, it is set via the
+kernel's `PR_SET_NO_NEW_PRIVS` from the guest agent before the
+workload command executes.
+
+### Composition with image policy
+
+The four controls compose orthogonally:
+
+```bash
+pullrun-runtime daemon \
+  --require-signature \
+  --require-sbom \
+  --max-cvss 7.0 \
+  --readonly-rootfs \
+  --no-new-privileges
+```
+
+A workload that passes cosign + SBOM checks but has
+`--readonly-rootfs` will still fail if it tries to write to
+`/usr/`. The policy engine gates *can it run?*; these flags gate
+*how it runs* — defense in depth at both layers.
+
 ## What this is good for
 
 The engine is *not* a complete supply-chain security

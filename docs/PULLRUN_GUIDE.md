@@ -267,9 +267,14 @@ pullrun load -i myimage.tar
 # List images in the store
 pullrun list
 
-# Login / logout from registries
-pullrun login docker.io
+# Login / logout from registries (bearer token auth)
+pullrun login docker.io           # prompts for username/password
+pullrun login ghcr.io -u myuser   # explicit user, prompts for password
+pullrun login localhost:5000      # plain-HTTP registry (needs --insecure-registry on daemon)
 pullrun logout
+
+# Configure the daemon for insecure (plain-HTTP) registries:
+pullrun-runtime daemon --insecure-registry localhost:5000
 ```
 
 ### Running workloads

@@ -67,7 +67,7 @@ the type verifies the bytes are well-formed at write time, and
 reads require no mutation. See `docs/PULLRUN_GUIDE.md` for the pitfalls of
 `check_bytes` in v0.)
 
-### The in-memory cache
+### The in-memory cache and concurrency model
 
 Two LRU caches (256 MiB each) sit in front of the store: one for
 `DagNode` deserializations and one for blob data.
@@ -82,6 +82,22 @@ does not invalidate live references held by callers. On a cache
 miss, the file is mmap'd and the `ArchivedDagNode` is
 zero-copy viewed (rkyv) from the mapped bytes; on eviction, the
 `Mmap` is dropped and the kernel reclaims the pages.
+
+The primary store is backed by `DashMap<Digest, Arc<Mmap>>` — a
+lock-free concurrent hash map (sharded by digest prefix). This
+is a deliberate architectural choice over `RwLock<HashMap>`:
+
+- **Reads are fully concurrent.** DashMap shards the key space
+  across 64 internal locks; reads that hit different shards do
+  not contend. A single `RwLock<HashMap>` serializes all readers
+  on the same lock.
+- **Writes do not block readers.** An insert or remove inside one
+  shard does not block lookups in other shards.
+- **The sharding strategy matches the store's own layout.** The
+  same two-hex-byte prefix that determines the on-disk path
+  determines the in-memory shard, so concurrent access patterns
+  (multi-image pull, simultaneous list + prune) naturally
+  distribute across shards.
 
 Concurrent reads are lock-free at the `Arc` level; the first reader
 pays for `mmap()` + page faults, every subsequent reader is a
@@ -250,18 +266,42 @@ On Apple Silicon, Pullrun uses the `Virtualization.framework`
 executor runs in-process with the daemon, which must be signed
 with the `com.apple.security.virtualization` entitlement.
 
+#### Two-thread dispatch model
+
+Apple Virtualization FFI requires that all framework calls happen
+on the main thread (specifically, the thread that calls
+`dispatch_main()`). This creates an unusual constraint for a Rust
+async runtime. The executor uses a two-thread architecture:
+
+- **Main thread** — calls `dispatch2::dispatch_main()` to pump
+  the main dispatch queue. The Apple Virtualization framework
+  submits all its async completion handlers (VM boot, vsock
+  events, VirtioFS I/O) to this queue. This thread never returns.
+- **Body thread** — does all actual work: kernel staging, VM
+  pool operations, vsock transport, workload exec. When done, it
+  calls `libc::_exit(code)` because the main thread is blocked
+  in `dispatch_main()` and cannot observe a normal return.
+
+A panic hook catches body-thread panics and calls `_exit(1)`;
+without this, a panic would leave the process stuck forever in
+`dispatch_main()` with no way to signal failure. This design is
+used by both `apple-virt-smoke` and `apple-virt-exec` standalone
+tools as well as the daemon's AppleVirtExecutor.
+
 ```
  ┌─ pullrun-runtime (signed process) ────────────────────┐
  │                                                        │
- │  AppleVirtExecutor                                     │
+ │  Thread 1 (main): dispatch_main()                      │
+ │    └─ Apple Virtualization completion handlers         │
+ │                                                        │
+ │  Thread 2 (body): all actual work                      │
  │    ├─ VM creation (lazy, not on boot)                  │
- │    ├─ VirtioFS rootfs share (the DAG rootfs directory) │
+ │    ├─ VirtioFS rootfs share (the DAG rootfs directory  │
  │    │   is shared directly — no ext4 image build)       │
  │    ├─ VZVirtioSocketListener (vsock port 42)           │
  │    └─ on_exit callback → status update + event         │
  │                                                        │
- │  Background thread: vm-{workload_id}                   │
- │  Main thread: dispatch_main()                          │
+ │  On completion: body thread calls _exit(code)          │
  └────────────────────────────────────────────────────────┘
 ```
 
@@ -297,6 +337,57 @@ connection back to the host daemon:
  │                                  │   │    └── exec workload           │
  └──────────────────────────────────┘   └────────────────────────────────┘
 ```
+
+#### pullrun-init: the guest agent
+
+The guest-side agent is a static binary (`aarch64-unknown-linux-musl`)
+that acts as PID 1 inside the VM. Its responsibilities differ by
+backend:
+
+**Firecracker (no initramfs):** The runtime generates a `/init`
+shell script from the OCI image's `ENTRYPOINT`/`CMD` and embeds
+it directly in the ext4 rootfs before boot. No separate initramfs,
+busybox, or agent binary is needed — the kernel's `init=/init`
+runs the generated script, which `exec`s the workload command.
+On exit, the script calls `poweroff -f` and the Firecracker VM
+shuts down.
+
+```
+OCI image ENTRYPOINT/CMD
+        │
+        ▼
+Runtime writes /init: "exec <entrypoint> <cmd>"
+        │
+        ▼
+mkfs.ext4 -d <rootfs_dir> <image>
+        │
+        ▼
+firecracker --kernel vmlinux --rootfs ext4.img
+     (init=/init)
+```
+
+**Apple Virt (initramfs):** A full initramfs (`cpio.gz`) bundles
+`pullrun-init` (static aarch64 musl binary), busybox applets,
+and device nodes. `pullrun-init` mounts VirtioFS shares
+(rootfs + volumes), wires the vsock connection to the host daemon,
+and `exec`s the workload. Unlike Firecracker, the VM stays alive
+after workload exit — a new vsock session can re-attach to a
+fresh shell.
+
+```
+Initramfs layout:
+  /init                  → shell script (exec /sbin/pullrun-init)
+  /sbin/pullrun-init      → static binary (aarch64 musl)
+  /bin/busybox           → applets: sh, cat, ls, mount, ...
+  /dev/{console,null,tty}→ device nodes
+  /proc, /sys, /etc, /mnt, /tmp → mount targets
+```
+
+The `pullrun-init` source lives in `runtime/pullrun-init/` and
+is deliberately small (~500 lines of Rust) — it avoids an
+init system, udev, or getty. The vsock protocol is a simple
+framed message stream (length-prefixed JSON for control,
+raw bytes for stdio).
 
 Networking for the VM uses a tap device attached to the shared
 `pullrun-br0` bridge — same L2 segment as the containers. The
@@ -577,7 +668,29 @@ Persistence (etcd), cross-node service discovery
 The wire protocol is stable; only the server-side state
 management changes.
 
-## 9. Why Rust + Go
+## 9. Standalone smoke-test tooling (`tools/`)
+
+The `tools/` directory contains six independent Cargo workspaces,
+each a focused binary that exercises one subsystem in isolation.
+They are not unit tests — they are standalone executables useful
+for CI, debugging, and hardware validation.
+
+| Tool | Platform | Purpose |
+|------|----------|---------|
+| `apple-virt-smoke` | macOS | FFI pool test — creates and destroys N Apple VMs concurrently to validate the Virtualization.framework FFI bindings under load. Exits after all VMs complete. |
+| `apple-virt-exec` | macOS | Full VM workload runner without the daemon. Takes a kernel, initramfs, and rootfs directory, boots a VM, runs a command via vsock, and reports exit code + wall time. Useful for CI pipelines that need VM isolation without the gRPC stack. |
+| `build-initramfs` | Cross-platform | Initramfs builder for Apple Virt guest images. Produces `pullrun-initramfs.cpio.gz` containing `pullrun-init` (static aarch64 musl), busybox, and device nodes. |
+| `build-kernel-image` | Cross-platform | Packs a vmlinux binary into an OCI image layer for registry distribution. Enables `--kernel-image ghcr.io/...` workflows. |
+| `firecracker-smoke` | Linux | Boots a real Firecracker microVM with a minimal Alpine rootfs, runs a single command, and validates the exit code. Requires `PULLRUN_FC_BIN` and `PULLRUN_FC_VMLINUX` env vars. |
+| `vm-network-smoke` | Linux | Tests VM outbound connectivity by booting a microVM, running `wget` against a host-bound HTTP server, and checking the serial console for `pullrun-vm-outbound OK`. |
+
+The standalone design means each tool has its own `Cargo.toml`
+and `target/` directory — no shared build state, no dependency on
+the runtime's crate graph. This is intentional: a CI job that
+only needs `apple-virt-exec` should not compile the entire OCI
+puller or policy engine.
+
+## 10. Why Rust + Go
 
 A deliberate split:
 
@@ -585,7 +698,10 @@ A deliberate split:
   proxy, the OCI pipeline, the policy engine. All of these
   benefit from `mmap`, zero-copy deserialization (rkyv), and
   fine-grained control over async runtime behavior. The Rust
-  code is one Cargo workspace with seven crates.
+  code is one Cargo workspace with eleven crates (pullrun-store,
+  pullrun-oci, pullrun-exec, pullrun-vm, pullrun-net, pullrun-dns,
+  pullrun-vsock, pullrun-sync, pullrun-policy, pullrun-runtime,
+  pullrun-init).
 - **Go owns the control plane and the CLI.** gRPC stubs are
   trivial in Go; the CLI is a 5-line `cobra` command. We
   deliberately don't share code between the CLI and the

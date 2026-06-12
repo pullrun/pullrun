@@ -24,12 +24,12 @@
 </div>
 
 <p align="center">
-  <a href="#install"><b>⚡ 30-Second Install</b></a> •
-  <a href="#quick-start"><b>🚀 Quick Start</b></a> •
-  <a href="#why-pullrun-over-docker"><b>🎯 Why Not Docker?</b></a> •
-  <a href="#features"><b>🗺️ Feature Map</b></a> •
-  <a href="#kubernetes"><b>☸️ Kubernetes</b></a> •
-  <a href="#mcp-ai-integration"><b>🤖 AI Agents</b></a>
+  <a href="#-install"><b>⚡ 30-Second Install</b></a> •
+  <a href="#-quick-start"><b>🚀 Quick Start</b></a> •
+  <a href="#-why-pullrun-over-docker"><b>🎯 Why Not Docker?</b></a> •
+  <a href="#-features"><b>🗺️ Feature Map</b></a> •
+  <a href="#-kubernetes"><b>☸️ Kubernetes</b></a> •
+  <a href="#-mcp-ai-integration"><b>🤖 AI Agents</b></a>
 </p>
 
 ---
@@ -204,16 +204,28 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 ## ✨ Features
 
 ### 🏃 Workload Lifecycle
-`pull`, `run`, `stop`, `exec`, `attach`, `list`, `logs`, `stats`, `events`, `inspect`, `commit`, `diff`, `prune`, `update` (rolling restart)
+`pull`, `run`, `stop`, `exec`, `attach`, `list`, `logs`, `stats`, `events`, `inspect`, `prune` plus:
+
+* **`commit`** — create a new image layer from a running container's current filesystem. The DAG store computes the delta against the original image, producing a content-addressed layer.
+* **`diff`** — show file-level changes between a running workload and its original image. The store compares DAG trees to produce an add/modify/delete listing.
+* **`update`** — live resource limit changes (CPU millicores, memory bytes) without restarting the workload.
+* **`cp`** — bidirectional file copy between host and workload paths.
+* **`save` / `load`** — OCI-compatible single-file tarball export/import for air-gapped environments. Re-import produces identical content hashes.
+* **`login` / `logout`** — bearer token auth for private OCI registries.
 
 ### 🔧 Build
 Native Dockerfile builder — `FROM`, `RUN`, `COPY`, `ADD`, `WORKDIR`, `ENV`, `CMD`, `ENTRYPOINT`, `--platform` for multi-arch. Each layer is content-addressed and cached by instruction hash. Uses runc directly for `RUN` instructions — no Docker daemon involved. Multi-platform builds produce manifest lists via `--platform linux/amd64,linux/arm64`.
+
+### 🏗️ OCI Kernel Images
+Pullrun treats kernel binaries as first-class OCI content. `pullrun kernel install` downloads a Kata Containers vmlinux from an OCI registry, storing it in the DAG store alongside regular image layers. The `--kernel-image` flag lets any workload specify a custom kernel by OCI reference — the daemon pulls it, stages it, and boots the VM with it. This is the same store-backed, content-addressed pipeline used for regular images: verified by digest, cached forever, pushable to any registry.
 
 ### 🐳 Compose
 Full Docker Compose-compatible workflow: `up`, `down`, `logs`, `ps`, `build`. Supports dependency ordering (topological sort), port mapping, environment variables, volumes (bind mounts), resource limits (CPU/memory), labels, and per-project bridge networks for isolation. Parses standard `docker-compose.yml` files via the [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go) library.
 
 ### ☸️ Kubernetes CRI
 Drop-in CRI shim at [`cri/pullrun-cri/`](cri/pullrun-cri/) — implement `RuntimeService` and `ImageService` from the Kubernetes CRI API. Maps pod sandboxes to pullrun workloads, supports RuntimeClass (`pullrun-container` / `pullrun-vm`), pod annotations for image/CPU/memory overrides, and streaming (exec, attach, port-forward).
+
+A native **control-plane stub** lives in [`control-plane/`](control-plane/): `pullrun-controller` (scheduler) + `pullrun-agent` (per-node deployer) communicating over gRPC. This is a v1 work-in-progress with etcd, `.pullrun.local` DNS, and admission control planned — but the wire protocol is stable today.
 
 ### 🤖 MCP AI Integration
 Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing 15+ runtime operations as MCP tools — `run`, `stop`, `exec`, `list`, `get`, `inspect`, `logs`, `stats`, `pull_image`, `list_images`, `build`, `push`, `prune`, `compose_up`, `compose_down` plus MCP resources (`pullrun://workload/{id}`, `pullrun://workload/{id}/logs`, `pullrun://store/info`, `pullrun://images`). Works in stdio mode (for opencode, Claude Code, Cursor) or SSE mode (for remote agents via HTTP).
@@ -222,15 +234,25 @@ Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing
 Gate workloads before they run — built-in support for:
 - **Cosign** signature verification (Ed25519 key pairs, key ID matching)
 - **SBOM** evaluation (CVSS scoring, ban by license)
-- **Seccomp** profiles (`default`, `unconfined`, custom)
-- **Read-only rootfs**, `no_new_privileges`
+- **Seccomp** profiles (`default` allowlist of ~50 syscalls, `unconfined`, or custom JSON)
+- **Read-only rootfs** — prevents runtime tampering (write only to `--volume` mounts)
+- **`no_new_privileges`** — blocks `setuid` and `capset` escalation
 - Policy is declarative: `required_signature: true`, `max_cvss_score: 7.0`, `deny_licenses: ["GPL-3.0"]`
+
+Compose all four: `--require-signature --readonly-rootfs --no-new-privileges --seccomp-profile default`.
 
 ### 🌐 P2P Image Distribution
 Nodes share image blocks peer-to-peer via gRPC + Bloom filters. One node pulls from the registry, the rest delta-sync from each other. Features: mDNS/discovery for zero-config LAN peer finding, Bloom filter cache to avoid redundant transfers, gossip protocol for peer state, delta computation, registrar service for peer tracking.
 
 ### 📡 Networking
-User-defined bridge networks with IPAM (`10.42.0.0/16` global pool, per-project subnets), inbound/outbound port forwarding via TCP proxy, DNS resolution, loopback mode, `iptables` integration. Networks are created with `pullrun network create <name> --subnet <cidr>` and attached workloads get an isolated bridge with their own subnet.
+User-defined bridge networks with IPAM (`10.42.0.0/16` global pool, per-project subnets), inbound/outbound port forwarding via TCP proxy, DNS resolution, `iptables` integration. Networks are created with `pullrun network create <name> --subnet <cidr>` and attached workloads get an isolated bridge with their own subnet.
+
+Three network modes per workload via `--net`:
+* **`isolated`** (default) — loopback only, no external traffic. Workload is reachable only from the host via the proxy on `10.42.0.1`.
+* **`host`** — shares the host's network namespace. Useful for latency-sensitive or port-dense workloads.
+* **`none`** — no network access at all. Strongest isolation, suitable for offline batch jobs.
+
+The proxy listens on `10.42.0.1:<port>` for each declared `--allow-inbound` rule and DNATs to the workload's internal IP. All workloads (containers and VMs) share the same L2 bridge segment — isolation is enforced by the proxy, not per-workload VLANs.
 
 ### 🗝️ Encrypted Secrets
 AES-256-GCM encryption at rest, decrypted into workload tmpfs at runtime. `pullrun secret create/get/ls/inspect/rm` — data stays encrypted on disk, only the runtime process can decrypt.
@@ -243,6 +265,20 @@ Real-time event stream via `pullrun events` — `IMAGE_PULLED`, `WORKLOAD_STARTE
 
 ### 🖥️ Interactive Shells
 Full TTY support with **detach/re-attach** via `Ctrl-P Ctrl-Q`. Works across all backends (container, Firecracker VM, Apple VM). Detached workloads keep running — re-attach with `pullrun exec --tty <id> /bin/sh`. Even works on exited workloads (daemon starts a fresh sleep container).
+
+### ❤️ Health Checks & Restart Policies
+`pullrun run --health-cmd 'curl -f http://localhost:80'` — periodic health checks with configurable interval, timeout, and retries. `--restart on-failure|always|unless-stopped` controls automatic restart on exit. Health state is surfaced via `pullrun inspect` and `pullrun events`.
+
+### 🗄️ VM State Persistence
+When a VM workload goes `exited` and is restarted via `exec`, the filesystem state depends on the backend:
+* **Apple Virt VM** — rootfs persists. VirtioFS shares the host directory directly; every write hits the host filesystem.
+* **Firecracker VM** — rootfs persists. The ext4 image file is retained and reused on the next boot.
+* **Container (runc)** — rootfs is ephemeral. Only `--volume` mounts survive.
+
+This makes stopped VMs behave like hibernated machines — all writes preserved, restart on demand with `exec`. No re-pull or re-declaration needed.
+
+### 🔐 Private Registries & Insecure Registries
+`pullrun login <registry>` stores bearer tokens for private OCI registries. The daemon accepts `--insecure-registry localhost:5000` for plain-HTTP registries (development mirrors, air-gapped LAN caches). Auth is per-registry with token refresh.
 
 ---
 
@@ -312,35 +348,38 @@ Each block verified by content hash before acceptance — no trust required.
 ## 🏗️ Architecture
 
 ```
-                             pullrun (Go CLI)
-                  pull · run · build · compose · inspect
-                  events · stats · network · secret · mcp
-                             │
-                             │ gRPC (UDS or TCP)
-                             ▼
-                  ┌─────────────────────────────────────┐
-                  │         pullrun-runtime             │
-                  │  ┌──────────┐   ┌──────────────┐    │
-                  │  │ Store    │   │ Executor     │    │
-                  │  │ (DAG)    │   │ runc / VM    │    │
-                  │  │ └ rkyv   │   │              │    │
-                  │  │ └ mmap   │   │              │    │
-                  │  └────┬─────┘   └──────┬───────┘    │
-                  │       │                │            │
-                  │  ┌────┴────────────────┴────┐       │
-                  │  │       Network            │       │
-                  │  │  IPAM · Proxy · DNS      │       │
-                  │  └──────────────────────────┘       │
-                  │                                      │
-                  │  Sync · Policy · Secrets · Metrics   │
-                  └──────────────────────────────────────┘
-                             │
-                  ┌──────────┴──────────┐
-                  │      Kubernetes     │
-                  │  CRI shim · Runtime │
-                  │  Class · Prometheus │
-                  └─────────────────────┘
+                              pullrun (Go CLI)
+                   pull · run · build · compose · inspect
+                   events · stats · network · secret · mcp
+                              │
+                              │ gRPC (UDS or TCP)
+                              ▼
+                   ┌─────────────────────────────────────┐
+                   │         pullrun-runtime             │
+                   │  ┌──────────┐   ┌──────────────┐    │
+                   │  │ Store    │   │ Executor     │    │
+                   │  │ (DAG)    │   │ runc / VM    │    │
+                   │  │ └ rkyv   │   │              │    │
+                   │  │ └ mmap   │   │              │    │
+                   │  │ └ DashMap│   │              │    │
+                   │  └────┬─────┘   └──────┬───────┘    │
+                   │       │                │            │
+                   │  ┌────┴────────────────┴────┐       │
+                   │  │       Network            │       │
+                   │  │  IPAM · Proxy · DNS      │       │
+                   │  └──────────────────────────┘       │
+                   │                                      │
+                   │  Sync · Policy · Secrets · Metrics   │
+                   └──────────────────────────────────────┘
+                              │
+                   ┌──────────┴──────────┐
+                   │      Kubernetes     │
+                   │  CRI shim · Runtime │
+                   │  Class · Prometheus │
+                   └─────────────────────┘
 ```
+
+The store uses `DashMap<Digest, Arc<Mmap>>` for lock-free concurrent reads — the first reader pays for `mmap()` + page faults, every subsequent reader is a single atomic load. The Rust workspace is eleven crates (store, oci, exec, vm, net, dns, vsock, sync, policy, runtime, init); the Go side is the CLI, CRI shim, compose, and control-plane stub.
 
 ---
 
@@ -349,19 +388,23 @@ Each block verified by content hash before acceptance — no trust required.
 ```
 proto/            # Protobuf definitions (single source of truth)
 runtime/          # Rust workspace — core data plane
-  pullrun-store/   # Zero-copy DAG store (rkyv + mmap)
+  pullrun-store/   # Zero-copy DAG store (rkyv + mmap + DashMap concurrent cache)
   pullrun-oci/     # OCI client + DAG converter
   pullrun-exec/    # Executor trait + runc wrapper
-  pullrun-vm/      # Firecracker + Apple Virt backends
+  pullrun-vm/      # Firecracker + Apple Virt backends + pullrun-init guest agent
   pullrun-net/     # IPAM, proxy, DNS, iptables
+  pullrun-dns/     # In-process DNS server for workload resolution
+  pullrun-vsock/   # Vsock transport layer for VM guest-host communication
   pullrun-sync/    # P2P block sync (Bloom, mDNS, gossip)
   pullrun-policy/  # Cosign, SBOM, seccomp gates
   pullrun-runtime/ # gRPC daemon
-cli/pullrun/      # Go CLI (cobra) — 30 commands
+cli/pullrun/      # Go CLI (cobra) — 30+ commands
 cri/pullrun-cri/  # Kubernetes CRI shim
+control-plane/    # Multi-node orchestration stub: pullrun-controller + pullrun-agent (v1 WIP)
 cmd/pullrun-compose/ # Docker Compose-compatible CLI
 deploy/           # K8s manifests, Prometheus rules, alerts
 docs/             # Architecture, operations, policy, MCP
+tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecracker-smoke, etc.)
 ```
 
 ---
