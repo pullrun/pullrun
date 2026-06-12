@@ -29,11 +29,20 @@ if [ "$OS" = "darwin" ] && command -v brew &>/dev/null; then
   warn "Homebrew install failed (Xcode version mismatch?). Falling back to direct download..."
 fi
 
-# ── Linux: try APT (not yet available) ─────────────────────────────
-# if [ "$OS" = "linux" ] && command -v apt-get &>/dev/null; then
-#   info "Installing via APT..."
-#   ... (coming soon)
-# fi
+# ── Linux: try APT (Debian/Ubuntu) ─────────────────────────────────
+if [ "$OS" = "linux" ] && command -v apt-get &>/dev/null; then
+  info "Installing via APT..."
+  KEY_URL="https://pullrun.github.io/apt/key.gpg"
+  KEYRING="/usr/share/keyrings/pullrun.gpg"
+  SOURCES="/etc/apt/sources.list.d/pullrun.list"
+  curl -fsSL "$KEY_URL" | sudo gpg --dearmor -o "$KEYRING" 2>/dev/null
+  echo "deb [signed-by=$KEYRING] https://pullrun.github.io/apt stable main" \
+    | sudo tee "$SOURCES" >/dev/null
+  sudo apt-get update -qq 2>/dev/null
+  sudo apt-get install -y -qq pullrun 2>/dev/null
+  info "Done! Run 'pullrun --help' to get started."
+  exit 0
+fi
 
 # ── Binary download (works on any OS) ──────────────────────────────
 info "Downloading pre-built binary for $OS/$ARCH..."
