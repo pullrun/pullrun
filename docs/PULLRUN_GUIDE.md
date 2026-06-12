@@ -1178,6 +1178,22 @@ Both `apple-virt-smoke` and `apple-virt-exec` use a two-thread model:
 A panic hook catches body-thread panics and calls `_exit(1)`;
 otherwise a panic would leave the process stuck in `dispatch_main()`.
 
+## 🔌 MCP Server (AI Agent Integration)
+
+Pullrun exposes its full runtime API through the Model Context Protocol (MCP),
+allowing AI agents like opencode, Claude Code, and Cursor to manage workloads
+through natural language.
+
+```bash
+# Start the MCP server (stdio mode, for opencode/Claude Code)
+pullrun mcp
+
+# Start the MCP server over HTTP (SSE mode, for remote agents)
+pullrun mcp --sse :8080
+```
+
+See [docs/ALL_MCP.md](ALL_MCP.md) for the complete tool and resource reference.
+
 ## Environment variables
 
 | Variable | Purpose | Default |

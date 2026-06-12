@@ -542,6 +542,12 @@ exporter's default exponential range.
 `/healthz` is exposed alongside `/metrics` for K8s liveness /
 readiness probes.
 
+### MCP server
+
+The pullrun CLI includes an `mcp` subcommand that starts a Model Context Protocol
+server, exposing 15 tools and 4 resources for AI agent integration. See
+[docs/ALL_MCP.md](ALL_MCP.md) for the complete reference.
+
 ## 8. The control plane (stub)
 
 The `control-plane/` Go module has a gRPC API server and an
