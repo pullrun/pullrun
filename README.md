@@ -21,6 +21,16 @@
 
 </div>
 
+<p align="center">
+  <a href="docs/PULLRUN_GUIDE.md"><b>📖 User Guide</b></a> •
+  <a href="docs/ARCHITECTURE.md"><b>🏗️ Architecture</b></a> •
+  <a href="docs/ALL_MCP.md"><b>🤖 MCP Reference</b></a> •
+  <a href="docs/OPERATIONS.md"><b>⚙️ Operations</b></a> •
+  <a href="docs/POLICY.md"><b>🔐 Policy</b></a> •
+  <a href="#install"><b>📦 Install</b></a> •
+  <a href="#quick-start"><b>🚀 Quick Start</b></a>
+</p>
+
 ---
 
 ## 🚀 What is Pullrun?
