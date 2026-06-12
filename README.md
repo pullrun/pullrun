@@ -9,7 +9,7 @@
 **Same OCI image. Any isolation level. No Docker daemon required.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.2.0-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
 [![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
