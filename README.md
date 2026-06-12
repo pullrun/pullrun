@@ -4,7 +4,7 @@
 
 # **Pullrun**
 
-### *Next-gen container runtime with zero-copy DAG storage, P2P image sync, and native AI agent integration via MCP. Run OCI images as Linux containers, Firecracker microVMs, or Apple Silicon VMs.*
+### *Next-gen container runtime with zero-copy DAG storage, P2P image sync, and native AI agent integration via MCP. Run OCI images as Linux containers, Firecracker microVMs, Apple Silicon VMs, or Windows WSL2 workloads.*
 
 **Same OCI image. Any isolation level. No Docker daemon required.**
 
@@ -13,6 +13,7 @@
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
 [![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
+[![Windows](https://img.shields.io/badge/Windows-WSL2_%7C_runc_%7C_Firecracker-0078D6?logo=windows&logoColor=white)](docs/WINDOWS.md)
 [![Rust](https://img.shields.io/badge/Rust-1.77+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
 [![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen?logo=checkmarx)](#testing)
@@ -37,11 +38,11 @@
 
 Pullrun is a next-generation container runtime that treats **content-addressed storage** as a first-class primitive. It pulls OCI images, deduplicates them into a zero-copy on-disk DAG ([rkyv](https://github.com/rkyv/rkyv) + [memmap2](https://github.com/danburkert/memmap-rs)), and runs them in whichever execution backend you choose.
 
-| Backend | Isolation | Best For |
-|---------|-----------|----------|
-| 🐧 **Linux Containers** (runc) | Process-level | Developer workflows, CI/CD dense packing |
-| 🔥 **Firecracker microVMs** (KVM) | Per-VM kernel | Multi-tenant, untrusted workloads, compliance |
-| 🍎 **Apple Virtualization** (macOS) | Per-VM kernel | macOS dev environments, Apple Silicon CI |
+| Backend | Isolation | Platform | Best For |
+|---------|-----------|----------|----------|
+| 🐧 **Linux Containers** (runc) | Process-level | Linux, macOS, Windows (WSL2) | Developer workflows, CI/CD dense packing |
+| 🔥 **Firecracker microVMs** (KVM) | Per-VM kernel | Linux x86_64, Windows (WSL2 x86_64) | Multi-tenant, untrusted workloads, compliance |
+| 🍎 **Apple Virtualization** (macOS) | Per-VM kernel | macOS Apple Silicon | macOS dev environments, Apple Silicon CI |
 
 > **The same image content can be booted as a container or as a VM — the only thing that changes is the backend.**
 
@@ -74,11 +75,26 @@ curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
 ```
 > The `.deb` package installs both `pullrun` and `pullrun-runtime` plus a systemd service.
 
+### Windows (WSL2 — runc + Firecracker VMs)
+```bash
+# Run from Git Bash, MSYS2, or WSL2 bash:
+curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
+```
+The installer:
+1. Downloads `pullrun.exe` to `%USERPROFILE%\pullrun\` and adds it to PATH
+2. Downloads `pullrun-runtime` (Linux binary) into your Ubuntu WSL2 distro
+3. Creates systemd services (`pullrun-runtime`, TCP proxy on port 9501, `keepwsl`)
+4. Loads KVM modules and installs Firecracker if nested virtualization is available
+5. Configures bridge networking, kernel modules, and auto-start
+
+> **Prerequisites:** Windows 10 Build 18362+ (x86_64) or Windows 11. WSL2 with Ubuntu 24.04 recommended.
+> **Firecracker VMs:** Windows 11 22H2+ with `nestedVirtualization=true` in `.wslconfig` (x86_64 only).
+
 ### Any platform (direct download)
 ```bash
 curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
 ```
-Detects the platform and installs via Homebrew (macOS), APT (Debian/Ubuntu), or direct binary download.
+Detects the platform and installs via Homebrew (macOS), APT (Debian/Ubuntu), direct binary (Linux), or WSL2 (Windows).
 
 ### From source
 ```bash
@@ -212,6 +228,35 @@ pullrun run alpine:3.18 --backend vm --tty --attach --cmd /bin/sh
 See [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) for kernel setup and full Linux configuration.
 
 ---
+
+## 🪟 Windows — WSL2 Containers & Firecracker VMs
+
+Run pullrun on Windows via WSL2 — no separate VM or Docker Desktop needed. The same CLI, the same DAG store, the same workflows.
+
+```bash
+# Container (default backend — uses runc inside WSL2)
+pullrun.exe run alpine:3.18 --cmd /bin/echo --cmd 'hello from Windows'
+
+# Firecracker VM (requires x86_64 Windows 11 + nested virtualization)
+pullrun.exe run alpine:3.18 --backend vm --cmd /bin/echo --cmd 'hello from Firecracker on Windows'
+```
+
+**Architecture:**
+```
+pullrun.exe (Windows native) ──TCP:9501──→ socat (WSL2)
+                                          → pullrun-runtime (systemd)
+                                          → runc (containers)
+                                          → Firecracker (VMs, /dev/kvm)
+```
+
+**Key Windows notes:**
+- **Zero-flag mode** — connects to WSL2 daemon on `localhost:9501` automatically
+- **Same DAG store** — byte-identical with macOS/Linux; cross-platform push/pull works
+- **`keepwsl.service`** — prevents WSL2 VM shutdown on session disconnect (mitigates microsoft/WSL#13416)
+- **`ip` and `iptables`** are auto-installed in WSL2 for bridge networking
+- **e2fsprogs ≥ 1.47.0** required for VM rootfs materialization (upgraded by installer)
+
+See [docs/WINDOWS.md](docs/WINDOWS.md) for full setup, .wslconfig tuning, known issues, and troubleshooting.
 
 ## 🖥️ Interactive Shells & Persistent Workloads
 
@@ -388,7 +433,7 @@ Full feature comparison: [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md)
 | Go | Building CLI from source | 1.22+ | `brew install go` or `apt install golang` |
 | protoc | Regenerating protobuf bindings | 3.0+ | `brew install protobuf` or `apt install protobuf-compiler` |
 
-> **Binary users:** You only need `pullrun` and `pullrun-runtime` from the release tarball. The tools above are only for compiling from source.
+> **Windows build from source:** Cross-compile the Go CLI with `GOOS=windows GOARCH=amd64 go build -o pullrun.exe .` from the `cli/pullrun/` directory. The Rust daemon cross-compiles for Linux with `cargo build --release --target x86_64-unknown-linux-musl`. See [docs/WINDOWS.md](docs/WINDOWS.md#building-from-source) for details.
 
 ---
 
@@ -421,6 +466,7 @@ docs/             # Architecture, operations, policy
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Zero-copy store design, executor trait, network model |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Deploying, monitoring, troubleshooting |
 | [docs/POLICY.md](docs/POLICY.md) | Policy engine (cosign, SBOM, CVSS, license) |
+| [docs/WINDOWS.md](docs/WINDOWS.md) | Windows/WSL2 setup, .wslconfig tuning, known issues |
 | [docs/cross-node-dag-sync.md](docs/cross-node-dag-sync.md) | P2P block sync design |
 | [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide for all platforms |
 | [docs/ALL_MCP.md](docs/ALL_MCP.md) | MCP server reference (AI agent integration) |

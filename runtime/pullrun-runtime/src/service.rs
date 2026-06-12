@@ -486,9 +486,32 @@ impl RuntimeCommand {
         // "running" at crash time is conservatively marked "exited" —
         // the executor can't be relied on to still own the process.
         let mut recovered = load_workload_checkpoints(&self.config.checkpoints_dir);
-        for state in recovered.values_mut() {
+        for (id, state) in recovered.iter_mut() {
             if state.status == "running" && state.backend != "vm" {
+                // Check if the runc container survived the daemon
+                // restart. When the daemon crashes or is restarted
+                // (e.g., systemd restart, WSL2 VM reboot), runc
+                // containers started with `runc run -d` may still be
+                // alive. Only mark as exited if truly dead.
+                let alive = std::process::Command::new("runc")
+                    .args(["state", id])
+                    .output()
+                    .ok()
+                    .and_then(|o| {
+                        if o.status.success() {
+                            let s = String::from_utf8_lossy(&o.stdout);
+                            Some(s.contains("\"status\": \"running\""))
+                        } else {
+                            Some(false)
+                        }
+                    })
+                    .unwrap_or(false);
+                if alive {
+                    info!(workload_id = %id, "workload recovered as running (container alive)");
+                    continue;
+                }
                 info!(
+                    workload_id = %id,
                     "workload running at last checkpoint; marking as exited (post-crash recovery)"
                 );
                 state.status = "exited".to_string();
@@ -502,6 +525,7 @@ impl RuntimeCommand {
                 }
             }
             info!(
+                workload_id = %id,
                 status = %state.status,
                 "recovered workload state"
             );
@@ -3174,7 +3198,74 @@ impl Runtime for RuntimeService {
             let env_vars = env.clone();
             let wd = working_dir.clone();
             let bundle_path = self.config.bundle_root.join(&workload_id);
+            let workloads_attach = Arc::clone(&self.workloads);
+            let checkpoints_dir_attach = self.config.checkpoints_dir.clone();
             tokio::task::spawn_blocking(move || {
+                // If the workload is marked as exited but runc says the
+                // container is alive, update the daemon state to "running"
+                // so that `pullrun list` reflects reality.
+                let runc_out = std::process::Command::new("runc")
+                    .args(["state", &wl_id])
+                    .output();
+                let alive = match &runc_out {
+                    Ok(o) if o.status.success() => {
+                        let s = String::from_utf8_lossy(&o.stdout);
+                        let running = s.contains("\"status\": \"running\"");
+                        tracing::info!(
+                            workload_id = %wl_id,
+                            runc_state = %s.trim(),
+                            is_running = running,
+                            "reconciling attach state"
+                        );
+                        running
+                    }
+                    Ok(_) => {
+                        tracing::warn!(
+                            workload_id = %wl_id,
+                            "runc state exited with non-zero status"
+                        );
+                        false
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            workload_id = %wl_id,
+                            error = %e,
+                            "runc state command failed"
+                        );
+                        false
+                    }
+                };
+                if alive {
+                    if let Some(s) = workloads_attach.blocking_write().get_mut(&wl_id) {
+                        if s.status != "running" {
+                            let prev = s.status.clone();
+                            s.status = "running".to_string();
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs() as i64)
+                                .unwrap_or(0);
+                            s.start_time = now;
+                            s.exit_time = 0;
+                            s.exit_code = None;
+                            write_workload_checkpoint(&checkpoints_dir_attach, &wl_id, s);
+                            tracing::info!(
+                                workload_id = %wl_id,
+                                from_status = %prev,
+                                "container alive at attach; state updated to running"
+                            );
+                        } else {
+                            tracing::info!(
+                                workload_id = %wl_id,
+                                "container alive at attach; state already running"
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            workload_id = %wl_id,
+                            "workload not found in state map during attach"
+                        );
+                    }
+                }
                 tracing::info!(workload_id = %wl_id, "blocking container attach task STARTED");
                 let result = run_runc_attach_session(
                     &wl_id, &cmd, &env_vars, &wd, use_tty,
@@ -4333,9 +4424,6 @@ fn run_runc_attach_session(
         }
     };
 
-    // Track whether we started a sleep container that needs cleanup.
-    let mut needs_cleanup = false;
-
     if tty {
         // ── TTY mode ──────────────────────────────────────────────
         // Allocate a PTY on the host so runc exec -t sees a real
@@ -4393,7 +4481,6 @@ fn run_runc_attach_session(
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            needs_cleanup = true;
         }
 
         // Spawn runc exec -t with the PTY slave as stdin/stdout/stderr.
@@ -4426,6 +4513,10 @@ fn run_runc_attach_session(
             use std::os::unix::io::FromRawFd;
             let mut master_file = unsafe { std::fs::File::from_raw_fd(pty_master) };
 
+            // Signals when stdin is done (detach or StdinEof).
+            let stdin_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stdin_done_clone = stdin_done.clone();
+
             // Thread: forward client_in_rx frames → PTY master
             let stdin_handle = std::thread::spawn(move || {
                 use std::io::Write;
@@ -4440,6 +4531,7 @@ fn run_runc_attach_session(
                 }
                 let _ = master_file.flush();
                 drop(master_file);
+                stdin_done_clone.store(true, std::sync::atomic::Ordering::SeqCst);
             });
 
             // Read from PTY master and forward to client.
@@ -4466,6 +4558,28 @@ fn run_runc_attach_session(
                 }
             });
 
+            // Wait for either stdin to close OR child to exit.
+            // On stdin close (detach): kill the child so we can return.
+            // On child exit (user typed 'exit'): let stdin drain naturally.
+            loop {
+                if stdin_done.load(std::sync::atomic::Ordering::SeqCst) {
+                    // stdin closed — user detached or stream ended.
+                    // Kill the runc exec process; the container (sleep
+                    // container or original) survives independently.
+                    let _ = child.kill();
+                    break;
+                }
+                match child.try_wait() {
+                    Ok(Some(_)) => break,
+                    Ok(None) => {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    Err(e) => {
+                        return Err(format!("try_wait child: {e}"));
+                    }
+                }
+            }
+
             let exit_status = child.wait().map_err(|e| format!("wait runc child: {e}"))?;
             let exit_code = exit_status.code().unwrap_or(-1);
             let _ = stdin_handle.join();
@@ -4474,11 +4588,6 @@ fn run_runc_attach_session(
                 exit_code: Some(exit_code),
                 signal: None,
             });
-        }
-        if needs_cleanup {
-            let _ = std::process::Command::new("runc")
-                .args(["delete", "--force", workload_id])
-                .output();
         }
         return Ok(());
     }

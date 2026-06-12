@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -8,9 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,6 +19,65 @@ import (
 	"golang.org/x/term"
 	runtimepb "pullrun/protoapi/pullrun/runtime"
 )
+
+// processInput scans data for the detach escape sequence (Ctrl-P Ctrl-Q = 0x10 0x11).
+// It returns the filtered data (with the escape sequence removed) and whether
+// the detach sequence was found. pending10 tracks a leading 0x10 from a previous
+// chunk that may be the start of an escape sequence.
+//
+// The function processes data in bulk using bytes.IndexByte for efficiency,
+// only branching per byte when a potential 0x10 prefix is found.
+func processInput(data []byte, pending10 *bool) (filtered []byte, detached bool) {
+	// Fast path: no 0x10 byte at all — nothing to escape. But if we have
+	// a pending 0x10 from a previous chunk, we must still check.
+	if !*pending10 && bytes.IndexByte(data, 0x10) < 0 {
+		return data, false
+	}
+
+	filtered = make([]byte, 0, len(data))
+	offset := 0
+	if *pending10 {
+		// The previous chunk ended with 0x10. Check if this one starts with 0x11.
+		if len(data) > 0 && data[0] == 0x11 {
+			*pending10 = false
+			return nil, true
+		}
+		filtered = append(filtered, 0x10)
+		offset = 0
+		*pending10 = false
+	}
+
+	for offset < len(data) {
+		// Search for the next 0x10 from the current position.
+		idx := bytes.IndexByte(data[offset:], 0x10)
+		if idx < 0 {
+			// No more 0x10 — copy everything remaining.
+			filtered = append(filtered, data[offset:]...)
+			break
+		}
+
+		// Copy everything up to (but not including) the 0x10.
+		filtered = append(filtered, data[offset:offset+idx]...)
+		pos := offset + idx
+
+		if pos+1 < len(data) && data[pos+1] == 0x11 {
+			// 0x10 0x11 found — detach.
+			return filtered, true
+		}
+
+		if pos == len(data)-1 {
+			// 0x10 is the last byte — might be start of escape in next chunk.
+			*pending10 = true
+			break
+		}
+
+		// Standalone 0x10 — keep it and continue.
+		filtered = append(filtered, 0x10)
+		offset = pos + 1
+	}
+
+	return filtered, false
+}
 
 // ensureGRPCClient returns a connected gRPC client. If direct mode is enabled
 // and the runtime is not running, it spawns pullrun-runtime as a child process.
@@ -34,28 +92,49 @@ func ensureGRPCClient(opts *RootOptions) (*GRPCClient, func(), error) {
 	}
 
 	if !opts.DirectMode {
-		client, err := NewGRPCClient(opts.SocketPath)
+		return dialSocketOrTCP(opts.SocketPath)
+	}
+
+	// Direct mode: connect, spawn if needed.
+	return ensureClientDirectMode(opts)
+}
+
+// isTCPAddr returns true if addr looks like host:port.
+func isTCPAddr(addr string) bool {
+	return strings.Contains(addr, ":")
+}
+
+// dialSocketOrTCP connects via UDS or TCP depending on the address format.
+func dialSocketOrTCP(addr string) (*GRPCClient, func(), error) {
+	if isTCPAddr(addr) {
+		client, err := NewGRPCClientTCP(addr)
 		if err != nil {
 			return nil, nil, err
 		}
 		return client, func() { client.Close() }, nil
 	}
+	client, err := NewGRPCClient(addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	return client, func() { client.Close() }, nil
+}
 
-	// Direct mode: spawn runtime if socket is missing or stale.
+// ensureClientDirectMode tries to connect, spawns runtime if needed, retries once.
+func ensureClientDirectMode(opts *RootOptions) (*GRPCClient, func(), error) {
 	for attempt := 0; attempt < 2; attempt++ {
-		if _, err := os.Stat(opts.SocketPath); os.IsNotExist(err) {
+		// Try connecting first (platform-independent)
+		client, closeFn, err := dialSocketOrTCP(opts.SocketPath)
+		if err == nil {
+			return client, closeFn, nil
+		}
+
+		// On first failure, attempt to spawn / start the daemon.
+		if attempt == 0 {
 			if err := spawnRuntime(opts); err != nil {
 				return nil, nil, fmt.Errorf("spawn runtime: %w", err)
 			}
 		}
-
-		client, err := NewGRPCClient(opts.SocketPath)
-		if err == nil {
-			return client, func() { client.Close() }, nil
-		}
-
-		// Connection failed — socket might be stale. Clean up and retry once.
-		os.Remove(opts.SocketPath)
 	}
 
 	return nil, nil, fmt.Errorf("cannot connect to runtime (tried spawning a new daemon)")
@@ -662,6 +741,10 @@ This is the equivalent of 'docker exec'.`,
 
 			if tty {
 				// Interactive mode: bidi AttachWorkload stream with PTY.
+				// We do not check the workload state here — the daemon's
+				// run_runc_attach_session handles both running and exited
+				// workloads (for exited, it starts a sleep container first
+				// and execs into it).
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 
@@ -700,77 +783,6 @@ This is the equivalent of 'docker exec'.`,
 	}
 	cmd.Flags().BoolVarP(&tty, "tty", "t", false, "Allocate a pseudo-TTY for interactive shell access")
 	return cmd
-}
-
-// spawnRuntime starts pullrun-runtime as a child process in daemon mode.
-func spawnRuntime(opts *RootOptions) error {
-	runtimeBinary, err := findRuntimeBinary()
-	if err != nil {
-		return err
-	}
-
-	storeRoot := os.Getenv("PULLRUN_STORE")
-	if storeRoot == "" {
-		home, _ := os.UserHomeDir()
-		storeRoot = filepath.Join(home, ".local/share/pullrun")
-	}
-	if err := os.MkdirAll(storeRoot, 0o755); err != nil {
-		return err
-	}
-
-	cmd := exec.Command(runtimeBinary,
-		"daemon",
-		"--socket", opts.SocketPath,
-		"--store-root", storeRoot,
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	doneCh := make(chan struct{})
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		select {
-		case <-sigCh:
-			if cmd.Process != nil {
-				cmd.Process.Signal(syscall.SIGTERM)
-			}
-		case <-doneCh:
-		}
-	}()
-
-	if err := cmd.Start(); err != nil {
-		signal.Stop(sigCh)
-		close(doneCh)
-		return fmt.Errorf("start runtime: %w", err)
-	}
-
-	// Wait for socket to appear (up to 5 seconds)
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(opts.SocketPath); err == nil {
-			signal.Stop(sigCh)
-			close(doneCh)
-			return nil
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	signal.Stop(sigCh)
-	close(doneCh)
-	return fmt.Errorf("runtime socket %s did not appear within 5s", opts.SocketPath)
-}
-
-func findRuntimeBinary() (string, error) {
-	if path, err := exec.LookPath("pullrun-runtime"); err == nil {
-		return path, nil
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "pullrun-runtime")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("pullrun-runtime not found: install it via 'make build' or place it alongside this binary")
 }
 
 // attachToWorkload opens a bidirectional AttachWorkload stream to a running
@@ -838,42 +850,28 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 	stdinDone := make(chan struct{})
 	go func() {
 		defer close(stdinDone)
-		buf := make([]byte, 4096)
-		var pending10 bool // true when we've buffered 0x10 (Ctrl+P) awaiting next byte
+		buf := make([]byte, 65536)
+		var pending10 bool
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
-				var filtered []byte
-				var detached bool
-				for _, b := range buf[:n] {
-					if pending10 && b == 0x11 {
-						fmt.Fprintf(os.Stderr, "\n[pullrun] escape seq detected\n")
-						detached = true
-						pending10 = false
-						continue
-					}
-					if pending10 {
-						filtered = append(filtered, 0x10)
-						pending10 = false
-					}
-					if b == 0x10 {
-						pending10 = true
-					} else {
-						filtered = append(filtered, b)
+				data := buf[:n]
+				if tty {
+					// Fast path: scan for escape sequence (Ctrl-P Ctrl-Q = 0x10 0x11)
+					// in the input buffer without byte-by-byte processing.
+					var detached bool
+					data, detached = processInput(data, &pending10)
+					if detached {
+						fmt.Fprintln(os.Stderr, "[pullrun] detached (escape)")
+						_ = stream.CloseSend()
+						cancel()
+						return
 					}
 				}
-				if detached {
-					fmt.Fprintln(os.Stderr, "[pullrun] detached (escape)")
-					_ = stream.CloseSend()
-					cancel()
-					return
-				}
-				if len(filtered) > 0 {
-					chunk := make([]byte, len(filtered))
-					copy(chunk, filtered)
+				if len(data) > 0 {
 					if sendErr := stream.Send(&runtimepb.AttachMessage{
 						Body: &runtimepb.AttachMessage_Stdin{
-							Stdin: &runtimepb.AttachStdin{Data: chunk},
+							Stdin: &runtimepb.AttachStdin{Data: data},
 						},
 					}); sendErr != nil {
 						return
@@ -881,7 +879,6 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 				}
 			}
 			if err == io.EOF {
-				// Flush any pending 0x10 before EOF.
 				if pending10 {
 					_ = stream.Send(&runtimepb.AttachMessage{
 						Body: &runtimepb.AttachMessage_Stdin{
@@ -906,11 +903,18 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 		msg *runtimepb.AttachMessage
 		err error
 	}
-	recvCh := make(chan recvResult, 1)
+	recvCh := make(chan recvResult, 64)
+	recvCtx, recvCancel := context.WithCancel(ctx)
+	defer recvCancel()
 	go func() {
+		defer recvCancel()
 		for {
 			msg, err := stream.Recv()
-			recvCh <- recvResult{msg, err}
+			select {
+			case recvCh <- recvResult{msg, err}:
+			case <-recvCtx.Done():
+				return
+			}
 			if err != nil {
 				return
 			}

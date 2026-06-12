@@ -756,10 +756,41 @@ async fn run_daemon(
     let uds_stream = UnixListenerStream::new(uds);
     let svc = RuntimeServer::new(service);
 
-    Server::builder()
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+
+    // Periodic keepalive to prevent WSL2 idle VM shutdown. The daemon
+    // must wake periodically even when idle; otherwise WSL2 may
+    // consider the VM idle and tear it down, killing all containers.
+    let mut keepalive = tokio::time::interval(Duration::from_secs(30));
+    keepalive.tick().await; // consume immediate first tick
+
+    let server = Server::builder()
         .add_service(svc)
-        .serve_with_incoming(uds_stream)
-        .await?;
+        .serve_with_incoming(uds_stream);
+    tokio::pin!(server);
+
+    loop {
+        tokio::select! {
+            biased;
+            _ = sigterm.recv() => {
+                info!("received SIGTERM, shutting down");
+                break;
+            }
+            _ = sigint.recv() => {
+                info!("received SIGINT, shutting down");
+                break;
+            }
+            result = &mut server => {
+                result?;
+                break;
+            }
+            _ = keepalive.tick() => {
+                // WSL2 keepalive — periodic wakeup prevents idle VM
+                // shutdown when no gRPC connections are active.
+            }
+        }
+    }
 
     Ok(())
 }

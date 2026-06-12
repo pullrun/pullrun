@@ -21,7 +21,7 @@ and inspect network policies. All communication with the runtime uses gRPC
 over a Unix domain socket.`,
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.SocketPath, "socket", "/tmp/pullrun.sock", "Runtime UDS socket path")
+	cmd.PersistentFlags().StringVar(&opts.SocketPath, "socket", DefaultSocketPath, "Runtime socket path (UDS on Unix, TCP host:port on Windows)")
 	cmd.PersistentFlags().StringVar(&opts.ServerAddr, "server", "", "Control plane address (disables direct mode)")
 	cmd.PersistentFlags().BoolVar(&opts.DirectMode, "direct", true, "Use direct mode (spawn runtime as child)")
 
