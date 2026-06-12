@@ -39,6 +39,28 @@ func NewGRPCClient(socketPath string) (*GRPCClient, error) {
 	}, nil
 }
 
+// NewGRPCClientTCP dials a TCP address (host:port) and returns a client wrapper.
+func NewGRPCClientTCP(addr string) (*GRPCClient, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+		grpc.WithDefaultCallOptions(grpc.WaitForReady(false)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("dial tcp %s: %w", addr, err)
+	}
+
+	return &GRPCClient{
+		conn:   conn,
+		client: runtimepb.NewRuntimeClient(conn),
+	}, nil
+}
+
 // Close releases the gRPC connection.
 func (c *GRPCClient) Close() error {
 	if c.conn != nil {

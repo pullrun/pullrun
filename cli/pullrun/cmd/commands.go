@@ -18,7 +18,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"golang.org/x/sys/unix"
 	runtimepb "pullrun/protoapi/pullrun/runtime"
 )
 
@@ -27,7 +26,11 @@ import (
 // If a stale socket is found (daemon died), it replaces it with a fresh daemon.
 func ensureGRPCClient(opts *RootOptions) (*GRPCClient, func(), error) {
 	if opts.ServerAddr != "" {
-		return nil, nil, fmt.Errorf("control-plane path not yet implemented; use --direct mode")
+		client, err := NewGRPCClientTCP(opts.ServerAddr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return client, func() { client.Close() }, nil
 	}
 
 	if !opts.DirectMode {
@@ -824,59 +827,12 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 	}
 
 	if tty {
-		if oldState, err := term.MakeRaw(int(os.Stdin.Fd())); err == nil {
-			// Re-enable output processing so \n from the
-			// PTY is displayed as \r\n on the host terminal.
-			// MakeRaw clears OPOST, which causes subsequent
-			// output to lose carriage returns — the cursor
-			// goes down but not back to column 0.
-			// make current terminal raw so arrow keys etc. are forwarded
-			if tios, err := unix.IoctlGetTermios(int(os.Stdin.Fd()), termiosGetReq); err == nil {
-				tios.Oflag |= unix.OPOST | unix.ONLCR
-				_ = unix.IoctlSetTermios(int(os.Stdin.Fd()), termiosSetReq, tios)
-			}
-
-			defer func() {
-				// Drain any pending terminal responses
-				// (e.g., cursor position reports) that
-				// arrived after the workload exited but
-				// before we restore the terminal.
-				buf := make([]byte, 1024)
-				_ = os.Stdin.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
-				for {
-					_, err := os.Stdin.Read(buf)
-					if err != nil {
-						break
-					}
-				}
-				_ = os.Stdin.SetReadDeadline(time.Time{})
-				_ = term.Restore(int(os.Stdin.Fd()), oldState)
-			}()
+		restore, err := setupRawTerminal()
+		if err == nil && restore != nil {
+			defer restore()
 		}
 
-		// Send initial window size and react to SIGWINCH.
-		winCh := make(chan os.Signal, 1)
-		signal.Notify(winCh, syscall.SIGWINCH)
-		go func() {
-			sendWinSize := func() {
-				w, h, err := term.GetSize(int(os.Stdin.Fd()))
-				if err != nil {
-					return
-				}
-				_ = stream.Send(&runtimepb.AttachMessage{
-					Body: &runtimepb.AttachMessage_WindowSize{
-						WindowSize: &runtimepb.AttachWindowSize{
-							Rows: uint32(h),
-							Cols: uint32(w),
-						},
-					},
-				})
-			}
-			sendWinSize() // initial
-			for range winCh {
-				sendWinSize()
-			}
-		}()
+		go watchWindowSize(stream)
 	}
 
 	stdinDone := make(chan struct{})
