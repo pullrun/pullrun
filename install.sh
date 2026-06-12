@@ -5,6 +5,7 @@ REPO="pullrun/pullrun"
 VERSION="${VERSION:-latest}"
 
 info()  { printf "\033[32m%s\033[0m\n" "$*"; }
+warn()  { printf "\033[33m%s\033[0m\n" "$*"; }
 error() { printf "\033[31m%s\033[0m\n" "$*" >&2; exit 1; }
 
 # ── Platform detection ──────────────────────────────────────────────
@@ -16,36 +17,25 @@ case "$ARCH" in
   *) error "unsupported arch: $ARCH" ;;
 esac
 
-# ── macOS: Homebrew ─────────────────────────────────────────────────
-if [ "$OS" = "darwin" ]; then
-  if command -v brew &>/dev/null; then
-    info "Installing via Homebrew..."
-    brew tap pullrun/tap
-    brew trust pullrun/tap || true
-    brew install pullrun
+# ── macOS: try Homebrew (pre-built binary, no Xcode needed) ─────────
+if [ "$OS" = "darwin" ] && command -v brew &>/dev/null; then
+  info "Installing via Homebrew..."
+  brew tap pullrun/tap 2>/dev/null
+  brew trust pullrun/tap 2>/dev/null || true
+  if brew install pullrun 2>/dev/null; then
     info "Done! Run 'pullrun --help' to get started."
     exit 0
   fi
-  info "Homebrew not found. Falling back to binary download..."
+  warn "Homebrew install failed (Xcode version mismatch?). Falling back to direct download..."
 fi
 
-# ── Linux: APT ──────────────────────────────────────────────────────
-if [ "$OS" = "linux" ]; then
-  if command -v apt-get &>/dev/null; then
-    info "Installing via APT..."
-    curl -fsSL "https://pullrun.github.io/apt/key.gpg" \
-      | sudo gpg --dearmor -o /usr/share/keyrings/pullrun.gpg
-    echo "deb [signed-by=/usr/share/keyrings/pullrun.gpg] https://pullrun.github.io/apt stable main" \
-      | sudo tee /etc/apt/sources.list.d/pullrun.list
-    sudo apt-get update
-    sudo apt-get install -y pullrun
-    info "Done! Run 'pullrun --help' to get started."
-    exit 0
-  fi
-  info "APT not found. Falling back to binary download..."
-fi
+# ── Linux: try APT (not yet available) ─────────────────────────────
+# if [ "$OS" = "linux" ] && command -v apt-get &>/dev/null; then
+#   info "Installing via APT..."
+#   ... (coming soon)
+# fi
 
-# ── Binary download fallback ────────────────────────────────────────
+# ── Binary download (works on any OS) ──────────────────────────────
 info "Downloading pre-built binary for $OS/$ARCH..."
 if [ "$VERSION" = "latest" ]; then
   API_URL="https://api.github.com/repos/$REPO/releases/latest"
@@ -59,12 +49,18 @@ TMPDIR=$(mktemp -d)
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT
 
-for BIN in pullrun pullrun-runtime; do
-  URL="$BASE/${BIN}-${TAG#v}-${OS}-${ARCH}.tar.gz"
-  info "  downloading $BIN..."
-  curl -fsSL "$URL" | tar -xzf - -C "$TMPDIR"
-  sudo mv "$TMPDIR/$BIN" "/usr/local/bin/$BIN"
-  sudo chmod +x "/usr/local/bin/$BIN"
+# Download combined tarball
+TARBALL="pullrun-${TAG#v}-${OS}-${ARCH}.tar.gz"
+URL="$BASE/$TARBALL"
+info "  downloading $TARBALL..."
+curl -fsSL "$URL" | tar -xzf - -C "$TMPDIR"
+
+# Install binaries
+for BIN in pullrun pullrun-runtime apple-virt-exec; do
+  if [ -f "$TMPDIR/bin/$BIN" ]; then
+    sudo mv "$TMPDIR/bin/$BIN" "/usr/local/bin/$BIN"
+    sudo chmod +x "/usr/local/bin/$BIN"
+  fi
 done
 
 info "Done! Run 'pullrun --help' to get started."

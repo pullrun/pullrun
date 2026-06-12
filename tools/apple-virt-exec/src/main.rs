@@ -300,6 +300,11 @@ fn run_body(args: Args) -> i32 {
         mem_mib: args.mem_mib,
         vsock_port: Some(VSOCK_PORT),
         console_log: Some(args.console_log.clone()),
+        workload_id: "apple-virt-exec".into(),
+        tty: false,
+        initial_rows: 0,
+        initial_cols: 0,
+        mounts: Vec::new(),
     };
 
     // 4. Set up the channel adapters. `client_in` is what
