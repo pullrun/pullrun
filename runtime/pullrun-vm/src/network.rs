@@ -50,7 +50,6 @@
 
 use std::fs::File;
 use std::net::Ipv4Addr;
-use std::os::unix::io::AsRawFd;
 use std::process::Command;
 
 use pullrun_net::Ipam;

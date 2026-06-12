@@ -1168,7 +1168,7 @@ pub struct VmPersistentHandleInner {
 impl VmPersistentHandleInner {
     /// Returns true if the VM's internal thread is still running.
     pub fn is_alive(&self) -> bool {
-        self.thread.as_ref().map_or(false, |t| !t.is_finished())
+        self.thread.as_ref().is_some_and(|t| !t.is_finished())
     }
 }
 
@@ -1281,52 +1281,39 @@ pub fn spawn_vm_inner(
 
         loop {
             // --- Command channel ---
-            loop {
-                match cmd_rx.try_recv() {
-                    Ok(crate::attach::VmCommand::AttachClient { session_id: sid, stdout_tx }) => {
-                        session_id = sid;
-                        client_out = Some(stdout_tx);
-                        while let Some(frame) = pending_frames.pop_front() {
-                            if client_out.as_ref().unwrap().send(frame).is_err() {
-                                client_out = None;
-                                break;
-                            }
-                        }
-                        // If the shell was idle (no pending output), send a newline to
-                        // trigger a prompt redraw so the user sees / # immediately.
-                        if client_out.is_some() && pending_frames.is_empty() {
-                            let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(Bytes::from_static(b"\n")));
-                            unsafe {
-                                libc::write(
-                                    stdin_write_fd,
-                                    encoded.as_ptr() as *const libc::c_void,
-                                    encoded.len(),
-                                );
-                            }
-                        }
-                    }
-                    Ok(crate::attach::VmCommand::DetachClient { session_id: sid }) => {
-                        if session_id == sid {
+            match cmd_rx.try_recv() {
+                Ok(crate::attach::VmCommand::AttachClient { session_id: sid, stdout_tx }) => {
+                    session_id = sid;
+                    client_out = Some(stdout_tx);
+                    while let Some(frame) = pending_frames.pop_front() {
+                        if client_out.as_ref().unwrap().send(frame).is_err() {
                             client_out = None;
+                            break;
                         }
-                        // Ignore stale DetachClient from a previous session.
                     }
-                    Ok(crate::attach::VmCommand::Shutdown) | Err(sync_mpsc::TryRecvError::Disconnected) => {
-                        // Unwind — see cleanup below.
-                        let _ = client_out.take();
-                        break;
+                    // If the shell was idle (no pending output), send a newline to
+                    // trigger a prompt redraw so the user sees / # immediately.
+                    if client_out.is_some() && pending_frames.is_empty() {
+                        let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(Bytes::from_static(b"\n")));
+                        unsafe {
+                            libc::write(
+                                stdin_write_fd,
+                                encoded.as_ptr() as *const libc::c_void,
+                                encoded.len(),
+                            );
+                        }
                     }
-                    Err(sync_mpsc::TryRecvError::Empty) => {}
                 }
-                // Use a flag to avoid three-level nesting.
-                break;
-            }
-
-            // If we got Shutdown above, exit the outer loop.
-            if cmd_rx.try_recv().is_ok() {
-                // The Shutdown case already broke; just note that
-                // we want to exit.  In practice the inner loop
-                // handles Shutdown and we check a flag here.
+                Ok(crate::attach::VmCommand::DetachClient { session_id: sid }) => {
+                    if session_id == sid {
+                        client_out = None;
+                    }
+                }
+                Ok(crate::attach::VmCommand::Shutdown) | Err(sync_mpsc::TryRecvError::Disconnected) => {
+                    let _ = client_out.take();
+                    break;
+                }
+                Err(sync_mpsc::TryRecvError::Empty) => {}
             }
 
             // --- Stdin from attached client ---

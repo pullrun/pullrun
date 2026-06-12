@@ -500,12 +500,12 @@ impl RuntimeCommand {
                     .args(["state", id])
                     .output()
                     .ok()
-                    .and_then(|o| {
+                    .map(|o| {
                         if o.status.success() {
                             let s = String::from_utf8_lossy(&o.stdout);
-                            Some(s.contains("\"status\": \"running\""))
+                            s.contains("\"status\": \"running\"")
                         } else {
-                            Some(false)
+                            false
                         }
                     })
                     .unwrap_or(false);
@@ -3096,7 +3096,7 @@ impl Runtime for RuntimeService {
                     let vm_handle: Option<Arc<pullrun_vm::VmPersistentHandle>> = {
                         let vms = persistent_vms.blocking_read();
                         vms.get(&wl_id).and_then(|h| {
-                            if h.is_alive() { Some(Arc::clone(&h)) } else { None }
+                            if h.is_alive() { Some(Arc::clone(h)) } else { None }
                         })
                     };
 
@@ -4220,6 +4220,7 @@ impl Runtime for RuntimeService {
 /// the Firecracker process exits (detected via `kill -0` on the
 /// PID stored in `firecracker.pid` beside the console log), it
 /// sends a `Frame::WorkloadExit` and returns.
+#[allow(dead_code)]
 fn run_firecracker_console_session(
     console_log_path: Option<&std::path::Path>,
     workload_id: &str,
@@ -4356,6 +4357,7 @@ fn run_firecracker_console_session(
 
 /// Check whether a process with the given PID is alive by sending
 /// signal 0.
+#[allow(dead_code)]
 fn is_pid_alive(pid: u32) -> bool {
     if pid == 0 {
         return false;
@@ -4403,6 +4405,7 @@ fn allocate_pty() -> Result<(std::os::unix::io::RawFd, std::ffi::CString), Strin
     Ok((master, slave_name))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_runc_attach_session(
     workload_id: &str,
     command: &[String],
@@ -4457,7 +4460,7 @@ fn run_runc_attach_session(
                 .map_err(|e| format!("write config.json: {e}"))?;
             let _sleep_child = std::process::Command::new("runc")
                 .args(["run", "-d", "-b"])
-                .arg(&bundle_path)
+                .arg(bundle_path)
                 .arg(workload_id)
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())

@@ -170,6 +170,7 @@ struct Workload {
     tty: bool,
     rows: u32,
     cols: u32,
+    #[allow(dead_code)]
     mounts: Vec<pullrun_vsock::VsockMount>,
 }
 
@@ -287,7 +288,7 @@ impl Workload {
 
         let (master_fd, slave_fd) = unsafe {
             let master = libc::open(
-                "/dev/ptmx\0".as_ptr() as *const libc::c_char,
+                c"/dev/ptmx".as_ptr(),
                 libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC,
             );
             if master < 0 {
@@ -462,7 +463,7 @@ impl Workload {
                     if self.tty {
                         let term = std::ffi::CString::new("xterm-256color").unwrap();
                         libc::setenv(
-                            b"TERM\0".as_ptr() as *const libc::c_char,
+                            c"TERM".as_ptr(),
                             term.as_ptr(),
                             1,
                         );
@@ -473,12 +474,12 @@ impl Workload {
                             (if self.rows > 0 { self.rows } else { 24 }).to_string()
                         ).unwrap();
                         libc::setenv(
-                            b"COLUMNS\0".as_ptr() as *const libc::c_char,
+                            c"COLUMNS".as_ptr(),
                             cols_str.as_ptr(),
                             1,
                         );
                         libc::setenv(
-                            b"LINES\0".as_ptr() as *const libc::c_char,
+                            c"LINES".as_ptr(),
                             rows_str.as_ptr(),
                             1,
                         );
