@@ -14,6 +14,8 @@
 //! `PULLRUN_VSOCK_FALLBACK_UNIX=/path/to.sock` to override the
 //! default `/tmp/pullrun-init.sock`.
 
+#[cfg(target_os = "linux")]
+use std::os::unix::io::OwnedFd;
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::sync::Arc;
