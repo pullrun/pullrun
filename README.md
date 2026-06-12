@@ -201,8 +201,7 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 
 ---
 
-<a id="features"></a>
-## 🗺️ Features
+## ✨ Features
 
 ### 🏃 Workload Lifecycle
 `pull`, `run`, `stop`, `exec`, `attach`, `list`, `logs`, `stats`, `events`, `inspect`, `commit`, `diff`, `prune`, `update` (rolling restart)
@@ -247,8 +246,7 @@ Full TTY support with **detach/re-attach** via `Ctrl-P Ctrl-Q`. Works across all
 
 ---
 
-<a id="kubernetes"></a>
-## ☸️ Kubernetes
+## ☸ Kubernetes
 
 Pullrun ships a CRI shim in [`cri/pullrun-cri/`](cri/pullrun-cri/) that implements the Kubernetes Container Runtime Interface. It maps pod sandboxes to pullrun workloads and supports:
 
