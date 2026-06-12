@@ -52,6 +52,7 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewConfigCommand(opts))
 	cmd.AddCommand(NewPruneCommand(opts))
 	cmd.AddCommand(NewInfoCommand(opts))
+	cmd.AddCommand(NewMCPCommand(opts))
 	cmd.AddCommand(NewVersionCommand())
 
 	return cmd

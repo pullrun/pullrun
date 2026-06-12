@@ -8,10 +8,15 @@
 
 **Same OCI image. Any isolation level. No Docker daemon required.**
 
-[![License](https://img.shields.io/github/license/pullrun/pullrun)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://www.rust-lang.org/)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](https://golang.org/)
-[![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen.svg)](#testing)
+[![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/pullrun/pullrun?logo=git&label=version)](https://github.com/pullrun/pullrun/releases)
+[![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
+[![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
+[![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
+[![Rust](https://img.shields.io/badge/Rust-1.77+-dca282?logo=rust)](https://www.rust-lang.org)
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
+[![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen?logo=checkmarx)](#testing)
+[![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
 
@@ -405,7 +410,7 @@ docs/             # Architecture, operations, policy
 | [docs/POLICY.md](docs/POLICY.md) | Policy engine (cosign, SBOM, CVSS, license) |
 | [docs/cross-node-dag-sync.md](docs/cross-node-dag-sync.md) | P2P block sync design |
 | [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide for all platforms |
-| [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide, lifecycle, persistence |
+| [docs/ALL_MCP.md](docs/ALL_MCP.md) | MCP server reference (AI agent integration) |
 
 ---
 

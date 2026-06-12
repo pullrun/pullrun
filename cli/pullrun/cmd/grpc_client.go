@@ -208,6 +208,11 @@ func (c *GRPCClient) Prune(ctx context.Context, req *runtimepb.PruneRequest) (*r
 	return c.client.Prune(ctx, req)
 }
 
+// ListImages enumerates all images in the local DAG store.
+func (c *GRPCClient) ListImages(ctx context.Context) (*runtimepb.ListImagesResponse, error) {
+	return c.client.ListImages(ctx, &runtimepb.ListImagesRequest{})
+}
+
 // ─── Secret / Config ──────────────────────────────────────────
 
 func (c *GRPCClient) CreateSecret(ctx context.Context, name string, data []byte) (*runtimepb.CreateSecretResponse, error) {
