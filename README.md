@@ -51,16 +51,17 @@ brew install pullrun
 ```
 > The formula downloads a pre-built ~18 MB tarball — no Rust, Go, LLVM, or Xcode required.
 
-### Linux (APT — Debian/Ubuntu) — *coming soon*
+### Linux (APT — Debian/Ubuntu)
 ```bash
-curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | sh
+curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
 ```
+> The `.deb` package installs both `pullrun` and `pullrun-runtime` plus a systemd service.
 
 ### Any platform (direct download)
 ```bash
-curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | sh
+curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
 ```
-Detects the platform and installs via Homebrew (macOS) or direct binary download.
+Detects the platform and installs via Homebrew (macOS), APT (Debian/Ubuntu), or direct binary download.
 
 ### From source
 ```bash
