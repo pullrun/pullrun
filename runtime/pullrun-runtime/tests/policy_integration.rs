@@ -28,7 +28,11 @@ mod tests {
 
     /// Build a RuntimeService rooted at `dir` with the given policy and keys.
     /// Bypasses the gRPC socket.
-    fn make_service(dir: &PathBuf, policy: Policy, keys: Vec<CosignKey>) -> pullrun_runtime::service::RuntimeService {
+    fn make_service(
+        dir: &PathBuf,
+        policy: Policy,
+        keys: Vec<CosignKey>,
+    ) -> pullrun_runtime::service::RuntimeService {
         let mut cfg = ServiceConfig::new(dir.clone());
         cfg = cfg.with_policy(policy).trusted_keys(keys);
         RuntimeCommand::new(cfg).service()
@@ -43,12 +47,7 @@ mod tests {
 
     /// Sign `image_ref`/`manifest` and write the resulting `SignatureBlob`
     /// into the store at the deterministic sig digest.
-    fn store_signature(
-        store: &Arc<MmapStore>,
-        sk: &SigningKey,
-        image_ref: &str,
-        manifest: &str,
-    ) {
+    fn store_signature(store: &Arc<MmapStore>, sk: &SigningKey, image_ref: &str, manifest: &str) {
         let payload = cosign::canonical_payload(image_ref, manifest);
         let sig = sk.sign(payload.as_bytes());
         let blob = SignatureBlob {
@@ -243,8 +242,12 @@ mod tests {
             no_new_privileges: bool,
             deny_license: Vec<String>,
         ) -> Option<Policy> {
-            if !require_signature && !require_sbom && max_cvss.is_none() && !readonly_rootfs
-                && !no_new_privileges && deny_license.is_empty()
+            if !require_signature
+                && !require_sbom
+                && max_cvss.is_none()
+                && !readonly_rootfs
+                && !no_new_privileges
+                && deny_license.is_empty()
             {
                 return None;
             }

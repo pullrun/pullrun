@@ -28,12 +28,10 @@ impl<'a> OciMaterializer<'a> {
         Self { store }
     }
 
-    pub fn materialize_manifest(
-        &self,
-        manifest_digest: &Digest,
-    ) -> Result<ManifestData, OciError> {
-        let manifest_node = self.store.get_archived(manifest_digest)
-            .map_err(|e| OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}")))?;
+    pub fn materialize_manifest(&self, manifest_digest: &Digest) -> Result<ManifestData, OciError> {
+        let manifest_node = self.store.get_archived(manifest_digest).map_err(|e| {
+            OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}"))
+        })?;
 
         if !manifest_node.is_manifest() {
             return Err(OciError::InvalidManifest(format!(
@@ -59,14 +57,11 @@ impl<'a> OciMaterializer<'a> {
 
         info!(%manifest_digest, rootfs = %rootfs_path.display(), "materializing bundle");
 
-        let manifest_node = self.store.get_archived(manifest_digest)
-            .map_err(|e| OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}")))?;
+        let manifest_node = self.store.get_archived(manifest_digest).map_err(|e| {
+            OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}"))
+        })?;
 
-        let layer_digests: Vec<Digest> = manifest_node
-            .edges
-            .iter()
-            .map(|e| Digest(*e))
-            .collect();
+        let layer_digests: Vec<Digest> = manifest_node.edges.iter().map(|e| Digest(*e)).collect();
 
         for (i, layer_digest) in layer_digests.iter().enumerate() {
             debug!(layer = i, %layer_digest, "materializing layer");
@@ -101,14 +96,11 @@ impl<'a> OciMaterializer<'a> {
 
         info!(%manifest_digest, target = %target_dir.display(), "materializing DAG root into target dir");
 
-        let manifest_node = self.store.get_archived(manifest_digest)
-            .map_err(|e| OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}")))?;
+        let manifest_node = self.store.get_archived(manifest_digest).map_err(|e| {
+            OciError::Other(format!("corrupt manifest node {manifest_digest}: {e}"))
+        })?;
 
-        let layer_digests: Vec<Digest> = manifest_node
-            .edges
-            .iter()
-            .map(|e| Digest(*e))
-            .collect();
+        let layer_digests: Vec<Digest> = manifest_node.edges.iter().map(|e| Digest(*e)).collect();
 
         for (i, layer_digest) in layer_digests.iter().enumerate() {
             debug!(layer = i, %layer_digest, "materializing layer");
@@ -118,12 +110,10 @@ impl<'a> OciMaterializer<'a> {
         Ok(())
     }
 
-    fn materialize_layer(
-        &self,
-        layer_digest: &Digest,
-        rootfs_path: &Path,
-    ) -> Result<(), OciError> {
-        let layer_node = self.store.get_archived(layer_digest)
+    fn materialize_layer(&self, layer_digest: &Digest, rootfs_path: &Path) -> Result<(), OciError> {
+        let layer_node = self
+            .store
+            .get_archived(layer_digest)
             .map_err(|e| OciError::Other(format!("corrupt layer node {layer_digest}: {e}")))?;
 
         if layer_node.is_layer() {
@@ -143,7 +133,9 @@ impl<'a> OciMaterializer<'a> {
         rootfs_path: &Path,
         base_path: &str,
     ) -> Result<(), OciError> {
-        let tree_node = self.store.get_archived(tree_digest)
+        let tree_node = self
+            .store
+            .get_archived(tree_digest)
             .map_err(|e| OciError::Other(format!("corrupt tree node {tree_digest}: {e}")))?;
 
         if tree_node.is_layer() {
@@ -255,8 +247,7 @@ impl<'a> OciMaterializer<'a> {
 
         std::fs::write(
             config_path,
-            serde_json::to_string_pretty(&oci_spec)
-                .expect("oci_spec serialization never fails"),
+            serde_json::to_string_pretty(&oci_spec).expect("oci_spec serialization never fails"),
         )?;
 
         Ok(())

@@ -133,11 +133,7 @@ impl OciToDagConverter {
         Ok(list_digest)
     }
 
-    async fn convert_layer(
-        &self,
-        layer_digest: &Digest,
-        blob: &[u8],
-    ) -> Result<Digest, OciError> {
+    async fn convert_layer(&self, layer_digest: &Digest, blob: &[u8]) -> Result<Digest, OciError> {
         debug!(%layer_digest, size = blob.len(), "converting layer to DAG");
 
         let store = self.store.clone();
@@ -159,7 +155,8 @@ impl OciToDagConverter {
         dir_index: &'b HashMap<String, Vec<usize>>,
         entries: &'b [DirectoryEntry],
         current_path: &'b str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Digest, OciError>> + Send + 'b>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Digest, OciError>> + Send + 'b>>
+    {
         Box::pin(async move {
             let children = dir_index.get(current_path).cloned().unwrap_or_default();
             let mut child_entries = Vec::new();
@@ -173,9 +170,7 @@ impl OciToDagConverter {
                     } else {
                         format!("{}/{}", current_path, entry.name)
                     };
-                    let subtree_digest = self
-                        .store_trees(dir_index, entries, &sub_path)
-                        .await?;
+                    let subtree_digest = self.store_trees(dir_index, entries, &sub_path).await?;
                     child_digests.push(subtree_digest);
                 } else {
                     child_digests.push(entry.digest);
@@ -183,7 +178,10 @@ impl OciToDagConverter {
                 child_entries.push(entry.clone());
             }
 
-            let inline: Vec<u8> = child_entries.iter().flat_map(|e| e.to_inline_bytes()).collect();
+            let inline: Vec<u8> = child_entries
+                .iter()
+                .flat_map(|e| e.to_inline_bytes())
+                .collect();
 
             let tree_node = DagNode {
                 kind: NodeKind::Tree,
@@ -296,17 +294,13 @@ fn extract_tar_entries_sync(
         let size = header.size()?;
 
         let symlink_target = if is_symlink {
-            header
-                .link_name()?
-                .map(|p| p.to_string_lossy().to_string())
+            header.link_name()?.map(|p| p.to_string_lossy().to_string())
         } else {
             None
         };
 
         let hardlink_target = if is_hardlink {
-            header
-                .link_name()?
-                .map(|p| p.to_string_lossy().to_string())
+            header.link_name()?.map(|p| p.to_string_lossy().to_string())
         } else {
             None
         };
@@ -357,7 +351,11 @@ fn extract_tar_entries_sync(
     // Deferred hardlinks whose target hasn't been seen yet.
     let mut deferred: Vec<usize> = Vec::new();
 
-    for (idx, raw_entry) in raw_entries.iter_mut().enumerate().filter(|(_, e)| e.is_hardlink) {
+    for (idx, raw_entry) in raw_entries
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, e)| e.is_hardlink)
+    {
         let target = raw_entry.hardlink_target.clone();
         if let Some(ref target_path) = target {
             if let Some(target_digest) = path_to_digest.get(target_path) {
@@ -444,13 +442,7 @@ mod tests {
             split_path("usr/bin/bash"),
             ("usr/bin".to_string(), "bash".to_string())
         );
-        assert_eq!(
-            split_path("usr/"),
-            ("".to_string(), "usr".to_string())
-        );
-        assert_eq!(
-            split_path("foo"),
-            ("".to_string(), "foo".to_string())
-        );
+        assert_eq!(split_path("usr/"), ("".to_string(), "usr".to_string()));
+        assert_eq!(split_path("foo"), ("".to_string(), "foo".to_string()));
     }
 }

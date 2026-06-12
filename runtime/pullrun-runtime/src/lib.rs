@@ -9,10 +9,10 @@ pub mod secrets;
 pub use secrets::SecretStore;
 
 pub mod binfmt;
+pub mod builder;
 pub mod events;
 pub mod metrics;
 pub mod service;
-pub mod builder;
 
 pub use events::{Event, EventBus, EventKind};
 pub use service::{RuntimeCommand, RuntimeService, ServiceConfig};

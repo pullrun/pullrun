@@ -63,10 +63,9 @@ use objc2::{define_class, msg_send, ClassType};
 use objc2_foundation::{NSArray, NSError, NSObjectProtocol, NSString, NSURL};
 use objc2_virtualization::{
     VZGenericPlatformConfiguration, VZLinuxBootLoader, VZNATNetworkDeviceAttachment,
-    VZSharedDirectory, VZSingleDirectoryShare,
-    VZVirtioFileSystemDeviceConfiguration, VZVirtioNetworkDeviceConfiguration,
-    VZVirtualMachine, VZVirtualMachineConfiguration, VZVirtualMachineDelegate,
-    VZVirtualMachineState,
+    VZSharedDirectory, VZSingleDirectoryShare, VZVirtioFileSystemDeviceConfiguration,
+    VZVirtioNetworkDeviceConfiguration, VZVirtualMachine, VZVirtualMachineConfiguration,
+    VZVirtualMachineDelegate, VZVirtualMachineState,
 };
 use thiserror::Error;
 use tokio::sync::{Mutex, Semaphore};
@@ -173,7 +172,10 @@ pub enum AppleVirtError {
     InvalidConfig(String),
 
     #[error("Apple Virt {operation} callback failed: {reason}")]
-    Callback { operation: &'static str, reason: String },
+    Callback {
+        operation: &'static str,
+        reason: String,
+    },
 
     #[error("Apple Virt state error: {0}")]
     InvalidState(String),
@@ -291,7 +293,11 @@ impl AppleVirtPool {
         let vm_queue: &'static DispatchQueue = DispatchQueue::main();
 
         for i in 0..config.pool_size {
-            info!(index = i, total = config.pool_size, "creating Apple Virt VM");
+            info!(
+                index = i,
+                total = config.pool_size,
+                "creating Apple Virt VM"
+            );
             let vm = build_vm(&config, vm_queue)?;
             start_vm(&vm, vm_queue)?;
             paused_vms.push(vm);
@@ -305,7 +311,7 @@ impl AppleVirtPool {
         }
 
         Ok(Self {
-#[allow(clippy::arc_with_non_send_sync)]
+            #[allow(clippy::arc_with_non_send_sync)]
             inner: Arc::new(PoolInner {
                 semaphore: Semaphore::new(config.pool_size),
                 paused_vms: Mutex::new(paused_vms),
@@ -451,9 +457,8 @@ impl Drop for AcquiredVm {
                 let ptr = raw as *mut VZVirtualMachine;
                 // SAFETY: We leaked the Retained above; this
                 // re-claims ownership on the blocking thread.
-                let vm: Retained<VZVirtualMachine> = unsafe {
-                    Retained::from_raw(ptr)
-                }.expect("null VM handle in AcquiredVm::drop");
+                let vm: Retained<VZVirtualMachine> =
+                    unsafe { Retained::from_raw(ptr) }.expect("null VM handle in AcquiredVm::drop");
                 if let Err(e) = stop_vm(&vm, queue) {
                     warn!("AcquiredVm::drop stop_vm failed: {e}");
                 }
@@ -559,13 +564,10 @@ fn build_vm(
     let kernel_url = NSURL::fileURLWithPath(&NSString::from_str(
         config.kernel.vmlinux_path().to_string_lossy().as_ref(),
     ));
-    let boot_loader = unsafe {
-        VZLinuxBootLoader::initWithKernelURL(alloc_objc(), &kernel_url)
-    };
+    let boot_loader = unsafe { VZLinuxBootLoader::initWithKernelURL(alloc_objc(), &kernel_url) };
     if let Some(initramfs) = config.kernel.initramfs_path() {
-        let initramfs_url = NSURL::fileURLWithPath(&NSString::from_str(
-            initramfs.to_string_lossy().as_ref(),
-        ));
+        let initramfs_url =
+            NSURL::fileURLWithPath(&NSString::from_str(initramfs.to_string_lossy().as_ref()));
         unsafe { boot_loader.setInitialRamdiskURL(Some(&initramfs_url)) };
     }
     // The kernel command line. `reboot=t` makes a kernel
@@ -593,7 +595,8 @@ fn build_vm(
     let store_url = NSURL::fileURLWithPath(&NSString::from_str(
         config.host_store_path.to_string_lossy().as_ref(),
     ));
-    let shared_dir = unsafe { VZSharedDirectory::initWithURL_readOnly(alloc_objc(), &store_url, false) };
+    let shared_dir =
+        unsafe { VZSharedDirectory::initWithURL_readOnly(alloc_objc(), &store_url, false) };
     let share = unsafe { VZSingleDirectoryShare::initWithDirectory(alloc_objc(), &shared_dir) };
     unsafe { fs_device.setShare(Some(&share)) };
     // `into_super` walks the class hierarchy to get a
@@ -629,7 +632,8 @@ fn build_vm(
     //    main queue, which we do not pump — the start callback
     //    would never fire.
     let allocated: Allocated<VZVirtualMachine> = alloc_objc();
-    let vm = unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &vm_config, vm_queue) };
+    let vm =
+        unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &vm_config, vm_queue) };
     // 8. Attach a logging delegate. The framework uses the
     //    delegate to surface state transitions; without one
     //    the start callback may not fire reliably on some
@@ -699,8 +703,8 @@ fn start_vm(vm: &VZVirtualMachine, queue: &DispatchQueue) -> Result<(), AppleVir
         Ok(0) => Ok(()),
         Ok(raw) => {
             let err_ptr = raw as *mut NSError;
-            let retained = unsafe { Retained::retain(err_ptr) }
-                .expect("non-null NSError from framework");
+            let retained =
+                unsafe { Retained::retain(err_ptr) }.expect("non-null NSError from framework");
             Err(AppleVirtError::from(retained))
         }
         Err(_timeout) => {
@@ -745,8 +749,8 @@ fn pause_vm(vm: &VZVirtualMachine, queue: &DispatchQueue) -> Result<(), AppleVir
         0 => Ok(()),
         raw => {
             let err_ptr = raw as *mut NSError;
-            let retained = unsafe { Retained::retain(err_ptr) }
-                .expect("non-null NSError from framework");
+            let retained =
+                unsafe { Retained::retain(err_ptr) }.expect("non-null NSError from framework");
             Err(AppleVirtError::from(retained))
         }
     }
@@ -773,8 +777,8 @@ fn resume_vm(vm: &VZVirtualMachine, queue: &DispatchQueue) -> Result<(), AppleVi
         0 => Ok(()),
         raw => {
             let err_ptr = raw as *mut NSError;
-            let retained = unsafe { Retained::retain(err_ptr) }
-                .expect("non-null NSError from framework");
+            let retained =
+                unsafe { Retained::retain(err_ptr) }.expect("non-null NSError from framework");
             Err(AppleVirtError::from(retained))
         }
     }
@@ -802,8 +806,8 @@ fn stop_vm(vm: &VZVirtualMachine, queue: &DispatchQueue) -> Result<(), AppleVirt
         0 => Ok(()),
         raw => {
             let err_ptr = raw as *mut NSError;
-            let retained = unsafe { Retained::retain(err_ptr) }
-                .expect("non-null NSError from framework");
+            let retained =
+                unsafe { Retained::retain(err_ptr) }.expect("non-null NSError from framework");
             Err(AppleVirtError::from(retained))
         }
     }

@@ -94,13 +94,24 @@ impl BloomFilter {
             let off = 12 + i * 8;
             *w = u64::from_le_bytes(data[off..off + 8].try_into().ok()?);
         }
-        let filter = Self { bits, k, m, num_items: 0 };
+        let filter = Self {
+            bits,
+            k,
+            m,
+            num_items: 0,
+        };
         Some((filter, expected_len))
     }
 
-    pub fn k(&self) -> u32 { self.k }
-    pub fn m(&self) -> u64 { self.m }
-    pub fn num_items(&self) -> usize { self.num_items }
+    pub fn k(&self) -> u32 {
+        self.k
+    }
+    pub fn m(&self) -> u64 {
+        self.m
+    }
+    pub fn num_items(&self) -> usize {
+        self.num_items
+    }
     pub fn clear(&mut self) {
         for w in &mut self.bits {
             *w = 0;

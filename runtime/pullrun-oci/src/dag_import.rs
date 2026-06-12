@@ -67,10 +67,8 @@ pub fn import_dag_from_tar<R: Read>(
                 )));
             }
             // Validate the rkyv data, then write directly to disk.
-            let _validated =
-                rkyv::check_archived_root::<pullrun_store::DagNode>(&entry_data).map_err(|e| {
-                    OciError::Other(format!("invalid node {digest_str}: {e}"))
-                })?;
+            let _validated = rkyv::check_archived_root::<pullrun_store::DagNode>(&entry_data)
+                .map_err(|e| OciError::Other(format!("invalid node {digest_str}: {e}")))?;
 
             let already_exists = store.exists(&digest);
             if !already_exists {

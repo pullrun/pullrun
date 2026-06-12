@@ -114,13 +114,7 @@ impl VsockClient {
         // Safety: socket() is async-signal-safe and doesn't
         // share state. The file descriptor is returned as a
         // bare c_int.
-        let fd = unsafe {
-            libc::socket(
-                AF_VSOCK,
-                libc::SOCK_STREAM | libc::SOCK_CLOEXEC,
-                0,
-            )
-        };
+        let fd = unsafe { libc::socket(AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
         if fd < 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -151,9 +145,7 @@ impl VsockClient {
     /// handle on a Unix socket for use from a different task.
     /// The returned stream takes ownership of the duped fd
     /// and closes it on drop.
-    fn dup_to_tokio_unix(
-        fd: RawFd,
-    ) -> Result<UnixStream, std::io::Error> {
+    fn dup_to_tokio_unix(fd: RawFd) -> Result<UnixStream, std::io::Error> {
         let duped = unsafe { libc::dup(fd) };
         if duped < 0 {
             return Err(std::io::Error::last_os_error());
@@ -257,9 +249,7 @@ impl VsockClient {
                 // Use a dup'd fd for each send. The dup
                 // takes its own reference; the original
                 // stream remains usable for the next send.
-                let mut owned =
-                    Self::dup_to_tokio_unix(s.as_raw_fd())
-                        .map_err(VsockError::Io)?;
+                let mut owned = Self::dup_to_tokio_unix(s.as_raw_fd()).map_err(VsockError::Io)?;
                 owned.write_all(&bytes).await.map_err(VsockError::Io)?;
                 owned.flush().await.map_err(VsockError::Io)?;
                 // owned drops; duped fd is closed.
@@ -281,12 +271,13 @@ impl VsockClient {
                 size: len as u32,
             }));
         }
-        let ty = pullrun_vsock::FrameType::from_u8(ty_byte)
-            .ok_or(VsockError::Encode(ProtocolError::Truncated {
+        let ty = pullrun_vsock::FrameType::from_u8(ty_byte).ok_or(VsockError::Encode(
+            ProtocolError::Truncated {
                 ty: pullrun_vsock::FrameType::Error,
                 needed: 1,
                 got: 0,
-            }))?;
+            },
+        ))?;
         let mut payload = vec![0u8; len];
         self.read_exact(&mut payload).await?;
         pullrun_vsock::decode(&payload, ty).map_err(VsockError::Encode)
@@ -321,9 +312,7 @@ impl VsockClient {
                 // multiple tasks are reading concurrently,
                 // the bytes get split. We use a per-call
                 // dup'd fd to get an independent read.
-                let mut owned =
-                    Self::dup_to_tokio_unix(s.as_raw_fd())
-                        .map_err(VsockError::Io)?;
+                let mut owned = Self::dup_to_tokio_unix(s.as_raw_fd()).map_err(VsockError::Io)?;
                 owned.read_exact(buf).await.map_err(VsockError::Io)?;
                 // owned drops; duped fd is closed.
             }
@@ -350,8 +339,7 @@ impl VsockClient {
                 VsockTransport::Vsock(duped)
             }
             VsockTransport::Unix(s) => {
-                let stream = Self::dup_to_tokio_unix(s.as_raw_fd())
-                    .expect("dup_to_tokio_unix");
+                let stream = Self::dup_to_tokio_unix(s.as_raw_fd()).expect("dup_to_tokio_unix");
                 VsockTransport::Unix(stream)
             }
         };
@@ -362,8 +350,7 @@ impl VsockClient {
                 VsockTransport::Vsock(duped)
             }
             VsockTransport::Unix(s) => {
-                let stream = Self::dup_to_tokio_unix(s.as_raw_fd())
-                    .expect("dup_to_tokio_unix");
+                let stream = Self::dup_to_tokio_unix(s.as_raw_fd()).expect("dup_to_tokio_unix");
                 VsockTransport::Unix(stream)
             }
         };
@@ -431,7 +418,10 @@ mod tests {
 
         let frame = accept_task.await.unwrap();
         match frame {
-            Frame::InitHello { workload_id, init_pid } => {
+            Frame::InitHello {
+                workload_id,
+                init_pid,
+            } => {
                 assert_eq!(workload_id, "wl-123");
                 assert_eq!(init_pid, 1);
             }
@@ -489,7 +479,13 @@ mod tests {
         // Receive WorkloadSpec
         let spec = client.recv_frame().await.unwrap();
         match spec {
-            Frame::WorkloadSpec { command, env, working_dir, tty, .. } => {
+            Frame::WorkloadSpec {
+                command,
+                env,
+                working_dir,
+                tty,
+                ..
+            } => {
                 let _ = tty;
                 assert_eq!(command, vec!["/bin/echo", "hello"]);
                 assert_eq!(env, vec!["FOO=bar"]);
@@ -500,7 +496,9 @@ mod tests {
 
         // Send WorkloadStdin + StdinEof
         client
-            .send_frame(Frame::WorkloadStdin(bytes::Bytes::from_static(b"some input")))
+            .send_frame(Frame::WorkloadStdin(bytes::Bytes::from_static(
+                b"some input",
+            )))
             .await
             .unwrap();
         client.send_frame(Frame::StdinEof).await.unwrap();

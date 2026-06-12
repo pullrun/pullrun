@@ -3,9 +3,9 @@
 
 #[cfg(target_os = "linux")]
 use std::path::Path;
+use tracing::warn;
 #[cfg(target_os = "linux")]
 use tracing::{debug, info};
-use tracing::warn;
 
 /// Register a binfmt_misc handler for the target architecture so
 /// runc can transparently execute cross-arch binaries via QEMU.

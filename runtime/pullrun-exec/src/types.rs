@@ -22,9 +22,9 @@ pub enum RestartPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mount {
-    pub type_: String,      // "bind", "volume", "tmpfs"
-    pub source: String,     // host path or volume name
-    pub destination: String, // container path
+    pub type_: String,        // "bind", "volume", "tmpfs"
+    pub source: String,       // host path or volume name
+    pub destination: String,  // container path
     pub options: Vec<String>, // e.g. ["rbind", "ro", "nosuid"]
 }
 
@@ -314,5 +314,6 @@ pub trait Executor: Send + Sync {
         memory_bytes: Option<u64>,
     ) -> Result<(), ExecError>;
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError>;
-    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError>;
+    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64)
+        -> Result<i32, ExecError>;
 }

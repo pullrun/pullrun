@@ -69,16 +69,19 @@ impl SyncPuller {
             "resolved manifest; fetching blobs via sync"
         );
 
-        let needed_digests: Vec<String> = manifest
-            .layers
-            .iter()
-            .map(|l| l.digest.clone())
-            .collect();
+        let needed_digests: Vec<String> =
+            manifest.layers.iter().map(|l| l.digest.clone()).collect();
 
         let mut layer_blobs = Vec::with_capacity(needed_digests.len());
         for digest in &needed_digests {
             let blob_data = self
-                .fetch_blob_with_sync(bloom_cache, digest, &registry, &repository, token.as_deref())
+                .fetch_blob_with_sync(
+                    bloom_cache,
+                    digest,
+                    &registry,
+                    &repository,
+                    token.as_deref(),
+                )
                 .await?;
             let d = Digest::from_hex(digest)
                 .map_err(|e| pullrun_oci::OciError::Other(format!("invalid layer digest: {e}")))?;
@@ -89,7 +92,12 @@ impl SyncPuller {
             .map_err(|e| pullrun_oci::OciError::Other(format!("invalid config digest: {e}")))?;
 
         info!(image_ref, layers = layer_blobs.len(), "all layers synced");
-        Ok(PulledImage { manifest, config, config_digest: cd, layer_blobs })
+        Ok(PulledImage {
+            manifest,
+            config,
+            config_digest: cd,
+            layer_blobs,
+        })
     }
 
     async fn resolve_image(
@@ -97,9 +105,20 @@ impl SyncPuller {
         image_ref: &str,
         explicit_registry: Option<&str>,
         platform: Option<&str>,
-    ) -> Result<(OciManifest, OciImageConfig, String, String, String, Option<String>), pullrun_oci::OciError>
-    {
-        self.oci_puller.resolve_image(image_ref, explicit_registry, platform).await
+    ) -> Result<
+        (
+            OciManifest,
+            OciImageConfig,
+            String,
+            String,
+            String,
+            Option<String>,
+        ),
+        pullrun_oci::OciError,
+    > {
+        self.oci_puller
+            .resolve_image(image_ref, explicit_registry, platform)
+            .await
     }
 
     async fn fetch_blob_with_sync(
@@ -138,7 +157,10 @@ impl SyncPuller {
 
         // 3. Fall back to upstream registry.
         debug!(%digest, "blob not on any peer; falling back to registry");
-        let data = self.oci_puller.fetch_blob_by_digest(registry, repository, digest, token).await?;
+        let data = self
+            .oci_puller
+            .fetch_blob_by_digest(registry, repository, digest, token)
+            .await?;
         let _ = self.store.put_blob_blocking(&d, &data);
         Ok(data)
     }
@@ -147,18 +169,18 @@ impl SyncPuller {
         const PEER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
         let endpoint = format!("http://{}", sync_addr);
-        let mut client = match tokio::time::timeout(PEER_TIMEOUT, BlockSyncClient::connect(endpoint)).await
-        {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => {
-                debug!(%sync_addr, error = %e, "failed to connect to peer");
-                return None;
-            }
-            Err(_) => {
-                debug!(%sync_addr, "peer connect timed out");
-                return None;
-            }
-        };
+        let mut client =
+            match tokio::time::timeout(PEER_TIMEOUT, BlockSyncClient::connect(endpoint)).await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => {
+                    debug!(%sync_addr, error = %e, "failed to connect to peer");
+                    return None;
+                }
+                Err(_) => {
+                    debug!(%sync_addr, "peer connect timed out");
+                    return None;
+                }
+            };
 
         let request = tonic::Request::new(GetBlobsRequest {
             digests: vec![digest.to_string()],
@@ -182,7 +204,11 @@ impl SyncPuller {
                         }
                     }
                 }
-                if !collected.is_empty() { Some(collected) } else { None }
+                if !collected.is_empty() {
+                    Some(collected)
+                } else {
+                    None
+                }
             }
             Ok(Err(e)) => {
                 debug!(%digest, %sync_addr, error = %e, "peer get_blobs failed");

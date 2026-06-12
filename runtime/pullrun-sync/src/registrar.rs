@@ -11,9 +11,9 @@ use tracing::{debug, info, warn};
 
 use crate::proto::registrar_server::Registrar;
 use crate::proto::{
-    DeregisterRequest, DeregisterResponse, HeartbeatRequest, HeartbeatResponse,
-    ListPeersRequest, ListPeersResponse, LookupRequest, LookupResponse,
-    PeerRegistration, RegisterRequest, RegisterResponse,
+    DeregisterRequest, DeregisterResponse, HeartbeatRequest, HeartbeatResponse, ListPeersRequest,
+    ListPeersResponse, LookupRequest, LookupResponse, PeerRegistration, RegisterRequest,
+    RegisterResponse,
 };
 
 pub use crate::proto::registrar_client::RegistrarClient as RegistrarClientGen;
@@ -74,7 +74,11 @@ impl RegistrarService {
         });
         let after = peers.len();
         if before != after {
-            info!(evicted = before - after, remaining = after, "registrar eviction");
+            info!(
+                evicted = before - after,
+                remaining = after,
+                "registrar eviction"
+            );
         }
     }
 }
@@ -163,11 +167,7 @@ impl Registrar for RegistrarService {
 ///
 /// Client-side helper: register a node with a remote registrar and
 /// run periodic heartbeats.  Spawn the returned future as a task.
-pub async fn run_registrar_client(
-    client: RegistrarClient,
-    node_id: String,
-    sync_addr: String,
-) {
+pub async fn run_registrar_client(client: RegistrarClient, node_id: String, sync_addr: String) {
     let register_req = tonic::Request::new(RegisterRequest {
         node_id: node_id.clone(),
         sync_addr: sync_addr.clone(),

@@ -12,7 +12,9 @@ use tracing::{debug, info};
 use pullrun_store::{Digest, MmapStore};
 
 use crate::converter::{DirectoryEntry, ManifestData};
-use crate::puller::{OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest, OciRuntimeConfig, OciRootFs};
+use crate::puller::{
+    OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest, OciRootFs, OciRuntimeConfig,
+};
 
 /// Push a DAG image to an OCI-compatible registry.
 pub struct DagPusher {
@@ -113,11 +115,7 @@ impl DagPusher {
         }
     }
 
-    fn authorized_get(
-        &self,
-        url: &str,
-        token: Option<&str>,
-    ) -> reqwest::RequestBuilder {
+    fn authorized_get(&self, url: &str, token: Option<&str>) -> reqwest::RequestBuilder {
         let mut req = self.client.get(url);
         if let Some(t) = token {
             req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
@@ -125,11 +123,7 @@ impl DagPusher {
         req
     }
 
-    fn authorized_put(
-        &self,
-        url: &str,
-        token: Option<&str>,
-    ) -> reqwest::RequestBuilder {
+    fn authorized_put(&self, url: &str, token: Option<&str>) -> reqwest::RequestBuilder {
         let mut req = self.client.put(url);
         if let Some(t) = token {
             req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
@@ -138,18 +132,15 @@ impl DagPusher {
     }
 
     /// Reconstruct an OCI layer tar.gz from a DAG layer node.
-    fn reconstruct_layer(
-        &self,
-        layer_digest: &Digest,
-    ) -> Result<(Vec<u8>, String), OciError> {
+    fn reconstruct_layer(&self, layer_digest: &Digest) -> Result<(Vec<u8>, String), OciError> {
         let mut tar_buf = Vec::new();
-        let mut gz =
-            flate2::write::GzEncoder::new(&mut tar_buf, flate2::Compression::default());
+        let mut gz = flate2::write::GzEncoder::new(&mut tar_buf, flate2::Compression::default());
         let mut tar = tar::Builder::new(&mut gz);
         self.walk_tree_for_layer(layer_digest, "", &mut tar)?;
         tar.finish()?;
         drop(tar);
-        let _ = gz.finish()
+        let _ = gz
+            .finish()
             .map_err(|e| OciError::Other(format!("gzip finish: {e}")))?;
 
         let digest = format!("sha256:{}", hex::encode(Sha256::digest(&tar_buf)));
@@ -163,9 +154,10 @@ impl DagPusher {
         base_path: &str,
         tar: &mut tar::Builder<&mut flate2::write::GzEncoder<&mut Vec<u8>>>,
     ) -> Result<(), OciError> {
-        let archived = self.store.get_archived(node_digest).map_err(|e| {
-            OciError::Other(format!("read node {node_digest}: {e}"))
-        })?;
+        let archived = self
+            .store
+            .get_archived(node_digest)
+            .map_err(|e| OciError::Other(format!("read node {node_digest}: {e}")))?;
 
         if archived.is_layer() {
             let layer_path = String::from_utf8_lossy(&archived.inline_data).to_string();
@@ -218,8 +210,14 @@ impl DagPusher {
                     let blob_mmap = self.store.get(&entry.digest).map_err(|e| {
                         OciError::Other(format!("read blob {}: {e}", entry.digest.as_hex()))
                     })?;
-                    let blob_node = rkyv::check_archived_root::<pullrun_store::DagNode>(&blob_mmap[..])
-                        .map_err(|e| OciError::Other(format!("corrupt blob node {}: {e}", entry.digest.as_hex())))?;
+                    let blob_node =
+                        rkyv::check_archived_root::<pullrun_store::DagNode>(&blob_mmap[..])
+                            .map_err(|e| {
+                                OciError::Other(format!(
+                                    "corrupt blob node {}: {e}",
+                                    entry.digest.as_hex()
+                                ))
+                            })?;
                     let file_data = blob_node.inline_data.as_ref();
 
                     let mut header = tar::Header::new_gnu();
@@ -288,12 +286,7 @@ impl DagPusher {
             location.clone()
         } else {
             // Relative URL
-            format!(
-                "{}//{}{}",
-                self.scheme(registry),
-                registry,
-                location
-            )
+            format!("{}//{}{}", self.scheme(registry), registry, location)
         };
 
         // PUT the blob data with digest query param.
@@ -335,9 +328,10 @@ impl DagPusher {
         // Check if the root is a manifest list.
         let rd = Digest::from_hex(root_digest)
             .map_err(|e| OciError::Other(format!("invalid root digest: {e}")))?;
-        let root_archived = self.store.get_archived(&rd).map_err(|e| {
-            OciError::Other(format!("read node {root_digest}: {e}"))
-        })?;
+        let root_archived = self
+            .store
+            .get_archived(&rd)
+            .map_err(|e| OciError::Other(format!("read node {root_digest}: {e}")))?;
         if root_archived.is_manifest_list() {
             return self.push_manifest_list(&rd, target_ref).await;
         }
@@ -349,9 +343,9 @@ impl DagPusher {
         }
 
         // Single-arch: push the OCI manifest and tag it.
-        let (oci_manifest, total_pushed) =
-            self.push_oci_manifest(&rd, &registry, &repository, token.as_deref())
-                .await?;
+        let (oci_manifest, total_pushed) = self
+            .push_oci_manifest(&rd, &registry, &repository, token.as_deref())
+            .await?;
 
         let manifest_json = serde_json::to_vec(&oci_manifest)?;
         let manifest_digest = format!("sha256:{}", hex::encode(Sha256::digest(&manifest_json)));
@@ -361,14 +355,19 @@ impl DagPusher {
         let manifest_url = format!("{scheme}//{registry}/v2/{repository}/manifests/{tag}");
         let resp = self
             .authorized_put(&manifest_url, token.as_deref())
-            .header(reqwest::header::CONTENT_TYPE, "application/vnd.oci.image.manifest.v1+json")
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/vnd.oci.image.manifest.v1+json",
+            )
             .body(manifest_json)
             .send()
             .await?;
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(OciError::Other(format!("manifest upload failed for {tag}: {body}")));
+            return Err(OciError::Other(format!(
+                "manifest upload failed for {tag}: {body}"
+            )));
         }
 
         info!(%manifest_digest, layers = n_layers, bytes = total_pushed, "image pushed successfully");
@@ -385,17 +384,17 @@ impl DagPusher {
         repository: &str,
         token: Option<&str>,
     ) -> Result<(OciManifest, i64), OciError> {
-        let archived = self.store.get_archived(manifest_digest).map_err(|e| {
-            OciError::Other(format!("read manifest node {manifest_digest}: {e}"))
-        })?;
+        let archived = self
+            .store
+            .get_archived(manifest_digest)
+            .map_err(|e| OciError::Other(format!("read manifest node {manifest_digest}: {e}")))?;
         if !archived.is_manifest() {
             return Err(OciError::InvalidManifest(format!(
                 "node {manifest_digest} is not a manifest node"
             )));
         }
 
-        let manifest_data: ManifestData =
-            serde_json::from_slice(archived.inline_data.as_ref())?;
+        let manifest_data: ManifestData = serde_json::from_slice(archived.inline_data.as_ref())?;
         // Reconstruct the OCI image config from the manifest data fields.
         let oci_config = OciImageConfig {
             created: None,
@@ -420,11 +419,7 @@ impl DagPusher {
             history: None,
         };
 
-        let layer_digests: Vec<Digest> = archived
-            .edges
-            .iter()
-            .map(|e| Digest(*e))
-            .collect();
+        let layer_digests: Vec<Digest> = archived.edges.iter().map(|e| Digest(*e)).collect();
 
         let mut oci_layers = Vec::new();
         let mut total_pushed: i64 = 0;
@@ -481,9 +476,10 @@ impl DagPusher {
     ) -> Result<(String, i64), OciError> {
         let (registry, repository, tag) = self.registry_for(target_ref);
 
-        let list_archived = self.store.get_archived(list_digest).map_err(|e| {
-            OciError::Other(format!("read manifest list node {list_digest}: {e}"))
-        })?;
+        let list_archived = self
+            .store
+            .get_archived(list_digest)
+            .map_err(|e| OciError::Other(format!("read manifest list node {list_digest}: {e}")))?;
         if !list_archived.is_manifest_list() {
             return Err(OciError::InvalidManifest(format!(
                 "node {list_digest} is not a manifest list node"
@@ -491,20 +487,17 @@ impl DagPusher {
         }
 
         let token = self.get_token(&registry, &repository, "push,pull").await?;
-        let child_digests: Vec<Digest> = list_archived
-            .edges
-            .iter()
-            .map(|e| Digest(*e))
-            .collect();
+        let child_digests: Vec<Digest> = list_archived.edges.iter().map(|e| Digest(*e)).collect();
 
         let mut total_pushed: i64 = 0;
         let mut manifests = Vec::with_capacity(child_digests.len());
 
         for child in &child_digests {
             // Read architecture/os from the child manifest node.
-            let child_archived = self.store.get_archived(child).map_err(|e| {
-                OciError::Other(format!("read child manifest {child}: {e}"))
-            })?;
+            let child_archived = self
+                .store
+                .get_archived(child)
+                .map_err(|e| OciError::Other(format!("read child manifest {child}: {e}")))?;
             let manifest_data: ManifestData =
                 serde_json::from_slice(child_archived.inline_data.as_ref())?;
 
@@ -519,9 +512,8 @@ impl DagPusher {
             let child_digest = format!("sha256:{}", hex::encode(Sha256::digest(&manifest_json)));
             let manifest_size = manifest_json.len() as i64;
             let scheme = self.scheme(&registry);
-            let manifest_url = format!(
-                "{scheme}//{registry}/v2/{repository}/manifests/{child_digest}"
-            );
+            let manifest_url =
+                format!("{scheme}//{registry}/v2/{repository}/manifests/{child_digest}");
             let resp = self
                 .authorized_put(&manifest_url, token.as_deref())
                 .header(

@@ -71,7 +71,10 @@ impl ProxyNetwork {
         let mut proxy_handles = Vec::new();
         let mut host_port_mappings = Vec::new();
 
-        for rule in rules.iter().filter(|r| matches!(r.direction, crate::Direction::Inbound)) {
+        for rule in rules
+            .iter()
+            .filter(|r| matches!(r.direction, crate::Direction::Inbound))
+        {
             if !matches!(rule.protocol, Protocol::Tcp) {
                 warn!(?rule, "non-TCP protocol not yet supported, skipping");
                 continue;
@@ -79,7 +82,11 @@ impl ProxyNetwork {
 
             let target_port = rule.port;
             let target_ip = internal_ip.clone();
-            let port = if rule.host_port != 0 { rule.host_port } else { rule.port };
+            let port = if rule.host_port != 0 {
+                rule.host_port
+            } else {
+                rule.port
+            };
 
             match self
                 .start_inbound_proxy(workload_id, port, target_ip, target_port)
@@ -95,10 +102,7 @@ impl ProxyNetwork {
             }
         }
 
-        if let Ok(handle) = self
-            .start_outbound_proxy(workload_id, rules.to_vec())
-            .await
-        {
+        if let Ok(handle) = self.start_outbound_proxy(workload_id, rules.to_vec()).await {
             proxy_handles.push(handle);
         }
 
@@ -253,10 +257,7 @@ impl NetworkManager for ProxyNetwork {
     ) -> Result<NetworkEndpoint, NetError> {
         info!(%workload_id, rules = rules.len(), "setting up proxy network");
 
-        let internal_ip_int = self
-            .ipam
-            .allocate()
-            .ok_or(NetError::NoAvailableIps)?;
+        let internal_ip_int = self.ipam.allocate().ok_or(NetError::NoAvailableIps)?;
         let internal_ip = std::net::Ipv4Addr::from(internal_ip_int).to_string();
 
         let endpoint = self
@@ -337,7 +338,11 @@ mod tests {
         let b_int = u32::from(ip_b);
 
         assert_ne!(a_int, b_int, "shared IPAM must give different IPs");
-        assert_eq!(b_int, a_int + 1, "shared IPAM should hand out sequential IPs");
+        assert_eq!(
+            b_int,
+            a_int + 1,
+            "shared IPAM should hand out sequential IPs"
+        );
 
         net_a.teardown("wl-a", &endpoint_a).await.unwrap();
         net_b.teardown("wl-b", &endpoint_b).await.unwrap();
@@ -349,7 +354,11 @@ mod tests {
     async fn test_register_endpoint_with_known_ip() {
         let net = ProxyNetwork::new().unwrap();
         let endpoint = net
-            .register_endpoint("vm-1", "10.42.0.42".to_string(), &[NetworkRule::inbound(9090)])
+            .register_endpoint(
+                "vm-1",
+                "10.42.0.42".to_string(),
+                &[NetworkRule::inbound(9090)],
+            )
             .await
             .unwrap();
 

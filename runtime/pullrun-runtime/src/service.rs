@@ -24,14 +24,18 @@ use tonic::Status;
 use tracing::{debug, info, warn};
 
 use pullrun_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
-use pullrun_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use pullrun_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
+use pullrun_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use pullrun_net::{Ipam, ProxyNetwork};
-use pullrun_oci::{current_arch, OciMaterializer, OciPuller, OciToDagConverter, DagPusher, OciAuth, export_dag_to_tar, import_dag_from_tar, build_dag_from_directory_with_platform, DagDirectory, DirectoryEntry};
+use pullrun_oci::{
+    build_dag_from_directory_with_platform, current_arch, export_dag_to_tar, import_dag_from_tar,
+    DagDirectory, DagPusher, DirectoryEntry, OciAuth, OciMaterializer, OciPuller,
+    OciToDagConverter,
+};
 use pullrun_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use pullrun_store::{Digest, MmapStore};
 use pullrun_sync::PeerBloomCache;
-use pullrun_vm::{FirecrackerConfig, FirecrackerExecutor, StagedKernel, ext4_path_for};
+use pullrun_vm::{ext4_path_for, FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
 /// Cache key used when the kernel is loaded from a local path
 /// (e.g. `~/.pullrun/kernels/`) instead of an OCI image.
@@ -40,32 +44,24 @@ const LOCAL_KERNEL_CACHE_KEY: &str = "__local";
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, CopyFileRequest, CopyFileResponse, CommitImageRequest, CommitImageResponse,
-    CreateNetworkRequest, CreateNetworkResponse, DagNode, DiffRequest, DiffResponse,
-    Event as ProtoEvent, ExecRequest, InfoRequest, InfoResponse,
-    ListNetworksRequest, ListNetworksResponse, NetworkInfo,
-    RemoveNetworkRequest, RemoveNetworkResponse,
-    ExecResponse, GetWorkloadRequest, HasImageRequest, HasImageResponse, InspectRequest,
-    InspectResponse, ListImagesRequest, ListImagesResponse, ListWorkloadsRequest,
-    ListWorkloadsResponse, LogChunk, NetworkRule as ProtoNetworkRule,
-    PruneRequest, PruneResponse,
-    PullImageRequest, PullImageResponse, RemoveImageRequest, RemoveImageResponse,
-    RunComposeRequest, RunComposeResponse, DagStoreInfoRequest, DagStoreInfoResponse,
-    RunRequest, RunResponse, StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest,
-    UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStatus, PortForwardRequest,
-    PortForwardData, GetWorkloadStatsRequest, WorkloadStats as ProtoWorkloadStats,
-    BuildImageRequest, BuildImageResponse,
-    PushImageRequest, PushImageResponse,
-    ExportImageRequest, ExportImageChunk,
-    ImportImageChunk, ImportImageResponse,
-    CreateSecretRequest, CreateSecretResponse,
-    ListSecretsRequest, ListSecretsResponse,
-    InspectSecretRequest, InspectSecretResponse,
-    RemoveSecretRequest, RemoveSecretResponse,
-    CreateConfigRequest, CreateConfigResponse,
-    ListConfigsRequest, ListConfigsResponse,
-    InspectConfigRequest, InspectConfigResponse,
-    RemoveConfigRequest, RemoveConfigResponse,
+    AttachMessage, BuildImageRequest, BuildImageResponse, CommitImageRequest, CommitImageResponse,
+    CopyFileRequest, CopyFileResponse, CreateConfigRequest, CreateConfigResponse,
+    CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse,
+    DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest, DiffResponse,
+    Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk, ExportImageRequest,
+    GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest, HasImageResponse,
+    ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
+    InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
+    InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListImagesRequest,
+    ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
+    ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
+    NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
+    PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
+    RemoveConfigRequest, RemoveConfigResponse, RemoveImageRequest, RemoveImageResponse,
+    RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest, RemoveSecretResponse,
+    RunComposeRequest, RunComposeResponse, RunRequest, RunResponse, StopRequest, StopResponse,
+    StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
+    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -184,7 +180,11 @@ impl ExecutorRouter {
 #[async_trait]
 impl Executor for ExecutorRouter {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError> {
-        tracing::debug!("ExecutorRouter::create backend={:?}, id={}", spec.backend, spec.id);
+        tracing::debug!(
+            "ExecutorRouter::create backend={:?}, id={}",
+            spec.backend,
+            spec.id
+        );
         match spec.backend {
             Backend::Container => {
                 tracing::debug!("ExecutorRouter::create: Container backend");
@@ -229,7 +229,9 @@ impl Executor for ExecutorRouter {
             },
             "vm" => match &self.vm {
                 Some(vm) => vm.start(handle).await,
-                None => Err(ExecError::BackendNotAvailable("VM backend not configured".into())),
+                None => Err(ExecError::BackendNotAvailable(
+                    "VM backend not configured".into(),
+                )),
             },
             other => Err(ExecError::BackendNotAvailable(format!(
                 "unknown backend in handle: {other}"
@@ -312,7 +314,9 @@ impl Executor for ExecutorRouter {
             }
         }
         // Fall back to regular container.
-        self.container.update(id, cpu_millicores, memory_bytes).await
+        self.container
+            .update(id, cpu_millicores, memory_bytes)
+            .await
     }
 
     async fn stats(&self, id: &str) -> Result<pullrun_exec::WorkloadStats, ExecError> {
@@ -333,7 +337,12 @@ impl Executor for ExecutorRouter {
         self.container.stats(id).await
     }
 
-    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError> {
+    async fn exec(
+        &self,
+        id: &str,
+        command: &[String],
+        timeout_secs: u64,
+    ) -> Result<i32, ExecError> {
         if let Some(ref rootless) = self.rootless {
             if rootless.bundle_dir_for(id).exists() {
                 return rootless.exec(id, command, timeout_secs).await;
@@ -371,7 +380,10 @@ fn fs_usage(path: &std::path::Path) -> (i64, i64) {
     // Use u128 to stay safe against overflow for very large filesystems.
     let total = (stat.f_blocks as u128) * (stat.f_frsize as u128);
     let available = (stat.f_bavail as u128) * (stat.f_frsize as u128);
-    (total.min(i64::MAX as u128) as i64, (total - available).min(i64::MAX as u128) as i64)
+    (
+        total.min(i64::MAX as u128) as i64,
+        (total - available).min(i64::MAX as u128) as i64,
+    )
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -399,8 +411,7 @@ impl RuntimeCommand {
 
         let policy_engine = self.config.policy.as_ref().map(|p| {
             Arc::new(
-                PolicyEngine::new(p.clone())
-                    .with_trusted_keys(self.config.trusted_keys.clone()),
+                PolicyEngine::new(p.clone()).with_trusted_keys(self.config.trusted_keys.clone()),
             )
         });
 
@@ -422,11 +433,12 @@ impl RuntimeCommand {
         // VM backend uses ProxyNetwork::register_endpoint() (starts
         // listeners only — VM has already allocated from the same IPAM
         // and attached a tap device to the shared bridge).
-        let proxy = Arc::new(
-            ProxyNetwork::new().expect("ProxyNetwork::new requires valid CIDR"),
-        );
+        let proxy = Arc::new(ProxyNetwork::new().expect("ProxyNetwork::new requires valid CIDR"));
         let ipam = proxy.ipam_handle();
-        info!("shared workload network: 10.42.0.0/16 (bridge {})", pullrun_vm::BRIDGE_NAME);
+        info!(
+            "shared workload network: 10.42.0.0/16 (bridge {})",
+            pullrun_vm::BRIDGE_NAME
+        );
 
         let container = Arc::new(
             LinuxContainerExecutor::new(
@@ -632,10 +644,7 @@ impl RuntimeCommand {
                                     // was already removed from the map.
                                 }
                             }
-                            record_workload_exit(
-                                &backend,
-                                exit_code_for_restart.map(|c| c as i32),
-                            );
+                            record_workload_exit(&backend, exit_code_for_restart.map(|c| c as i32));
                             watcher_bus.emit(
                                 Event::new(&id, EventKind::WorkloadExited)
                                     .with_metadata("backend", &backend)
@@ -697,7 +706,7 @@ impl RuntimeCommand {
                                     state.status = "exited".to_string();
                                     state.exit_time = now;
                                     state.exit_code = Some(137); // assume killed
-                                    // Restart unless policy is No.
+                                                                 // Restart unless policy is No.
                                     should_restart = !matches!(
                                         state.restart_policy,
                                         pullrun_exec::types::RestartPolicy::No
@@ -771,9 +780,15 @@ impl RuntimeCommand {
                                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                                 id.hash(&mut hasher);
                                 let jitter = hasher.finish();
-                                (id.clone(), hc.test.clone(), hc.interval_seconds.max(1),
-                                 hc.timeout_seconds.max(1), hc.retries.max(1),
-                                 s.start_time + hc.start_period_seconds as i64, jitter)
+                                (
+                                    id.clone(),
+                                    hc.test.clone(),
+                                    hc.interval_seconds.max(1),
+                                    hc.timeout_seconds.max(1),
+                                    hc.retries.max(1),
+                                    s.start_time + hc.start_period_seconds as i64,
+                                    jitter,
+                                )
                             })
                         })
                         .filter(|(_id, _, interval, _, _, grace_end, jitter)| {
@@ -784,7 +799,8 @@ impl RuntimeCommand {
                                 .unwrap_or(0);
                             // Include jitter phase so workloads with the same
                             // interval probe at different ticks.
-                            now.wrapping_add(*jitter).is_multiple_of(interval) || now >= *grace_end as u64
+                            now.wrapping_add(*jitter).is_multiple_of(interval)
+                                || now >= *grace_end as u64
                         })
                         .map(|(id, test, interval, timeout, retries, grace_end, _)| {
                             (id, test, interval, timeout, retries, grace_end)
@@ -800,7 +816,11 @@ impl RuntimeCommand {
                         continue;
                     }
                     // Run the probe command via runc exec
-                    let healthy = hc_executor.exec(&id, &test, timeout as u64).await.map(|r| r == 0).unwrap_or(false);
+                    let healthy = hc_executor
+                        .exec(&id, &test, timeout as u64)
+                        .await
+                        .map(|r| r == 0)
+                        .unwrap_or(false);
                     let mut map = hc_workloads.write().await;
                     if let Some(state) = map.get_mut(&id) {
                         if healthy {
@@ -943,11 +963,7 @@ mod walk_dag_tests {
 
         // Insert children first so the edges resolve.
         let layer = StoreDagNode::new(NodeKind::Layer, vec![], b"layer-bytes".to_vec());
-        let tree = StoreDagNode::new(
-            NodeKind::Tree,
-            vec![Digest::ZERO],
-            b"tree-bytes".to_vec(),
-        );
+        let tree = StoreDagNode::new(NodeKind::Tree, vec![Digest::ZERO], b"tree-bytes".to_vec());
         let manifest = StoreDagNode::new(
             NodeKind::Manifest,
             vec![Digest::ZERO],
@@ -1067,11 +1083,7 @@ mod parse_exit_code_tests {
 /// Write a single workload's state to the checkpoints directory as a
 /// JSON file. Called on every state transition (run, stop, exit).
 /// Idempotent: subsequent writes replace the previous checkpoint.
-fn write_workload_checkpoint(
-    dir: &std::path::Path,
-    id: &str,
-    state: &WorkloadState,
-) {
+fn write_workload_checkpoint(dir: &std::path::Path, id: &str, state: &WorkloadState) {
     let path = dir.join(format!("{id}.json"));
     match serde_json::to_string_pretty(state) {
         Ok(json) => {
@@ -1151,19 +1163,36 @@ async fn attempt_restart(
     id: &str,
     backend: &str,
 ) {
-    use std::time::Duration;
     use pullrun_exec::types::{Backend, RestartPolicy, WorkloadSpec};
+    use std::time::Duration;
 
     // Read current state to get restart count and policy.
-    let (restart_count, image_root, command, env, cpu_millicores, memory_bytes,
-          network_rules, kernel_image_ref, _working_dir, bridge_name, mounts,
-          health_check, network_mode_str, stopped_by_operator) = {
+    let (
+        restart_count,
+        image_root,
+        command,
+        env,
+        cpu_millicores,
+        memory_bytes,
+        network_rules,
+        kernel_image_ref,
+        _working_dir,
+        bridge_name,
+        mounts,
+        health_check,
+        network_mode_str,
+        stopped_by_operator,
+    ) = {
         let map = watcher_workloads.read().await;
         match map.get(id) {
             Some(s) => {
                 // Don't restart if the operator stopped this workload.
                 let stopped = s.status != "exited";
-                let network_mode = if s.internal_ip.is_some() { "bridge" } else { "isolated" };
+                let network_mode = if s.internal_ip.is_some() {
+                    "bridge"
+                } else {
+                    "isolated"
+                };
                 (
                     s.restart_count,
                     s.image_root.clone(),
@@ -1397,7 +1426,8 @@ pub struct RuntimeService {
     /// On non-macOS this field exists but is never used (VM
     /// backend returns `failed_precondition`).
     #[cfg(target_os = "macos")]
-    pub persistent_vms: Arc<tokio::sync::RwLock<HashMap<String, Arc<pullrun_vm::VmPersistentHandle>>>>,
+    pub persistent_vms:
+        Arc<tokio::sync::RwLock<HashMap<String, Arc<pullrun_vm::VmPersistentHandle>>>>,
 }
 
 impl RuntimeService {
@@ -1440,10 +1470,7 @@ impl RuntimeService {
     /// Defense-in-depth check at run time. Uses the recorded image_ref
     /// (from PullImage) when available, falls back to a no-signature
     /// SBOM-only check otherwise.
-    async fn evaluate_for_run(
-        &self,
-        root_digest: &str,
-    ) -> Result<(), Status> {
+    async fn evaluate_for_run(&self, root_digest: &str) -> Result<(), Status> {
         let Some(engine) = &self.policy_engine else {
             return Ok(());
         };
@@ -1509,11 +1536,7 @@ impl RuntimeService {
         // Look up the materialized rootfs path (if any) so
         // `attach_workload` can mount it on the new VM.
         let rootfs_dir = if final_backend == "vm" {
-            self.rootfs_cache
-                .read()
-                .await
-                .get(&final_id)
-                .cloned()
+            self.rootfs_cache.read().await.get(&final_id).cloned()
         } else {
             None
         };
@@ -1525,7 +1548,11 @@ impl RuntimeService {
             exit_time: 0,
             exit_code: None,
             backend: final_backend.clone(),
-            internal_ip: if final_ip == "loopback" { None } else { Some(final_ip.clone()) },
+            internal_ip: if final_ip == "loopback" {
+                None
+            } else {
+                Some(final_ip.clone())
+            },
             pid: final_pid,
             image_root: final_image_root.clone(),
             command: final_command.clone(),
@@ -1541,17 +1568,36 @@ impl RuntimeService {
             restart_policy,
             restart_count: 0,
             env: req.env.clone(),
-            cpu_millicores: if req.cpu_millicores > 0 { Some(req.cpu_millicores) } else { None },
-            memory_bytes: if req.memory_bytes > 0 { Some(req.memory_bytes) } else { None },
-            bridge_name: if req.bridge_name.is_empty() { None } else { Some(req.bridge_name.clone()) },
-            mounts: req.mounts.iter().map(|m| pullrun_exec::Mount {
-                type_: m.r#type.clone(),
-                source: m.source.clone(),
-                destination: m.destination.clone(),
-                options: m.options.clone(),
-            }).collect(),
+            cpu_millicores: if req.cpu_millicores > 0 {
+                Some(req.cpu_millicores)
+            } else {
+                None
+            },
+            memory_bytes: if req.memory_bytes > 0 {
+                Some(req.memory_bytes)
+            } else {
+                None
+            },
+            bridge_name: if req.bridge_name.is_empty() {
+                None
+            } else {
+                Some(req.bridge_name.clone())
+            },
+            mounts: req
+                .mounts
+                .iter()
+                .map(|m| pullrun_exec::Mount {
+                    type_: m.r#type.clone(),
+                    source: m.source.clone(),
+                    destination: m.destination.clone(),
+                    options: m.options.clone(),
+                })
+                .collect(),
             console_log_path: if final_backend == "vm" {
-                self.config.vm_backend.as_ref().map(|cfg| cfg.vm_root.join(&final_id).join("console.log"))
+                self.config
+                    .vm_backend
+                    .as_ref()
+                    .map(|cfg| cfg.vm_root.join(&final_id).join("console.log"))
             } else {
                 None
             },
@@ -1741,8 +1787,7 @@ impl Runtime for RuntimeService {
         // there.
         #[cfg(target_os = "macos")]
         let mut req_for_state = req.clone();
-        let backend = Backend::from_str(&req.backend)
-            .map_err(tonic::Status::invalid_argument)?;
+        let backend = Backend::from_str(&req.backend).map_err(tonic::Status::invalid_argument)?;
 
         // RAII timer: records wall-clock duration of the whole RPC
         // (parse, policy, create, start) on drop, regardless of
@@ -1766,8 +1811,10 @@ impl Runtime for RuntimeService {
                 {
                     match find_local_kernel() {
                         Some((vmlinux, initramfs)) => {
-                            let staged = StagedKernel::from_paths(vmlinux, initramfs)
-                                .map_err(|e| tonic::Status::internal(format!("local kernel: {e}")))?;
+                            let staged =
+                                StagedKernel::from_paths(vmlinux, initramfs).map_err(|e| {
+                                    tonic::Status::internal(format!("local kernel: {e}"))
+                                })?;
                             info!(
                                 "using local kernel; caching under {}",
                                 LOCAL_KERNEL_CACHE_KEY
@@ -1799,53 +1846,51 @@ impl Runtime for RuntimeService {
             // the daemon's VmBackendConfig.kernel_path is used
             // directly, so skip OCI staging.
             if !req.kernel_image.is_empty() {
-            let already_staged = self
-                .kernel_cache
-                .read()
-                .await
-                .contains_key(&req.kernel_image);
-            if !already_staged {
-                let store = self.store.clone();
-                let kernel_image = req.kernel_image.clone();
-                let insecure_registries = self.config.insecure_registries.clone();
-                let r = tokio::task::spawn_blocking(move || {
-                    stage_kernel_image(&store, &kernel_image, &insecure_registries)
-                })
-                .await
-                .map_err(|e| {
-                    tonic::Status::internal(format!("stage kernel join: {e}"))
-                })?;
-                match r {
-                    Ok(kernel) => {
-                        self.event_bus.emit(
-                            Event::new(&req.id, EventKind::ImagePulled)
-                                .with_metadata("kind", "kernel")
-                                .with_metadata("image", &req.kernel_image)
-                                .with_metadata(
-                                    "vmlinux_bytes",
-                                    kernel.vmlinux_size().to_string(),
-                                ),
-                        );
-                        self.kernel_cache
-                            .write()
-                            .await
-                            .insert(req.kernel_image.clone(), kernel);
-                    }
-                    Err(e) => {
-                        self.event_bus.emit(
-                            Event::new(&req.id, EventKind::ImagePulled)
-                                .with_metadata("kind", "kernel")
-                                .with_metadata("image", &req.kernel_image)
-                                .with_metadata("outcome", "failed")
-                                .with_metadata("error", e.to_string()),
-                        );
-                        return Err(tonic::Status::internal(format!(
-                            "stage kernel {}: {e}",
-                            req.kernel_image
-                        )));
+                let already_staged = self
+                    .kernel_cache
+                    .read()
+                    .await
+                    .contains_key(&req.kernel_image);
+                if !already_staged {
+                    let store = self.store.clone();
+                    let kernel_image = req.kernel_image.clone();
+                    let insecure_registries = self.config.insecure_registries.clone();
+                    let r = tokio::task::spawn_blocking(move || {
+                        stage_kernel_image(&store, &kernel_image, &insecure_registries)
+                    })
+                    .await
+                    .map_err(|e| tonic::Status::internal(format!("stage kernel join: {e}")))?;
+                    match r {
+                        Ok(kernel) => {
+                            self.event_bus.emit(
+                                Event::new(&req.id, EventKind::ImagePulled)
+                                    .with_metadata("kind", "kernel")
+                                    .with_metadata("image", &req.kernel_image)
+                                    .with_metadata(
+                                        "vmlinux_bytes",
+                                        kernel.vmlinux_size().to_string(),
+                                    ),
+                            );
+                            self.kernel_cache
+                                .write()
+                                .await
+                                .insert(req.kernel_image.clone(), kernel);
+                        }
+                        Err(e) => {
+                            self.event_bus.emit(
+                                Event::new(&req.id, EventKind::ImagePulled)
+                                    .with_metadata("kind", "kernel")
+                                    .with_metadata("image", &req.kernel_image)
+                                    .with_metadata("outcome", "failed")
+                                    .with_metadata("error", e.to_string()),
+                            );
+                            return Err(tonic::Status::internal(format!(
+                                "stage kernel {}: {e}",
+                                req.kernel_image
+                            )));
+                        }
                     }
                 }
-            }
             }
 
             // Materialize the workload's OCI image to a temp
@@ -1862,12 +1907,8 @@ impl Runtime for RuntimeService {
                     materialize_rootfs(&store_for_rootfs, &root_digest_for_rootfs)
                 })
                 .await
-                .map_err(|e| {
-                    tonic::Status::internal(format!("materialize rootfs join: {e}"))
-                })?
-                .map_err(|e| {
-                    tonic::Status::internal(format!("materialize rootfs: {e}"))
-                })?;
+                .map_err(|e| tonic::Status::internal(format!("materialize rootfs join: {e}")))?
+                .map_err(|e| tonic::Status::internal(format!("materialize rootfs: {e}")))?;
                 self.rootfs_cache
                     .write()
                     .await
@@ -1957,7 +1998,12 @@ impl Runtime for RuntimeService {
         };
 
         // Resolve secrets/configs and stage them for bind-mounting.
-        let staged_secret_dir = self.config.store_root.join("run").join("secrets-stage").join(&req.id);
+        let staged_secret_dir = self
+            .config
+            .store_root
+            .join("run")
+            .join("secrets-stage")
+            .join(&req.id);
         let mut extra_mounts: Vec<pullrun_exec::Mount> = Vec::new();
 
         if !req.secrets.is_empty() || !req.configs.is_empty() {
@@ -1969,7 +2015,9 @@ impl Runtime for RuntimeService {
                 .config
                 .secrets_store
                 .read_secret_raw(&sr.name)
-                .map_err(|e| tonic::Status::invalid_argument(format!("secret '{}': {e}", sr.name)))?;
+                .map_err(|e| {
+                    tonic::Status::invalid_argument(format!("secret '{}': {e}", sr.name))
+                })?;
             let target = if sr.target_path.is_empty() {
                 format!("/run/secrets/{}", sr.name)
             } else {
@@ -1991,7 +2039,9 @@ impl Runtime for RuntimeService {
                 .config
                 .secrets_store
                 .read_config_raw(&cr.name)
-                .map_err(|e| tonic::Status::invalid_argument(format!("config '{}': {e}", cr.name)))?;
+                .map_err(|e| {
+                    tonic::Status::invalid_argument(format!("config '{}': {e}", cr.name))
+                })?;
             let target = if cr.target_path.is_empty() {
                 format!("/{}", cr.name)
             } else {
@@ -2030,8 +2080,16 @@ impl Runtime for RuntimeService {
             backend,
             command: req.command.clone(),
             env,
-            cpu_millicores: if req.cpu_millicores > 0 { Some(req.cpu_millicores) } else { None },
-            memory_bytes: if req.memory_bytes > 0 { Some(req.memory_bytes) } else { None },
+            cpu_millicores: if req.cpu_millicores > 0 {
+                Some(req.cpu_millicores)
+            } else {
+                None
+            },
+            memory_bytes: if req.memory_bytes > 0 {
+                Some(req.memory_bytes)
+            } else {
+                None
+            },
             network_mode,
             network_rules: network_rules.clone(),
             kernel_path,
@@ -2041,13 +2099,16 @@ impl Runtime for RuntimeService {
                 Some(req.bridge_name.clone())
             },
             mounts,
-            health_check: req.health_check.as_ref().map(|hc| pullrun_exec::HealthCheck {
-                test: hc.test.clone(),
-                interval_seconds: hc.interval_seconds,
-                timeout_seconds: hc.timeout_seconds,
-                retries: hc.retries,
-                start_period_seconds: hc.start_period_seconds,
-            }),
+            health_check: req
+                .health_check
+                .as_ref()
+                .map(|hc| pullrun_exec::HealthCheck {
+                    test: hc.test.clone(),
+                    interval_seconds: hc.interval_seconds,
+                    timeout_seconds: hc.timeout_seconds,
+                    retries: hc.retries,
+                    start_period_seconds: hc.start_period_seconds,
+                }),
             restart_policy: restart_policy.clone(),
         };
 
@@ -2080,10 +2141,8 @@ impl Runtime for RuntimeService {
                 // `pullrun_vm::run_session_blocking`.
                 #[cfg(target_os = "macos")]
                 {
-                    let is_applevirt_unsupported = matches!(
-                        e,
-                        pullrun_exec::ExecError::BackendNotAvailable(_)
-                    );
+                    let is_applevirt_unsupported =
+                        matches!(e, pullrun_exec::ExecError::BackendNotAvailable(_));
                     if backend_label == "vm" && is_applevirt_unsupported {
                         warn!(
                             workload_id = %req.id,
@@ -2188,7 +2247,10 @@ impl Runtime for RuntimeService {
 
         let final_backend = handle.backend.clone();
         let final_pid = handle.pid.unwrap_or(0);
-        let final_ip = handle.internal_ip.clone().unwrap_or_else(|| "loopback".into());
+        let final_ip = handle
+            .internal_ip
+            .clone()
+            .unwrap_or_else(|| "loopback".into());
         let final_id = req.id.clone();
         let final_image_root = req.root_digest.clone();
         let final_command = req.command.clone();
@@ -2209,9 +2271,10 @@ impl Runtime for RuntimeService {
                 .get(&final_id)
                 .cloned()
                 .or_else(|| {
-                    self.config.vm_backend.as_ref().map(|cfg| {
-                        ext4_path_for(&cfg.vm_root, &final_id)
-                    })
+                    self.config
+                        .vm_backend
+                        .as_ref()
+                        .map(|cfg| ext4_path_for(&cfg.vm_root, &final_id))
                 })
         } else {
             None
@@ -2244,7 +2307,10 @@ impl Runtime for RuntimeService {
             bridge_name: spec.bridge_name.clone(),
             mounts: spec.mounts.clone(),
             console_log_path: if final_backend == "vm" {
-                self.config.vm_backend.as_ref().map(|cfg| cfg.vm_root.join(&final_id).join("console.log"))
+                self.config
+                    .vm_backend
+                    .as_ref()
+                    .map(|cfg| cfg.vm_root.join(&final_id).join("console.log"))
             } else {
                 None
             },
@@ -2283,7 +2349,9 @@ impl Runtime for RuntimeService {
 
         for service in req.services {
             let id = if service.name.is_empty() {
-                return Err(tonic::Status::invalid_argument("compose service name is empty"));
+                return Err(tonic::Status::invalid_argument(
+                    "compose service name is empty",
+                ));
             } else {
                 format!("{}-{}", req.project_name, service.name)
             };
@@ -2365,7 +2433,9 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<StopResponse>, tonic::Status> {
         let req = request.into_inner();
         let id = req.id.clone();
-        self.executor.stop(&id).await
+        self.executor
+            .stop(&id)
+            .await
             .map_err(|e| tonic::Status::internal(format!("stop failed: {e}")))?;
 
         // Do NOT clean up materialized rootfs — `exec` on an exited
@@ -2373,7 +2443,12 @@ impl Runtime for RuntimeService {
         self.rootfs_cache.write().await.remove(&id);
 
         // Clean up staged secrets/configs for this workload.
-        let staged_secret_dir = self.config.store_root.join("run").join("secrets-stage").join(&id);
+        let staged_secret_dir = self
+            .config
+            .store_root
+            .join("run")
+            .join("secrets-stage")
+            .join(&id);
         tokio::fs::remove_dir_all(&staged_secret_dir).await.ok();
 
         // Look up the backend label *before* mutating state, so the
@@ -2385,7 +2460,10 @@ impl Runtime for RuntimeService {
         // to us at this layer in v0.
         let backend_label = {
             let workloads = self.workloads.read().await;
-            workloads.get(&id).map(|s| s.backend.clone()).unwrap_or_else(|| "unknown".to_string())
+            workloads
+                .get(&id)
+                .map(|s| s.backend.clone())
+                .unwrap_or_else(|| "unknown".to_string())
         };
 
         // Only emit `WorkloadStopped` and mark "stopped" if the
@@ -2441,14 +2519,17 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<WorkloadStatus>, tonic::Status> {
         let req = request.into_inner();
         let workloads = self.workloads.read().await;
-        let state = workloads.get(&req.id)
+        let state = workloads
+            .get(&req.id)
             .ok_or_else(|| tonic::Status::not_found(format!("workload {} not found", req.id)))?;
 
         use crate::proto::RestartPolicy;
         let restart_proto = match state.restart_policy {
             pullrun_exec::types::RestartPolicy::OnFailure => RestartPolicy::RestartOnFailure,
             pullrun_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
-            pullrun_exec::types::RestartPolicy::UnlessStopped => RestartPolicy::RestartUnlessStopped,
+            pullrun_exec::types::RestartPolicy::UnlessStopped => {
+                RestartPolicy::RestartUnlessStopped
+            }
             _ => RestartPolicy::RestartNo,
         };
         Ok(tonic::Response::new(WorkloadStatus {
@@ -2470,29 +2551,38 @@ impl Runtime for RuntimeService {
         _request: tonic::Request<ListWorkloadsRequest>,
     ) -> Result<tonic::Response<ListWorkloadsResponse>, tonic::Status> {
         let workloads = self.workloads.read().await;
-        let items: Vec<WorkloadStatus> = workloads.iter().map(|(id, state)| {
-            use crate::proto::RestartPolicy;
-            let restart_proto = match state.restart_policy {
-                pullrun_exec::types::RestartPolicy::OnFailure => RestartPolicy::RestartOnFailure,
-                pullrun_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
-                pullrun_exec::types::RestartPolicy::UnlessStopped => RestartPolicy::RestartUnlessStopped,
-                _ => RestartPolicy::RestartNo,
-            };
-            WorkloadStatus {
-                id: id.clone(),
-                state: state.status.clone(),
-                backend: state.backend.clone(),
-                exit_code: state.exit_code.unwrap_or(0),
-                start_time: state.start_time,
-                internal_ip: state.internal_ip.clone().unwrap_or_default(),
-                network_isolated: true,
-                health: state.health.clone(),
-                restart_policy: restart_proto.into(),
-                restart_count: state.restart_count,
-            }
-        }).collect();
+        let items: Vec<WorkloadStatus> = workloads
+            .iter()
+            .map(|(id, state)| {
+                use crate::proto::RestartPolicy;
+                let restart_proto = match state.restart_policy {
+                    pullrun_exec::types::RestartPolicy::OnFailure => {
+                        RestartPolicy::RestartOnFailure
+                    }
+                    pullrun_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
+                    pullrun_exec::types::RestartPolicy::UnlessStopped => {
+                        RestartPolicy::RestartUnlessStopped
+                    }
+                    _ => RestartPolicy::RestartNo,
+                };
+                WorkloadStatus {
+                    id: id.clone(),
+                    state: state.status.clone(),
+                    backend: state.backend.clone(),
+                    exit_code: state.exit_code.unwrap_or(0),
+                    start_time: state.start_time,
+                    internal_ip: state.internal_ip.clone().unwrap_or_default(),
+                    network_isolated: true,
+                    health: state.health.clone(),
+                    restart_policy: restart_proto.into(),
+                    restart_count: state.restart_count,
+                }
+            })
+            .collect();
 
-        Ok(tonic::Response::new(ListWorkloadsResponse { workloads: items }))
+        Ok(tonic::Response::new(ListWorkloadsResponse {
+            workloads: items,
+        }))
     }
 
     type StreamLogsStream = tokio_stream::wrappers::ReceiverStream<Result<LogChunk, tonic::Status>>;
@@ -2506,9 +2596,9 @@ impl Runtime for RuntimeService {
 
         // Verify the workload exists before starting the stream.
         let workloads = self.workloads.read().await;
-        let state = workloads.get(&req.id).ok_or_else(|| {
-            tonic::Status::not_found(format!("workload {} not found", req.id))
-        })?;
+        let state = workloads
+            .get(&req.id)
+            .ok_or_else(|| tonic::Status::not_found(format!("workload {} not found", req.id)))?;
         let status_str = format!("{}\n", state.status);
         drop(workloads);
 
@@ -2518,11 +2608,15 @@ impl Runtime for RuntimeService {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs() as i64;
-            if tx.send(Ok(LogChunk {
-                data: status_str.into_bytes(),
-                stderr: false,
-                timestamp: now,
-            })).await.is_err() {
+            if tx
+                .send(Ok(LogChunk {
+                    data: status_str.into_bytes(),
+                    stderr: false,
+                    timestamp: now,
+                }))
+                .await
+                .is_err()
+            {
                 return;
             }
 
@@ -2539,10 +2633,13 @@ impl Runtime for RuntimeService {
             }
         });
 
-        Ok(tonic::Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
+        Ok(tonic::Response::new(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+        ))
     }
 
-    type StreamEventsStream = tokio_stream::wrappers::ReceiverStream<Result<ProtoEvent, tonic::Status>>;
+    type StreamEventsStream =
+        tokio_stream::wrappers::ReceiverStream<Result<ProtoEvent, tonic::Status>>;
 
     async fn stream_events(
         &self,
@@ -2594,7 +2691,9 @@ impl Runtime for RuntimeService {
             }
         });
 
-        Ok(tonic::Response::new(tokio_stream::wrappers::ReceiverStream::new(mpsc_rx)))
+        Ok(tonic::Response::new(
+            tokio_stream::wrappers::ReceiverStream::new(mpsc_rx),
+        ))
     }
 
     async fn inspect_workload(
@@ -2671,7 +2770,9 @@ impl Runtime for RuntimeService {
         let restart_proto = match state.restart_policy {
             pullrun_exec::types::RestartPolicy::OnFailure => RestartPolicy::RestartOnFailure,
             pullrun_exec::types::RestartPolicy::Always => RestartPolicy::RestartAlways,
-            pullrun_exec::types::RestartPolicy::UnlessStopped => RestartPolicy::RestartUnlessStopped,
+            pullrun_exec::types::RestartPolicy::UnlessStopped => {
+                RestartPolicy::RestartUnlessStopped
+            }
             _ => RestartPolicy::RestartNo,
         };
         Ok(tonic::Response::new(InspectResponse {
@@ -2701,7 +2802,8 @@ impl Runtime for RuntimeService {
         let req = request.into_inner();
 
         // Dispatch through ExecutorRouter for correct backend selection.
-        let exit_code = self.executor
+        let exit_code = self
+            .executor
             .exec(&req.id, &req.command, 30)
             .await
             .map_err(|e| tonic::Status::internal(format!("exec failed: {e}")))?;
@@ -2711,7 +2813,9 @@ impl Runtime for RuntimeService {
         let (stdout, stderr) = {
             let mut cmd = tokio::process::Command::new("runc");
             cmd.args(["exec", &req.id]);
-            for arg in &req.command { cmd.arg(arg); }
+            for arg in &req.command {
+                cmd.arg(arg);
+            }
             match cmd.output().await {
                 Ok(out) => (out.stdout, out.stderr),
                 Err(_) => (Vec::new(), Vec::new()),
@@ -2725,16 +2829,15 @@ impl Runtime for RuntimeService {
         }))
     }
 
-    type AttachWorkloadStream = tokio_stream::wrappers::ReceiverStream<
-        Result<AttachMessage, tonic::Status>,
-    >;
+    type AttachWorkloadStream =
+        tokio_stream::wrappers::ReceiverStream<Result<AttachMessage, tonic::Status>>;
 
     async fn attach_workload(
         &self,
         request: tonic::Request<tonic::Streaming<AttachMessage>>,
     ) -> Result<tonic::Response<Self::AttachWorkloadStream>, tonic::Status> {
-        use pullrun_vsock::Frame;
         use pullrun_vm::attach::{FrameSink, FrameSource};
+        use pullrun_vsock::Frame;
         use std::sync::mpsc as sync_mpsc;
 
         tracing::info!("AttachWorkload RPC opened");
@@ -2767,11 +2870,7 @@ impl Runtime for RuntimeService {
         //    clone what we need.
         let workload_id = open.workload_id.clone();
         let open_command = open.command.clone();
-        let open_env: Vec<String> = open
-            .env
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
+        let open_env: Vec<String> = open.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         let open_working_dir = open.working_dir.clone();
         let open_tty = open.tty;
         let open_rows = open.initial_rows;
@@ -2820,11 +2919,7 @@ impl Runtime for RuntimeService {
             open_command
         };
         let env = if open_env.is_empty() {
-            state
-                .env
-                .iter()
-                .map(|(k, v)| format!("{k}={v}"))
-                .collect()
+            state.env.iter().map(|(k, v)| format!("{k}={v}")).collect()
         } else {
             open_env
         };
@@ -2863,7 +2958,10 @@ impl Runtime for RuntimeService {
                                     let staged = StagedKernel::from_paths(
                                         vmlinux_path.clone(),
                                         initramfs_path.clone(),
-                                    ).map_err(|e| tonic::Status::internal(format!("local kernel: {e}")))?;
+                                    )
+                                    .map_err(|e| {
+                                        tonic::Status::internal(format!("local kernel: {e}"))
+                                    })?;
                                     self.kernel_cache
                                         .write()
                                         .await
@@ -2872,8 +2970,13 @@ impl Runtime for RuntimeService {
                                         "re-cached local kernel under {} for attach",
                                         LOCAL_KERNEL_CACHE_KEY
                                     );
-                                    StagedKernel::from_paths(vmlinux_path, initramfs_path)
-                                        .map_err(|e| tonic::Status::internal(format!("reconstruct local kernel: {e}")))?
+                                    StagedKernel::from_paths(vmlinux_path, initramfs_path).map_err(
+                                        |e| {
+                                            tonic::Status::internal(format!(
+                                                "reconstruct local kernel: {e}"
+                                            ))
+                                        },
+                                    )?
                                 }
                                 None => {
                                     return Err(tonic::Status::failed_precondition(format!(
@@ -2892,22 +2995,18 @@ impl Runtime for RuntimeService {
                             )));
                         }
                     }
-                    None if kref.is_empty() => {
-                        match self.config.vm_backend.as_ref() {
-                            Some(cfg) => {
-                                StagedKernel::from_paths(cfg.kernel_path.clone(), None)
-                                    .map_err(|e| tonic::Status::internal(format!(
-                                        "kernel from --vm-kernel: {e}"
-                                    )))?
-                            }
-                            None => {
-                                return Err(tonic::Status::failed_precondition(format!(
-                                    "workload {workload_id} has no staged kernel; \
+                    None if kref.is_empty() => match self.config.vm_backend.as_ref() {
+                        Some(cfg) => StagedKernel::from_paths(cfg.kernel_path.clone(), None)
+                            .map_err(|e| {
+                                tonic::Status::internal(format!("kernel from --vm-kernel: {e}"))
+                            })?,
+                        None => {
+                            return Err(tonic::Status::failed_precondition(format!(
+                                "workload {workload_id} has no staged kernel; \
                                      was it started by this runtime?"
-                                )));
-                            }
+                            )));
                         }
-                    }
+                    },
                     None => {
                         return Err(tonic::Status::failed_precondition(format!(
                             "workload {workload_id} has no staged kernel for {kref}; \
@@ -2936,7 +3035,9 @@ impl Runtime for RuntimeService {
                 console_log: Some(
                     std::env::var("PULLRUN_VM_CONSOLE_LOG")
                         .map(std::path::PathBuf::from)
-                        .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/pullrun-attach-console.log")),
+                        .unwrap_or_else(|_| {
+                            std::path::PathBuf::from("/tmp/pullrun-attach-console.log")
+                        }),
                 ),
                 tty: open_tty,
                 initial_rows: open_rows,
@@ -2976,7 +3077,10 @@ impl Runtime for RuntimeService {
                                     Event::new(&workload_id_fwd, EventKind::WorkloadStarted)
                                         .with_metadata("backend", "apple-virt-attach")
                                         .with_metadata("outcome", "duplicate_open")
-                                        .with_metadata("error", "client sent AttachOpen after the first one"),
+                                        .with_metadata(
+                                            "error",
+                                            "client sent AttachOpen after the first one",
+                                        ),
                                 );
                                 None
                             }
@@ -3033,11 +3137,12 @@ impl Runtime for RuntimeService {
             tokio::task::spawn_blocking(move || {
                 let mut total_bytes: u64 = 0;
                 loop {
-                    let frame = match server_out_rx.recv_timeout(std::time::Duration::from_millis(10)) {
-                        Ok(f) => f,
-                        Err(sync_mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(sync_mpsc::RecvTimeoutError::Disconnected) => return,
-                    };
+                    let frame =
+                        match server_out_rx.recv_timeout(std::time::Duration::from_millis(10)) {
+                            Ok(f) => f,
+                            Err(sync_mpsc::RecvTimeoutError::Timeout) => continue,
+                            Err(sync_mpsc::RecvTimeoutError::Disconnected) => return,
+                        };
                     if let pullrun_vsock::Frame::WorkloadStdout(ref data) = frame {
                         total_bytes += data.len() as u64;
                         tracing::debug!(
@@ -3060,7 +3165,11 @@ impl Runtime for RuntimeService {
         // 8. Emit a "starting" event so observers can see
         //    attach attempts in the event stream even if
         //    the actual session errors out.
-        let backend_label = if is_vm { "apple-virt-attach" } else { "container-attach" };
+        let backend_label = if is_vm {
+            "apple-virt-attach"
+        } else {
+            "container-attach"
+        };
         self.event_bus.emit(
             Event::new(&workload_id, EventKind::WorkloadStarted)
                 .with_metadata("backend", backend_label)
@@ -3082,7 +3191,8 @@ impl Runtime for RuntimeService {
             // (vsock-based PTY), Linux uses Firecracker serial console reader.
             #[cfg(target_os = "macos")]
             {
-                let cfg_for_session = vm_attach_cfg.expect("vm_attach_cfg must be Some for VM backend");
+                let cfg_for_session =
+                    vm_attach_cfg.expect("vm_attach_cfg must be Some for VM backend");
                 let wl_id = workload_id.clone();
                 let eb = self.event_bus.clone();
                 let tx_s = tx.clone();
@@ -3096,7 +3206,11 @@ impl Runtime for RuntimeService {
                     let vm_handle: Option<Arc<pullrun_vm::VmPersistentHandle>> = {
                         let vms = persistent_vms.blocking_read();
                         vms.get(&wl_id).and_then(|h| {
-                            if h.is_alive() { Some(Arc::clone(h)) } else { None }
+                            if h.is_alive() {
+                                Some(Arc::clone(h))
+                            } else {
+                                None
+                            }
                         })
                     };
 
@@ -3111,25 +3225,28 @@ impl Runtime for RuntimeService {
                             let wls_exit = Arc::clone(&workloads);
                             let eb_exit = eb.clone();
                             let cp_exit = checkpoints_dir.clone();
-                            let on_exit: Option<Box<dyn FnOnce() + Send>> = Some(Box::new(move || {
-                                let mut wls = wls_exit.blocking_write();
-                                if let Some(s) = wls.get_mut(&wl_id_exit) {
-                                    s.status = "exited".to_string();
-                                    s.exit_code = s.exit_code.or(Some(137));
-                                    if s.exit_time == 0 {
-                                        s.exit_time = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .map(|d| d.as_secs() as i64)
-                                            .unwrap_or(0);
+                            let on_exit: Option<Box<dyn FnOnce() + Send>> =
+                                Some(Box::new(move || {
+                                    let mut wls = wls_exit.blocking_write();
+                                    if let Some(s) = wls.get_mut(&wl_id_exit) {
+                                        s.status = "exited".to_string();
+                                        s.exit_code = s.exit_code.or(Some(137));
+                                        if s.exit_time == 0 {
+                                            s.exit_time = std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .map(|d| d.as_secs() as i64)
+                                                .unwrap_or(0);
+                                        }
+                                        write_workload_checkpoint(&cp_exit, &wl_id_exit, s);
                                     }
-                                    write_workload_checkpoint(&cp_exit, &wl_id_exit, s);
-                                }
-                                drop(wls);
-                                vms_exit.blocking_write().remove(&wl_id_exit);
-                                eb_exit.emit(Event::new(&wl_id_exit, EventKind::WorkloadExited)
-                                    .with_metadata("backend", "apple-virt")
-                                    .with_metadata("exit_code", "137"));
-                            }));
+                                    drop(wls);
+                                    vms_exit.blocking_write().remove(&wl_id_exit);
+                                    eb_exit.emit(
+                                        Event::new(&wl_id_exit, EventKind::WorkloadExited)
+                                            .with_metadata("backend", "apple-virt")
+                                            .with_metadata("exit_code", "137"),
+                                    );
+                                }));
                             match pullrun_vm::spawn_vm(cfg_for_session, on_exit) {
                                 Ok(h) => {
                                     // VM booted — mark as running.
@@ -3138,16 +3255,21 @@ impl Runtime for RuntimeService {
                                         write_workload_checkpoint(&checkpoints_dir, &wl_id, s);
                                     }
                                     let h = Arc::new(h);
-                                    persistent_vms.blocking_write().insert(wl_id.clone(), Arc::clone(&h));
+                                    persistent_vms
+                                        .blocking_write()
+                                        .insert(wl_id.clone(), Arc::clone(&h));
                                     h
                                 }
                                 Err(e) => {
-                                    eb.emit(Event::new(&wl_id, EventKind::WorkloadStarted)
-                                        .with_metadata("backend", "apple-virt-attach")
-                                        .with_metadata("outcome", "failed")
-                                        .with_metadata("error", e.to_string()));
+                                    eb.emit(
+                                        Event::new(&wl_id, EventKind::WorkloadStarted)
+                                            .with_metadata("backend", "apple-virt-attach")
+                                            .with_metadata("outcome", "failed")
+                                            .with_metadata("error", e.to_string()),
+                                    );
                                     let _ = tx_s.blocking_send(Err(attach_error_to_status(&e)));
-                                    drop(fwd); drop(drn);
+                                    drop(fwd);
+                                    drop(drn);
                                     return;
                                 }
                             }
@@ -3156,17 +3278,22 @@ impl Runtime for RuntimeService {
 
                     let result = pullrun_vm::attach_to_vm(&vm_handle, client_in_rx, server_out_tx);
                     if let Err(err) = result {
-                        eb.emit(Event::new(&wl_id, EventKind::WorkloadStarted)
-                            .with_metadata("backend", "apple-virt-attach")
-                            .with_metadata("outcome", "session_failed")
-                            .with_metadata("error", err.to_string()));
+                        eb.emit(
+                            Event::new(&wl_id, EventKind::WorkloadStarted)
+                                .with_metadata("backend", "apple-virt-attach")
+                                .with_metadata("outcome", "session_failed")
+                                .with_metadata("error", err.to_string()),
+                        );
                         let _ = tx_s.blocking_send(Err(attach_error_to_status(&err)));
                     } else {
-                        eb.emit(Event::new(&wl_id, EventKind::WorkloadStarted)
-                            .with_metadata("backend", "apple-virt-attach")
-                            .with_metadata("outcome", "client_detached"));
+                        eb.emit(
+                            Event::new(&wl_id, EventKind::WorkloadStarted)
+                                .with_metadata("backend", "apple-virt-attach")
+                                .with_metadata("outcome", "client_detached"),
+                        );
                     }
-                    drop(fwd); drop(drn);
+                    drop(fwd);
+                    drop(drn);
                 });
             }
 
@@ -3184,13 +3311,18 @@ impl Runtime for RuntimeService {
                 tokio::task::spawn_blocking(move || {
                     run_firecracker_console_session(
                         console_path.as_deref(),
-                        &wl_id, &tx_s,
-                        client_in_rx, server_out_tx,
-                        fwd, drn,
+                        &wl_id,
+                        &tx_s,
+                        client_in_rx,
+                        server_out_tx,
+                        fwd,
+                        drn,
                     );
-                    eb.emit(Event::new(&wl_id, EventKind::WorkloadStarted)
-                        .with_metadata("backend", "firecracker-attach")
-                        .with_metadata("outcome", "session_ended"));
+                    eb.emit(
+                        Event::new(&wl_id, EventKind::WorkloadStarted)
+                            .with_metadata("backend", "firecracker-attach")
+                            .with_metadata("outcome", "session_ended"),
+                    );
                 });
             }
         } else if is_container {
@@ -3271,8 +3403,14 @@ impl Runtime for RuntimeService {
                 }
                 tracing::info!(workload_id = %wl_id, "blocking container attach task STARTED");
                 let result = run_runc_attach_session(
-                    &wl_id, &cmd, &env_vars, &wd, use_tty,
-                    &bundle_path, client_in_rx, server_out_tx,
+                    &wl_id,
+                    &cmd,
+                    &env_vars,
+                    &wd,
+                    use_tty,
+                    &bundle_path,
+                    client_in_rx,
+                    server_out_tx,
                 );
                 if let Err(err) = result {
                     event_bus_session.emit(
@@ -3284,7 +3422,9 @@ impl Runtime for RuntimeService {
                     let body = tonic::Status::internal(format!("container attach: {err}"));
                     let msg = AttachMessage {
                         body: Some(crate::proto::attach_message::Body::Error(
-                            crate::proto::AttachError { message: err.to_string() },
+                            crate::proto::AttachError {
+                                message: err.to_string(),
+                            },
                         )),
                     };
                     let _ = tx_session.blocking_send(Err(body));
@@ -3301,7 +3441,9 @@ impl Runtime for RuntimeService {
             });
         }
 
-        Ok(tonic::Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
+        Ok(tonic::Response::new(
+            tokio_stream::wrappers::ReceiverStream::new(rx),
+        ))
     }
 
     // ------------------------------------------------------------------
@@ -3313,7 +3455,9 @@ impl Runtime for RuntimeService {
         request: tonic::Request<HasImageRequest>,
     ) -> Result<tonic::Response<HasImageResponse>, tonic::Status> {
         let _ = request;
-        Err(tonic::Status::unimplemented("has_image not yet implemented"))
+        Err(tonic::Status::unimplemented(
+            "has_image not yet implemented",
+        ))
     }
 
     async fn list_images(
@@ -3348,9 +3492,8 @@ impl Runtime for RuntimeService {
         }))
     }
 
-    type PortForwardStream = tokio_stream::wrappers::ReceiverStream<
-        Result<PortForwardData, tonic::Status>,
-    >;
+    type PortForwardStream =
+        tokio_stream::wrappers::ReceiverStream<Result<PortForwardData, tonic::Status>>;
 
     async fn port_forward(
         &self,
@@ -3378,16 +3521,22 @@ impl Runtime for RuntimeService {
             None
         };
         if cpu.is_none() && mem.is_none() {
-            return Ok(tonic::Response::new(UpdateWorkloadResponse { success: false }));
+            return Ok(tonic::Response::new(UpdateWorkloadResponse {
+                success: false,
+            }));
         }
         match self.executor.update(&req.id, cpu, mem).await {
             Ok(()) => {
                 info!(id = %req.id, cpu_millicores = ?cpu, memory_bytes = ?mem, "workload resources updated");
-                Ok(tonic::Response::new(UpdateWorkloadResponse { success: true }))
+                Ok(tonic::Response::new(UpdateWorkloadResponse {
+                    success: true,
+                }))
             }
             Err(e) => {
                 warn!(id = %req.id, error = %e, "workload resource update failed");
-                Ok(tonic::Response::new(UpdateWorkloadResponse { success: false }))
+                Ok(tonic::Response::new(UpdateWorkloadResponse {
+                    success: false,
+                }))
             }
         }
     }
@@ -3428,16 +3577,21 @@ impl Runtime for RuntimeService {
         let content = tokio::fs::read_to_string(&dockerfile_path)
             .await
             .map_err(|e| {
-                tonic::Status::invalid_argument(format!("read Dockerfile {}: {e}", dockerfile_path.display()))
+                tonic::Status::invalid_argument(format!(
+                    "read Dockerfile {}: {e}",
+                    dockerfile_path.display()
+                ))
             })?;
 
-        let dockerfile = pullrun_oci::Dockerfile::parse(&content).map_err(|e| {
-            tonic::Status::invalid_argument(format!("parse Dockerfile: {e}"))
-        })?;
+        let dockerfile = pullrun_oci::Dockerfile::parse(&content)
+            .map_err(|e| tonic::Status::invalid_argument(format!("parse Dockerfile: {e}")))?;
 
         // Resolve context dir
         let context_dir = if req.context_dir.is_empty() {
-            dockerfile_path.parent().unwrap_or(&PathBuf::from(".")).to_path_buf()
+            dockerfile_path
+                .parent()
+                .unwrap_or(&PathBuf::from("."))
+                .to_path_buf()
         } else {
             PathBuf::from(&req.context_dir)
         };
@@ -3454,9 +3608,17 @@ impl Runtime for RuntimeService {
 
         let root_digest = if !req.platforms.is_empty() {
             // Multi-platform build.
-            let platforms: Vec<String> = req.platforms.iter().map(|p| {
-                if p.is_empty() { "linux/amd64".to_string() } else { p.clone() }
-            }).collect();
+            let platforms: Vec<String> = req
+                .platforms
+                .iter()
+                .map(|p| {
+                    if p.is_empty() {
+                        "linux/amd64".to_string()
+                    } else {
+                        p.clone()
+                    }
+                })
+                .collect();
 
             let builder = crate::builder::DagBuilder::new(
                 self.store.clone(),
@@ -3560,9 +3722,8 @@ impl Runtime for RuntimeService {
         }))
     }
 
-    type ExportImageStream = tokio_stream::wrappers::ReceiverStream<
-        Result<ExportImageChunk, tonic::Status>,
-    >;
+    type ExportImageStream =
+        tokio_stream::wrappers::ReceiverStream<Result<ExportImageChunk, tonic::Status>>;
 
     async fn export_image(
         &self,
@@ -3620,12 +3781,11 @@ impl Runtime for RuntimeService {
         }
 
         // Import from the buffered data.
-        let (root_digest, bytes_stored, bytes_deduplicated) = tokio::task::spawn_blocking(
-            move || import_dag_from_tar(&store, &buf[..]),
-        )
-        .await
-        .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
-        .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
+        let (root_digest, bytes_stored, bytes_deduplicated) =
+            tokio::task::spawn_blocking(move || import_dag_from_tar(&store, &buf[..]))
+                .await
+                .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
+                .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
 
         Ok(tonic::Response::new(ImportImageResponse {
             root_digest,
@@ -3640,7 +3800,9 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<CopyFileResponse>, tonic::Status> {
         let req = request.into_inner();
         if req.id.is_empty() || req.container_path.is_empty() {
-            return Err(Status::invalid_argument("id and container_path are required"));
+            return Err(Status::invalid_argument(
+                "id and container_path are required",
+            ));
         }
 
         // Look up the workload to get the rootfs path.
@@ -3654,14 +3816,12 @@ impl Runtime for RuntimeService {
             // For container workloads, it's at bundle_root/{id}/rootfs.
             let rootfs = if state.backend == "vm" || state.backend == "sandbox" {
                 let cache = self.rootfs_cache.read().await;
-                cache
-                    .get(&req.id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        Status::failed_precondition(
-                            format!("rootfs not materialized for workload {}", req.id),
-                        )
-                    })?
+                cache.get(&req.id).cloned().ok_or_else(|| {
+                    Status::failed_precondition(format!(
+                        "rootfs not materialized for workload {}",
+                        req.id
+                    ))
+                })?
             } else {
                 self.config.bundle_root.join(&req.id).join("rootfs")
             };
@@ -3716,9 +3876,12 @@ impl Runtime for RuntimeService {
                     .map_err(|e| Status::internal(format!("write error: {e}")))?;
                 // Set file mode if specified.
                 if req.mode != 0 {
-                    tokio::fs::set_permissions(&canonical, std::fs::Permissions::from_mode(req.mode))
-                        .await
-                        .map_err(|e| Status::internal(format!("chmod error: {e}")))?;
+                    tokio::fs::set_permissions(
+                        &canonical,
+                        std::fs::Permissions::from_mode(req.mode),
+                    )
+                    .await
+                    .map_err(|e| Status::internal(format!("chmod error: {e}")))?;
                 }
                 let metadata = tokio::fs::metadata(&canonical)
                     .await
@@ -3755,14 +3918,12 @@ impl Runtime for RuntimeService {
 
             if state.backend == "vm" || state.backend == "sandbox" {
                 let cache = self.rootfs_cache.read().await;
-                cache
-                    .get(&req.id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        Status::failed_precondition(
-                            format!("rootfs not materialized for workload {}", req.id),
-                        )
-                    })?
+                cache.get(&req.id).cloned().ok_or_else(|| {
+                    Status::failed_precondition(format!(
+                        "rootfs not materialized for workload {}",
+                        req.id
+                    ))
+                })?
             } else {
                 self.config.bundle_root.join(&req.id).join("rootfs")
             }
@@ -3823,14 +3984,12 @@ impl Runtime for RuntimeService {
 
             let rootfs = if state.backend == "vm" || state.backend == "sandbox" {
                 let cache = self.rootfs_cache.read().await;
-                cache
-                    .get(&req.id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        Status::failed_precondition(
-                            format!("rootfs not materialized for workload {}", req.id),
-                        )
-                    })?
+                cache.get(&req.id).cloned().ok_or_else(|| {
+                    Status::failed_precondition(format!(
+                        "rootfs not materialized for workload {}",
+                        req.id
+                    ))
+                })?
             } else {
                 self.config.bundle_root.join(&req.id).join("rootfs")
             };
@@ -3887,7 +4046,7 @@ impl Runtime for RuntimeService {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs())
-                    .saturating_sub(start as u64)
+                .saturating_sub(start as u64)
             } else {
                 0
             }
@@ -3926,9 +4085,7 @@ impl Runtime for RuntimeService {
         }
 
         // Create the bridge device.
-        bridge_create(&req.name).map_err(|e| {
-            Status::internal(format!("create bridge: {e}"))
-        })?;
+        bridge_create(&req.name).map_err(|e| Status::internal(format!("create bridge: {e}")))?;
 
         // Determine subnet. For v0, use a deterministic /24 based on the bridge name.
         let subnet = if req.subnet.is_empty() {
@@ -3962,19 +4119,18 @@ impl Runtime for RuntimeService {
             .map_err(|e| Status::internal(format!("unpersist network: {e}")))?;
 
         // Delete the bridge device.
-        bridge_delete(&req.name).map_err(|e| {
-            Status::internal(format!("delete bridge: {e}"))
-        })?;
+        bridge_delete(&req.name).map_err(|e| Status::internal(format!("delete bridge: {e}")))?;
 
-        Ok(tonic::Response::new(RemoveNetworkResponse { success: true }))
+        Ok(tonic::Response::new(RemoveNetworkResponse {
+            success: true,
+        }))
     }
 
     async fn list_networks(
         &self,
         _request: tonic::Request<ListNetworksRequest>,
     ) -> Result<tonic::Response<ListNetworksResponse>, tonic::Status> {
-        let networks = list_persisted_networks(&self.config.store_root)
-            .unwrap_or_default();
+        let networks = list_persisted_networks(&self.config.store_root).unwrap_or_default();
 
         // Count attached workloads per network for the response.
         let workloads = self.workloads.read().await;
@@ -4144,8 +4300,14 @@ impl Runtime for RuntimeService {
             if let Ok(entries) = std::fs::read_dir(&bundle_root) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if !path.is_dir() { continue; }
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if !path.is_dir() {
+                        continue;
+                    }
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     let is_active = {
                         let workloads = self.workloads.read().await;
                         workloads.contains_key(&name)
@@ -4190,8 +4352,14 @@ impl Runtime for RuntimeService {
             if let Ok(entries) = std::fs::read_dir(&staged_root) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if !path.is_dir() { continue; }
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if !path.is_dir() {
+                        continue;
+                    }
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     if !active_ids.contains(&name) {
                         if let Ok(meta) = std::fs::metadata(&path) {
                             bytes_freed += meta.len() as i64;
@@ -4291,7 +4459,10 @@ fn run_firecracker_console_session(
             Ok(0) => break,
             Ok(n) => {
                 let data = bytes::Bytes::copy_from_slice(&buf[..n]);
-                if server_out_tx.send(pullrun_vsock::Frame::WorkloadStdout(data)).is_err() {
+                if server_out_tx
+                    .send(pullrun_vsock::Frame::WorkloadStdout(data))
+                    .is_err()
+                {
                     return; // client disconnected
                 }
             }
@@ -4319,7 +4490,10 @@ fn run_firecracker_console_session(
                                 Ok(0) => break,
                                 Ok(n) => {
                                     let data = bytes::Bytes::copy_from_slice(&buf[..n]);
-                                    if server_out_tx.send(pullrun_vsock::Frame::WorkloadStdout(data)).is_err() {
+                                    if server_out_tx
+                                        .send(pullrun_vsock::Frame::WorkloadStdout(data))
+                                        .is_err()
+                                    {
                                         return;
                                     }
                                 }
@@ -4333,11 +4507,15 @@ fn run_firecracker_console_session(
         }
 
         // Check if the Firecracker process is still alive.
-        let pid_alive = pid_path.as_ref().and_then(|pp| {
-            std::fs::read_to_string(pp).ok().and_then(|s| {
-                s.trim().parse::<u32>().ok().filter(|&pid| pid > 0)
+        let pid_alive = pid_path
+            .as_ref()
+            .and_then(|pp| {
+                std::fs::read_to_string(pp)
+                    .ok()
+                    .and_then(|s| s.trim().parse::<u32>().ok().filter(|&pid| pid > 0))
             })
-        }).map(is_pid_alive).unwrap_or(false);
+            .map(is_pid_alive)
+            .unwrap_or(false);
 
         if !pid_alive && known_size > 0 {
             // Process exited; flush any remaining data.
@@ -4387,18 +4565,24 @@ fn allocate_pty() -> Result<(std::os::unix::io::RawFd, std::ffi::CString), Strin
     }
     if unsafe { libc::grantpt(master) } < 0 {
         let e = std::io::Error::last_os_error();
-        unsafe { libc::close(master); }
+        unsafe {
+            libc::close(master);
+        }
         return Err(format!("grantpt: {e}"));
     }
     if unsafe { libc::unlockpt(master) } < 0 {
         let e = std::io::Error::last_os_error();
-        unsafe { libc::close(master); }
+        unsafe {
+            libc::close(master);
+        }
         return Err(format!("unlockpt: {e}"));
     }
     let slave_name_ptr = unsafe { libc::ptsname(master) };
     if slave_name_ptr.is_null() {
         let e = std::io::Error::last_os_error();
-        unsafe { libc::close(master); }
+        unsafe {
+            libc::close(master);
+        }
         return Err(format!("ptsname: {e}"));
     }
     let slave_name = unsafe { std::ffi::CStr::from_ptr(slave_name_ptr).to_owned() };
@@ -4448,16 +4632,24 @@ fn run_runc_attach_session(
                 .map_err(|e| format!("parse config.json: {e}"))?;
             if let Some(process) = config.get_mut("process") {
                 if let Some(obj) = process.as_object_mut() {
-                    obj.insert("args".to_string(), serde_json::Value::Array(
-                        vec!["sleep".to_string(), "3600".to_string()]
-                            .into_iter().map(serde_json::Value::String).collect(),
-                    ));
+                    obj.insert(
+                        "args".to_string(),
+                        serde_json::Value::Array(
+                            vec!["sleep".to_string(), "3600".to_string()]
+                                .into_iter()
+                                .map(serde_json::Value::String)
+                                .collect(),
+                        ),
+                    );
                     obj.insert("terminal".to_string(), serde_json::Value::Bool(false));
                 }
             }
-            std::fs::write(&config_path, serde_json::to_string_pretty(&config)
-                .map_err(|e| format!("serialize config.json: {e}"))?)
-                .map_err(|e| format!("write config.json: {e}"))?;
+            std::fs::write(
+                &config_path,
+                serde_json::to_string_pretty(&config)
+                    .map_err(|e| format!("serialize config.json: {e}"))?,
+            )
+            .map_err(|e| format!("write config.json: {e}"))?;
             let _sleep_child = std::process::Command::new("runc")
                 .args(["run", "-d", "-b"])
                 .arg(bundle_path)
@@ -4471,7 +4663,8 @@ fn run_runc_attach_session(
             let max_wait = std::time::Duration::from_secs(10);
             loop {
                 let out = std::process::Command::new("runc")
-                    .args(["state", workload_id]).output();
+                    .args(["state", workload_id])
+                    .output();
                 let running = match &out {
                     Ok(o) if o.status.success() => {
                         let s = String::from_utf8_lossy(&o.stdout);
@@ -4479,10 +4672,13 @@ fn run_runc_attach_session(
                     }
                     _ => false,
                 };
-                if running { break; }
+                if running {
+                    break;
+                }
                 if wait_start.elapsed() > max_wait {
                     let _ = std::process::Command::new("runc")
-                        .args(["delete", "--force", workload_id]).output();
+                        .args(["delete", "--force", workload_id])
+                        .output();
                     return Err("timeout waiting for container to start".into());
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -4490,13 +4686,20 @@ fn run_runc_attach_session(
         }
 
         // Spawn runc exec -t with the PTY slave as stdin/stdout/stderr.
-        let mut args = vec!["exec".to_string(), "-t".to_string(), workload_id.to_string()];
+        let mut args = vec![
+            "exec".to_string(),
+            "-t".to_string(),
+            workload_id.to_string(),
+        ];
         args.extend(command.iter().cloned());
 
         // Open the slave side of the PTY.
         let slave = unsafe { libc::open(slave_name.as_ptr(), libc::O_RDWR) };
         if slave < 0 {
-            return Err(format!("open slave pty: {}", std::io::Error::last_os_error()));
+            return Err(format!(
+                "open slave pty: {}",
+                std::io::Error::last_os_error()
+            ));
         }
 
         use std::os::unix::io::FromRawFd;
@@ -4504,9 +4707,21 @@ fn run_runc_attach_session(
 
         let mut child = std::process::Command::new("runc")
             .args(&args)
-            .stdin(slave_file.try_clone().map_err(|e| format!("clone slave stdin: {e}"))?)
-            .stdout(slave_file.try_clone().map_err(|e| format!("clone slave stdout: {e}"))?)
-            .stderr(slave_file.try_clone().map_err(|e| format!("clone slave stderr: {e}"))?)
+            .stdin(
+                slave_file
+                    .try_clone()
+                    .map_err(|e| format!("clone slave stdin: {e}"))?,
+            )
+            .stdout(
+                slave_file
+                    .try_clone()
+                    .map_err(|e| format!("clone slave stdout: {e}"))?,
+            )
+            .stderr(
+                slave_file
+                    .try_clone()
+                    .map_err(|e| format!("clone slave stderr: {e}"))?,
+            )
             .spawn()
             .map_err(|e| format!("spawn runc exec -t (host pty): {e}"))?;
 
@@ -4555,7 +4770,10 @@ fn run_runc_attach_session(
                         Ok(0) => break,
                         Ok(n) => {
                             let data = bytes::Bytes::copy_from_slice(&buf[..n]);
-                            if tx_out.send(pullrun_vsock::Frame::WorkloadStdout(data)).is_err() {
+                            if tx_out
+                                .send(pullrun_vsock::Frame::WorkloadStdout(data))
+                                .is_err()
+                            {
                                 break;
                             }
                         }
@@ -4626,23 +4844,32 @@ fn run_runc_attach_session(
             .output();
 
         let config_path = bundle_path.join("config.json");
-        let config_text = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("read config.json: {e}"))?;
-        let mut config: serde_json::Value = serde_json::from_str(&config_text)
-            .map_err(|e| format!("parse config.json: {e}"))?;
+        let config_text =
+            std::fs::read_to_string(&config_path).map_err(|e| format!("read config.json: {e}"))?;
+        let mut config: serde_json::Value =
+            serde_json::from_str(&config_text).map_err(|e| format!("parse config.json: {e}"))?;
 
         // Non-TTY mode: run the command directly via `runc run`.
         if let Some(process) = config.get_mut("process") {
             if let Some(obj) = process.as_object_mut() {
-                obj.insert("args".to_string(), serde_json::Value::Array(
-                    command.iter().map(|c| serde_json::Value::String(c.clone())).collect(),
-                ));
+                obj.insert(
+                    "args".to_string(),
+                    serde_json::Value::Array(
+                        command
+                            .iter()
+                            .map(|c| serde_json::Value::String(c.clone()))
+                            .collect(),
+                    ),
+                );
                 obj.insert("terminal".to_string(), serde_json::Value::Bool(false));
             }
         }
-        std::fs::write(&config_path, serde_json::to_string_pretty(&config)
-            .map_err(|e| format!("serialize config.json: {e}"))?)
-            .map_err(|e| format!("write config.json: {e}"))?;
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&config)
+                .map_err(|e| format!("serialize config.json: {e}"))?,
+        )
+        .map_err(|e| format!("write config.json: {e}"))?;
 
         let cmd = std::process::Command::new("runc")
             .args(["run", "-b"])
@@ -4686,7 +4913,10 @@ fn run_runc_attach_session(
                 Ok(0) => break,
                 Ok(n) => {
                     let data = bytes::Bytes::copy_from_slice(&buf[..n]);
-                    if tx_out.send(pullrun_vsock::Frame::WorkloadStdout(data)).is_err() {
+                    if tx_out
+                        .send(pullrun_vsock::Frame::WorkloadStdout(data))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -4705,7 +4935,10 @@ fn run_runc_attach_session(
                 Ok(0) => break,
                 Ok(n) => {
                     let data = bytes::Bytes::copy_from_slice(&buf[..n]);
-                    if tx_err.send(pullrun_vsock::Frame::WorkloadStderr(data)).is_err() {
+                    if tx_err
+                        .send(pullrun_vsock::Frame::WorkloadStderr(data))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -4735,10 +4968,7 @@ fn run_runc_attach_session(
 /// Translate a `pullrun_vsock::Frame` from the blocking
 /// session task into a gRPC `AttachMessage`.
 fn frame_to_attach_message(frame: pullrun_vsock::Frame) -> AttachMessage {
-    use crate::proto::{
-        attach_message::Body as Body, AttachError, AttachExit, AttachStderr,
-        AttachStdout,
-    };
+    use crate::proto::{attach_message::Body, AttachError, AttachExit, AttachStderr, AttachStdout};
     let body = match frame {
         pullrun_vsock::Frame::WorkloadStdout(b) => Body::Stdout(AttachStdout { data: b.to_vec() }),
         pullrun_vsock::Frame::WorkloadStderr(b) => Body::Stderr(AttachStderr { data: b.to_vec() }),
@@ -4841,9 +5071,10 @@ fn materialize_rootfs(
     manifest_digest: &str,
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
     use pullrun_store::Digest;
-    let target = store.root_dir().join("rootfs").join(
-        manifest_digest.replace([':', '/'], "_"),
-    );
+    let target = store
+        .root_dir()
+        .join("rootfs")
+        .join(manifest_digest.replace([':', '/'], "_"));
     if target.exists() {
         // Already materialized (e.g. the workload was run
         // before). Reuse.
@@ -4880,7 +5111,11 @@ fn find_local_kernel() -> Option<(std::path::PathBuf, Option<std::path::PathBuf>
                 .filter(|p| p.is_file())
                 .or_else(|| {
                     let default = home.join(".pullrun/initramfs/pullrun-initramfs.cpio.gz");
-                    if default.is_file() { Some(default) } else { None }
+                    if default.is_file() {
+                        Some(default)
+                    } else {
+                        None
+                    }
                 });
             return Some((p, initramfs));
         }
@@ -4908,7 +5143,11 @@ fn find_local_kernel() -> Option<(std::path::PathBuf, Option<std::path::PathBuf>
 
     let initramfs = {
         let p = home.join(".pullrun/initramfs/pullrun-initramfs.cpio.gz");
-        if p.is_file() { Some(p) } else { None }
+        if p.is_file() {
+            Some(p)
+        } else {
+            None
+        }
     };
 
     Some((kernel, initramfs))
@@ -4921,14 +5160,28 @@ fn build_auth(username: &str, password: &str, token: &str) -> Option<OciAuth> {
         return None;
     }
     Some(OciAuth {
-        username: if username.is_empty() { None } else { Some(username.to_string()) },
-        password: if password.is_empty() { None } else { Some(password.to_string()) },
-        registry_token: if token.is_empty() { None } else { Some(token.to_string()) },
+        username: if username.is_empty() {
+            None
+        } else {
+            Some(username.to_string())
+        },
+        password: if password.is_empty() {
+            None
+        } else {
+            Some(password.to_string())
+        },
+        registry_token: if token.is_empty() {
+            None
+        } else {
+            Some(token.to_string())
+        },
     })
 }
 
 /// Walk a rootfs directory and return a map of relative paths to SHA256 digests.
-fn walk_rootfs_for_diff(root: &std::path::Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
+fn walk_rootfs_for_diff(
+    root: &std::path::Path,
+) -> Result<HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
     let mut files = HashMap::new();
     let root = std::fs::canonicalize(root)?;
     walk_dir_recursive(&root, &root, &mut files)?;
@@ -5072,17 +5325,16 @@ fn network_subnet_for(name: &str) -> String {
 fn persist_network(store_root: &std::path::Path, name: &str, subnet: &str) -> Result<(), String> {
     let path = networks_registry_path(store_root);
     let mut networks: HashMap<String, String> = if path.exists() {
-        let data = std::fs::read_to_string(&path)
-            .map_err(|e| format!("read networks.json: {e}"))?;
+        let data =
+            std::fs::read_to_string(&path).map_err(|e| format!("read networks.json: {e}"))?;
         serde_json::from_str(&data).unwrap_or_default()
     } else {
         HashMap::new()
     };
     networks.insert(name.to_string(), subnet.to_string());
-    let data = serde_json::to_string_pretty(&networks)
-        .map_err(|e| format!("serialize networks: {e}"))?;
-    std::fs::write(&path, data)
-        .map_err(|e| format!("write networks.json: {e}"))?;
+    let data =
+        serde_json::to_string_pretty(&networks).map_err(|e| format!("serialize networks: {e}"))?;
+    std::fs::write(&path, data).map_err(|e| format!("write networks.json: {e}"))?;
     Ok(())
 }
 
@@ -5091,29 +5343,22 @@ fn unpersist_network(store_root: &std::path::Path, name: &str) -> Result<(), Str
     if !path.exists() {
         return Ok(());
     }
-    let data = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read networks.json: {e}"))?;
-    let mut networks: HashMap<String, String> =
-        serde_json::from_str(&data).unwrap_or_default();
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("read networks.json: {e}"))?;
+    let mut networks: HashMap<String, String> = serde_json::from_str(&data).unwrap_or_default();
     networks.remove(name);
-    let data = serde_json::to_string_pretty(&networks)
-        .map_err(|e| format!("serialize networks: {e}"))?;
-    std::fs::write(&path, data)
-        .map_err(|e| format!("write networks.json: {e}"))?;
+    let data =
+        serde_json::to_string_pretty(&networks).map_err(|e| format!("serialize networks: {e}"))?;
+    std::fs::write(&path, data).map_err(|e| format!("write networks.json: {e}"))?;
     Ok(())
 }
 
-fn list_persisted_networks(
-    store_root: &std::path::Path,
-) -> Result<Vec<(String, String)>, String> {
+fn list_persisted_networks(store_root: &std::path::Path) -> Result<Vec<(String, String)>, String> {
     let path = networks_registry_path(store_root);
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let data = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read networks.json: {e}"))?;
-    let networks: HashMap<String, String> =
-        serde_json::from_str(&data).unwrap_or_default();
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("read networks.json: {e}"))?;
+    let networks: HashMap<String, String> = serde_json::from_str(&data).unwrap_or_default();
     let mut result: Vec<(String, String)> = networks.into_iter().collect();
     result.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(result)

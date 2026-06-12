@@ -65,7 +65,9 @@ impl SbomData {
         self.vulnerabilities
             .iter()
             .map(|v| v.cvss)
-            .fold(None, |acc, x| Some(acc.map_or(x, |y| if x > y { x } else { y })))
+            .fold(None, |acc, x| {
+                Some(acc.map_or(x, |y| if x > y { x } else { y }))
+            })
     }
 }
 
@@ -84,9 +86,7 @@ pub fn encode_sbom(blob: &SbomBlob) -> Result<Vec<u8>, Box<dyn std::error::Error
 }
 
 /// Decode an rkyv byte slice as an `SbomBlob`.
-pub fn decode_sbom(
-    bytes: &[u8],
-) -> Result<&ArchivedSbomBlob, Box<dyn std::error::Error>> {
+pub fn decode_sbom(bytes: &[u8]) -> Result<&ArchivedSbomBlob, Box<dyn std::error::Error>> {
     Ok(rkyv::check_archived_root::<SbomBlob>(bytes)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?)
 }
@@ -209,7 +209,13 @@ pub fn from_cyclonedx_json(json: &str) -> Result<SbomBlob, serde_json::Error> {
             licenses: c
                 .licenses
                 .into_iter()
-                .map(|l| if l.license.id.is_empty() { l.license.name } else { l.license.id })
+                .map(|l| {
+                    if l.license.id.is_empty() {
+                        l.license.name
+                    } else {
+                        l.license.id
+                    }
+                })
                 .filter(|s| !s.is_empty())
                 .collect(),
         })
@@ -349,7 +355,10 @@ mod tests {
         assert_eq!(blob.components[0].licenses, vec!["Apache-2.0"]);
         assert_eq!(blob.vulnerabilities.len(), 1);
         assert_eq!(blob.vulnerabilities[0].cvss, 7.5);
-        assert_eq!(blob.vulnerabilities[0].component, "pkg:generic/openssl@3.0.0");
+        assert_eq!(
+            blob.vulnerabilities[0].component,
+            "pkg:generic/openssl@3.0.0"
+        );
     }
 
     #[test]

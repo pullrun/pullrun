@@ -9,10 +9,10 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use pullrun_store::{Digest, MmapStore};
+use pullrun_sync::proto::{GetBlobsRequest, HaveBlobsRequest};
 use pullrun_sync::{
     BlockSyncClient, BlockSyncServer, BlockSyncService, PeerBloomCache, PeerBloomInfo,
 };
-use pullrun_sync::proto::{GetBlobsRequest, HaveBlobsRequest};
 use tempfile::TempDir;
 
 fn seed_blob(store: &MmapStore, data: &[u8]) -> Digest {
@@ -23,9 +23,7 @@ fn seed_blob(store: &MmapStore, data: &[u8]) -> Digest {
 
 async fn start_block_sync_server(store: Arc<MmapStore>) -> (SocketAddr, BlockSyncService) {
     let svc = BlockSyncService::new(store);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = BlockSyncServer::new(svc.clone());
     tokio::spawn(async move {
@@ -124,7 +122,9 @@ async fn test_peer_bloom_cache() {
         last_updated: std::time::Instant::now(),
     };
 
-    cache.update("node1".into(), "127.0.0.1:9501".into(), info).await;
+    cache
+        .update("node1".into(), "127.0.0.1:9501".into(), info)
+        .await;
     assert_eq!(cache.peer_count().await, 1);
 
     let peers = cache.find_peers_with_blob("sha256:nonexistent").await;
@@ -167,7 +167,10 @@ async fn test_block_sync_multi_node_blob_transfer() {
         }
     }
 
-    assert_eq!(received, data, "transferred blob data should match original");
+    assert_eq!(
+        received, data,
+        "transferred blob data should match original"
+    );
 
     // Store the blob in store2
     store2.put_blob_blocking(&digest, &received).unwrap();
@@ -177,17 +180,15 @@ async fn test_block_sync_multi_node_blob_transfer() {
 
 // ─── Registrar tests ────────────────────────────────────────────
 
-use pullrun_sync::{RegistrarClient, RegistrarServer, RegistrarService};
 use pullrun_sync::proto::{
     DeregisterRequest, HeartbeatRequest, ListPeersRequest, LookupRequest, RegisterRequest,
 };
+use pullrun_sync::{RegistrarClient, RegistrarServer, RegistrarService};
 
 async fn start_registrar_server() -> (SocketAddr, RegistrarService) {
     let svc = RegistrarService::new();
     let server = RegistrarServer::new(svc.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         tonic::transport::Server::builder()

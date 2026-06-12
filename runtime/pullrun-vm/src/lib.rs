@@ -13,21 +13,20 @@ pub mod apple;
 
 #[cfg(target_os = "macos")]
 pub use apple::{
-    AcquiredVm, AppleVirtError, AppleVirtPool, AppleVirtPoolConfig,
-    DEFAULT_POOL_SIZE, DEFAULT_VM_CPUS, DEFAULT_VM_MEM_MIB,
+    AcquiredVm, AppleVirtError, AppleVirtPool, AppleVirtPoolConfig, DEFAULT_POOL_SIZE,
+    DEFAULT_VM_CPUS, DEFAULT_VM_MEM_MIB,
 };
 
-pub use attach::{
-    spawn_apple_virt_vm, spawn_vm, attach_to_vm, run_session_blocking,
-    AppleVirtAttachConfig, AppleVirtAttachHandle,
-    AttachError, DEFAULT_VSOCK_PORT, FrameSink, FrameSource, VmCommand,
-};
 pub use attach::VmPersistentHandle;
-pub use oci_kernel::{OciKernelError, StagedKernel, KERNEL_VMLINUX_PATH, KERNEL_INITRAMFS_PATH};
+pub use attach::{
+    attach_to_vm, run_session_blocking, spawn_apple_virt_vm, spawn_vm, AppleVirtAttachConfig,
+    AppleVirtAttachHandle, AttachError, FrameSink, FrameSource, VmCommand, DEFAULT_VSOCK_PORT,
+};
+pub use oci_kernel::{OciKernelError, StagedKernel, KERNEL_INITRAMFS_PATH, KERNEL_VMLINUX_PATH};
 
 pub use network::{
-    create_tap, create_tap_on_bridge, derive_cidr, ensure_bridge, ensure_bridge_named,
-    mac_from_ip, teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME, GATEWAY_IP, NETMASK,
+    create_tap, create_tap_on_bridge, derive_cidr, ensure_bridge, ensure_bridge_named, mac_from_ip,
+    teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME, GATEWAY_IP, NETMASK,
 };
 
 use std::collections::HashMap;
@@ -37,10 +36,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use pullrun_exec::types::{Backend, ExitStatus, WorkloadSpec, WorkloadStats};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{info, warn};
-use pullrun_exec::types::{Backend, ExitStatus, WorkloadSpec, WorkloadStats};
 
 use pullrun_exec::{ExecError, Executor, ProcessHandle};
 use pullrun_net::{Ipam, NetworkEndpoint, NetworkManager, ProxyNetwork};
@@ -50,7 +49,7 @@ pub use ext4::{
     ext4_path_for, firecracker_config, materialize_ext4_rootfs, Ext4Error, Ext4Options,
 };
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VmSidecar {
     pub vm_net: VmNetwork,
     pub endpoint: NetworkEndpoint,
@@ -171,32 +170,31 @@ impl Executor for FirecrackerExecutor {
         //    is set (per-project isolation), otherwise the global pool.
         let (_bridge_name, _netmask, _gateway, guest_ip, _ipam_owned) =
             if let Some(ref bn) = spec.bridge_name {
-                let (gateway, netmask, project_ipam) =
-                    crate::network::derive_cidr(bn);
+                let (gateway, netmask, project_ipam) = crate::network::derive_cidr(bn);
                 let ip_u32 = project_ipam
                     .allocate()
                     .ok_or_else(|| ExecError::ExecutionFailed("no IPs in project subnet".into()))?;
                 let guest_ip = Ipv4Addr::from(ip_u32);
                 (bn.clone(), netmask, gateway, guest_ip, Some(project_ipam))
             } else {
-                let ip_u32 = self
-                    .ipam
-                    .allocate()
-                    .ok_or_else(|| ExecError::ExecutionFailed("no IPs available in shared IPAM".into()))?;
+                let ip_u32 = self.ipam.allocate().ok_or_else(|| {
+                    ExecError::ExecutionFailed("no IPs available in shared IPAM".into())
+                })?;
                 let guest_ip = Ipv4Addr::from(ip_u32);
-                (crate::network::BRIDGE_NAME.to_string(),
-                 crate::network::NETMASK,
-                 crate::network::GATEWAY_IP,
-                 guest_ip,
-                 None)
+                (
+                    crate::network::BRIDGE_NAME.to_string(),
+                    crate::network::NETMASK,
+                    crate::network::GATEWAY_IP,
+                    guest_ip,
+                    None,
+                )
             };
 
         // 2. Plumb the host-side network: bridge (idempotent) + tap.
         let tap_name = self.tap_name_for(&spec.id);
         let (vm_net, tap_fd) = if let Some(ref bn) = spec.bridge_name {
             let (gw, nm, _) = crate::network::derive_cidr(bn);
-            let cidr = format!("10.{}.{}.0/24",
-                gw.octets()[1], gw.octets()[2]);
+            let cidr = format!("10.{}.{}.0/24", gw.octets()[1], gw.octets()[2]);
             crate::network::ensure_bridge_named(bn, &cidr, gw)
                 .map_err(|e| ExecError::ExecutionFailed(format!("bridge setup: {e}")))?;
             create_tap_on_bridge(&tap_name, guest_ip, bn, nm, gw)
@@ -327,8 +325,7 @@ impl Executor for FirecrackerExecutor {
         let config_path = vm_dir.join("vm-config.json");
         std::fs::write(
             &config_path,
-            serde_json::to_string_pretty(&config)
-                .expect("config serialization never fails"),
+            serde_json::to_string_pretty(&config).expect("config serialization never fails"),
         )?;
 
         // Firecracker's --log-path target must exist before the process starts.
@@ -354,8 +351,11 @@ impl Executor for FirecrackerExecutor {
             .arg(vm_dir.join("firecracker.metrics"))
             .arg("--level")
             .arg("Info")
-            .stdout(console_file.try_clone()
-                .map_err(|e| ExecError::ExecutionFailed(format!("clone console fd: {e}")))?)
+            .stdout(
+                console_file
+                    .try_clone()
+                    .map_err(|e| ExecError::ExecutionFailed(format!("clone console fd: {e}")))?,
+            )
             .stderr(console_file)
             .spawn()?;
 
@@ -452,9 +452,8 @@ impl Executor for FirecrackerExecutor {
                     let exists = unsafe { libc::kill(pid, 0) == 0 };
                     if exists {
                         let mut status: i32 = 0;
-                        let reaped = unsafe {
-                            libc::waitpid(pid, &mut status as *mut _, libc::WNOHANG)
-                        };
+                        let reaped =
+                            unsafe { libc::waitpid(pid, &mut status as *mut _, libc::WNOHANG) };
                         if reaped > 0 {
                             // Child was a zombie and has been reaped
                             // (or just exited). Report as stopped.
@@ -496,7 +495,12 @@ impl Executor for FirecrackerExecutor {
         ))
     }
 
-    async fn exec(&self, _id: &str, _command: &[String], _timeout_secs: u64) -> Result<i32, ExecError> {
+    async fn exec(
+        &self,
+        _id: &str,
+        _command: &[String],
+        _timeout_secs: u64,
+    ) -> Result<i32, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "Firecracker VM exec: use 'pullrun run --backend vm --cmd <cmd>' to run a one-shot command, \
              or 'pullrun exec --tty <id> -- <cmd>' for interactive container exec".into(),
@@ -567,10 +571,16 @@ impl Executor for AppleVirtExecutor {
         ))
     }
 
-    async fn exec(&self, _id: &str, _command: &[String], _timeout_secs: u64) -> Result<i32, ExecError> {
+    async fn exec(
+        &self,
+        _id: &str,
+        _command: &[String],
+        _timeout_secs: u64,
+    ) -> Result<i32, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "Apple Virt VM exec: use 'pullrun workload run <id> --tty' for interactive shell, \
-             or 'pullrun exec --tty <id> -- <cmd>' for interactive container exec".into(),
+             or 'pullrun exec --tty <id> -- <cmd>' for interactive container exec"
+                .into(),
         ))
     }
 }

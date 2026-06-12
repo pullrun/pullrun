@@ -49,13 +49,17 @@ pub fn export_dag_to_tar<W: Write>(
     header.set_entry_type(tar::EntryType::Regular);
     header.set_mode(0o644);
     header.set_mtime(0);
-    tar.append_data(&mut header, "pullrun-manifest.json", manifest_json.as_slice())?;
+    tar.append_data(
+        &mut header,
+        "pullrun-manifest.json",
+        manifest_json.as_slice(),
+    )?;
 
     // Write each node (read via the cache API).
     for digest in &node_digests {
-        let mmap = store.get(digest).map_err(|e| {
-            OciError::Other(format!("read node {}: {e}", digest.as_hex()))
-        })?;
+        let mmap = store
+            .get(digest)
+            .map_err(|e| OciError::Other(format!("read node {}: {e}", digest.as_hex())))?;
         let data: &[u8] = &mmap[..];
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
@@ -69,9 +73,9 @@ pub fn export_dag_to_tar<W: Write>(
 
     // Write each blob (read via the store API).
     for digest in &blob_digests {
-        let mmap = store.get_blob(digest).map_err(|e| {
-            OciError::Other(format!("read blob {}: {e}", digest.as_hex()))
-        })?;
+        let mmap = store
+            .get_blob(digest)
+            .map_err(|e| OciError::Other(format!("read blob {}: {e}", digest.as_hex())))?;
         let data: &[u8] = &mmap[..];
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);

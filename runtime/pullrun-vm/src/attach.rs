@@ -101,9 +101,7 @@ pub enum VmCommand {
         stdout_tx: std::sync::mpsc::Sender<Frame>,
     },
     /// The attached client has disconnected.
-    DetachClient {
-        session_id: u64,
-    },
+    DetachClient { session_id: u64 },
     /// Shut down the VM entirely.
     Shutdown,
 }

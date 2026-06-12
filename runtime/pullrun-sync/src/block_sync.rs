@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use futures::Stream;
 use tokio::sync::{mpsc, RwLock};
@@ -15,7 +15,7 @@ use pullrun_store::{Digest, MmapStore};
 
 use crate::bloom::BloomFilter;
 use crate::proto::block_sync_server::BlockSync;
-use crate::proto::{BlobChunk, HaveBlobsRequest, HaveBlobsResponse, GetBlobsRequest, SyncBlob};
+use crate::proto::{BlobChunk, GetBlobsRequest, HaveBlobsRequest, HaveBlobsResponse, SyncBlob};
 
 pub use crate::proto::block_sync_client::BlockSyncClient as BlockSyncClientGen;
 pub use crate::proto::block_sync_server::BlockSyncServer;
@@ -102,7 +102,9 @@ impl BlockSyncService {
             bf.insert(d);
         }
         *self.inner.bloom_filter.write().await = bf;
-        self.inner.blob_count.store(digests.len(), Ordering::Relaxed);
+        self.inner
+            .blob_count
+            .store(digests.len(), Ordering::Relaxed);
     }
 
     async fn collect_blob_digests(&self) -> Vec<String> {

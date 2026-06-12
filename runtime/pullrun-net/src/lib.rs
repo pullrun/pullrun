@@ -1,14 +1,14 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
+pub mod dns;
+pub mod ipam;
 pub mod loopback;
 pub mod proxy;
-pub mod ipam;
-pub mod dns;
 
+pub use ipam::{IpRange, Ipam};
 pub use loopback::LoopbackNetwork;
 pub use proxy::ProxyNetwork;
-pub use ipam::{IpRange, Ipam};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

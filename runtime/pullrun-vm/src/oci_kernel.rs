@@ -247,10 +247,7 @@ mod tests {
     /// `from_paths` rejects a non-existent vmlinux.
     #[test]
     fn from_paths_rejects_missing_vmlinux() {
-        let result = StagedKernel::from_paths(
-            PathBuf::from("/nonexistent/vmlinux"),
-            None,
-        );
+        let result = StagedKernel::from_paths(PathBuf::from("/nonexistent/vmlinux"), None);
         match result {
             Err(OciKernelError::MissingFile(_)) => {}
             Err(other) => panic!("unexpected error: {other:?}"),

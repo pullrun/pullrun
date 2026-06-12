@@ -39,7 +39,10 @@ impl Clone for SecretStore {
 
 impl SecretStore {
     pub fn new(store_root: PathBuf) -> Self {
-        Self { store_root, key_cache: Mutex::new(None) }
+        Self {
+            store_root,
+            key_cache: Mutex::new(None),
+        }
     }
 
     fn secrets_dir(&self) -> PathBuf {
@@ -130,7 +133,8 @@ impl SecretStore {
     pub fn create_secret(&self, name: &str, data: &[u8]) -> Result<(), String> {
         let name = Self::sanitize_name(name)?;
         let path = self.secrets_dir().join(&name);
-        std::fs::create_dir_all(self.secrets_dir()).map_err(|e| format!("create secrets dir: {e}"))?;
+        std::fs::create_dir_all(self.secrets_dir())
+            .map_err(|e| format!("create secrets dir: {e}"))?;
         let encrypted = self.encrypt(data)?;
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -153,18 +157,15 @@ impl SecretStore {
     pub fn read_secret(&self, name: &str) -> Result<String, String> {
         let name = Self::sanitize_name(name)?;
         let path = self.secrets_dir().join(&name);
-        let encrypted = std::fs::read(&path)
-            .map_err(|e| format!("read secret '{name}': {e}"))?;
+        let encrypted = std::fs::read(&path).map_err(|e| format!("read secret '{name}': {e}"))?;
         let plaintext = self.decrypt(&encrypted)?;
-        String::from_utf8(plaintext)
-            .map_err(|e| format!("secret '{name}' is not valid UTF-8: {e}"))
+        String::from_utf8(plaintext).map_err(|e| format!("secret '{name}' is not valid UTF-8: {e}"))
     }
 
     pub fn read_secret_raw(&self, name: &str) -> Result<Vec<u8>, String> {
         let name = Self::sanitize_name(name)?;
         let path = self.secrets_dir().join(&name);
-        let encrypted = std::fs::read(&path)
-            .map_err(|e| format!("read secret '{name}': {e}"))?;
+        let encrypted = std::fs::read(&path).map_err(|e| format!("read secret '{name}': {e}"))?;
         self.decrypt(&encrypted)
     }
 
@@ -199,8 +200,7 @@ impl SecretStore {
     pub fn inspect_secret(&self, name: &str) -> Result<SecretInfo, String> {
         let name_clean = Self::sanitize_name(name)?;
         let path = self.secrets_dir().join(&name_clean);
-        let meta = std::fs::metadata(&path)
-            .map_err(|e| format!("inspect secret '{name}': {e}"))?;
+        let meta = std::fs::metadata(&path).map_err(|e| format!("inspect secret '{name}': {e}"))?;
         if !meta.is_file() {
             return Err(format!("'{}' is not a file", name));
         }
@@ -232,7 +232,8 @@ impl SecretStore {
     pub fn create_config(&self, name: &str, data: &[u8]) -> Result<(), String> {
         let name = Self::sanitize_name(name)?;
         let path = self.configs_dir().join(&name);
-        std::fs::create_dir_all(self.configs_dir()).map_err(|e| format!("create configs dir: {e}"))?;
+        std::fs::create_dir_all(self.configs_dir())
+            .map_err(|e| format!("create configs dir: {e}"))?;
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -293,8 +294,7 @@ impl SecretStore {
     pub fn inspect_config(&self, name: &str) -> Result<SecretInfo, String> {
         let name_clean = Self::sanitize_name(name)?;
         let path = self.configs_dir().join(&name_clean);
-        let meta = std::fs::metadata(&path)
-            .map_err(|e| format!("inspect config '{name}': {e}"))?;
+        let meta = std::fs::metadata(&path).map_err(|e| format!("inspect config '{name}': {e}"))?;
         if !meta.is_file() {
             return Err(format!("'{}' is not a file", name));
         }
@@ -349,8 +349,7 @@ pub fn stage_secret(
         .join("secrets");
     std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create secret dir: {e}"))?;
     let file_path = dest_dir.join(secret_name);
-    std::fs::write(&file_path, secret_content)
-        .map_err(|e| format!("write staged secret: {e}"))?;
+    std::fs::write(&file_path, secret_content).map_err(|e| format!("write staged secret: {e}"))?;
     Ok((file_path, target))
 }
 
@@ -375,7 +374,6 @@ pub fn stage_config(
         .join("secrets");
     std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create config dir: {e}"))?;
     let file_path = dest_dir.join(config_name);
-    std::fs::write(&file_path, config_content)
-        .map_err(|e| format!("write staged config: {e}"))?;
+    std::fs::write(&file_path, config_content).map_err(|e| format!("write staged config: {e}"))?;
     Ok((file_path, target))
 }

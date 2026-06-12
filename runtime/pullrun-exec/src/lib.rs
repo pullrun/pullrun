@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod container;
-pub mod types;
 pub mod rootless;
+pub mod types;
 
 pub use container::{LinuxContainerExecutor, RootlessContainerExecutor};
 pub use rootless::{
@@ -11,4 +11,7 @@ pub use rootless::{
     rootless_oci_config, rootless_runc_command, setup_rootless_network, NetworkHandle,
     RootlessConfig,
 };
-pub use types::{ExecError, Executor, HealthCheck, Mount, NetworkRule, ProcessHandle, WorkloadSpec, WorkloadStats};
+pub use types::{
+    ExecError, Executor, HealthCheck, Mount, NetworkRule, ProcessHandle, WorkloadSpec,
+    WorkloadStats,
+};

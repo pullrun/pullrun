@@ -120,17 +120,12 @@ pub async fn materialize_ext4_rootfs(
                     info!("OCI image has no ENTRYPOINT/CMD; injecting default /bin/sh");
                     vec!["/bin/sh".to_string()]
                 } else {
-                    info!(
-                        "injecting /init from OCI manifest: {}",
-                        merged.join(" ")
-                    );
+                    info!("injecting /init from OCI manifest: {}", merged.join(" "));
                     merged
                 }
             }
             Err(e) => {
-                warn!(
-                    "failed to read OCI manifest for /init: {e}; falling back to /bin/sh"
-                );
+                warn!("failed to read OCI manifest for /init: {e}; falling back to /bin/sh");
                 vec!["/bin/sh".to_string()]
             }
         };
@@ -191,16 +186,25 @@ fn create_sparse_file(path: &Path, size_mb: u64) -> Result<(), Ext4Error> {
     Ok(())
 }
 
-fn format_ext4_from_dir(image: &Path, source_dir: &Path, label: Option<&str>) -> Result<(), Ext4Error> {
+fn format_ext4_from_dir(
+    image: &Path,
+    source_dir: &Path,
+    label: Option<&str>,
+) -> Result<(), Ext4Error> {
     // Check mkfs.ext4 supports -d (e2fsprogs >= 1.47.0).
     let version_output = Command::new("mkfs.ext4")
         .arg("--version")
         .output()
         .map_err(|e| Ext4Error::MkfsNotFound(format!("mkfs.ext4 not found: {e}")))?;
-    let version_str = String::from_utf8_lossy(
-        if version_output.stdout.is_empty() { &version_output.stderr } else { &version_output.stdout }
-    );
-    if !version_str.contains("1.47") && !version_str.contains("1.48") && !version_str.contains("1.49") {
+    let version_str = String::from_utf8_lossy(if version_output.stdout.is_empty() {
+        &version_output.stderr
+    } else {
+        &version_output.stdout
+    });
+    if !version_str.contains("1.47")
+        && !version_str.contains("1.48")
+        && !version_str.contains("1.49")
+    {
         warn!(
             "mkfs.ext4 version may not support -d flag (requires e2fsprogs >= 1.47.0, got: {})",
             version_str.lines().next().unwrap_or("unknown")
@@ -419,7 +423,11 @@ mod tests {
         )
         .await
         .expect("materialize ext4");
-        eprintln!("→ ext4 image created at {} ({} MB)", ext4_path.display(), fs_size_mb(&ext4_path));
+        eprintln!(
+            "→ ext4 image created at {} ({} MB)",
+            ext4_path.display(),
+            fs_size_mb(&ext4_path)
+        );
 
         // 3. Verify the image is a valid ext4 filesystem.
         let fstype = std::process::Command::new("blkid")
@@ -457,7 +465,10 @@ mod tests {
                         // debugfs stat shows symlink target in the output
                         eprintln!("  /bin/sh is a symlink");
                     }
-                    Ok(o) => eprintln!("  debugfs stat /bin/sh failed: {}", String::from_utf8_lossy(&o.stderr)),
+                    Ok(o) => eprintln!(
+                        "  debugfs stat /bin/sh failed: {}",
+                        String::from_utf8_lossy(&o.stderr)
+                    ),
                     Err(e) => eprintln!("  debugfs not usable: {e}"),
                 }
 
@@ -469,19 +480,29 @@ mod tests {
                     Ok(o) if o.status.success() => {
                         eprintln!("  /init exists (rootfs bootstrap injected)");
                     }
-                    Ok(o) => eprintln!("  /init not found (may be expected): {}", String::from_utf8_lossy(&o.stderr)),
+                    Ok(o) => eprintln!(
+                        "  /init not found (may be expected): {}",
+                        String::from_utf8_lossy(&o.stderr)
+                    ),
                     Err(e) => eprintln!("  debugfs stat /init failed: {e}"),
                 }
 
                 // /etc/alpine-release should exist
                 let release_stat = Command::new("debugfs")
-                    .args(["-R", "stat /etc/alpine-release", &ext4_path.to_string_lossy()])
+                    .args([
+                        "-R",
+                        "stat /etc/alpine-release",
+                        &ext4_path.to_string_lossy(),
+                    ])
                     .output();
                 match release_stat {
                     Ok(o) if o.status.success() => {
                         eprintln!("  /etc/alpine-release exists (alpine userland verified)");
                     }
-                    Ok(o) => eprintln!("  /etc/alpine-release not found: {}", String::from_utf8_lossy(&o.stderr)),
+                    Ok(o) => eprintln!(
+                        "  /etc/alpine-release not found: {}",
+                        String::from_utf8_lossy(&o.stderr)
+                    ),
                     Err(e) => eprintln!("  debugfs stat /etc/alpine-release failed: {e}"),
                 }
             } else {

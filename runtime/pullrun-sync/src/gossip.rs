@@ -124,7 +124,10 @@ impl BloomGossip {
         // Skip first immediate tick
         interval.tick().await;
 
-        info!("bloom filter gossip started (interval={}s)", GOSSIP_INTERVAL.as_secs());
+        info!(
+            "bloom filter gossip started (interval={}s)",
+            GOSSIP_INTERVAL.as_secs()
+        );
 
         loop {
             interval.tick().await;
@@ -141,7 +144,11 @@ impl BloomGossip {
             // thread_rng() is !Send and cannot cross .await boundaries.
             let mut rng = StdRng::from_entropy();
             let peer_count = (peers.len() as u32).clamp(1, 3);
-            let selected: Vec<_> = peers.as_slice().choose_multiple(&mut rng, peer_count as usize).cloned().collect();
+            let selected: Vec<_> = peers
+                .as_slice()
+                .choose_multiple(&mut rng, peer_count as usize)
+                .cloned()
+                .collect();
 
             // Get our bloom filter once, reuse for all peers in this round.
             let (bf_bytes, bf_k, bf_m) = self.block_sync_service.bloom_filter_bytes().await;

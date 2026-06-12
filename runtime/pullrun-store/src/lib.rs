@@ -90,7 +90,7 @@ impl<'de> Deserialize<'de> for Digest {
 }
 
 /// rkyv archive support: archive as `[u8; 32]` (inline, zero-copy).
-use rkyv::{Archive, Serialize as RSerialize, Deserialize as RDeserialize};
+use rkyv::{Archive, Deserialize as RDeserialize, Serialize as RSerialize};
 
 /// The archived form of `Digest` is `Archived<[u8; 32]>`, which is `[u8; 32]`.
 /// `#[derive(Archive)]` on a `Digest([u8; 32])` would produce
@@ -109,7 +109,10 @@ impl Archive for Digest {
 }
 
 impl<R: rkyv::Fallible + ?Sized> RSerialize<R> for Digest {
-    fn serialize(&self, _serializer: &mut R) -> Result<Self::Resolver, <R as rkyv::Fallible>::Error> {
+    fn serialize(
+        &self,
+        _serializer: &mut R,
+    ) -> Result<Self::Resolver, <R as rkyv::Fallible>::Error> {
         Ok(())
     }
 }
@@ -123,4 +126,3 @@ impl<D: rkyv::Fallible + ?Sized> RDeserialize<Digest, D> for [u8; 32] {
 /// Files/directory entries below this threshold are stored inline
 /// in the DAG node rather than as separate blob files.
 pub const SMALL_FILE_THRESHOLD: u64 = 4096;
-

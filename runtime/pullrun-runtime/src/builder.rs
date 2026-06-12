@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use pullrun_oci::{
-    build_dag_from_directory_with_platform, current_arch, DagDirectory,
-    Dockerfile, Instruction, ManifestData, OciMaterializer, OciPuller,
+    build_dag_from_directory_with_platform, current_arch, DagDirectory, Dockerfile, Instruction,
+    ManifestData, OciMaterializer, OciPuller,
 };
 use pullrun_store::{Digest, MmapStore};
 use tokio::sync::RwLock;
@@ -144,7 +144,10 @@ impl DagBuilder {
         }
 
         let list_node = pullrun_store::DagNode::manifest_list(manifest_digests, vec![]);
-        let list_digest = self.store.put(&list_node).await
+        let list_digest = self
+            .store
+            .put(&list_node)
+            .await
             .map_err(|e| BuildError::Store(format!("store manifest list: {e}")))?;
 
         info!(%list_digest, platforms = platforms.len(), "manifest list created for multi-arch build");
@@ -159,17 +162,12 @@ impl DagBuilder {
     ) -> Result<BuildResult, BuildError> {
         // Determine effective platform: explicit request overrides Dockerfile's
         // --platform, which overrides host native (None = puller auto-detects).
-        let effective_platform: Option<String> = self
-            .platform
-            .clone()
-            .or_else(|| stage.platform.clone());
+        let effective_platform: Option<String> =
+            self.platform.clone().or_else(|| stage.platform.clone());
 
         // 1. Pull the base image
         info!("pulling base image: {}", stage.from);
-        let puller = OciPuller::with_insecure_registries(
-            None,
-            self.insecure_registries.clone(),
-        );
+        let puller = OciPuller::with_insecure_registries(None, self.insecure_registries.clone());
         let registry = extract_registry(&stage.from);
         let image_ref = extract_image_ref(&stage.from);
         let pulled = puller
@@ -226,7 +224,8 @@ impl DagBuilder {
                     layer_count += 1;
                 }
                 Instruction::Copy { sources, dest } => {
-                    let cache_key = self.cache_key_copy(&current_manifest, context_dir, sources, dest);
+                    let cache_key =
+                        self.cache_key_copy(&current_manifest, context_dir, sources, dest);
                     // Check cache
                     let cached = self.layer_cache.read().await.get(&cache_key).copied();
                     if let Some(cached_digest) = cached {
@@ -253,7 +252,8 @@ impl DagBuilder {
                     layer_count += 1;
                 }
                 Instruction::Add { sources, dest } => {
-                    let cache_key = self.cache_key_copy(&current_manifest, context_dir, sources, dest);
+                    let cache_key =
+                        self.cache_key_copy(&current_manifest, context_dir, sources, dest);
                     let cached = self.layer_cache.read().await.get(&cache_key).copied();
                     if let Some(cached_digest) = cached {
                         info!("ADD {:?} {} [cached]", sources, dest);
@@ -283,9 +283,7 @@ impl DagBuilder {
                 }
                 Instruction::Env { key, value } => {
                     info!("ENV {key}={value}");
-                    manifest_data
-                        .env
-                        .push(format!("{key}={value}"));
+                    manifest_data.env.push(format!("{key}={value}"));
                 }
                 Instruction::Cmd(cmd) => {
                     info!("CMD {:?}", cmd);
@@ -348,8 +346,7 @@ impl DagBuilder {
         command: &[String],
         manifest_data: &mut ManifestData,
     ) -> Result<Digest, BuildError> {
-        let temp_dir = tempfile::tempdir()
-            .map_err(BuildError::Io)?;
+        let temp_dir = tempfile::tempdir().map_err(BuildError::Io)?;
         let rootfs_dir = temp_dir.path().join("rootfs");
 
         // Materialize current state
@@ -370,8 +367,7 @@ impl DagBuilder {
         );
 
         let bundle_dir = self.bundle_root.join(&workload_id);
-        std::fs::create_dir_all(&bundle_dir)
-            .map_err(BuildError::Io)?;
+        std::fs::create_dir_all(&bundle_dir).map_err(BuildError::Io)?;
 
         // Build OCI config.json
         let config = serde_json::json!({
@@ -412,10 +408,9 @@ impl DagBuilder {
         });
 
         let config_path = bundle_dir.join("config.json");
-        let config_json = serde_json::to_string_pretty(&config)
-            .map_err(|e| BuildError::Config(e.to_string()))?;
-        std::fs::write(&config_path, &config_json)
-            .map_err(BuildError::Io)?;
+        let config_json =
+            serde_json::to_string_pretty(&config).map_err(|e| BuildError::Config(e.to_string()))?;
+        std::fs::write(&config_path, &config_json).map_err(BuildError::Io)?;
 
         // Write /etc/hosts and /etc/resolv.conf so entrypoint scripts
         // that expect these files don't fail.
@@ -431,8 +426,7 @@ impl DagBuilder {
         }
         let resolv_path = etc_dir.join("resolv.conf");
         if !resolv_path.exists() {
-            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
-                .ok();
+            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n").ok();
         }
 
         // Symlink rootfs into bundle
@@ -440,8 +434,7 @@ impl DagBuilder {
         if bundle_rootfs.exists() {
             std::fs::remove_dir_all(&bundle_rootfs).ok();
         }
-        std::os::unix::fs::symlink(&rootfs_dir, &bundle_rootfs)
-            .map_err(BuildError::Io)?;
+        std::os::unix::fs::symlink(&rootfs_dir, &bundle_rootfs).map_err(BuildError::Io)?;
 
         // Cross-architecture check: if the target arch differs from
         // the host, ensure qemu-user-static binfmt handlers are set up.
@@ -469,8 +462,7 @@ impl DagBuilder {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(BuildError::Execute(format!(
                 "command {:?} failed: {}\nstderr: {stderr}",
-                command,
-                output.status
+                command, output.status
             )));
         }
 
@@ -499,8 +491,7 @@ impl DagBuilder {
         dest: &str,
         manifest_data: &mut ManifestData,
     ) -> Result<Digest, BuildError> {
-        let temp_dir = tempfile::tempdir()
-            .map_err(BuildError::Io)?;
+        let temp_dir = tempfile::tempdir().map_err(BuildError::Io)?;
         let rootfs_dir = temp_dir.path().join("rootfs");
 
         // Materialize current state
@@ -516,17 +507,13 @@ impl DagBuilder {
         } else {
             rootfs_dir.join(dest)
         };
-        std::fs::create_dir_all(&dest_path)
-            .map_err(BuildError::Io)?;
+        std::fs::create_dir_all(&dest_path).map_err(BuildError::Io)?;
 
         // Copy each source into the rootfs
         for src in sources {
             let src_path = context_dir.join(src);
-            let dest_path = dest_path.join(
-                src.rsplit('/').next().unwrap_or(src),
-            );
-            copy_recursive(&src_path, &dest_path)
-                .map_err(BuildError::Io)?;
+            let dest_path = dest_path.join(src.rsplit('/').next().unwrap_or(src));
+            copy_recursive(&src_path, &dest_path).map_err(BuildError::Io)?;
         }
 
         // Re-scan the rootfs into DAG nodes
@@ -535,9 +522,14 @@ impl DagBuilder {
             manifest_digest,
             node_count,
             blob_bytes,
-        } = build_dag_from_directory_with_platform(&self.store, &rootfs_dir, &manifest_data.architecture, &manifest_data.os)
-            .await
-            .map_err(|e| BuildError::Scan(e.to_string()))?;
+        } = build_dag_from_directory_with_platform(
+            &self.store,
+            &rootfs_dir,
+            &manifest_data.architecture,
+            &manifest_data.os,
+        )
+        .await
+        .map_err(|e| BuildError::Scan(e.to_string()))?;
 
         debug!("COPY layer: {node_count} nodes, {blob_bytes} bytes");
         Ok(manifest_digest)
@@ -658,5 +650,3 @@ fn copy_recursive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
         Ok(())
     }
 }
-
-

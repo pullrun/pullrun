@@ -32,7 +32,11 @@ impl IpRange {
         }
 
         let ip_int = u32::from(ip);
-        let mask = if prefix == 0 { 0 } else { !((1u32 << (32 - prefix)) - 1) };
+        let mask = if prefix == 0 {
+            0
+        } else {
+            !((1u32 << (32 - prefix)) - 1)
+        };
         let base = ip_int & mask;
         let size = 1u32 << (32 - prefix);
 

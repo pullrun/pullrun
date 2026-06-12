@@ -13,6 +13,7 @@ use tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::Server;
 use tracing::{info, warn};
 
+use proto::runtime_server::RuntimeServer;
 use pullrun_exec::types::{Backend, NetworkMode, WorkloadSpec};
 use pullrun_exec::{Executor, LinuxContainerExecutor};
 use pullrun_oci::{OciPuller, OciToDagConverter};
@@ -23,11 +24,9 @@ use pullrun_runtime::proto;
 use pullrun_runtime::service::{RuntimeCommand, RuntimeService, ServiceConfig, VmBackendConfig};
 use pullrun_store::{Digest, MmapStore};
 use pullrun_sync::{
-    BlockSyncClient, BlockSyncServer, BlockSyncService, BloomGossip, Discovery,
-    PeerBloomCache, RegistrarClient, RegistrarServer, RegistrarService,
-    generate_node_id, run_registrar_client,
+    generate_node_id, run_registrar_client, BlockSyncClient, BlockSyncServer, BlockSyncService,
+    BloomGossip, Discovery, PeerBloomCache, RegistrarClient, RegistrarServer, RegistrarService,
 };
-use proto::runtime_server::RuntimeServer;
 
 #[derive(Parser)]
 #[command(name = "pullrun-runtime")]
@@ -90,7 +89,11 @@ enum Commands {
         vm_firecracker: Option<PathBuf>,
         #[arg(long, help = "Path to a firecracker-compatible vmlinux kernel")]
         vm_kernel: Option<PathBuf>,
-        #[arg(long, default_value = "/var/lib/pullrun/vm", help = "Where to store ext4 rootfs images and VM sidecars")]
+        #[arg(
+            long,
+            default_value = "/var/lib/pullrun/vm",
+            help = "Where to store ext4 rootfs images and VM sidecars"
+        )]
         vm_root: PathBuf,
         #[arg(long, default_value_t = 2, help = "vCPUs per VM")]
         vm_vcpus: u8,
@@ -182,8 +185,12 @@ fn build_policy(
     no_new_privileges: bool,
     deny_license: Vec<String>,
 ) -> Option<Policy> {
-    if !require_signature && !require_sbom && max_cvss.is_none() && !readonly_rootfs
-        && !no_new_privileges && deny_license.is_empty()
+    if !require_signature
+        && !require_sbom
+        && max_cvss.is_none()
+        && !readonly_rootfs
+        && !no_new_privileges
+        && deny_license.is_empty()
     {
         return None;
     }
@@ -330,7 +337,12 @@ fn daemon_main(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run_one_shot(cmd: Commands) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
-        Commands::Pull { image_ref, registry, store_root, insecure_registry } => {
+        Commands::Pull {
+            image_ref,
+            registry,
+            store_root,
+            insecure_registry,
+        } => {
             run_pull(
                 &image_ref,
                 registry.as_deref(),
@@ -419,8 +431,6 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     .await
 }
 
-
-
 async fn run_pull(
     image_ref: &str,
     registry: Option<&str>,
@@ -428,10 +438,8 @@ async fn run_pull(
     insecure_registries: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let store = Arc::new(MmapStore::new(store_root.to_path_buf()));
-    let puller = OciPuller::with_insecure_registries(
-        None,
-        insecure_registries.iter().cloned().collect(),
-    );
+    let puller =
+        OciPuller::with_insecure_registries(None, insecure_registries.iter().cloned().collect());
     let pulled = puller.pull(image_ref, registry).await?;
     let converter = OciToDagConverter::new(store.clone());
     let root_digest = converter.convert(&pulled).await?;
@@ -464,7 +472,10 @@ async fn run_workload(
         .iter()
         .filter_map(|e| {
             let mut parts = e.splitn(2, '=');
-            Some((parts.next()?.to_string(), parts.next().unwrap_or("").to_string()))
+            Some((
+                parts.next()?.to_string(),
+                parts.next().unwrap_or("").to_string(),
+            ))
         })
         .collect();
 
@@ -474,8 +485,7 @@ async fn run_workload(
         command.to_vec()
     };
 
-    let image_root = Digest::from_hex(root_digest)
-        .map_err(|e| format!("invalid digest: {e}"))?;
+    let image_root = Digest::from_hex(root_digest).map_err(|e| format!("invalid digest: {e}"))?;
     let spec = WorkloadSpec {
         id: name.to_string(),
         image_root,
@@ -503,7 +513,10 @@ async fn run_workload(
     Ok(())
 }
 
-async fn run_stop(id: &str, store_root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_stop(
+    id: &str,
+    store_root: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let store = MmapStore::new(store_root.to_path_buf());
     let bundle_root = store_root.join("bundles");
     let executor = LinuxContainerExecutor::new(store, None, bundle_root);
@@ -643,7 +656,12 @@ async fn run_daemon(
 
         // Start bloom filter gossip (periodic bloom filter exchange with peers).
         if let Some(client) = local_client {
-            let gossip = BloomGossip::new(client, block_sync_service.clone(), discovery.clone(), cache.clone());
+            let gossip = BloomGossip::new(
+                client,
+                block_sync_service.clone(),
+                discovery.clone(),
+                cache.clone(),
+            );
             tokio::spawn(async move {
                 gossip.run().await;
             });

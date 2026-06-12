@@ -134,7 +134,9 @@ fn build_a_response(query: &[u8], name: &str, ip: &str) -> Vec<u8> {
     resp[2] = 0x81;
     resp[3] = 0x80;
 
-    let ip_addr: std::net::Ipv4Addr = ip.parse().unwrap_or_else(|_| std::net::Ipv4Addr::new(0, 0, 0, 0));
+    let ip_addr: std::net::Ipv4Addr = ip
+        .parse()
+        .unwrap_or_else(|_| std::net::Ipv4Addr::new(0, 0, 0, 0));
     let octets = ip_addr.octets();
 
     let mut answer = Vec::new();

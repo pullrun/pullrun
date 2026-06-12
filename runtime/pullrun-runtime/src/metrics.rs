@@ -109,9 +109,9 @@ pub fn install_recorder() -> PrometheusHandle {
                 }
             };
 
-            let handle = builder
-                .install_recorder()
-                .expect("first install of metrics recorder (subsequent installs reuse the cached handle)");
+            let handle = builder.install_recorder().expect(
+                "first install of metrics recorder (subsequent installs reuse the cached handle)",
+            );
             describe_metrics();
             handle
         })
@@ -275,7 +275,9 @@ pub struct PullTimer {
 
 impl PullTimer {
     pub fn start() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 }
 
@@ -295,7 +297,9 @@ pub struct StartTimer {
 
 impl StartTimer {
     pub fn start() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 }
 
@@ -359,7 +363,10 @@ mod tests {
         record_workload_exit("container", Some(0));
         record_store_stats(7, 4096);
         let body = h.render();
-        assert!(body.contains("pullrun_pulls_total"), "missing pulls_total in render");
+        assert!(
+            body.contains("pullrun_pulls_total"),
+            "missing pulls_total in render"
+        );
         assert!(
             body.contains("pullrun_workloads_started_total"),
             "missing workloads_started_total in render"

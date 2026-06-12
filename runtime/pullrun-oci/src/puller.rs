@@ -12,7 +12,13 @@ use tracing::{debug, info};
 
 use pullrun_store::Digest;
 
-type FetchResult<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Vec<u8>, Vec<OciDescriptor>), OciError>> + Send + 'a>>;
+type FetchResult<'a> = std::pin::Pin<
+    Box<
+        dyn std::future::Future<Output = Result<(Vec<u8>, Vec<OciDescriptor>), OciError>>
+            + Send
+            + 'a,
+    >,
+>;
 
 #[derive(Debug, Error)]
 pub enum OciError {
@@ -254,13 +260,17 @@ impl OciPuller {
         let url = if registry == "registry-1.docker.io" || registry == "docker.io" {
             format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repository}:pull")
         } else {
-            format!("{}//{registry}/token?scope=repository:{repository}:pull", self.scheme(registry))
+            format!(
+                "{}//{registry}/token?scope=repository:{repository}:pull",
+                self.scheme(registry)
+            )
         };
 
         let mut req = self.client.get(&url);
         if let Some(auth) = &self.auth {
             if let (Some(user), Some(pass)) = (&auth.username, &auth.password) {
-                let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+                let encoded =
+                    base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
                 req = req.header(reqwest::header::AUTHORIZATION, format!("Basic {encoded}"));
             }
         }
@@ -290,7 +300,8 @@ impl OciPuller {
         image_ref: &str,
         explicit_registry: Option<&str>,
     ) -> Result<PulledImage, OciError> {
-        self.pull_with_platform(image_ref, explicit_registry, None).await
+        self.pull_with_platform(image_ref, explicit_registry, None)
+            .await
     }
 
     /// Pull an OCI image, optionally selecting a specific platform.
@@ -314,7 +325,12 @@ impl OciPuller {
             .fetch_manifest_with_platform(&registry, &repository, &tag, token.as_deref(), platform)
             .await?;
         let config = self
-            .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
+            .fetch_config(
+                &registry,
+                &repository,
+                &manifest.config.digest,
+                token.as_deref(),
+            )
             .await?;
 
         let config_digest = Digest::from_hex(&manifest.config.digest)
@@ -380,7 +396,12 @@ impl OciPuller {
                 )
                 .await?;
             let config = self
-                .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
+                .fetch_config(
+                    &registry,
+                    &repository,
+                    &manifest.config.digest,
+                    token.as_deref(),
+                )
                 .await?;
             let config_digest = Digest::from_hex(&manifest.config.digest)
                 .map_err(|e| OciError::Other(format!("invalid config digest: {e}")))?;
@@ -423,17 +444,22 @@ impl OciPuller {
         repository: &'a str,
         reference: &'a str,
         token: Option<&'a str>,
-    ) -> FetchResult<'a>
-    {
+    ) -> FetchResult<'a> {
         Box::pin(async move {
             let url = manifest_url(self, registry, repository, reference);
             let mut req = self
                 .client
                 .get(&url)
                 .header("Accept", "application/vnd.oci.image.index.v1+json")
-                .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+                .header(
+                    "Accept",
+                    "application/vnd.docker.distribution.manifest.list.v2+json",
+                )
                 .header("Accept", "application/vnd.oci.image.manifest.v1+json")
-                .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
+                .header(
+                    "Accept",
+                    "application/vnd.docker.distribution.manifest.v2+json",
+                );
 
             if let Some(t) = token {
                 req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
@@ -498,8 +524,9 @@ impl OciPuller {
         reference: &'a str,
         token: Option<&'a str>,
         platform: Option<&'a str>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<OciManifest, OciError>> + Send + 'a>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<OciManifest, OciError>> + Send + 'a>,
+    > {
         Box::pin(async move {
             let url = manifest_url(self, registry, repository, reference);
             let mut req = self
@@ -507,8 +534,14 @@ impl OciPuller {
                 .get(&url)
                 .header("Accept", "application/vnd.oci.image.manifest.v1+json")
                 .header("Accept", "application/vnd.oci.image.index.v1+json")
-                .header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
-                .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json");
+                .header(
+                    "Accept",
+                    "application/vnd.docker.distribution.manifest.v2+json",
+                )
+                .header(
+                    "Accept",
+                    "application/vnd.docker.distribution.manifest.list.v2+json",
+                );
 
             if let Some(t) = token {
                 req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
@@ -554,9 +587,8 @@ impl OciPuller {
                     manifests: Vec<OciDescriptor>,
                 }
 
-                let list: ManifestList = serde_json::from_slice(&bytes).map_err(|e| {
-                    OciError::InvalidManifest(format!("manifest list parse: {e}"))
-                })?;
+                let list: ManifestList = serde_json::from_slice(&bytes)
+                    .map_err(|e| OciError::InvalidManifest(format!("manifest list parse: {e}")))?;
 
                 // Resolve the target platform: explicit override, or host native.
                 let (target_arch, target_os) = if let Some(p) = platform {
@@ -600,9 +632,7 @@ impl OciPuller {
                     })
                     .or_else(|| list.manifests.first())
                     .ok_or_else(|| {
-                        OciError::InvalidManifest(
-                            "no child manifest for current platform".into(),
-                        )
+                        OciError::InvalidManifest("no child manifest for current platform".into())
                     })?;
 
                 info!(
@@ -610,7 +640,15 @@ impl OciPuller {
                     "following manifest list child for platform {target_arch}/{target_os}"
                 );
 
-                return self.fetch_manifest_with_platform(registry, repository, &child.digest, token, platform).await;
+                return self
+                    .fetch_manifest_with_platform(
+                        registry,
+                        repository,
+                        &child.digest,
+                        token,
+                        platform,
+                    )
+                    .await;
             }
 
             let manifest: OciManifest = serde_json::from_slice(&bytes)
@@ -681,8 +719,17 @@ impl OciPuller {
         image_ref: &str,
         explicit_registry: Option<&str>,
         platform: Option<&str>,
-    ) -> Result<(OciManifest, OciImageConfig, String, String, String, Option<String>), OciError>
-    {
+    ) -> Result<
+        (
+            OciManifest,
+            OciImageConfig,
+            String,
+            String,
+            String,
+            Option<String>,
+        ),
+        OciError,
+    > {
         let registry = self.registry_for(image_ref, explicit_registry);
         let (repository, tag) = self.image_parts(image_ref);
         let token = self.get_token(&registry, &repository).await?;
@@ -691,7 +738,12 @@ impl OciPuller {
             .fetch_manifest_with_platform(&registry, &repository, &tag, token.as_deref(), platform)
             .await?;
         let config = self
-            .fetch_config(&registry, &repository, &manifest.config.digest, token.as_deref())
+            .fetch_config(
+                &registry,
+                &repository,
+                &manifest.config.digest,
+                token.as_deref(),
+            )
             .await?;
         let config_digest = manifest.config.digest.clone();
 
@@ -725,7 +777,10 @@ fn manifest_url(puller: &OciPuller, registry: &str, repository: &str, reference:
     if registry == "registry-1.docker.io" || registry == "docker.io" {
         format!("https://index.docker.io/v2/{repository}/manifests/{reference}")
     } else {
-        format!("{}//{registry}/v2/{repository}/manifests/{reference}", puller.scheme(registry))
+        format!(
+            "{}//{registry}/v2/{repository}/manifests/{reference}",
+            puller.scheme(registry)
+        )
     }
 }
 
@@ -733,7 +788,10 @@ fn blob_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) 
     if registry == "registry-1.docker.io" || registry == "docker.io" {
         format!("https://index.docker.io/v2/{repository}/blobs/{digest}")
     } else {
-        format!("{}//{registry}/v2/{repository}/blobs/{digest}", puller.scheme(registry))
+        format!(
+            "{}//{registry}/v2/{repository}/blobs/{digest}",
+            puller.scheme(registry)
+        )
     }
 }
 

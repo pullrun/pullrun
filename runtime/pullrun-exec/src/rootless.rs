@@ -171,10 +171,7 @@ pub fn rootless_oci_config(uid: u32) -> serde_json::Value {
 }
 
 /// Apply rootless OCI config to an existing config.json on disk.
-pub fn apply_rootless_config(
-    bundle_dir: &Path,
-    uid: u32,
-) -> Result<(), ExecError> {
+pub fn apply_rootless_config(bundle_dir: &Path, uid: u32) -> Result<(), ExecError> {
     let config_path = bundle_dir.join("config.json");
     if !config_path.exists() {
         return Err(ExecError::ExecutionFailed(format!(
@@ -196,7 +193,9 @@ pub fn apply_rootless_config(
     if let Some(linux) = config.get_mut("linux") {
         if let Some(namespaces) = linux.get_mut("namespaces") {
             if let Some(arr) = namespaces.as_array_mut() {
-                let has_user = arr.iter().any(|n| n.get("type").and_then(|v| v.as_str()) == Some("user"));
+                let has_user = arr
+                    .iter()
+                    .any(|n| n.get("type").and_then(|v| v.as_str()) == Some("user"));
                 if !has_user {
                     arr.push(serde_json::json!({"type": "user"}));
                 }
@@ -231,7 +230,10 @@ pub async fn setup_rootless_network(
     let (program, args) = if use_pasta {
         info!(%workload_id, %container_pid, "starting pasta for rootless networking");
         let mut args = vec!["--ns", &netns_path, "--config-net", "--mtu", "65520"];
-        (PathBuf::from("pasta"), args.drain(..).map(String::from).collect())
+        (
+            PathBuf::from("pasta"),
+            args.drain(..).map(String::from).collect(),
+        )
     } else {
         info!(%workload_id, %container_pid, "starting slirp4netns for rootless networking");
         let args = vec![
@@ -250,10 +252,7 @@ pub async fn setup_rootless_network(
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| {
-            ExecError::BackendNotAvailable(format!(
-                "{} not available: {e}",
-                program.display()
-            ))
+            ExecError::BackendNotAvailable(format!("{} not available: {e}", program.display()))
         })?;
 
     Ok(NetworkHandle { child })

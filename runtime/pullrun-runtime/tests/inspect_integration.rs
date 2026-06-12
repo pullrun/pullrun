@@ -109,9 +109,7 @@ mod tests {
         }
 
         // Inspect it.
-        let req = tonic::Request::new(pullrun_runtime::proto::InspectRequest {
-            id: id.clone(),
-        });
+        let req = tonic::Request::new(pullrun_runtime::proto::InspectRequest { id: id.clone() });
         let resp = svc.inspect_workload(req).await.expect("inspect rpc");
         let inner = resp.into_inner();
 
@@ -130,7 +128,10 @@ mod tests {
         assert_eq!(inner.network_rules[0].direction, "inbound");
         assert_eq!(inner.network_rules[0].protocol, "tcp");
         assert_eq!(inner.network_rules[0].port, 8080);
-        assert_eq!(inner.network_rules[0].from_cidrs, vec!["10.0.0.0/8".to_string()]);
+        assert_eq!(
+            inner.network_rules[0].from_cidrs,
+            vec!["10.0.0.0/8".to_string()]
+        );
         assert_eq!(
             inner.policy_decisions.get("default"),
             Some(&"allow".to_string())
@@ -149,7 +150,10 @@ mod tests {
         assert_eq!(proto.id, ev.id);
         assert_eq!(proto.kind, "WORKLOAD_STARTED");
         assert_eq!(proto.timestamp, ev.timestamp as i64);
-        assert_eq!(proto.metadata.get("backend").map(|s| s.as_str()), Some("container"));
+        assert_eq!(
+            proto.metadata.get("backend").map(|s| s.as_str()),
+            Some("container")
+        );
         assert_eq!(proto.metadata.get("pid").map(|s| s.as_str()), Some("1234"));
     }
 }

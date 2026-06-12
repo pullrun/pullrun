@@ -33,18 +33,17 @@
 
 #![cfg(target_os = "macos")]
 
-use std::os::fd::FromRawFd;
-use std::path::PathBuf;
-use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::VecDeque;
+use std::os::fd::FromRawFd;
+use std::os::fd::RawFd;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use block2::RcBlock;
-use dispatch2::DispatchQueue;
 use bytes::Bytes;
-use pullrun_vsock::{Frame, FrameType, MAX_PAYLOAD};
+use dispatch2::DispatchQueue;
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyObject, NSObject};
 use objc2::{define_class, msg_send, ClassType, DefinedClass};
@@ -52,14 +51,15 @@ use objc2_foundation::{NSArray, NSError, NSFileHandle, NSObjectProtocol, NSStrin
 use objc2_virtualization::{
     VZConsoleDeviceConfiguration, VZDirectorySharingDeviceConfiguration,
     VZFileHandleSerialPortAttachment, VZGenericPlatformConfiguration, VZLinuxBootLoader,
-    VZNetworkDeviceConfiguration, VZSerialPortAttachment, VZSharedDirectory,
-    VZSingleDirectoryShare, VZSocketDevice, VZSocketDeviceConfiguration,
+    VZNATNetworkDeviceAttachment, VZNetworkDeviceConfiguration, VZSerialPortAttachment,
+    VZSharedDirectory, VZSingleDirectoryShare, VZSocketDevice, VZSocketDeviceConfiguration,
     VZVirtioConsoleDeviceConfiguration, VZVirtioConsolePortConfiguration,
     VZVirtioConsolePortConfigurationArray, VZVirtioFileSystemDeviceConfiguration,
     VZVirtioNetworkDeviceConfiguration, VZVirtioSocketConnection, VZVirtioSocketDevice,
     VZVirtioSocketDeviceConfiguration, VZVirtioSocketListener, VZVirtioSocketListenerDelegate,
-    VZNATNetworkDeviceAttachment, VZVirtualMachine, VZVirtualMachineConfiguration,
+    VZVirtualMachine, VZVirtualMachineConfiguration,
 };
+use pullrun_vsock::{Frame, FrameType, MAX_PAYLOAD};
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
@@ -94,9 +94,7 @@ pub async fn spawn_apple_virt_vm(
     // `Box<Retained<VZVirtualMachine>>`; dropping the
     // handle recovers the box and drops the `Retained`,
     // which stops the VM.
-    let (tx, rx) = tokio::sync::oneshot::channel::<
-        Result<RawHandleParts, AttachError>,
-    >();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<RawHandleParts, AttachError>>();
     tokio::task::spawn_blocking(move || {
         let result = spawn_apple_virt_vm_blocking(cfg);
         let _ = tx.send(result);
@@ -110,9 +108,8 @@ pub async fn spawn_apple_virt_vm(
         unsafe { Box::from_raw(parts.vm_box as *mut Retained<VZVirtualMachine>) };
     let _vm: Retained<VZVirtualMachine> = *vm_box;
     // SAFETY: `parts.conn_box` likewise.
-    let conn_box: Box<Retained<VZVirtioSocketConnection>> = unsafe {
-        Box::from_raw(parts.conn_box as *mut Retained<VZVirtioSocketConnection>)
-    };
+    let conn_box: Box<Retained<VZVirtioSocketConnection>> =
+        unsafe { Box::from_raw(parts.conn_box as *mut Retained<VZVirtioSocketConnection>) };
     let conn: Retained<VZVirtioSocketConnection> = *conn_box;
     Ok(AppleVirtAttachHandle {
         _vm,
@@ -138,9 +135,7 @@ struct RawHandleParts {
     init_hello: pullrun_vsock::Frame,
 }
 
-fn spawn_apple_virt_vm_blocking(
-    cfg: AppleVirtAttachConfig,
-) -> Result<RawHandleParts, AttachError> {
+fn spawn_apple_virt_vm_blocking(cfg: AppleVirtAttachConfig) -> Result<RawHandleParts, AttachError> {
     let port = cfg.vsock_port.unwrap_or(DEFAULT_VSOCK_PORT);
     debug!("building listener + delegate");
 
@@ -154,24 +149,18 @@ fn spawn_apple_virt_vm_blocking(
     let conn_cond: Arc<Condvar> = Arc::new(Condvar::new());
     let delegate = VsockAcceptDelegate::new(conn_slot.clone(), conn_cond.clone());
     let listener = unsafe { VZVirtioSocketListener::new() };
-    unsafe {
-        listener.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(
-            &*delegate,
-        )))
-    };
+    unsafe { listener.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*delegate))) };
 
     // 2. Build the socket device config and pass it to
     //    `build_attach_vm_config` (which calls
     //    `setSocketDevices` internally).
-    let socket_device_config: Retained<VZVirtioSocketDeviceConfiguration> = unsafe {
-        VZVirtioSocketDeviceConfiguration::init(alloc_socket_cfg())
-    };
+    let socket_device_config: Retained<VZVirtioSocketDeviceConfiguration> =
+        unsafe { VZVirtioSocketDeviceConfiguration::init(alloc_socket_cfg()) };
     let socket_device_config_clone: Retained<VZVirtioSocketDeviceConfiguration> =
         socket_device_config.clone();
 
     // 3. Build the full VM config.
-    let vm_config = build_attach_vm_config(&cfg, Some(socket_device_config))
-        .map_err(vm_err)?;
+    let vm_config = build_attach_vm_config(&cfg, Some(socket_device_config)).map_err(vm_err)?;
     let validation: Result<(), Retained<NSError>> = unsafe { vm_config.validateWithError() };
     if let Err(err) = validation {
         let desc = err.localizedDescription();
@@ -199,8 +188,10 @@ fn spawn_apple_virt_vm_blocking(
     // libdispatch trap on recent macOS.
     debug!("constructing VM with main queue");
     let vm_queue: &'static DispatchQueue = DispatchQueue::main();
-    let allocated: Allocated<VZVirtualMachine> = unsafe { msg_send![VZVirtualMachine::class(), alloc] };
-    let vm = unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &vm_config, vm_queue) };
+    let allocated: Allocated<VZVirtualMachine> =
+        unsafe { msg_send![VZVirtualMachine::class(), alloc] };
+    let vm =
+        unsafe { VZVirtualMachine::initWithConfiguration_queue(allocated, &vm_config, vm_queue) };
     debug!("VM constructed");
 
     // 5. Start the VM. Dispatch the call onto the VM's queue
@@ -269,25 +260,19 @@ fn spawn_apple_virt_vm_blocking(
     //    the device is created on VM start.
     debug!("getting runtime socket devices");
     let runtime_socket_devices = unsafe { vm.socketDevices() };
-    let runtime_socket_device_super: Retained<VZSocketDevice> =
-        runtime_socket_devices
-            .firstObject()
-            .ok_or_else(|| {
-                AttachError::Vm("VM has no socket devices after start".into())
-            })?;
+    let runtime_socket_device_super: Retained<VZSocketDevice> = runtime_socket_devices
+        .firstObject()
+        .ok_or_else(|| AttachError::Vm("VM has no socket devices after start".into()))?;
     // Downcast to the concrete `VZVirtioSocketDevice` so
     // we can call `setSocketListener_forPort` on it. The
     // device we configured is a `VZVirtioSocketDevice`, so
     // this should always succeed; if not, it's a framework
     // bug.
-    let runtime_socket_device: Retained<VZVirtioSocketDevice> =
-        runtime_socket_device_super
-            .downcast::<VZVirtioSocketDevice>()
-            .map_err(|_| {
-                AttachError::Vm(
-                    "runtime socket device is not a VZVirtioSocketDevice".into(),
-                )
-            })?;
+    let runtime_socket_device: Retained<VZVirtioSocketDevice> = runtime_socket_device_super
+        .downcast::<VZVirtioSocketDevice>()
+        .map_err(|_| {
+            AttachError::Vm("runtime socket device is not a VZVirtioSocketDevice".into())
+        })?;
     debug!(port, "setting socket listener");
     //
     // The `setSocketListener_forPort:` call must happen on the
@@ -299,8 +284,7 @@ fn spawn_apple_virt_vm_blocking(
     // main thread is already running its runloop.
     let (set_tx, set_rx) = std::sync::mpsc::channel::<()>();
     let listener_addr: usize = std::ptr::addr_of!(*listener) as *const _ as usize;
-    let device_addr: usize =
-        std::ptr::addr_of!(*runtime_socket_device) as *const _ as usize;
+    let device_addr: usize = std::ptr::addr_of!(*runtime_socket_device) as *const _ as usize;
     vm_queue.exec_async(move || {
         // SAFETY: both pointers are kept alive by `Retained`s
         // in the caller's stack. The closure runs on the
@@ -361,11 +345,9 @@ fn spawn_apple_virt_vm_blocking(
     // boundary. The async caller recovers ownership via
     // `Box::from_raw` (see `spawn_apple_virt_vm`).
     let vm_box: Box<Retained<VZVirtualMachine>> = Box::new(vm);
-    let vm_box_ptr: *mut Retained<VZVirtualMachine> =
-        Box::into_raw(vm_box);
+    let vm_box_ptr: *mut Retained<VZVirtualMachine> = Box::into_raw(vm_box);
     let conn_box: Box<Retained<VZVirtioSocketConnection>> = Box::new(conn);
-    let conn_box_ptr: *mut Retained<VZVirtioSocketConnection> =
-        Box::into_raw(conn_box);
+    let conn_box_ptr: *mut Retained<VZVirtioSocketConnection> = Box::into_raw(conn_box);
 
     Ok(RawHandleParts {
         vm_box: vm_box_ptr as usize,
@@ -431,9 +413,8 @@ fn read_init_hello_blocking(
             "InitHello frame payload too large: {len} > {MAX_PAYLOAD}"
         )));
     }
-    let ty = FrameType::from_u8(ty_byte).ok_or_else(|| {
-        AttachError::Vsock(format!("unknown vsock frame type: {ty_byte:#x}"))
-    })?;
+    let ty = FrameType::from_u8(ty_byte)
+        .ok_or_else(|| AttachError::Vsock(format!("unknown vsock frame type: {ty_byte:#x}")))?;
     let mut payload = vec![0u8; len];
     // Loop-read the payload so we can see if it's a short
     // read or an outright EOF. We use a generous timeout
@@ -519,7 +500,6 @@ pub fn run_session_blocking(
     client_in: FrameSource,
     server_out: FrameSink,
 ) -> Result<(), AttachError> {
-
     // 1. Spawn the VM. This is the slow part (boots the
     //    guest, waits for vsock connection, reads
     //    `InitHello`). It returns a `RawHandleParts`; the
@@ -537,13 +517,16 @@ pub fn run_session_blocking(
     let spec_tty = cfg.tty;
     let spec_rows = cfg.initial_rows;
     let spec_cols = cfg.initial_cols;
-    let spec_mounts: Vec<pullrun_vsock::VsockMount> = cfg.mounts.iter().enumerate().map(|(i, m)| {
-        pullrun_vsock::VsockMount {
+    let spec_mounts: Vec<pullrun_vsock::VsockMount> = cfg
+        .mounts
+        .iter()
+        .enumerate()
+        .map(|(i, m)| pullrun_vsock::VsockMount {
             tag: format!("pullrun-vol-{i}"),
             destination: m.destination.clone(),
             read_only: m.options.iter().any(|o| o == "ro"),
-        }
-    }).collect();
+        })
+        .collect();
     let parts = spawn_apple_virt_vm_blocking(cfg)?;
 
     // SAFETY: `parts.vm_box` was leaked via `Box::into_raw`
@@ -555,9 +538,8 @@ pub fn run_session_blocking(
         unsafe { Box::from_raw(parts.vm_box as *mut Retained<VZVirtualMachine>) };
     let _vm: Retained<VZVirtualMachine> = *vm_box;
     // SAFETY: `parts.conn_box` likewise.
-    let conn_box: Box<Retained<VZVirtioSocketConnection>> = unsafe {
-        Box::from_raw(parts.conn_box as *mut Retained<VZVirtioSocketConnection>)
-    };
+    let conn_box: Box<Retained<VZVirtioSocketConnection>> =
+        unsafe { Box::from_raw(parts.conn_box as *mut Retained<VZVirtioSocketConnection>) };
     let conn: Retained<VZVirtioSocketConnection> = *conn_box;
     let handle = AppleVirtAttachHandle {
         _vm,
@@ -748,9 +730,7 @@ pub fn run_session_blocking(
         let ty_byte = hdr[4];
         if len > MAX_PAYLOAD as usize {
             warn!(len, "vsock frame too large");
-            let _ = server_out.send(Frame::Error(format!(
-                "vsock frame too large: {len}"
-            )));
+            let _ = server_out.send(Frame::Error(format!("vsock frame too large: {len}")));
             break Ok(());
         }
         let ty = match FrameType::from_u8(ty_byte) {
@@ -787,9 +767,7 @@ pub fn run_session_blocking(
             Ok(f) => f,
             Err(e) => {
                 warn!(error = ?e, "decode vsock frame");
-                let _ = server_out.send(Frame::Error(format!(
-                    "decode vsock frame: {e:?}"
-                )));
+                let _ = server_out.send(Frame::Error(format!("decode vsock frame: {e:?}")));
                 break Ok(());
             }
         };
@@ -861,9 +839,8 @@ fn build_attach_vm_config(
         unsafe { msg_send![VZLinuxBootLoader::class(), alloc] };
     let boot_loader = unsafe { VZLinuxBootLoader::initWithKernelURL(allocated_bl, &kernel_url) };
     if let Some(initramfs) = cfg.kernel.initramfs_path() {
-        let initramfs_url = NSURL::fileURLWithPath(&NSString::from_str(
-            initramfs.to_string_lossy().as_ref(),
-        ));
+        let initramfs_url =
+            NSURL::fileURLWithPath(&NSString::from_str(initramfs.to_string_lossy().as_ref()));
         unsafe { boot_loader.setInitialRamdiskURL(Some(&initramfs_url)) };
     }
     let mut cmdline = String::from("reboot=t panic=-1 console=hvc0");
@@ -895,23 +872,19 @@ fn build_attach_vm_config(
 
     // 4. Rootfs (VirtioFS).
     let store_tag = NSString::from_str("pullrun-rootfs");
-    let allocated_fs: Allocated<VZVirtioFileSystemDeviceConfiguration> = unsafe {
-        msg_send![VZVirtioFileSystemDeviceConfiguration::class(), alloc]
-    };
+    let allocated_fs: Allocated<VZVirtioFileSystemDeviceConfiguration> =
+        unsafe { msg_send![VZVirtioFileSystemDeviceConfiguration::class(), alloc] };
     let fs_device = unsafe { VZVirtioFileSystemDeviceConfiguration::init(allocated_fs) };
     unsafe { fs_device.setTag(&store_tag) };
     let store_url = NSURL::fileURLWithPath(&NSString::from_str(
         cfg.rootfs_dir.to_string_lossy().as_ref(),
     ));
-    let allocated_sd: Allocated<VZSharedDirectory> = unsafe {
-        msg_send![VZSharedDirectory::class(), alloc]
-    };
-    let shared_dir = unsafe {
-        VZSharedDirectory::initWithURL_readOnly(allocated_sd, &store_url, false)
-    };
-    let allocated_sh: Allocated<VZSingleDirectoryShare> = unsafe {
-        msg_send![VZSingleDirectoryShare::class(), alloc]
-    };
+    let allocated_sd: Allocated<VZSharedDirectory> =
+        unsafe { msg_send![VZSharedDirectory::class(), alloc] };
+    let shared_dir =
+        unsafe { VZSharedDirectory::initWithURL_readOnly(allocated_sd, &store_url, false) };
+    let allocated_sh: Allocated<VZSingleDirectoryShare> =
+        unsafe { msg_send![VZSingleDirectoryShare::class(), alloc] };
     let share = unsafe { VZSingleDirectoryShare::initWithDirectory(allocated_sh, &shared_dir) };
     unsafe { fs_device.setShare(Some(&share)) };
     let mut all_fs_devices: Vec<Retained<VZDirectorySharingDeviceConfiguration>> =
@@ -924,24 +897,19 @@ fn build_attach_vm_config(
         }
         let vol_tag = format!("pullrun-vol-{i}");
         let tag_ns = NSString::from_str(&vol_tag);
-        let allocated_vol: Allocated<VZVirtioFileSystemDeviceConfiguration> = unsafe {
-            msg_send![VZVirtioFileSystemDeviceConfiguration::class(), alloc]
-        };
+        let allocated_vol: Allocated<VZVirtioFileSystemDeviceConfiguration> =
+            unsafe { msg_send![VZVirtioFileSystemDeviceConfiguration::class(), alloc] };
         let vol_device = unsafe { VZVirtioFileSystemDeviceConfiguration::init(allocated_vol) };
         unsafe { vol_device.setTag(&tag_ns) };
-        let source_url = NSURL::fileURLWithPath(&NSString::from_str(
-            mount.source.as_str(),
-        ));
-        let allocated_sd: Allocated<VZSharedDirectory> = unsafe {
-            msg_send![VZSharedDirectory::class(), alloc]
-        };
+        let source_url = NSURL::fileURLWithPath(&NSString::from_str(mount.source.as_str()));
+        let allocated_sd: Allocated<VZSharedDirectory> =
+            unsafe { msg_send![VZSharedDirectory::class(), alloc] };
         let is_read_only = mount.options.iter().any(|o| o == "ro");
         let shared_dir = unsafe {
             VZSharedDirectory::initWithURL_readOnly(allocated_sd, &source_url, is_read_only)
         };
-        let allocated_sh: Allocated<VZSingleDirectoryShare> = unsafe {
-            msg_send![VZSingleDirectoryShare::class(), alloc]
-        };
+        let allocated_sh: Allocated<VZSingleDirectoryShare> =
+            unsafe { msg_send![VZSingleDirectoryShare::class(), alloc] };
         let share = unsafe { VZSingleDirectoryShare::initWithDirectory(allocated_sh, &shared_dir) };
         unsafe { vol_device.setShare(Some(&share)) };
         all_fs_devices.push(vol_device.into_super());
@@ -953,9 +921,8 @@ fn build_attach_vm_config(
 
     // 5. Network: NAT.
     let nat_attachment = unsafe { VZNATNetworkDeviceAttachment::new() };
-    let allocated_net: Allocated<VZVirtioNetworkDeviceConfiguration> = unsafe {
-        msg_send![VZVirtioNetworkDeviceConfiguration::class(), alloc]
-    };
+    let allocated_net: Allocated<VZVirtioNetworkDeviceConfiguration> =
+        unsafe { msg_send![VZVirtioNetworkDeviceConfiguration::class(), alloc] };
     let net_device = unsafe { VZVirtioNetworkDeviceConfiguration::init(allocated_net) };
     unsafe { net_device.setAttachment(Some(&nat_attachment)) };
     let net_array: Retained<NSArray<VZNetworkDeviceConfiguration>> =
@@ -987,10 +954,12 @@ fn build_attach_vm_config(
             NSFileHandle::fileHandleForWritingAtPath(&path_str);
         let write_handle = match write_handle {
             Some(h) => h,
-            None => return Err(format!(
-                "NSFileHandle::fileHandleForWritingAtPath({:?}) returned nil",
-                console_path
-            )),
+            None => {
+                return Err(format!(
+                    "NSFileHandle::fileHandleForWritingAtPath({:?}) returned nil",
+                    console_path
+                ))
+            }
         };
 
         // /dev/null for reading (the guest never reads from console).
@@ -999,13 +968,16 @@ fn build_attach_vm_config(
             NSFileHandle::fileHandleForReadingAtPath(&null_str);
         let null_handle = match null_handle {
             Some(h) => h,
-            None => return Err("NSFileHandle::fileHandleForReadingAtPath(/dev/null) returned nil".into()),
+            None => {
+                return Err(
+                    "NSFileHandle::fileHandleForReadingAtPath(/dev/null) returned nil".into(),
+                )
+            }
         };
 
         // Build the serial port attachment (write → log file, read → /dev/null).
-        let allocated_att: Allocated<VZFileHandleSerialPortAttachment> = unsafe {
-            msg_send![VZFileHandleSerialPortAttachment::class(), alloc]
-        };
+        let allocated_att: Allocated<VZFileHandleSerialPortAttachment> =
+            unsafe { msg_send![VZFileHandleSerialPortAttachment::class(), alloc] };
         let attachment = unsafe {
             VZFileHandleSerialPortAttachment::initWithFileHandleForReading_fileHandleForWriting(
                 allocated_att,
@@ -1018,18 +990,16 @@ fn build_attach_vm_config(
 
         // Build the console port configuration and attach
         // the file handle.
-        let port_alloc: Allocated<VZVirtioConsolePortConfiguration> = unsafe {
-            msg_send![VZVirtioConsolePortConfiguration::class(), alloc]
-        };
+        let port_alloc: Allocated<VZVirtioConsolePortConfiguration> =
+            unsafe { msg_send![VZVirtioConsolePortConfiguration::class(), alloc] };
         let port = unsafe { VZVirtioConsolePortConfiguration::init(port_alloc) };
         // setAttachment is inherited from VZConsolePortConfiguration.
         unsafe { port.setAttachment(Some(&*attachment_as_serial)) };
         unsafe { port.setIsConsole(true) };
 
         // Build the console device and add the port.
-        let dev_alloc: Allocated<VZVirtioConsoleDeviceConfiguration> = unsafe {
-            msg_send![VZVirtioConsoleDeviceConfiguration::class(), alloc]
-        };
+        let dev_alloc: Allocated<VZVirtioConsoleDeviceConfiguration> =
+            unsafe { msg_send![VZVirtioConsoleDeviceConfiguration::class(), alloc] };
         let console_dev = unsafe { VZVirtioConsoleDeviceConfiguration::init(dev_alloc) };
         let ports: Retained<VZVirtioConsolePortConfigurationArray> = unsafe { console_dev.ports() };
         unsafe { ports.setObject_atIndexedSubscript(Some(&*port), 0) };
@@ -1193,13 +1163,16 @@ pub fn spawn_vm_inner(
     let spec_tty = cfg.tty;
     let spec_rows = cfg.initial_rows;
     let spec_cols = cfg.initial_cols;
-    let spec_mounts: Vec<pullrun_vsock::VsockMount> = cfg.mounts.iter().enumerate().map(|(i, m)| {
-        pullrun_vsock::VsockMount {
+    let spec_mounts: Vec<pullrun_vsock::VsockMount> = cfg
+        .mounts
+        .iter()
+        .enumerate()
+        .map(|(i, m)| pullrun_vsock::VsockMount {
             tag: format!("pullrun-vol-{i}"),
             destination: m.destination.clone(),
             read_only: m.options.iter().any(|o| o == "ro"),
-        }
-    }).collect();
+        })
+        .collect();
     let thread_name = format!("vm-{}", cfg.workload_id);
 
     // Boot the VM. The raw parts contain `*mut c_void` pointers
@@ -1230,13 +1203,18 @@ pub fn spawn_vm_inner(
     };
     let spec_bytes = pullrun_vsock::encode(&workload_spec);
     let n = unsafe {
-        libc::write(read_fd, spec_bytes.as_ptr() as *const libc::c_void, spec_bytes.len())
+        libc::write(
+            read_fd,
+            spec_bytes.as_ptr() as *const libc::c_void,
+            spec_bytes.len(),
+        )
     };
     if n < 0 || (n as usize) != spec_bytes.len() {
         unsafe { libc::close(stdin_write_fd) };
         return Err(AttachError::Vsock(format!(
             "write WorkloadSpec: short write ({} of {})",
-            n, spec_bytes.len()
+            n,
+            spec_bytes.len()
         )));
     }
 
@@ -1244,8 +1222,7 @@ pub fn spawn_vm_inner(
     let (stdin_tx, stdin_rx): (sync_mpsc::Sender<Frame>, sync_mpsc::Receiver<Frame>) =
         sync_mpsc::channel();
     let parked_tx = stdin_tx.clone();
-    let (cmd_tx, cmd_rx): (sync_mpsc::Sender<crate::attach::VmCommand>, _) =
-        sync_mpsc::channel();
+    let (cmd_tx, cmd_rx): (sync_mpsc::Sender<crate::attach::VmCommand>, _) = sync_mpsc::channel();
 
     // Raw pointers to the !Send ObjC objects — these are `Send`
     // and will be reconstructed into the handle on the target thread.
@@ -1257,166 +1234,175 @@ pub fn spawn_vm_inner(
     let thread = std::thread::Builder::new()
         .name(thread_name)
         .spawn(move || {
-        // Reconstruct the handle inside the spawned thread, where
-        // the !Send ObjC objects are valid.
-        let vm_box: Box<Retained<VZVirtualMachine>> =
-            unsafe { Box::from_raw(vm_ptr as *mut Retained<VZVirtualMachine>) };
-        let _vm: Retained<VZVirtualMachine> = *vm_box;
-        let conn_box: Box<Retained<VZVirtioSocketConnection>> =
-            unsafe { Box::from_raw(conn_ptr as *mut Retained<VZVirtioSocketConnection>) };
-        let _conn: Retained<VZVirtioSocketConnection> = *conn_box;
-        let handle = AppleVirtAttachHandle {
-            _vm,
-            _conn,
-            fd: read_fd,
-            port,
-            init_hello,
-        };
+            // Reconstruct the handle inside the spawned thread, where
+            // the !Send ObjC objects are valid.
+            let vm_box: Box<Retained<VZVirtualMachine>> =
+                unsafe { Box::from_raw(vm_ptr as *mut Retained<VZVirtualMachine>) };
+            let _vm: Retained<VZVirtualMachine> = *vm_box;
+            let conn_box: Box<Retained<VZVirtioSocketConnection>> =
+                unsafe { Box::from_raw(conn_ptr as *mut Retained<VZVirtioSocketConnection>) };
+            let _conn: Retained<VZVirtioSocketConnection> = *conn_box;
+            let handle = AppleVirtAttachHandle {
+                _vm,
+                _conn,
+                fd: read_fd,
+                port,
+                init_hello,
+            };
 
-        let read_file = unsafe { std::fs::File::from_raw_fd(read_fd) };
-        let mut client_out: Option<sync_mpsc::Sender<Frame>> = None;
-        let mut session_id: u64 = 0;
-        let mut pending_frames: VecDeque<Frame> = VecDeque::new();
-        let mut header_buf = [0u8; HEADER_LEN + TYPE_LEN];
+            let read_file = unsafe { std::fs::File::from_raw_fd(read_fd) };
+            let mut client_out: Option<sync_mpsc::Sender<Frame>> = None;
+            let mut session_id: u64 = 0;
+            let mut pending_frames: VecDeque<Frame> = VecDeque::new();
+            let mut header_buf = [0u8; HEADER_LEN + TYPE_LEN];
 
-        loop {
-            // --- Command channel ---
-            match cmd_rx.try_recv() {
-                Ok(crate::attach::VmCommand::AttachClient { session_id: sid, stdout_tx }) => {
-                    session_id = sid;
-                    client_out = Some(stdout_tx);
-                    while let Some(frame) = pending_frames.pop_front() {
-                        if client_out.as_ref().unwrap().send(frame).is_err() {
-                            client_out = None;
-                            break;
-                        }
-                    }
-                    // If the shell was idle (no pending output), send a newline to
-                    // trigger a prompt redraw so the user sees / # immediately.
-                    if client_out.is_some() && pending_frames.is_empty() {
-                        let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(Bytes::from_static(b"\n")));
-                        unsafe {
-                            libc::write(
-                                stdin_write_fd,
-                                encoded.as_ptr() as *const libc::c_void,
-                                encoded.len(),
-                            );
-                        }
-                    }
-                }
-                Ok(crate::attach::VmCommand::DetachClient { session_id: sid }) => {
-                    if session_id == sid {
-                        client_out = None;
-                    }
-                }
-                Ok(crate::attach::VmCommand::Shutdown) | Err(sync_mpsc::TryRecvError::Disconnected) => {
-                    let _ = client_out.take();
-                    break;
-                }
-                Err(sync_mpsc::TryRecvError::Empty) => {}
-            }
-
-            // --- Stdin from attached client ---
             loop {
-                match stdin_rx.try_recv() {
-                    Ok(Frame::WorkloadStdin(data)) => {
-                        let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(data));
-                        unsafe {
-                            libc::write(
-                                stdin_write_fd,
-                                encoded.as_ptr() as *const libc::c_void,
-                                encoded.len(),
-                            );
+                // --- Command channel ---
+                match cmd_rx.try_recv() {
+                    Ok(crate::attach::VmCommand::AttachClient {
+                        session_id: sid,
+                        stdout_tx,
+                    }) => {
+                        session_id = sid;
+                        client_out = Some(stdout_tx);
+                        while let Some(frame) = pending_frames.pop_front() {
+                            if client_out.as_ref().unwrap().send(frame).is_err() {
+                                client_out = None;
+                                break;
+                            }
+                        }
+                        // If the shell was idle (no pending output), send a newline to
+                        // trigger a prompt redraw so the user sees / # immediately.
+                        if client_out.is_some() && pending_frames.is_empty() {
+                            let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(
+                                Bytes::from_static(b"\n"),
+                            ));
+                            unsafe {
+                                libc::write(
+                                    stdin_write_fd,
+                                    encoded.as_ptr() as *const libc::c_void,
+                                    encoded.len(),
+                                );
+                            }
                         }
                     }
-                    Ok(Frame::StdinEof) => {
-                        let encoded = pullrun_vsock::encode(&Frame::StdinEof);
-                        unsafe {
-                            libc::write(
-                                stdin_write_fd,
-                                encoded.as_ptr() as *const libc::c_void,
-                                encoded.len(),
-                            );
-                            libc::shutdown(stdin_write_fd, libc::SHUT_WR);
+                    Ok(crate::attach::VmCommand::DetachClient { session_id: sid }) => {
+                        if session_id == sid {
+                            client_out = None;
                         }
                     }
-                    Err(sync_mpsc::TryRecvError::Empty) => break,
-                    Err(sync_mpsc::TryRecvError::Disconnected) => {
-                        // Parked sender keeps channel alive.
+                    Ok(crate::attach::VmCommand::Shutdown)
+                    | Err(sync_mpsc::TryRecvError::Disconnected) => {
+                        let _ = client_out.take();
                         break;
                     }
-                    _ => {}
+                    Err(sync_mpsc::TryRecvError::Empty) => {}
                 }
-            }
 
-            // --- Read from vsock (poll with 100ms timeout) ---
-            let mut pollfd = libc::pollfd {
-                fd: read_fd,
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            let poll_ret = unsafe { libc::poll(&mut pollfd as *mut _, 1, 100) };
-
-            if poll_ret > 0 && (pollfd.revents & libc::POLLIN) != 0 {
-                // Read header — uses non-exact read to handle short reads
-                // (same pattern as run_session_blocking).
-                let n = match std::io::Read::read(&mut &read_file, &mut header_buf) {
-                    Ok(0) => break, // EOF
-                    Ok(n) => n,
-                    Err(_) => break,
-                };
-                if n < HEADER_LEN + TYPE_LEN {
-                    continue; // short header, retry on next poll
-                }
-                let len = u32::from_be_bytes([
-                    header_buf[0], header_buf[1], header_buf[2], header_buf[3],
-                ]) as usize;
-                let ty_byte = header_buf[4];
-                let ty = match FrameType::from_u8(ty_byte) {
-                    Some(t) => t,
-                    None => continue,
-                };
-                let mut payload = vec![0u8; len];
-                let mut got = 0usize;
-                while got < len {
-                    match std::io::Read::read(&mut &read_file, &mut payload[got..]) {
-                        Ok(0) => break,
-                        Ok(m) => got += m,
-                        Err(_) => break,
-                    }
-                }
-                if got < len {
-                    continue;
-                }
-                if let Ok(frame) = pullrun_vsock::decode(&payload, ty) {
-                    let is_exit = matches!(frame, Frame::WorkloadExit { .. });
-                    // Forward to attached client, or buffer if none.
-                    if let Some(ref tx) = client_out {
-                        if tx.send(frame).is_err() {
-                            client_out = None; // client hung up
+                // --- Stdin from attached client ---
+                loop {
+                    match stdin_rx.try_recv() {
+                        Ok(Frame::WorkloadStdin(data)) => {
+                            let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(data));
+                            unsafe {
+                                libc::write(
+                                    stdin_write_fd,
+                                    encoded.as_ptr() as *const libc::c_void,
+                                    encoded.len(),
+                                );
+                            }
                         }
-                    } else {
-                        pending_frames.push_back(frame);
-                    }
-                    if is_exit {
-                        break; // workload exited — stop VM
+                        Ok(Frame::StdinEof) => {
+                            let encoded = pullrun_vsock::encode(&Frame::StdinEof);
+                            unsafe {
+                                libc::write(
+                                    stdin_write_fd,
+                                    encoded.as_ptr() as *const libc::c_void,
+                                    encoded.len(),
+                                );
+                                libc::shutdown(stdin_write_fd, libc::SHUT_WR);
+                            }
+                        }
+                        Err(sync_mpsc::TryRecvError::Empty) => break,
+                        Err(sync_mpsc::TryRecvError::Disconnected) => {
+                            // Parked sender keeps channel alive.
+                            break;
+                        }
+                        _ => {}
                     }
                 }
-            } else if poll_ret < 0 {
-                break; // poll error
+
+                // --- Read from vsock (poll with 100ms timeout) ---
+                let mut pollfd = libc::pollfd {
+                    fd: read_fd,
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                let poll_ret = unsafe { libc::poll(&mut pollfd as *mut _, 1, 100) };
+
+                if poll_ret > 0 && (pollfd.revents & libc::POLLIN) != 0 {
+                    // Read header — uses non-exact read to handle short reads
+                    // (same pattern as run_session_blocking).
+                    let n = match std::io::Read::read(&mut &read_file, &mut header_buf) {
+                        Ok(0) => break, // EOF
+                        Ok(n) => n,
+                        Err(_) => break,
+                    };
+                    if n < HEADER_LEN + TYPE_LEN {
+                        continue; // short header, retry on next poll
+                    }
+                    let len = u32::from_be_bytes([
+                        header_buf[0],
+                        header_buf[1],
+                        header_buf[2],
+                        header_buf[3],
+                    ]) as usize;
+                    let ty_byte = header_buf[4];
+                    let ty = match FrameType::from_u8(ty_byte) {
+                        Some(t) => t,
+                        None => continue,
+                    };
+                    let mut payload = vec![0u8; len];
+                    let mut got = 0usize;
+                    while got < len {
+                        match std::io::Read::read(&mut &read_file, &mut payload[got..]) {
+                            Ok(0) => break,
+                            Ok(m) => got += m,
+                            Err(_) => break,
+                        }
+                    }
+                    if got < len {
+                        continue;
+                    }
+                    if let Ok(frame) = pullrun_vsock::decode(&payload, ty) {
+                        let is_exit = matches!(frame, Frame::WorkloadExit { .. });
+                        // Forward to attached client, or buffer if none.
+                        if let Some(ref tx) = client_out {
+                            if tx.send(frame).is_err() {
+                                client_out = None; // client hung up
+                            }
+                        } else {
+                            pending_frames.push_back(frame);
+                        }
+                        if is_exit {
+                            break; // workload exited — stop VM
+                        }
+                    }
+                } else if poll_ret < 0 {
+                    break; // poll error
+                }
             }
-        }
 
-        // --- Cleanup ---
-        drop(read_file);
-        unsafe { libc::close(stdin_write_fd) };
-        drop(handle);
+            // --- Cleanup ---
+            drop(read_file);
+            unsafe { libc::close(stdin_write_fd) };
+            drop(handle);
 
-        if let Some(cb) = on_exit {
-            cb();
-        }
-    })
-    .expect("spawn VM background thread");
+            if let Some(cb) = on_exit {
+                cb();
+            }
+        })
+        .expect("spawn VM background thread");
 
     Ok(VmPersistentHandleInner {
         _parked_tx: parked_tx,
@@ -1489,7 +1475,9 @@ pub fn attach_to_vm_inner(
     }
 
     // Detach cleanly — VM keeps running.
-    let _ = handle.cmd_tx.send(crate::attach::VmCommand::DetachClient { session_id });
+    let _ = handle
+        .cmd_tx
+        .send(crate::attach::VmCommand::DetachClient { session_id });
     drop(stdin_handle);
 
     Ok(())

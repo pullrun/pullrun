@@ -1,19 +1,25 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-pub mod puller;
 pub mod converter;
-pub mod materializer;
 pub mod dag_export;
 pub mod dag_import;
-pub mod push;
 pub mod dockerfile;
+pub mod materializer;
+pub mod puller;
+pub mod push;
 
-pub use converter::{OciToDagConverter, ManifestData, DirectoryEntry};
+pub use converter::{DirectoryEntry, ManifestData, OciToDagConverter};
 
 pub use dag_export::export_dag_to_tar;
 pub use dag_import::import_dag_from_tar;
-pub use dockerfile::{Dockerfile, BuildStage, Instruction, build_dag_from_directory, build_dag_from_directory_with_platform, DagDirectory};
+pub use dockerfile::{
+    build_dag_from_directory, build_dag_from_directory_with_platform, BuildStage, DagDirectory,
+    Dockerfile, Instruction,
+};
 pub use materializer::OciMaterializer;
-pub use puller::{OciError, OciPuller, PulledImage, PulledImageList, OciAuth, OciManifest, OciImageConfig, OciDescriptor, parse_platform, current_arch};
+pub use puller::{
+    current_arch, parse_platform, OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest,
+    OciPuller, PulledImage, PulledImageList,
+};
 pub use push::DagPusher;

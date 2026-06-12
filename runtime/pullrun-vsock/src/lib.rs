@@ -260,13 +260,24 @@ impl Frame {
     /// tag) into a fresh buffer.
     fn encode_payload(&self) -> Bytes {
         match self {
-            Self::InitHello { workload_id, init_pid } => {
+            Self::InitHello {
+                workload_id,
+                init_pid,
+            } => {
                 let mut buf = BytesMut::new();
                 buf.put_u32(*init_pid);
                 write_length_prefixed_string(&mut buf, workload_id);
                 buf.freeze()
             }
-            Self::WorkloadSpec { command, env, working_dir, tty, rows, cols, mounts } => {
+            Self::WorkloadSpec {
+                command,
+                env,
+                working_dir,
+                tty,
+                rows,
+                cols,
+                mounts,
+            } => {
                 let mut buf = BytesMut::new();
                 buf.put_u32(command.len() as u32);
                 for s in command {
@@ -288,9 +299,7 @@ impl Frame {
                 }
                 buf.freeze()
             }
-            Self::WorkloadStdout(b) | Self::WorkloadStderr(b) | Self::WorkloadStdin(b) => {
-                b.clone()
-            }
+            Self::WorkloadStdout(b) | Self::WorkloadStderr(b) | Self::WorkloadStdin(b) => b.clone(),
             Self::StdinEof => Bytes::new(),
             Self::WorkloadExit { exit_code, signal } => {
                 let mut buf = BytesMut::new();
@@ -338,7 +347,10 @@ impl Frame {
                 }
                 let init_pid = cur.get_u32();
                 let workload_id = read_length_prefixed_string(&mut cur, ty)?;
-                Self::InitHello { workload_id, init_pid }
+                Self::InitHello {
+                    workload_id,
+                    init_pid,
+                }
             }
             FrameType::WorkloadSpec => {
                 if cur.remaining() < 4 {
@@ -371,8 +383,16 @@ impl Frame {
                 } else {
                     false // backward compat with old frames that lack the tty byte
                 };
-                let rows = if cur.remaining() >= 4 { cur.get_u32() } else { 0 };
-                let cols = if cur.remaining() >= 4 { cur.get_u32() } else { 0 };
+                let rows = if cur.remaining() >= 4 {
+                    cur.get_u32()
+                } else {
+                    0
+                };
+                let cols = if cur.remaining() >= 4 {
+                    cur.get_u32()
+                } else {
+                    0
+                };
                 let mounts = if cur.remaining() >= 4 {
                     let n = cur.get_u32() as usize;
                     let mut mounts = Vec::with_capacity(n);
@@ -380,13 +400,25 @@ impl Frame {
                         let tag = read_length_prefixed_string(&mut cur, ty)?;
                         let destination = read_length_prefixed_string(&mut cur, ty)?;
                         let read_only = cur.get_u8() != 0;
-                        mounts.push(VsockMount { tag, destination, read_only });
+                        mounts.push(VsockMount {
+                            tag,
+                            destination,
+                            read_only,
+                        });
                     }
                     mounts
                 } else {
                     Vec::new()
                 };
-                Self::WorkloadSpec { command, env, working_dir, tty, rows, cols, mounts }
+                Self::WorkloadSpec {
+                    command,
+                    env,
+                    working_dir,
+                    tty,
+                    rows,
+                    cols,
+                    mounts,
+                }
             }
             FrameType::WorkloadStdout => Self::WorkloadStdout(cur),
             FrameType::WorkloadStderr => Self::WorkloadStderr(cur),
@@ -405,7 +437,11 @@ impl Frame {
                 let has_signal = (flags & 0x02) != 0;
                 let exit_code = if has_code {
                     if cur.remaining() < 4 {
-                        return Err(ProtocolError::Truncated { ty, needed: 4, got: cur.remaining() });
+                        return Err(ProtocolError::Truncated {
+                            ty,
+                            needed: 4,
+                            got: cur.remaining(),
+                        });
                     }
                     Some(cur.get_i32())
                 } else {
@@ -413,7 +449,11 @@ impl Frame {
                 };
                 let signal = if has_signal {
                     if cur.remaining() < 4 {
-                        return Err(ProtocolError::Truncated { ty, needed: 4, got: cur.remaining() });
+                        return Err(ProtocolError::Truncated {
+                            ty,
+                            needed: 4,
+                            got: cur.remaining(),
+                        });
                     }
                     Some(cur.get_i32())
                 } else {
@@ -542,9 +582,7 @@ pub fn decode(payload: &[u8], ty: FrameType) -> Result<Frame, ProtocolError> {
 }
 
 /// Read a single frame from a byte stream.
-pub async fn read_frame<R: AsyncRead + Unpin>(
-    r: &mut R,
-) -> Result<Frame, ProtocolError> {
+pub async fn read_frame<R: AsyncRead + Unpin>(r: &mut R) -> Result<Frame, ProtocolError> {
     // 1. 4-byte big-endian length prefix.
     let mut hdr = [0u8; 5];
     r.read_exact(&mut hdr).await.map_err(|e| {
@@ -592,10 +630,7 @@ fn write_length_prefixed_string(buf: &mut BytesMut, s: &str) {
     buf.extend_from_slice(bytes);
 }
 
-fn read_length_prefixed_string(
-    cur: &mut Bytes,
-    ty: FrameType,
-) -> Result<String, ProtocolError> {
+fn read_length_prefixed_string(cur: &mut Bytes, ty: FrameType) -> Result<String, ProtocolError> {
     if cur.remaining() < 4 {
         return Err(ProtocolError::Truncated {
             ty,

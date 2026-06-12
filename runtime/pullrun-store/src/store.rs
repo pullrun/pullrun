@@ -55,9 +55,8 @@ pub struct ArchivedNodeGuard {
 
 impl ArchivedNodeGuard {
     fn new(digest: &Digest, mmap: Arc<Mmap>) -> Result<Self, StoreError> {
-        let ptr: *const ArchivedDagNode =
-            rkyv::check_archived_root::<DagNode>(&mmap[..])
-                .map_err(|e| StoreError::Corrupted(*digest, e.to_string()))?;
+        let ptr: *const ArchivedDagNode = rkyv::check_archived_root::<DagNode>(&mmap[..])
+            .map_err(|e| StoreError::Corrupted(*digest, e.to_string()))?;
         Ok(Self {
             _mmap: mmap,
             archived: ptr,
@@ -131,14 +130,20 @@ impl MmapStore {
 
     fn path_for(&self, digest: &Digest) -> PathBuf {
         let hex = digest.as_hex();
-        assert!(hex.len() >= 4 && hex.is_char_boundary(4), "digest too short or at char boundary");
+        assert!(
+            hex.len() >= 4 && hex.is_char_boundary(4),
+            "digest too short or at char boundary"
+        );
         let (a, b, rest) = (&hex[0..2], &hex[2..4], &hex[4..]);
         self.root.join(a).join(b).join(rest).join("node.rkyv")
     }
 
     fn path_for_blob(&self, digest: &Digest) -> PathBuf {
         let hex = digest.as_hex();
-        assert!(hex.len() >= 4 && hex.is_char_boundary(4), "digest too short or at char boundary");
+        assert!(
+            hex.len() >= 4 && hex.is_char_boundary(4),
+            "digest too short or at char boundary"
+        );
         let (a, b, rest) = (&hex[0..2], &hex[2..4], &hex[4..]);
         self.root.join(a).join(b).join(rest).join("blob.raw")
     }
@@ -148,9 +153,8 @@ impl MmapStore {
     }
 
     pub async fn put(&self, node: &DagNode) -> Result<Digest, StoreError> {
-        let bytes = rkyv::to_bytes::<_, 256>(node).map_err(|e| {
-            StoreError::Serialization(format!("rkyv serialization failed: {e}"))
-        })?;
+        let bytes = rkyv::to_bytes::<_, 256>(node)
+            .map_err(|e| StoreError::Serialization(format!("rkyv serialization failed: {e}")))?;
 
         let digest = Self::compute_digest(&bytes);
         let path = self.path_for(&digest);
@@ -170,9 +174,8 @@ impl MmapStore {
     }
 
     pub fn put_blocking(&self, node: &DagNode) -> Result<Digest, StoreError> {
-        let bytes = rkyv::to_bytes::<_, 256>(node).map_err(|e| {
-            StoreError::Serialization(format!("rkyv serialization failed: {e}"))
-        })?;
+        let bytes = rkyv::to_bytes::<_, 256>(node)
+            .map_err(|e| StoreError::Serialization(format!("rkyv serialization failed: {e}")))?;
 
         let digest = Self::compute_digest(&bytes);
         let path = self.path_for(&digest);
@@ -497,7 +500,10 @@ mod tests {
         assert_eq!(store.cached_node_count(), 3);
         let bytes_after = store.total_bytes();
         assert!(bytes_after > 0, "got {bytes_after}");
-        assert!(bytes_after < 1024 * 1024, "store grew unexpectedly large: {bytes_after}");
+        assert!(
+            bytes_after < 1024 * 1024,
+            "store grew unexpectedly large: {bytes_after}"
+        );
 
         let d1b = store.put(&DagNode::blob(b"alpha".to_vec())).await.unwrap();
         assert_eq!(d1, d1b, "identical content must hash to the same digest");
@@ -517,10 +523,7 @@ mod tests {
         let d1 = d(&"aa".repeat(32));
         let d2 = d(&"bb".repeat(32));
 
-        let node = DagNode::manifest(
-            vec![d1, d2],
-            b"image config for concurrent test".to_vec(),
-        );
+        let node = DagNode::manifest(vec![d1, d2], b"image config for concurrent test".to_vec());
         let digest = store.put(&node).await.unwrap();
 
         let mut handles = vec![];
@@ -532,7 +535,10 @@ mod tests {
                 let archived = unsafe { rkyv::archived_root::<DagNode>(&mmap[..]) };
                 assert!(archived.is_manifest());
                 assert_eq!(archived.edges.len(), 2);
-                assert_eq!(archived.inline_data.as_ref(), b"image config for concurrent test");
+                assert_eq!(
+                    archived.inline_data.as_ref(),
+                    b"image config for concurrent test"
+                );
             }));
         }
 
@@ -560,10 +566,7 @@ mod tests {
             handles.push(thread::spawn(move || {
                 let archived_ref = store.get_archived(&digest).unwrap();
                 assert!(archived_ref.is_manifest());
-                assert_eq!(
-                    archived_ref.inline_data.as_ref(),
-                    b"manifest bytes"
-                );
+                assert_eq!(archived_ref.inline_data.as_ref(), b"manifest bytes");
             }));
         }
 
@@ -621,9 +624,6 @@ mod tests {
         let blob_mmap = store.get(&tree_edges[0]).unwrap();
         let blob_node = unsafe { rkyv::archived_root::<DagNode>(&blob_mmap[..]) };
         assert!(blob_node.is_blob());
-        assert_eq!(
-            blob_node.inline_data.as_ref(),
-            b"file content"
-        );
+        assert_eq!(blob_node.inline_data.as_ref(), b"file content");
     }
 }

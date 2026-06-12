@@ -77,8 +77,8 @@ pub use pullrun_vsock::DEFAULT_VSOCK_PORT as DEFAULT_HOST_VSOCK_PORT;
 pub async fn run() -> Result<(), InitError> {
     info!("pullrun-init starting");
 
-    let workload_id = std::env::var("PULLRUN_WORKLOAD_ID")
-        .unwrap_or_else(|_| "(unset)".to_string());
+    let workload_id =
+        std::env::var("PULLRUN_WORKLOAD_ID").unwrap_or_else(|_| "(unset)".to_string());
     let init_pid = std::process::id();
 
     // 1. Connect to the host over vsock.
@@ -108,7 +108,15 @@ pub async fn run() -> Result<(), InitError> {
             mounts,
         } => {
             info!(?command, working_dir = %working_dir, env_count = env.len(), tty, rows, cols, mount_count = mounts.len(), "got workload spec");
-            Workload { command, env, working_dir, tty, rows, cols, mounts }
+            Workload {
+                command,
+                env,
+                working_dir,
+                tty,
+                rows,
+                cols,
+                mounts,
+            }
         }
         pullrun_vsock::Frame::Error(msg) => {
             return Err(InitError::HostRejected(msg));
@@ -185,12 +193,12 @@ impl Workload {
     #[cfg(target_os = "linux")]
     fn mount_volumes(&self) -> Result<(), InitError> {
         for m in &self.mounts {
-            std::fs::create_dir_all(&m.destination)
-                .map_err(InitError::Io)?;
+            std::fs::create_dir_all(&m.destination).map_err(InitError::Io)?;
             let tag_c = std::ffi::CString::new(m.tag.as_bytes())
                 .map_err(|_| InitError::Exec(format!("NUL in mount tag: {}", m.tag)))?;
-            let dest_c = std::ffi::CString::new(m.destination.as_bytes())
-                .map_err(|_| InitError::Exec(format!("NUL in mount destination: {}", m.destination)))?;
+            let dest_c = std::ffi::CString::new(m.destination.as_bytes()).map_err(|_| {
+                InitError::Exec(format!("NUL in mount destination: {}", m.destination))
+            })?;
             let fs_type_c = std::ffi::CString::new("virtiofs")
                 .map_err(|_| InitError::Exec("NUL in virtiofs".into()))?;
             let flags: libc::c_ulong = if m.read_only {
@@ -218,10 +226,7 @@ impl Workload {
     /// Spawn the workload, wire stdio to vsock, and return when
     /// the workload exits.  Dispatches to the PTY or piped
     /// implementation based on `self.tty`.
-    async fn run(
-        self,
-        client: &mut VsockClient,
-    ) -> Result<WorkloadExit, InitError> {
+    async fn run(self, client: &mut VsockClient) -> Result<WorkloadExit, InitError> {
         #[cfg(target_os = "linux")]
         self.mount_volumes()?;
         if self.tty {
@@ -238,10 +243,7 @@ impl Workload {
     /// master side and vsock.  This gives the workload a real
     /// TTY (isatty = true) so interactive programs like shells
     /// and editors work properly.
-    async fn run_tty(
-        self,
-        client: &mut VsockClient,
-    ) -> Result<WorkloadExit, InitError> {
+    async fn run_tty(self, client: &mut VsockClient) -> Result<WorkloadExit, InitError> {
         use std::io::Read;
         use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
         use tokio::io::unix::AsyncFd;
@@ -278,10 +280,7 @@ impl Workload {
                 std::ptr::null(),
             );
             let _ = libc::unlink(c"/dev/ptmx".as_ptr());
-            libc::symlink(
-                c"pts/ptmx".as_ptr(),
-                c"/dev/ptmx".as_ptr(),
-            );
+            libc::symlink(c"pts/ptmx".as_ptr(), c"/dev/ptmx".as_ptr());
         }
         // On macOS the host provides devfs with ptmx already
         // available, so nothing extra is needed.
@@ -313,10 +312,7 @@ impl Workload {
                 let _ = libc::close(master);
                 return Err(InitError::Exec(format!("ptsname: {e}")));
             }
-            let slave = libc::open(
-                slave_name,
-                libc::O_RDWR | libc::O_CLOEXEC,
-            );
+            let slave = libc::open(slave_name, libc::O_RDWR | libc::O_CLOEXEC);
             if slave < 0 {
                 let e = std::io::Error::last_os_error();
                 let _ = libc::close(master);
@@ -409,10 +405,7 @@ impl Workload {
                     //    terminal, the kernel automatically
                     //    associates this device as the controlling
                     //    terminal.
-                    let slave_fd = libc::open(
-                        slave_name_c.as_ptr(),
-                        libc::O_RDWR | libc::O_NOCTTY,
-                    );
+                    let slave_fd = libc::open(slave_name_c.as_ptr(), libc::O_RDWR | libc::O_NOCTTY);
                     if slave_fd < 0 {
                         libc::_exit(127);
                     }
@@ -434,10 +427,7 @@ impl Workload {
 
                     // 5. Set the working directory if specified.
                     if !self.working_dir.is_empty() {
-                        let cwd = std::ffi::CString::new(
-                            self.working_dir.clone(),
-                        )
-                        .unwrap();
+                        let cwd = std::ffi::CString::new(self.working_dir.clone()).unwrap();
                         libc::chdir(cwd.as_ptr());
                     }
 
@@ -447,15 +437,9 @@ impl Workload {
                     // libc::clearenv();
                     for var in &self.env {
                         if let Some((k, v)) = var.split_once('=') {
-                            let key =
-                                std::ffi::CString::new(k).unwrap();
-                            let val =
-                                std::ffi::CString::new(v).unwrap();
-                            libc::setenv(
-                                key.as_ptr(),
-                                val.as_ptr(),
-                                1,
-                            );
+                            let key = std::ffi::CString::new(k).unwrap();
+                            let val = std::ffi::CString::new(v).unwrap();
+                            libc::setenv(key.as_ptr(), val.as_ptr(), 1);
                         }
                     }
 
@@ -465,43 +449,28 @@ impl Workload {
                     // cursor movement, etc.).
                     if self.tty {
                         let term = std::ffi::CString::new("xterm-256color").unwrap();
-                        libc::setenv(
-                            c"TERM".as_ptr(),
-                            term.as_ptr(),
-                            1,
-                        );
+                        libc::setenv(c"TERM".as_ptr(), term.as_ptr(), 1);
                         let cols_str = std::ffi::CString::new(
-                            (if self.cols > 0 { self.cols } else { 80 }).to_string()
-                        ).unwrap();
+                            (if self.cols > 0 { self.cols } else { 80 }).to_string(),
+                        )
+                        .unwrap();
                         let rows_str = std::ffi::CString::new(
-                            (if self.rows > 0 { self.rows } else { 24 }).to_string()
-                        ).unwrap();
-                        libc::setenv(
-                            c"COLUMNS".as_ptr(),
-                            cols_str.as_ptr(),
-                            1,
-                        );
-                        libc::setenv(
-                            c"LINES".as_ptr(),
-                            rows_str.as_ptr(),
-                            1,
-                        );
+                            (if self.rows > 0 { self.rows } else { 24 }).to_string(),
+                        )
+                        .unwrap();
+                        libc::setenv(c"COLUMNS".as_ptr(), cols_str.as_ptr(), 1);
+                        libc::setenv(c"LINES".as_ptr(), rows_str.as_ptr(), 1);
                     }
 
                     // 7. Build the argv array for execvp.
-                    let c_command = std::ffi::CString::new(command.clone())
-                        .unwrap();
+                    let c_command = std::ffi::CString::new(command.clone()).unwrap();
                     let c_args: Vec<std::ffi::CString> = self
                         .command
                         .iter()
-                        .map(|a| {
-                            std::ffi::CString::new(a.clone()).unwrap()
-                        })
+                        .map(|a| std::ffi::CString::new(a.clone()).unwrap())
                         .collect();
-                    let mut arg_ptrs: Vec<*const libc::c_char> = c_args
-                        .iter()
-                        .map(|a| a.as_ptr())
-                        .collect();
+                    let mut arg_ptrs: Vec<*const libc::c_char> =
+                        c_args.iter().map(|a| a.as_ptr()).collect();
                     arg_ptrs.push(std::ptr::null());
 
                     libc::execvp(c_command.as_ptr(), arg_ptrs.as_ptr());
@@ -521,17 +490,15 @@ impl Workload {
         // has an independent fd (reading and writing from the
         // same fd concurrently with epoll is fine, but having
         // separate fds avoids subtle issues).
-        let master_dup = master_fd.try_clone().map_err(|e| {
-            InitError::Exec(format!("dup master: {e}"))
-        })?;
+        let master_dup = master_fd
+            .try_clone()
+            .map_err(|e| InitError::Exec(format!("dup master: {e}")))?;
         let master_read_file = unsafe { std::fs::File::from_raw_fd(master_fd.into_raw_fd()) };
         let master_write_file = unsafe { std::fs::File::from_raw_fd(master_dup.into_raw_fd()) };
-        let read_async = AsyncFd::new(master_read_file).map_err(|e| {
-            InitError::Exec(format!("AsyncFd read: {e}"))
-        })?;
-        let write_async = AsyncFd::new(master_write_file).map_err(|e| {
-            InitError::Exec(format!("AsyncFd write: {e}"))
-        })?;
+        let read_async = AsyncFd::new(master_read_file)
+            .map_err(|e| InitError::Exec(format!("AsyncFd read: {e}")))?;
+        let write_async = AsyncFd::new(master_write_file)
+            .map_err(|e| InitError::Exec(format!("AsyncFd write: {e}")))?;
 
         let client_a = client.clone();
         let client_b = client.clone();
@@ -617,7 +584,9 @@ impl Workload {
                             ws_xpixel: 0,
                             ws_ypixel: 0,
                         };
-                        unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &ws); }
+                        unsafe {
+                            libc::ioctl(fd, libc::TIOCSWINSZ, &ws);
+                        }
                     }
                     _ => {}
                 }
@@ -658,10 +627,7 @@ impl Workload {
     /// tokio tasks to shuttle bytes between the pipes and
     /// the vsock stream.  This is the default when
     /// `tty=false`.
-    async fn run_piped(
-        self,
-        client: &mut VsockClient,
-    ) -> Result<WorkloadExit, InitError> {
+    async fn run_piped(self, client: &mut VsockClient) -> Result<WorkloadExit, InitError> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::process::Command;
 
@@ -701,15 +667,18 @@ impl Workload {
             .spawn()
             .map_err(|e| InitError::Exec(format!("spawn {}: {e}", command)))?;
 
-        let mut stdin = child.stdin.take().ok_or_else(|| {
-            InitError::Exec("child stdin not captured".into())
-        })?;
-        let mut stdout = child.stdout.take().ok_or_else(|| {
-            InitError::Exec("child stdout not captured".into())
-        })?;
-        let mut stderr = child.stderr.take().ok_or_else(|| {
-            InitError::Exec("child stderr not captured".into())
-        })?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| InitError::Exec("child stdin not captured".into()))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| InitError::Exec("child stdout not captured".into()))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| InitError::Exec("child stderr not captured".into()))?;
 
         // The vsock client is cheaply cloneable (Arc inside),
         // so each task gets its own handle. The underlying
@@ -789,9 +758,10 @@ impl Workload {
         });
 
         // Wait for the child to exit.
-        let status = child.wait().await.map_err(|e| {
-            InitError::Exec(format!("waitpid: {e}"))
-        })?;
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| InitError::Exec(format!("waitpid: {e}")))?;
 
         // Cancel the I/O tasks (they'll exit when their pipes
         // close naturally).

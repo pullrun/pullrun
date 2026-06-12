@@ -17,18 +17,35 @@ use crate::OciError;
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
-    Run { command: Vec<String> },
-    Copy { sources: Vec<String>, dest: String },
+    Run {
+        command: Vec<String>,
+    },
+    Copy {
+        sources: Vec<String>,
+        dest: String,
+    },
     WorkDir(String),
-    Env { key: String, value: String },
+    Env {
+        key: String,
+        value: String,
+    },
     Cmd(Vec<String>),
     Entrypoint(Vec<String>),
     Expose(u16),
-    Label { key: String, value: String },
+    Label {
+        key: String,
+        value: String,
+    },
     User(String),
-    Arg { name: String, default: Option<String> },
+    Arg {
+        name: String,
+        default: Option<String>,
+    },
     Shell(Vec<String>),
-    Add { sources: Vec<String>, dest: String },
+    Add {
+        sources: Vec<String>,
+        dest: String,
+    },
     Comment(String),
 }
 
@@ -152,9 +169,7 @@ fn parse_from(s: &str) -> (String, Option<String>, Option<String>) {
 fn parse_instruction(line: &str) -> Result<Instruction, String> {
     let trimmed = line.trim();
     if trimmed.starts_with('[') && trimmed.ends_with(']') {
-        return Err(format!(
-            "bare JSON array without instruction: {trimmed}"
-        ));
+        return Err(format!("bare JSON array without instruction: {trimmed}"));
     }
 
     let idx = line.find(char::is_whitespace).unwrap_or(line.len());
@@ -169,11 +184,7 @@ fn parse_instruction(line: &str) -> Result<Instruction, String> {
                 Ok(Instruction::Run { command: parsed })
             } else {
                 Ok(Instruction::Run {
-                    command: vec![
-                        "/bin/sh".to_string(),
-                        "-c".to_string(),
-                        args.to_string(),
-                    ],
+                    command: vec!["/bin/sh".to_string(), "-c".to_string(), args.to_string()],
                 })
             }
         }
@@ -259,7 +270,9 @@ fn parse_copy_add(args: &str, _is_add: bool) -> Result<Instruction, String> {
 
     let parts: Vec<&str> = rest.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err(format!("COPY requires at least source and dest, got {rest}"));
+        return Err(format!(
+            "COPY requires at least source and dest, got {rest}"
+        ));
     }
     let dest = parts.last().unwrap().to_string();
     let sources: Vec<String> = parts[..parts.len() - 1]
@@ -272,9 +285,8 @@ fn parse_copy_add(args: &str, _is_add: bool) -> Result<Instruction, String> {
 fn parse_json_or_shell(args: &str) -> Vec<String> {
     let t = args.trim();
     if t.starts_with('[') && t.ends_with(']') {
-        serde_json::from_str(t).unwrap_or_else(|_| {
-            vec!["/bin/sh".to_string(), "-c".to_string(), t.to_string()]
-        })
+        serde_json::from_str(t)
+            .unwrap_or_else(|_| vec!["/bin/sh".to_string(), "-c".to_string(), t.to_string()])
     } else {
         vec!["/bin/sh".to_string(), "-c".to_string(), t.to_string()]
     }
@@ -298,8 +310,6 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 // ---------------------------------------------------------------------------
 // Directory → DAG walker
 // ---------------------------------------------------------------------------
-
-
 
 /// Result of scanning a directory into DAG nodes.
 /// The contained digest is a Manifest node pointing at the root layer.
@@ -329,13 +339,18 @@ pub async fn build_dag_from_directory_with_platform(
     architecture: &str,
     os: &str,
 ) -> Result<DagDirectory, OciError> {
-    let dir = dir.canonicalize().map_err(|e| {
-        OciError::Other(format!("canonicalize {dir:?}: {e}"))
-    })?;
+    let dir = dir
+        .canonicalize()
+        .map_err(|e| OciError::Other(format!("canonicalize {dir:?}: {e}")))?;
 
     // Phase 1: walk the directory tree efficiently with walkdir,
     // collect all entries with their metadata (fast, no I/O on file content).
-    let mut entries: Vec<(String, /* is_dir */ bool, /* is_symlink */ bool, u32)> = Vec::new();
+    let mut entries: Vec<(
+        String,
+        /* is_dir */ bool,
+        /* is_symlink */ bool,
+        u32,
+    )> = Vec::new();
     for entry in WalkDir::new(&dir).sort_by_file_name() {
         let entry = entry.map_err(|e| OciError::Other(format!("walkdir: {e}")))?;
         let path = entry.path();
@@ -347,7 +362,11 @@ pub async fn build_dag_from_directory_with_platform(
             .to_string();
         let mode = if ft.is_dir() {
             0o755
-        } else if entry.metadata().map(|m| m.permissions().readonly()).unwrap_or(false) {
+        } else if entry
+            .metadata()
+            .map(|m| m.permissions().readonly())
+            .unwrap_or(false)
+        {
             0o444
         } else {
             0o644
@@ -357,45 +376,52 @@ pub async fn build_dag_from_directory_with_platform(
 
     // Phase 2: process all files in parallel using rayon.
     // Returns HashMap<relative_path, (digest, size)> for files.
-    let results: Vec<(&str, bool, bool, u32)> = entries.iter().map(|(r, d, s, m)| (r.as_str(), *d, *s, *m)).collect();
-    let file_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
-    let symlink_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
+    let results: Vec<(&str, bool, bool, u32)> = entries
+        .iter()
+        .map(|(r, d, s, m)| (r.as_str(), *d, *s, *m))
+        .collect();
+    let file_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let symlink_results: Arc<Mutex<HashMap<String, (Digest, u64)>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     let store_ref: &MmapStore = store;
-    results.par_iter().for_each(|(rel, is_dir, is_symlink, _mode)| {
-        if *is_dir {
-            return;
-        }
-        let full_path = dir.join(rel);
-        if *is_symlink {
-            let target = match std::fs::read_link(&full_path) {
-                Ok(t) => t.to_string_lossy().to_string(),
+    results
+        .par_iter()
+        .for_each(|(rel, is_dir, is_symlink, _mode)| {
+            if *is_dir {
+                return;
+            }
+            let full_path = dir.join(rel);
+            if *is_symlink {
+                let target = match std::fs::read_link(&full_path) {
+                    Ok(t) => t.to_string_lossy().to_string(),
+                    Err(_) => return,
+                };
+                let node = DagNode::blob(target.as_bytes().to_vec());
+                if let Ok(d) = store_ref.put_blocking(&node) {
+                    let mut map = symlink_results.lock().expect("results lock poisoned");
+                    map.insert(rel.to_string(), (d, target.len() as u64));
+                }
+                return;
+            }
+            let data = match std::fs::read(&full_path) {
+                Ok(d) => d,
                 Err(_) => return,
             };
-            let node = DagNode::blob(target.as_bytes().to_vec());
+            let size = data.len() as u64;
+            if data.is_empty() {
+                return;
+            }
+            let node = DagNode::blob(data.clone());
             if let Ok(d) = store_ref.put_blocking(&node) {
-                let mut map = symlink_results.lock().expect("results lock poisoned");
-                map.insert(rel.to_string(), (d, target.len() as u64));
+                if size > SMALL_FILE_THRESHOLD {
+                    let _ = store_ref.put_blob_blocking(&d, &data);
+                }
+                let mut map = file_results.lock().expect("results lock poisoned");
+                map.insert(rel.to_string(), (d, size));
             }
-            return;
-        }
-        let data = match std::fs::read(&full_path) {
-            Ok(d) => d,
-            Err(_) => return,
-        };
-        let size = data.len() as u64;
-        if data.is_empty() {
-            return;
-        }
-        let node = DagNode::blob(data.clone());
-        if let Ok(d) = store_ref.put_blocking(&node) {
-            if size > SMALL_FILE_THRESHOLD {
-                let _ = store_ref.put_blob_blocking(&d, &data);
-            }
-            let mut map = file_results.lock().expect("results lock poisoned");
-            map.insert(rel.to_string(), (d, size));
-        }
-    });
+        });
 
     // Phase 3: build DirEntry tree from the collected results.
     let root_entry = build_dir_entry_tree(
@@ -646,9 +672,8 @@ mod tests {
 
     #[test]
     fn test_parse_copy() {
-        let df =
-            Dockerfile::parse("FROM alpine\nCOPY package.json /app/\nCOPY src/ /app/src/\n")
-                .unwrap();
+        let df = Dockerfile::parse("FROM alpine\nCOPY package.json /app/\nCOPY src/ /app/src/\n")
+            .unwrap();
         match &df.stages[0].instructions[0] {
             Instruction::Copy { sources, dest } => {
                 assert_eq!(sources, &["package.json"]);
@@ -691,10 +716,9 @@ mod tests {
 
     #[test]
     fn test_parse_comments_and_continuation() {
-        let df = Dockerfile::parse(
-            "# This is a comment\nFROM alpine\nRUN echo hello \\\n    world\n",
-        )
-        .unwrap();
+        let df =
+            Dockerfile::parse("# This is a comment\nFROM alpine\nRUN echo hello \\\n    world\n")
+                .unwrap();
         assert_eq!(df.stages.len(), 1);
         match &df.stages[0].instructions[0] {
             Instruction::Run { command } => {
@@ -707,10 +731,9 @@ mod tests {
 
     #[test]
     fn test_parse_from_with_platform() {
-        let df = Dockerfile::parse(
-            "FROM --platform=linux/amd64 alpine:3.18 AS base\nRUN echo hi\n",
-        )
-        .unwrap();
+        let df =
+            Dockerfile::parse("FROM --platform=linux/amd64 alpine:3.18 AS base\nRUN echo hi\n")
+                .unwrap();
         assert_eq!(df.stages.len(), 1);
         assert_eq!(df.stages[0].platform.as_deref(), Some("linux/amd64"));
         assert_eq!(df.stages[0].name.as_deref(), Some("base"));

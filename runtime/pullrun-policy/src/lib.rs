@@ -121,7 +121,10 @@ impl PolicyEngine {
             }
         }
 
-        if policy.require_sbom || policy.max_cvss_score.is_some() || !policy.deny_licenses.is_empty() {
+        if policy.require_sbom
+            || policy.max_cvss_score.is_some()
+            || !policy.deny_licenses.is_empty()
+        {
             match evaluate_sbom(store, manifest_digest)? {
                 SbomReport::Missing => {
                     if policy.require_sbom {
@@ -142,7 +145,11 @@ impl PolicyEngine {
                         }
                     }
                     for banned in &policy.deny_licenses {
-                        if report.licenses.iter().any(|l| l.eq_ignore_ascii_case(banned)) {
+                        if report
+                            .licenses
+                            .iter()
+                            .any(|l| l.eq_ignore_ascii_case(banned))
+                        {
                             return Ok(PolicyDecision::Deny(format!(
                                 "image {image_ref} contains banned license: {banned}"
                             )));
@@ -153,9 +160,7 @@ impl PolicyEngine {
         }
 
         if !policy.allowed_syscalls.is_empty() && policy.seccomp_profile.is_none() {
-            warn!(
-                "allowed_syscalls set but no seccomp_profile — ignoring syscall whitelist"
-            );
+            warn!("allowed_syscalls set but no seccomp_profile — ignoring syscall whitelist");
         }
 
         if let Some(profile) = &policy.seccomp_profile {
@@ -295,7 +300,9 @@ mod tests {
         let engine = PolicyEngine::new(Policy::default());
         let mut policy = Policy::default();
         policy.seccomp_profile = Some("default".into());
-        let store = Arc::new(MmapStore::new(std::env::temp_dir().join("pullrun-test-policy")));
+        let store = Arc::new(MmapStore::new(
+            std::env::temp_dir().join("pullrun-test-policy"),
+        ));
         let d = engine
             .evaluate_for_image(&policy, &store, "alpine:latest", "deadbeef")
             .unwrap();
@@ -307,7 +314,9 @@ mod tests {
         let engine = PolicyEngine::new(Policy::default());
         let mut policy = Policy::default();
         policy.seccomp_profile = Some("bogus-profile".into());
-        let store = Arc::new(MmapStore::new(std::env::temp_dir().join("pullrun-test-policy")));
+        let store = Arc::new(MmapStore::new(
+            std::env::temp_dir().join("pullrun-test-policy"),
+        ));
         let d = engine
             .evaluate_for_image(&policy, &store, "alpine:latest", "deadbeef")
             .unwrap();

@@ -61,7 +61,7 @@ impl LinuxContainerExecutor {
         // Check that `ip` exists before trying to use it (macOS doesn't have it).
         if Command::new("ip").arg("--version").output().is_err() {
             return Err(ExecError::ExecutionFailed(
-                "'ip' command not found — bridge networking requires iproute2 (Linux only)".into()
+                "'ip' command not found — bridge networking requires iproute2 (Linux only)".into(),
             ));
         }
         // ip link show exits 0 even when the device doesn't exist (it
@@ -70,13 +70,17 @@ impl LinuxContainerExecutor {
         let status = Command::new("ip")
             .args(["link", "add", bridge_name, "type", "bridge"])
             .status()
-            .map_err(|e| ExecError::ExecutionFailed(format!("ip link add bridge {bridge_name}: {e}")))?;
+            .map_err(|e| {
+                ExecError::ExecutionFailed(format!("ip link add bridge {bridge_name}: {e}"))
+            })?;
         if status.success() {
             info!(bridge = bridge_name, "created bridge");
             Command::new("ip")
                 .args(["link", "set", bridge_name, "up"])
                 .status()
-                .map_err(|e| ExecError::ExecutionFailed(format!("ip link set {bridge_name} up: {e}")))?;
+                .map_err(|e| {
+                    ExecError::ExecutionFailed(format!("ip link set {bridge_name} up: {e}"))
+                })?;
         }
         // Assign the gateway IP to the bridge so the host kernel has a
         // route to the container subnet (10.42.0.0/16). Without this,
@@ -87,7 +91,13 @@ impl LinuxContainerExecutor {
             let gateway_ip = DEFAULT_GATEWAY.to_string();
             // Ignore error — the address may already be assigned.
             let _ = Command::new("ip")
-                .args(["addr", "add", &format!("{gateway_ip}/16"), "dev", bridge_name])
+                .args([
+                    "addr",
+                    "add",
+                    &format!("{gateway_ip}/16"),
+                    "dev",
+                    bridge_name,
+                ])
                 .status();
         }
         Ok(())
@@ -108,11 +118,14 @@ impl LinuxContainerExecutor {
             .output()
             .await?;
         if !output.status.success() {
-            return Err(ExecError::ExecutionFailed("runc state failed after start".into()));
+            return Err(ExecError::ExecutionFailed(
+                "runc state failed after start".into(),
+            ));
         }
         let state: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
-        let pid = state["pid"].as_i64()
+        let pid = state["pid"]
+            .as_i64()
             .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
 
         use std::hash::{Hash, Hasher};
@@ -126,13 +139,23 @@ impl LinuxContainerExecutor {
         // Create veth pair with one end in the container's netns
         let status = SyncCommand::new("ip")
             .args([
-                "link", "add", &veth_host, "type", "veth", "peer", "name", "eth0",
-                "netns", &pid.to_string(),
+                "link",
+                "add",
+                &veth_host,
+                "type",
+                "veth",
+                "peer",
+                "name",
+                "eth0",
+                "netns",
+                &pid.to_string(),
             ])
             .status()
             .map_err(|e| ExecError::ExecutionFailed(format!("ip link add veth: {e}")))?;
         if !status.success() {
-            return Err(ExecError::ExecutionFailed("ip link add veth pair failed".into()));
+            return Err(ExecError::ExecutionFailed(
+                "ip link add veth pair failed".into(),
+            ));
         }
 
         // Attach host end to bridge
@@ -146,15 +169,44 @@ impl LinuxContainerExecutor {
         // Configure IP inside the container
         let cidr = format!("{}/16", ip);
         SyncCommand::new("nsenter")
-            .args(["-t", &pid.to_string(), "-n", "--", "ip", "addr", "add", &cidr, "dev", "eth0"])
-            .status()?;
-        SyncCommand::new("nsenter")
-            .args(["-t", &pid.to_string(), "-n", "--", "ip", "link", "set", "eth0", "up"])
+            .args([
+                "-t",
+                &pid.to_string(),
+                "-n",
+                "--",
+                "ip",
+                "addr",
+                "add",
+                &cidr,
+                "dev",
+                "eth0",
+            ])
             .status()?;
         SyncCommand::new("nsenter")
             .args([
-                "-t", &pid.to_string(), "-n", "--", "ip", "route", "add", "default",
-                "via", &DEFAULT_GATEWAY.to_string(),
+                "-t",
+                &pid.to_string(),
+                "-n",
+                "--",
+                "ip",
+                "link",
+                "set",
+                "eth0",
+                "up",
+            ])
+            .status()?;
+        SyncCommand::new("nsenter")
+            .args([
+                "-t",
+                &pid.to_string(),
+                "-n",
+                "--",
+                "ip",
+                "route",
+                "add",
+                "default",
+                "via",
+                &DEFAULT_GATEWAY.to_string(),
             ])
             .status()?;
 
@@ -171,7 +223,9 @@ impl LinuxContainerExecutor {
                         }
                     })
                     .collect();
-                proxy.register_endpoint(id, ip.to_string(), &rules).await
+                proxy
+                    .register_endpoint(id, ip.to_string(), &rules)
+                    .await
                     .map_err(|e| ExecError::ExecutionFailed(format!("proxy register: {e}")))?;
             }
         }
@@ -264,8 +318,10 @@ impl Executor for LinuxContainerExecutor {
                     }
                 }
             }
-            let existing_keys: HashSet<String> =
-                env_vars.iter().filter_map(|kv| kv.split_once('=').map(|(k, _)| k.to_string())).collect();
+            let existing_keys: HashSet<String> = env_vars
+                .iter()
+                .filter_map(|kv| kv.split_once('=').map(|(k, _)| k.to_string()))
+                .collect();
             for (k, v) in spec_env.iter() {
                 if !existing_keys.contains(k.as_str()) {
                     env_vars.push(format!("{k}={v}"));
@@ -286,20 +342,29 @@ impl Executor for LinuxContainerExecutor {
         if spec.cpu_millicores.is_some() || spec.memory_bytes.is_some() {
             let mut resources = serde_json::Map::new();
             if let Some(cpu_millicores) = spec.cpu_millicores {
-                resources.insert("cpu".to_string(), serde_json::json!({
-                    "shares": cpu_millicores * 1024 / 1000,
-                    "quota": (cpu_millicores * 100) as i64,
-                    "period": 100000
-                }));
+                resources.insert(
+                    "cpu".to_string(),
+                    serde_json::json!({
+                        "shares": cpu_millicores * 1024 / 1000,
+                        "quota": (cpu_millicores * 100) as i64,
+                        "period": 100000
+                    }),
+                );
             }
             if let Some(mem_bytes) = spec.memory_bytes {
-                resources.insert("memory".to_string(), serde_json::json!({
-                    "limit": mem_bytes as i64,
-                    "swap": mem_bytes as i64
-                }));
+                resources.insert(
+                    "memory".to_string(),
+                    serde_json::json!({
+                        "limit": mem_bytes as i64,
+                        "swap": mem_bytes as i64
+                    }),
+                );
             }
             if let Some(obj) = linux.as_object_mut() {
-                obj.insert("resources".to_string(), serde_json::Value::Object(resources));
+                obj.insert(
+                    "resources".to_string(),
+                    serde_json::Value::Object(resources),
+                );
             }
         }
 
@@ -314,9 +379,18 @@ impl Executor for LinuxContainerExecutor {
         ];
         for m in &spec.mounts {
             let mut mount = serde_json::Map::new();
-            mount.insert("destination".to_string(), serde_json::Value::String(m.destination.clone()));
-            mount.insert("type".to_string(), serde_json::Value::String(m.type_.clone()));
-            mount.insert("source".to_string(), serde_json::Value::String(m.source.clone()));
+            mount.insert(
+                "destination".to_string(),
+                serde_json::Value::String(m.destination.clone()),
+            );
+            mount.insert(
+                "type".to_string(),
+                serde_json::Value::String(m.type_.clone()),
+            );
+            mount.insert(
+                "source".to_string(),
+                serde_json::Value::String(m.source.clone()),
+            );
             // Bind mounts always need rbind + rprivate for runc to work.
             let mut opts: Vec<String> = Vec::new();
             if m.type_ == "bind" {
@@ -329,8 +403,14 @@ impl Executor for LinuxContainerExecutor {
                 }
             }
             if !opts.is_empty() {
-                mount.insert("options".to_string(),
-                    serde_json::Value::Array(opts.iter().map(|o| serde_json::Value::String(o.clone())).collect()));
+                mount.insert(
+                    "options".to_string(),
+                    serde_json::Value::Array(
+                        opts.iter()
+                            .map(|o| serde_json::Value::String(o.clone()))
+                            .collect(),
+                    ),
+                );
             }
             mounts.push(serde_json::Value::Object(mount));
         }
@@ -395,8 +475,7 @@ impl Executor for LinuxContainerExecutor {
         }
         let resolv_path = etc_dir.join("resolv.conf");
         if !resolv_path.exists() {
-            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
-                .ok();
+            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n").ok();
         }
 
         let bridge_name = spec.bridge_name.clone();
@@ -409,7 +488,11 @@ impl Executor for LinuxContainerExecutor {
                 .iter()
                 .filter(|r| matches!(r.direction, Direction::Inbound))
                 .map(|r| {
-                    let host_p = if r.host_port != 0 { r.host_port } else { r.port };
+                    let host_p = if r.host_port != 0 {
+                        r.host_port
+                    } else {
+                        r.port
+                    };
                     (host_p, r.port)
                 })
                 .collect(),
@@ -431,7 +514,12 @@ impl Executor for LinuxContainerExecutor {
         let id = handle.id.clone();
         let bdir = bundle_dir.clone();
 
-        tracing::debug!("start: runc_path={:?}, bundle_dir={:?}, id={}", runc_path, bdir, id);
+        tracing::debug!(
+            "start: runc_path={:?}, bundle_dir={:?}, id={}",
+            runc_path,
+            bdir,
+            id
+        );
 
         let status = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawn_blocking: spawning runc run -d -b {:?} {}", bdir, id);
@@ -470,7 +558,8 @@ impl Executor for LinuxContainerExecutor {
                 ExecError::ExecutionFailed(format!("invalid internal_ip in handle: {e}"))
             })?;
             let bridge = handle.bridge_name.as_deref().unwrap_or(DEFAULT_BRIDGE_NAME);
-            self.setup_container_network(&handle.id, ip, &handle.host_ports, bridge).await?;
+            self.setup_container_network(&handle.id, ip, &handle.host_ports, bridge)
+                .await?;
         }
 
         info!(id = %handle.id, "container started");
@@ -561,8 +650,8 @@ impl Executor for LinuxContainerExecutor {
             status: String,
         }
 
-        let state: RuncState = serde_json::from_slice(&output.stdout)
-            .unwrap_or_else(|_| RuncState {
+        let state: RuncState =
+            serde_json::from_slice(&output.stdout).unwrap_or_else(|_| RuncState {
                 status: "unknown".to_string(),
             });
 
@@ -604,7 +693,12 @@ impl Executor for LinuxContainerExecutor {
         Ok(())
     }
 
-    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError> {
+    async fn exec(
+        &self,
+        id: &str,
+        command: &[String],
+        timeout_secs: u64,
+    ) -> Result<i32, ExecError> {
         let mut args = vec!["exec".to_string(), id.to_string()];
         args.extend(command.iter().cloned());
         let output = tokio::time::timeout(
@@ -612,7 +706,9 @@ impl Executor for LinuxContainerExecutor {
             Command::new(&self.runc_path).args(&args).output(),
         )
         .await
-        .map_err(|_| ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s")))?
+        .map_err(|_| {
+            ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s"))
+        })?
         .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
         Ok(output.status.code().unwrap_or(-1))
     }
@@ -627,7 +723,8 @@ impl Executor for LinuxContainerExecutor {
         }
         let state: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
-        let pid = state["pid"].as_i64()
+        let pid = state["pid"]
+            .as_i64()
             .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
 
         let mut mem_bytes: u64 = 0;
@@ -660,7 +757,8 @@ impl Executor for LinuxContainerExecutor {
                     if let Some(cg_path) = line.split(':').nth(2) {
                         let cg_path = cg_path.trim();
                         // Try memory cgroup v1
-                        let mem_v1 = format!("/sys/fs/cgroup/memory{cg_path}/memory.usage_in_bytes");
+                        let mem_v1 =
+                            format!("/sys/fs/cgroup/memory{cg_path}/memory.usage_in_bytes");
                         if mem_bytes == 0 {
                             if let Ok(val) = std::fs::read_to_string(&mem_v1) {
                                 mem_bytes = val.trim().parse().unwrap_or(0);
@@ -757,7 +855,11 @@ impl Executor for RootlessContainerExecutor {
                 .iter()
                 .filter(|r| matches!(r.direction, pullrun_net::Direction::Inbound))
                 .map(|r| {
-                    let host_p = if r.host_port != 0 { r.host_port } else { r.port };
+                    let host_p = if r.host_port != 0 {
+                        r.host_port
+                    } else {
+                        r.port
+                    };
                     (host_p, r.port)
                 })
                 .collect(),
@@ -775,11 +877,7 @@ impl Executor for RootlessContainerExecutor {
 
         let bundle_dir = self.bundle_dir(&handle.id);
 
-        let mut cmd = crate::rootless::rootless_runc_command(
-            &self.config,
-            &handle.id,
-            &bundle_dir,
-        );
+        let mut cmd = crate::rootless::rootless_runc_command(&self.config, &handle.id, &bundle_dir);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
@@ -788,13 +886,7 @@ impl Executor for RootlessContainerExecutor {
         let pid = child.id();
 
         // Run pasta/slirp4netns in the container's network namespace
-        match crate::rootless::setup_rootless_network(
-            &handle.id,
-            pid,
-            self.use_pasta,
-        )
-        .await
-        {
+        match crate::rootless::setup_rootless_network(&handle.id, pid, self.use_pasta).await {
             Ok(net) => {
                 info!(id = %handle.id, "rootless networking set up");
                 self.net_handles
@@ -820,12 +912,21 @@ impl Executor for RootlessContainerExecutor {
         info!(%id, "stopping rootless container");
 
         // Kill the runc child and the network process (pasta/slirp4netns).
-        let maybe_child = self.children.lock().expect("children lock poisoned").remove(id);
+        let maybe_child = self
+            .children
+            .lock()
+            .expect("children lock poisoned")
+            .remove(id);
         if let Some(mut child) = maybe_child {
             let _ = child.kill();
             tokio::task::spawn_blocking(move || child.wait()).await.ok();
         }
-        if let Some(mut net) = self.net_handles.lock().expect("net_handles lock poisoned").remove(id) {
+        if let Some(mut net) = self
+            .net_handles
+            .lock()
+            .expect("net_handles lock poisoned")
+            .remove(id)
+        {
             net.kill().ok();
         }
 
@@ -846,12 +947,18 @@ impl Executor for RootlessContainerExecutor {
     }
 
     async fn wait(&self, id: &str) -> Result<ExitStatus, ExecError> {
-        let maybe_child = self.children.lock().expect("children lock poisoned").remove(id);
+        let maybe_child = self
+            .children
+            .lock()
+            .expect("children lock poisoned")
+            .remove(id);
         if let Some(mut child) = maybe_child {
             let status = tokio::task::spawn_blocking(move || child.wait())
                 .await
                 .map_err(|e| ExecError::ExecutionFailed(format!("join wait task for {id}: {e}")))?
-                .map_err(|e| ExecError::ExecutionFailed(format!("wait for runc child {id}: {e}")))?;
+                .map_err(|e| {
+                    ExecError::ExecutionFailed(format!("wait for runc child {id}: {e}"))
+                })?;
             let exit_code = status.code().unwrap_or(-1);
             use std::os::unix::process::ExitStatusExt;
             let signal = status.signal();
@@ -934,7 +1041,12 @@ impl Executor for RootlessContainerExecutor {
         Ok(())
     }
 
-    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64) -> Result<i32, ExecError> {
+    async fn exec(
+        &self,
+        id: &str,
+        command: &[String],
+        timeout_secs: u64,
+    ) -> Result<i32, ExecError> {
         let mut args = vec![
             "exec".to_string(),
             "--root".to_string(),
@@ -947,14 +1059,21 @@ impl Executor for RootlessContainerExecutor {
             Command::new(&self.config.runc_path).args(&args).output(),
         )
         .await
-        .map_err(|_| ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s")))?
+        .map_err(|_| {
+            ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s"))
+        })?
         .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
         Ok(output.status.code().unwrap_or(-1))
     }
 
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {
         let output = Command::new(&self.config.runc_path)
-            .args(["state", "--root", &self.config.state_root.to_string_lossy(), id])
+            .args([
+                "state",
+                "--root",
+                &self.config.state_root.to_string_lossy(),
+                id,
+            ])
             .output()
             .await?;
         if !output.status.success() {
@@ -963,7 +1082,8 @@ impl Executor for RootlessContainerExecutor {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let state: serde_json::Value = serde_json::from_str(&stdout)
             .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
-        let pid = state["pid"].as_i64()
+        let pid = state["pid"]
+            .as_i64()
             .ok_or_else(|| ExecError::ExecutionFailed("no pid in runc state".into()))?;
 
         let mut mem_bytes: u64 = 0;
@@ -974,10 +1094,14 @@ impl Executor for RootlessContainerExecutor {
             for line in data.lines() {
                 if let Some(path) = line.split("::").nth(1) {
                     let path = path.trim();
-                    if let Ok(val) = std::fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.current")) {
+                    if let Ok(val) =
+                        std::fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.current"))
+                    {
                         mem_bytes = val.trim().parse().unwrap_or(0);
                     }
-                    if let Ok(val) = std::fs::read_to_string(format!("/sys/fs/cgroup{path}/cpu.stat")) {
+                    if let Ok(val) =
+                        std::fs::read_to_string(format!("/sys/fs/cgroup{path}/cpu.stat"))
+                    {
                         for line in val.lines() {
                             if let Some(rest) = line.strip_prefix("usage_usec ") {
                                 cpu_usec = rest.trim().parse().unwrap_or(0);

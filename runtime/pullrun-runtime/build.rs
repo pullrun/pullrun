@@ -11,8 +11,14 @@ fn main() {
         .build_client(true)
         .compile(
             &[
-                proto_path.join("pullrun/runtime.proto").to_string_lossy().to_string(),
-                proto_path.join("pullrun/control.proto").to_string_lossy().to_string(),
+                proto_path
+                    .join("pullrun/runtime.proto")
+                    .to_string_lossy()
+                    .to_string(),
+                proto_path
+                    .join("pullrun/control.proto")
+                    .to_string_lossy()
+                    .to_string(),
             ],
             &[proto_path.to_string_lossy().to_string()],
         )

@@ -163,9 +163,7 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
         .read(true)
         .write(true)
         .open("/dev/net/tun")
-        .map_err(|e| {
-            VmNetError::IpCommand(format!("open /dev/net/tun: {e}"))
-        })?;
+        .map_err(|e| VmNetError::IpCommand(format!("open /dev/net/tun: {e}")))?;
 
     let mut req = IfReq {
         ifr_name: {
@@ -182,7 +180,13 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
     // SAFETY: `ioctl(TUNSETIFF)` is a standard Linux TUN/TAP operation.
     // `tun.as_raw_fd()` is a valid open fd to `/dev/net/tun`. `req` is
     // properly initialized and sized `sizeof(struct ifreq) = 40`.
-    let ret = unsafe { libc::ioctl(tun.as_raw_fd(), TUNSETIFF as _, &mut req as *mut _ as *mut std::ffi::c_void) };
+    let ret = unsafe {
+        libc::ioctl(
+            tun.as_raw_fd(),
+            TUNSETIFF as _,
+            &mut req as *mut _ as *mut std::ffi::c_void,
+        )
+    };
     if ret < 0 {
         let err = std::io::Error::last_os_error();
         return Err(VmNetError::IpCommand(format!(

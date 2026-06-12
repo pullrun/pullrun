@@ -238,8 +238,7 @@ mod tests {
         let mut rx = bus.subscribe();
 
         bus.emit(
-            Event::new("img-1", EventKind::ImagePulled)
-                .with_metadata("registry", "docker.io"),
+            Event::new("img-1", EventKind::ImagePulled).with_metadata("registry", "docker.io"),
         );
 
         let ev = tokio::time::timeout(Duration::from_millis(100), rx.recv())
@@ -248,7 +247,10 @@ mod tests {
             .expect("recv error");
         assert_eq!(ev.id, "img-1");
         assert_eq!(ev.kind, EventKind::ImagePulled);
-        assert_eq!(ev.metadata.get("registry").map(|s| s.as_str()), Some("docker.io"));
+        assert_eq!(
+            ev.metadata.get("registry").map(|s| s.as_str()),
+            Some("docker.io")
+        );
     }
 
     #[tokio::test]
