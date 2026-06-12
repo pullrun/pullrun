@@ -40,7 +40,7 @@ spec:
       hostPID: true
       containers:
         - name: pullrun-runtime
-          image: ghcr.io/pullrun/pullrun-runtime:v0.1.0
+          image: ghcr.io/pullrun/pullrun-runtime:v0.2.0
           imagePullPolicy: IfNotPresent
           args:
             - daemon
