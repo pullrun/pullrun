@@ -123,6 +123,14 @@ impl VmPersistentHandle {
     pub fn is_alive(&self) -> bool {
         self.inner.is_alive()
     }
+
+    /// Send a Shutdown command and wait for the VM thread to exit.
+    pub fn stop(&self) {
+        let _ = self.inner.cmd_tx.send(VmCommand::Shutdown);
+        if let Some(t) = self.inner.thread.lock().unwrap().take() {
+            let _ = t.join();
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -140,7 +148,7 @@ impl VmPersistentHandle {
 impl Drop for VmPersistentHandle {
     fn drop(&mut self) {
         let _ = self.inner.cmd_tx.send(VmCommand::Shutdown);
-        if let Some(t) = self.inner.thread.take() {
+        if let Some(t) = self.inner.thread.lock().unwrap().take() {
             let _ = t.join();
         }
     }

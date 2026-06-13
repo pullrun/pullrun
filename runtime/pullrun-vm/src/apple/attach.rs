@@ -1132,13 +1132,17 @@ pub struct VmPersistentHandleInner {
     /// Command channel for attach/detach/shutdown.
     pub cmd_tx: sync_mpsc::Sender<crate::attach::VmCommand>,
     /// The internal thread that owns the VM handle.
-    pub thread: Option<std::thread::JoinHandle<()>>,
+    pub thread: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl VmPersistentHandleInner {
     /// Returns true if the VM's internal thread is still running.
     pub fn is_alive(&self) -> bool {
-        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+        self.thread
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|t| !t.is_finished())
     }
 }
 
@@ -1408,7 +1412,7 @@ pub fn spawn_vm_inner(
         _parked_tx: parked_tx,
         stdin_tx,
         cmd_tx,
-        thread: Some(thread),
+        thread: Mutex::new(Some(thread)),
     })
 }
 

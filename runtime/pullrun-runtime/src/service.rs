@@ -2433,10 +2433,38 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<StopResponse>, tonic::Status> {
         let req = request.into_inner();
         let id = req.id.clone();
-        self.executor
-            .stop(&id)
-            .await
-            .map_err(|e| tonic::Status::internal(format!("stop failed: {e}")))?;
+
+        // Check workload status before trying to stop any OS process.
+        // If the status is not "running", there is nothing to stop.
+        let needs_stop = {
+            let workloads = self.workloads.read().await;
+            workloads
+                .get(&id)
+                .map(|s| s.status == "running")
+                .unwrap_or(false)
+        };
+
+        if needs_stop {
+            // Check for persistent Apple Virt VM handles first
+            // (macOS — not tracked by the executor router).
+            let vm_stopped = {
+                let mut vms = self.persistent_vms.write().await;
+                if let Some(handle) = vms.remove(&id) {
+                    drop(vms);
+                    handle.stop();
+                    true
+                } else {
+                    false
+                }
+            };
+
+            if !vm_stopped {
+                self.executor
+                    .stop(&id)
+                    .await
+                    .map_err(|e| tonic::Status::internal(format!("stop failed: {e}")))?;
+            }
+        }
 
         // Do NOT clean up materialized rootfs — `exec` on an exited
         // VM boots a fresh VM on the same rootfs (persistent storage).
@@ -2466,27 +2494,40 @@ impl Runtime for RuntimeService {
                 .unwrap_or_else(|| "unknown".to_string())
         };
 
-        // Only emit `WorkloadStopped` and mark "stopped" if the
-        // workload is still in the running state. If the background
-        // watcher has already flipped it to "exited", we leave it
-        // alone and don't double-emit. (The watcher uses its own
-        // `announced` HashSet to ensure it only fires
-        // `WorkloadExited` once per id.)
+        // Only emit `WorkloadStopped` and mark as stopped/exited if
+        // the workload is still alive. If the background watcher has
+        // already flipped it to "exited", we leave it alone and don't
+        // double-emit. (The watcher uses its own `announced` HashSet
+        // to ensure it only fires `WorkloadExited` once per id.)
         let mut was_running = false;
         let mut state_copy: Option<WorkloadState> = None;
         {
             let mut workloads = self.workloads.write().await;
             if let Some(state) = workloads.get_mut(&id) {
-                if state.status == "running" {
-                    state.status = "stopped".to_string();
-                    state.exit_code = Some(0);
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs() as i64)
-                        .unwrap_or(0);
-                    state.exit_time = now;
-                    was_running = true;
-                    state_copy = Some(state.clone());
+                match state.status.as_str() {
+                    "running" => {
+                        state.status = "stopped".to_string();
+                        state.exit_code = Some(0);
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        state.exit_time = now;
+                        was_running = true;
+                        state_copy = Some(state.clone());
+                    }
+                    "pending" => {
+                        state.status = "exited".to_string();
+                        state.exit_code = Some(0);
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        state.exit_time = now;
+                        was_running = true;
+                        state_copy = Some(state.clone());
+                    }
+                    _ => {}
                 }
             }
         }
