@@ -424,6 +424,12 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 
 ---
 
+## 📄 Technical Report
+
+A technical report describing the architecture is available in [`/paper`](./paper/pullrun_paper.pdf) and archived on Zenodo: https://doi.org/10.5281/zenodo.20679669
+
+---
+
 ## 📄 License
 
 Apache 2.0 — see [LICENSE](LICENSE). Contributions subject to [CLA.md](CLA.md).

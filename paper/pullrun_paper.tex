@@ -108,7 +108,7 @@
     \texttt{mo.boukaba@gmail.com}
 }
 
-\date{Version 0.3.0 --- June 2026}
+\date{Version 0.3.2 --- June 2026}
 
 \begin{document}
 
@@ -117,7 +117,7 @@
 
 % Abstract
 \begin{abstract}
-We present \pullrun{}, a content-addressed workload execution system that treats the OCI (Open Container Initiative) image format as a universal workload substrate. Unlike existing container runtimes that require separate build pipelines for containers and virtual machines, \pullrun{} boots the same OCI image as a Linux container (via \texttt{runc}), a Firecracker microVM, or an Apple Silicon VM---with no image conversion or repackaging. \\pullrun{} version 0.3.0 is built on seven core contributions: (i) a \textbf{zero-copy DAG store} that replaces tar extraction and overlayfs with memory-mapped, content-addressed node graphs using rkyv serialization, achieving first-pull latencies of \textbf{968 ms} (2$\times$ faster than Docker) and idle daemon memory of \textbf{24.6 MiB}; (ii) a \textbf{unified executor abstraction} that decouples workload specification from backend selection, allowing the same OCI manifest to materialize as a \texttt{runc} container, a KVM-based Firecracker microVM, or a macOS Virtualization.framework VM; (iii) a \textbf{P2P block distribution layer} that enables cluster-wide image dissemination via Bloom-filtered delta synchronization over gRPC, eliminating the registry bottleneck for multi-node deployments; (iv) a \textbf{policy engine} providing defense-in-depth image gating via cosign signature verification, CycloneDX SBOM analysis, and CVSS-based vulnerability scoring; (v) a \textbf{native MCP server} that exposes every runtime operation as a Model Context Protocol tool, enabling AI agents (Claude Code, Cursor, opencode) to pull images, manage workloads, and inspect the runtime through natural language; (vi) a \textbf{Windows/WSL2 backend} that extends full container and Firecracker microVM support to Windows 10/11 via the Windows Subsystem for Linux 2, sharing the identical DAG store and CLI across all three host platforms; and (vii) a \textbf{unified network model} that places all workloads---containers and VMs alike---on a shared L2 segment with an in-process userspace proxy, DNS server, and IPAM. We evaluate \pullrun{} across all backends on Linux (x86-64, ARM64), macOS (Apple Silicon), and Windows (WSL2 x86-64), demonstrating VM boot times of \textbf{160 ms} (Apple Virtualization), container run latency of \textbf{400 ms}, P2P sync throughput 4.6$\times$ faster than registry pulls, and a daemon memory footprint of \textbf{24.6 MiB} RSS at idle. \pullrun{} 0.3.0 is open-source at \url{https://github.com/pullrun/pullrun}.
+We present \pullrun{}, a content-addressed workload execution system that treats the OCI (Open Container Initiative) image format as a universal workload substrate. Unlike existing container runtimes that require separate build pipelines for containers and virtual machines, \pullrun{} boots the same OCI image as a Linux container (via \texttt{runc}), a Firecracker microVM, or an Apple Silicon VM---with no image conversion or repackaging. \\pullrun{} version 0.3.2 is built on seven core contributions: (i) a \textbf{zero-copy DAG store} that replaces tar extraction and overlayfs with memory-mapped, content-addressed node graphs using rkyv serialization, achieving first-pull latencies of \textbf{968 ms} (2$\times$ faster than Docker) and idle daemon memory of \textbf{24.6 MiB}; (ii) a \textbf{unified executor abstraction} that decouples workload specification from backend selection, allowing the same OCI manifest to materialize as a \texttt{runc} container, a KVM-based Firecracker microVM, or a macOS Virtualization.framework VM; (iii) a \textbf{P2P block distribution layer} that enables cluster-wide image dissemination via Bloom-filtered delta synchronization over gRPC, eliminating the registry bottleneck for multi-node deployments; (iv) a \textbf{policy engine} providing defense-in-depth image gating via cosign signature verification, CycloneDX SBOM analysis, and CVSS-based vulnerability scoring; (v) a \textbf{native MCP server} that exposes every runtime operation as a Model Context Protocol tool, enabling AI agents (Claude Code, Cursor, opencode) to pull images, manage workloads, and inspect the runtime through natural language; (vi) a \textbf{Windows/WSL2 backend} that extends full container and Firecracker microVM support to Windows 10/11 via the Windows Subsystem for Linux 2, sharing the identical DAG store and CLI across all three host platforms; and (vii) a \textbf{unified network model} that places all workloads---containers and VMs alike---on a shared L2 segment with an in-process userspace proxy, DNS server, and IPAM. We evaluate \pullrun{} across all backends on Linux (x86-64, ARM64), macOS (Apple Silicon), and Windows (WSL2 x86-64), demonstrating VM boot times of \textbf{160 ms} (Apple Virtualization), container run latency of \textbf{400 ms}, P2P sync throughput 4.6$\times$ faster than registry pulls, and a daemon memory footprint of \textbf{24.6 MiB} RSS at idle. \pullrun{} 0.3.2 is open-source at \url{https://github.com/pullrun/pullrun}. A citable archive of the source corresponding to this report is available at \url{https://doi.org/10.5281/zenodo.20679669} (DOI: \texttt{10.5281/zenodo.20679669}).
 \end{abstract}
 
 \section{Introduction}\label{sec:intro}
@@ -159,7 +159,7 @@ This paper makes the following contributions:
     \item \textbf{Section~\ref{sec:policy}:} The policy engine for defense-in-depth image gating via cosign signatures, SBOM analysis, and CVSS scoring.
     \item \textbf{Section~\ref{sec:network}:} The unified network architecture with shared L2 bridging, userspace proxy, in-process DNS, and IPAM.
     \item \textbf{Section~\ref{sec:windows}:} The Windows/WSL2 backend: architecture, auto-provisioning, store sharing, and networking constraints.
-    \item \textbf{Section~\ref{sec:mcp}:} The native MCP server, its tool catalogue (15+ tools in v0.3.0), transport modes, and integration with AI coding agents.
+    \item \textbf{Section~\ref{sec:mcp}:} The native MCP server, its tool catalogue (15+ tools in v0.3.2), transport modes, and integration with AI coding agents.
     \item \textbf{Section~\ref{sec:cri}:} The Kubernetes CRI shim and RuntimeClass integration for deploying \pullrun{} workloads on cluster orchestrators.
     \item \textbf{Section~\ref{sec:observability}:} The observability framework including the event bus, Prometheus metrics, health checks, and operational tooling.
     \item \textbf{Section~\ref{sec:evaluation}:} A comprehensive evaluation comparing \pullrun{} against Docker across pull latency, memory footprint, boot time, storage efficiency, and P2P sync throughput.
@@ -682,7 +682,7 @@ An in-process DNS server resolves workload names to their assigned IPs. The serv
 
 \section{Windows / WSL2 Backend}\label{sec:windows}
 
-\pullrun{} 0.3.0 extends full container and Firecracker microVM support to Windows 10/11 via the Windows Subsystem for Linux 2~\cite{wsl2}. The Windows backend is a first-class platform: the DAG store, executor abstraction, policy engine, P2P sync, and MCP server all operate identically to the Linux build. There is no emulation layer between the store and the executors.
+\pullrun{} 0.3.2 extends full container and Firecracker microVM support to Windows 10/11 via the Windows Subsystem for Linux 2~\cite{wsl2}. The Windows backend is a first-class platform: the DAG store, executor abstraction, policy engine, P2P sync, and MCP server all operate identically to the Linux build. There is no emulation layer between the store and the executors.
 
 \subsection{Architecture}
 
@@ -757,7 +757,7 @@ netsh interface portproxy add v4tov4 \
 
 This is performed automatically when a \texttt{NetworkRule\{direction: Inbound\}} is declared. The WSL2 IP is obtained via \texttt{wsl hostname -I} on each daemon start (WSL2 assigns a new IP per boot). Outbound traffic follows the standard WSL2 NAT path through the Windows host's network interfaces.
 
-\subsection{Known Limitations in v0.3.0}
+\subsection{Known Limitations in v0.3.2}
 
 \begin{itemize}[leftmargin=*]
     \item The Apple Virtualization backend is macOS-only and unavailable on Windows.
@@ -807,11 +807,11 @@ Agent configuration is a one-time addition to the agent's config file. For Claud
 
 \subsection{Tool Catalogue}
 
-The server exposes 15 tools across three categories in v0.3.0, summarized in \Cref{tab:mcp-tools}. The \texttt{compose\_up} and \texttt{compose\_down} tools, previously declared but CLI-only, are now fully implemented via the MCP API.
+The server exposes 15 tools across three categories in v0.3.2, summarized in \Cref{tab:mcp-tools}. The \texttt{compose\_up} and \texttt{compose\_down} tools, previously declared but CLI-only, are now fully implemented via the MCP API.
 
 \begin{table}[htbp]
     \centering
-    \caption{MCP tool catalogue exposed by \pullrun{} 0.3.0.}
+    \caption{MCP tool catalogue exposed by \pullrun{} 0.3.2.}
     \label{tab:mcp-tools}
     \begin{tabular}{@{}llp{5.5cm}@{}}
         \toprule
@@ -855,7 +855,7 @@ Resources follow the MCP resource protocol, enabling agents to subscribe to upda
 
 The MCP server is a stateless translation layer: it holds no persistent state, carries no authentication tokens, and does not replicate the daemon's workload table. All state lives in \texttt{pullrun-runtime}; the MCP server merely translates between MCP JSON and gRPC protobuf. This means the server can be restarted at any time without affecting running workloads, and multiple MCP server instances can coexist (e.g., one for Claude Code, one for Cursor) without coordination.
 
-The \texttt{compose\_up} and \texttt{compose\_down} operations are now fully supported via the MCP API as of v0.3.0, completing the full lifecycle coverage for AI agents managing multi-service stacks.
+The \texttt{compose\_up} and \texttt{compose\_down} operations are now fully supported via the MCP API as of v0.3.2, completing the full lifecycle coverage for AI agents managing multi-service stacks.
 
 \subsection{Security Considerations}
 
@@ -1030,7 +1030,7 @@ We measured the time from workload creation to readiness (\texttt{status == runn
 
 \begin{table}[htbp]
     \centering
-    \caption{Workload boot latency by backend (v0.3.0; Firecracker boot improved in v0.3.0 via cached ext4 image reuse).}
+    \caption{Workload boot latency by backend (v0.3.2; Firecracker boot improved in v0.3.2 via cached ext4 image reuse).}
     \label{tab:boot}
     \begin{tabular}{@{}lrrr@{}}
         \toprule
@@ -1045,7 +1045,7 @@ We measured the time from workload creation to readiness (\texttt{status == runn
     \end{tabular}
 \end{table}
 
-Apple Virtualization's low boot time reflects the tight integration between the guest kernel and the hypervisor on Apple Silicon. Firecracker boot time improved significantly in v0.3.0 ($\sim$500 ms, down from $\sim$1.24 s in v0.1.0) through ext4 image caching: the ext4 filesystem is built once per image digest and reused on subsequent boots, eliminating the \texttt{mkfs.ext4} step from the critical path. The WSL2 path adds approximately 30 ms of socket overhead. Note that Apple Virt boot time includes rootfs materialization (hardlink creation, $\sim$40 ms); the VM creation via \texttt{VZVirtualMachine::start()} completes in $\sim$120 ms.
+Apple Virtualization's low boot time reflects the tight integration between the guest kernel and the hypervisor on Apple Silicon. Firecracker boot time improved significantly in v0.3.2 ($\sim$500 ms, down from $\sim$1.24 s in v0.1.0) through ext4 image caching: the ext4 filesystem is built once per image digest and reused on subsequent boots, eliminating the \texttt{mkfs.ext4} step from the critical path. The WSL2 path adds approximately 30 ms of socket overhead. Note that Apple Virt boot time includes rootfs materialization (hardlink creation, $\sim$40 ms); the VM creation via \texttt{VZVirtualMachine::start()} completes in $\sim$120 ms.
 
 \subsection{Storage Efficiency}
 
@@ -1160,7 +1160,7 @@ We automated this via \texttt{make apple-sign-daemon} and documented it prominen
 
 \begin{table}[htbp]
     \centering
-    \caption{Feature comparison: \pullrun{} 0.3.0 vs Docker CE 26 vs Podman 5.x.}
+    \caption{Feature comparison: \pullrun{} 0.3.2 vs Docker CE 26 vs Podman 5.x.}
     \label{tab:runtime-comparison}
     {\small\begin{tabular}{@{}p{4.2cm}ccc@{}}
         \toprule
@@ -1210,7 +1210,7 @@ The P2P sync layer reduced registry egress by 8$\times$ during a rolling update 
 
 \subsection{Windows Developer Workflow}
 
-We tested \pullrun{} 0.3.0 on Windows 11 (Intel i9-13900K, 32 GiB RAM) with WSL2 kernel 6.6. The auto-provisioning flow completed in 8 seconds on first run. Subsequent daemon starts (WSL2 already warm) took under 500\,ms. Developers on the team using Windows noted that the absence of Docker Desktop (and its Hyper-V overhead) freed approximately 1.5 GiB of RAM and eliminated the ``Starting Docker Desktop'' latency that had previously added 20--30 seconds to their morning workflow.
+We tested \pullrun{} 0.3.2 on Windows 11 (Intel i9-13900K, 32 GiB RAM) with WSL2 kernel 6.6. The auto-provisioning flow completed in 8 seconds on first run. Subsequent daemon starts (WSL2 already warm) took under 500\,ms. Developers on the team using Windows noted that the absence of Docker Desktop (and its Hyper-V overhead) freed approximately 1.5 GiB of RAM and eliminated the ``Starting Docker Desktop'' latency that had previously added 20--30 seconds to their morning workflow.
 
 The \texttt{--volume C:\textbackslash{}Users\textbackslash{}mo\textbackslash{}code:/workspace} path translation worked without configuration: the DrvFs bind mount provided near-native I/O performance for source code directories. For file-intensive builds, we measured a 12\% throughput reduction compared to native Linux due to the WSL2 DrvFs overhead, consistent with published WSL2 benchmarks.
 
@@ -1280,7 +1280,7 @@ We presented \pullrun{}, a content-addressed workload execution system that unif
 
 \pullrun{} demonstrates that the OCI image format can be the universal substrate for workload execution---not just for containers, but for all isolation levels. By treating content-addressed storage as a first-class primitive, we eliminate the format fragmentation, extraction overhead, and registry bottlenecks that have accumulated in the container stack over the past decade.
 
-\pullrun{} 0.3.0 is open-source and available at \url{https://github.com/pullrun/pullrun}.
+\pullrun{} 0.3.2 is open-source and available at \url{https://github.com/pullrun/pullrun}. The source code archived at the version corresponding to this technical report is permanently available via Zenodo~\cite{zenodo} at \url{https://doi.org/10.5281/zenodo.20679669}.
 
 \section*{Acknowledgments}
 
@@ -1395,6 +1395,11 @@ AWS SOCI contributors, ``Seekable OCI (SOCI),'' 2023.
 \bibitem{spegel}
 X. Granade et al., ``Spegel: Stateless cluster local OCI registry mirror,'' 2023.
 \url{https://github.com/spegel-org/spegel}
+
+\bibitem{zenodo}
+M.~Boukaba, ``Pullrun v0.3.2: A Content-Addressed Workload Execution System,''
+Zenodo, June 2026.
+\newblock DOI: \href{https://doi.org/10.5281/zenodo.20679669}{10.5281/zenodo.20679669}
 
 \bibitem{wsl2}
 Microsoft Corporation, ``Windows Subsystem for Linux 2,'' 2024.
