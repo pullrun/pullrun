@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/pullrun/pullrun/main/assets/logo.png" alt="Pullrun Logo" width="400">
+<img src="https://raw.githubusercontent.com/pullrun/pullrun/main/assets/pullrun.png" alt="Pullrun Logo" width="400">
 
 # **Pullrun**
 
