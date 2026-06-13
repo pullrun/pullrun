@@ -11,6 +11,7 @@ target-linux/
 # Go
 cli/pullrun/pullrun
 cli/pullrun/cli
+cli/pullrun/pullrun-runtime
 cmd/pullrun-compose/compose
 cri/pullrun-cri/cri
 cri/test-harness/test-harness
@@ -39,7 +40,6 @@ FUTURE_IDEAS.md
 Fix_progress.md
 PROGRESS.md
 WARNINGS.md
-PAPER.md
 windows_progress.md
 CI_GREEN.md
 
