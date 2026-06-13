@@ -37,7 +37,7 @@ func TestRunCommandHasVMBackend(t *testing.T) {
 	if f == nil {
 		t.Fatalf("NewRunCommand is missing --backend flag")
 	}
-	if f.DefValue != "container" {
-		t.Errorf("--backend default = %q, want \"container\"", f.DefValue)
+	if f.DefValue != defaultBackend() {
+		t.Errorf("--backend default = %q, want %q", f.DefValue, defaultBackend())
 	}
 }

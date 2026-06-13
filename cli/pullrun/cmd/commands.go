@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -224,6 +225,15 @@ func parseVolumeSpec(spec string) (*runtimepb.Mount, error) {
 	return m, nil
 }
 
+// defaultBackend returns "vm" on macOS where runc is
+// unavailable, and "container" on all other platforms.
+func defaultBackend() string {
+	if runtime.GOOS == "darwin" {
+		return "vm"
+	}
+	return "container"
+}
+
 func NewRunCommand(opts *RootOptions) *cobra.Command {
 	var (
 		backend         string
@@ -260,7 +270,8 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		Long: `Run a workload. Accepts either a content-addressed digest (sha256:...)
 or an image:tag reference (e.g. alpine:latest) which will be pulled first.
 
-Use --backend=vm to run inside an Apple Virt micro-VM (macOS only).
+The default backend is "container" on Linux and "vm" on macOS.
+Use --backend=vm explicitly on Linux to run inside a Firecracker micro-VM.
 The kernel is loaded from ~/.pullrun/kernels/ by default, or from
 an OCI image via --kernel-image=<ref>.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -430,7 +441,7 @@ an OCI image via --kernel-image=<ref>.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&backend, "backend", "container", "Backend: container, vm, sandbox")
+	cmd.Flags().StringVar(&backend, "backend", defaultBackend(), "Backend: container, vm, sandbox")
 	cmd.Flags().StringVar(&name, "name", "", "Workload name (auto-generated if empty)")
 	cmd.Flags().StringSliceVar(&allowOutbound, "allow-outbound", nil, "Allow outbound: tcp:host:port")
 	cmd.Flags().StringSliceVar(&allowInbound, "allow-inbound", nil, "Allow inbound port (e.g. 8080)")
