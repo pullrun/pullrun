@@ -2463,10 +2463,23 @@ impl Runtime for RuntimeService {
             let vm_stopped = false;
 
             if !vm_stopped {
-                self.executor
-                    .stop(&id)
-                    .await
-                    .map_err(|e| tonic::Status::internal(format!("stop failed: {e}")))?;
+                // If the executor stop fails on a VM workload (e.g.
+                // stale state from an older daemon), just warn and
+                // continue so the state gets cleaned up.
+                if let Err(e) = self.executor.stop(&id).await {
+                    let is_vm = self
+                        .workloads
+                        .read()
+                        .await
+                        .get(&id)
+                        .map(|s| s.backend == "vm")
+                        .unwrap_or(false);
+                    if is_vm {
+                        warn!(%id, error = %e, "executor stop failed for VM workload; cleaning up state anyway");
+                    } else {
+                        return Err(tonic::Status::internal(format!("stop failed: {e}")));
+                    }
+                }
             }
         }
 
