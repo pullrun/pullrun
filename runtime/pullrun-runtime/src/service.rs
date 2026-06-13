@@ -2447,6 +2447,7 @@ impl Runtime for RuntimeService {
         if needs_stop {
             // Check for persistent Apple Virt VM handles first
             // (macOS — not tracked by the executor router).
+            #[cfg(target_os = "macos")]
             let vm_stopped = {
                 let mut vms = self.persistent_vms.write().await;
                 if let Some(handle) = vms.remove(&id) {
@@ -2457,6 +2458,9 @@ impl Runtime for RuntimeService {
                     false
                 }
             };
+
+            #[cfg(not(target_os = "macos"))]
+            let vm_stopped = false;
 
             if !vm_stopped {
                 self.executor
