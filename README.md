@@ -4,9 +4,9 @@
 
 # **Pullrun**
 
-### *One OCI runtime for containers, VMs, Kubernetes, and AI agents — powered by a content-addressed DAG store, P2P image sync, and a unified platform architecture in a single 12 MB binary.*
+### *One OCI image. Any execution target. A single 12 MB binary.*
 
-**Same OCI image. Container, VM, K8s workload, or AI agent. Any platform. Zero daemon required.**
+**Run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. No daemon required. No overlayfs. No separate VM images.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20679669.svg)](https://doi.org/10.5281/zenodo.20679669)
@@ -46,7 +46,7 @@ Pullrun is a **unified OCI runtime platform** — run the same OCI image as a co
 - **Universal OCI execution** — same image, any backend (container, Firecracker VM, Apple VM, K8s, MCP)
 - **Content-addressed DAG store** — zero-copy mmap reads, deduplicated by content hash, byte-identical across every node
 - **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
-- **Platform architecture, not just a runtime** — image management, storage, security policies, secrets, CRI, Compose, and MCP in one binary
+- **Pullrun is a platform, not just a runtime.** Image management, storage, security policies, secrets, CRI, Compose, and MCP — all in one binary, not a stack of separate daemons
 - **12 MB static binary** — no daemon required by default, optional runtime daemon for background services
 
 ```bash
@@ -170,7 +170,7 @@ pullrun-runtime daemon --sync-addr 0.0.0.0:9500
 
 ---
 
-## 🎯 Why Pullrun Over Docker?
+## 🎯 Why Pullrun?
 
 ### 🏗️ Architecture is Everything
 
@@ -208,6 +208,8 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 | Rootless by default | ✅ | ❌ (`dockerd` as root) |
 | Central daemon | Optional | Required |
 
+<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 14) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.</sup>
+
 ---
 
 ## ✨ Features
@@ -223,10 +225,10 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 * **`login` / `logout`** — bearer token auth for private OCI registries.
 
 ### 🔧 Build
-Native Dockerfile builder — `FROM`, `RUN`, `COPY`, `ADD`, `WORKDIR`, `ENV`, `CMD`, `ENTRYPOINT`, `--platform` for multi-arch. Each layer is content-addressed and cached by instruction hash. Uses runc directly for `RUN` instructions — no Docker daemon involved. Multi-platform builds produce manifest lists via `--platform linux/amd64,linux/arm64`.
+Native Dockerfile builder (`FROM`, `RUN`, `COPY`, `ADD`, `WORKDIR`, `ENV`, `CMD`, `ENTRYPOINT`) with content-addressed layer caching by instruction hash. Uses runc directly for `RUN` — no Docker daemon. Multi-platform builds via `--platform linux/amd64,linux/arm64`.
 
 ### 🏗️ OCI Kernel Images
-Pullrun treats kernel binaries as first-class OCI content. `pullrun kernel install` downloads a Kata Containers vmlinux from an OCI registry, storing it in the DAG store alongside regular image layers. The `--kernel-image` flag lets any workload specify a custom kernel by OCI reference — the daemon pulls it, stages it, and boots the VM with it. This is the same store-backed, content-addressed pipeline used for regular images: verified by digest, cached forever, pushable to any registry.
+Kernel binaries are first-class OCI content. `pullrun kernel install` downloads a vmlinux from an OCI registry into the DAG store. The `--kernel-image` flag lets any workload specify a custom kernel by OCI reference — same store-backed, content-addressed pipeline: verified by digest, cached forever, pushable to any registry.
 
 ### 🐳 Compose
 Full Docker Compose-compatible workflow: `up`, `down`, `logs`, `ps`, `build`. Supports dependency ordering (topological sort), port mapping, environment variables, volumes (bind mounts), resource limits (CPU/memory), labels, and per-project bridge networks for isolation. Parses standard `docker-compose.yml` files via the [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go) library.
@@ -254,14 +256,7 @@ Compose all four: `--require-signature --readonly-rootfs --no-new-privileges --s
 Nodes share image blocks peer-to-peer via gRPC + Bloom filters. One node pulls from the registry, the rest delta-sync from each other. Features: mDNS/discovery for zero-config LAN peer finding, Bloom filter cache to avoid redundant transfers, gossip protocol for peer state, delta computation, registrar service for peer tracking.
 
 ### 📡 Networking
-User-defined bridge networks with IPAM (`10.42.0.0/16` global pool, per-project subnets), inbound/outbound port forwarding via TCP proxy, DNS resolution, `iptables` integration. Networks are created with `pullrun network create <name> --subnet <cidr>` and attached workloads get an isolated bridge with their own subnet.
-
-Three network modes per workload via `--net`:
-* **`isolated`** (default) — loopback only, no external traffic. Workload is reachable only from the host via the proxy on `10.42.0.1`.
-* **`host`** — shares the host's network namespace. Useful for latency-sensitive or port-dense workloads.
-* **`none`** — no network access at all. Strongest isolation, suitable for offline batch jobs.
-
-The proxy listens on `10.42.0.1:<port>` for each declared `--allow-inbound` rule and DNATs to the workload's internal IP. All workloads (containers and VMs) share the same L2 bridge segment — isolation is enforced by the proxy, not per-workload VLANs.
+User-defined bridge networks with IPAM, inbound/outbound port forwarding, DNS resolution, and `iptables` integration. Three modes per workload via `--net`: **`isolated`** (default, loopback only with host proxy on `10.42.0.1`), **`host`** (shares host namespace), **`none`** (no network). Isolation is enforced by the proxy, not per-workload VLANs.
 
 ### 🗝️ Encrypted Secrets
 AES-256-GCM encryption at rest, decrypted into workload tmpfs at runtime. `pullrun secret create/get/ls/inspect/rm` — data stays encrypted on disk, only the runtime process can decrypt.
@@ -279,15 +274,10 @@ Full TTY support with **detach/re-attach** via `Ctrl-P Ctrl-Q`. Works across all
 `pullrun run --health-cmd 'curl -f http://localhost:80'` — periodic health checks with configurable interval, timeout, and retries. `--restart on-failure|always|unless-stopped` controls automatic restart on exit. Health state is surfaced via `pullrun inspect` and `pullrun events`.
 
 ### 🗄️ VM State Persistence
-When a VM workload goes `exited` and is restarted via `exec`, the filesystem state depends on the backend:
-* **Apple Virt VM** — rootfs persists. VirtioFS shares the host directory directly; every write hits the host filesystem.
-* **Firecracker VM** — rootfs persists. The ext4 image file is retained and reused on the next boot.
-* **Container (runc)** — rootfs is ephemeral. Only `--volume` mounts survive.
+Stopped VMs behave like hibernated machines — all writes preserved, restart on demand with `exec`. Backend specifics: **Apple Virt** rootfs persists via VirtioFS, **Firecracker** retains the ext4 image, **Container (runc)** rootfs is ephemeral (only `--volume` mounts survive). No re-pull needed.
 
-This makes stopped VMs behave like hibernated machines — all writes preserved, restart on demand with `exec`. No re-pull or re-declaration needed.
-
-### 🔐 Private Registries & Insecure Registries
-`pullrun login <registry>` stores bearer tokens for private OCI registries. The daemon accepts `--insecure-registry localhost:5000` for plain-HTTP registries (development mirrors, air-gapped LAN caches). Auth is per-registry with token refresh.
+### 🔐 Private Registries
+`pullrun login <registry>` for bearer token auth. Daemon accepts `--insecure-registry` for plain-HTTP mirrors and air-gapped LAN caches.
 
 ---
 
