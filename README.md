@@ -4,9 +4,9 @@
 
 # **Pullrun**
 
-### *Cross-platform container + VM runtime with a content-addressed DAG store, P2P image sync, Kubernetes CRI, native Compose, MCP AI integration, Cosign/SBOM policy gating, and encrypted secrets — all in a single 12 MB binary.*
+### *One OCI runtime for containers, VMs, Kubernetes, and AI agents — powered by a content-addressed DAG store, P2P image sync, and a unified platform architecture in a single 12 MB binary.*
 
-**Same OCI image. Container or VM. Any platform. Zero daemon required.**
+**Same OCI image. Container, VM, K8s workload, or AI agent. Any platform. Zero daemon required.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20679669.svg)](https://doi.org/10.5281/zenodo.20679669)
@@ -27,7 +27,8 @@
 <p align="center">
   <a href="#-install"><b>⚡ 30-Second Install</b></a> •
   <a href="#-quick-start"><b>🚀 Quick Start</b></a> •
-  <a href="#-why-pullrun-over-docker"><b>🎯 Why Not Docker?</b></a> •
+  <a href="#-architecture"><b>🏗️ Architecture</b></a> •
+  <a href="#-why-pullrun"><b>🎯 Why Pullrun?</b></a> •
   <a href="#-features"><b>🗺️ Feature Map</b></a> •
   <a href="#-kubernetes"><b>☸️ Kubernetes</b></a> •
   <a href="#-mcp-ai-integration"><b>🤖 AI Agents</b></a>
@@ -37,9 +38,16 @@
 
 ## ⚡ What is Pullrun?
 
-Pullrun is the **only** container runtime that lets you run the **same OCI image** as a container **or** as a microVM on **any OS** — macOS (Apple Silicon), Linux (x86_64/arm64), or Windows (WSL2) — with **zero daemon overhead**, a **content-addressed store** that's byte-identical across every machine, and a **P2P sync layer** that eliminates registry bottlenecks.
+Pullrun is a **unified OCI runtime platform** — run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task, all backed by a single content-addressed DAG store and P2P distribution layer.
 
-No Docker daemon. No Podman machine. No overlayfs CVEs. No platform lock-in.
+**Why this matters:** Modern infrastructure uses too many execution engines — Docker for dev, containerd for production, Firecracker for isolation, CRI for Kubernetes, MCP agents for AI. Each has its own image format, storage, and operational model — even though they all run the same OCI images. Pullrun collapses these layers into one runtime.
+
+**Key differentiators:**
+- **Universal OCI execution** — same image, any backend (container, Firecracker VM, Apple VM, K8s, MCP)
+- **Content-addressed DAG store** — zero-copy mmap reads, deduplicated by content hash, byte-identical across every node
+- **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
+- **Platform architecture, not just a runtime** — image management, storage, security policies, secrets, CRI, Compose, and MCP in one binary
+- **12 MB static binary** — no daemon required by default, optional runtime daemon for background services
 
 ```bash
 # Container — 400 ms
