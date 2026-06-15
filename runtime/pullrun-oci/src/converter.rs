@@ -378,8 +378,7 @@ fn extract_tar_entries_sync(
         xattrs: HashMap<String, Vec<u8>>,
     }
 
-    let decoder = GzDecoder::new(blob);
-    let mut archive = Archive::new(decoder);
+    let mut archive = Archive::new(blob);
     let mut dir_index: HashMap<String, Vec<usize>> = HashMap::new();
     let mut raw_entries: Vec<RawEntry> = Vec::new();
     // Map from path to digest for regular files (used to resolve hardlinks).
