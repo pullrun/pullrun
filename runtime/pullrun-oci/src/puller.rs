@@ -43,8 +43,9 @@ pub mod media_types {
 }
 
 /// Compression format for layer blobs on push.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionFormat {
+    #[default]
     Gzip,
     Zstd,
 }
@@ -55,12 +56,6 @@ impl CompressionFormat {
             CompressionFormat::Gzip => media_types::LAYER_TAR_GZIP,
             CompressionFormat::Zstd => media_types::LAYER_TAR_ZSTD,
         }
-    }
-}
-
-impl Default for CompressionFormat {
-    fn default() -> Self {
-        CompressionFormat::Gzip
     }
 }
 
