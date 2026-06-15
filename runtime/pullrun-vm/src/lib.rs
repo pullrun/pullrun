@@ -42,8 +42,8 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{info, warn};
 
-use pullrun_exec::{ExecError, Executor, ProcessHandle};
 use pullrun_exec::types::NetworkMode;
+use pullrun_exec::{ExecError, Executor, ProcessHandle};
 use pullrun_net::{Ipam, NetworkEndpoint, NetworkManager, ProxyNetwork};
 use pullrun_store::MmapStore;
 
@@ -201,10 +201,9 @@ impl Executor for FirecrackerExecutor {
         let tap_name = self.tap_name_for(&spec.id);
         let use_slirp = matches!(spec.network_mode, NetworkMode::Slirp);
         let (vm_net, tap_fd, slirp_child) = if use_slirp {
-            let (vm_net, child) = crate::network::create_slirp_tap(
-                &tap_name, guest_ip, _netmask, _gateway,
-            )
-                .map_err(|e| ExecError::ExecutionFailed(format!("slirp network setup: {e}")))?;
+            let (vm_net, child) =
+                crate::network::create_slirp_tap(&tap_name, guest_ip, _netmask, _gateway)
+                    .map_err(|e| ExecError::ExecutionFailed(format!("slirp network setup: {e}")))?;
             (vm_net, None, Some(child))
         } else if let Some(ref bn) = spec.bridge_name {
             let (gw, nm, _) = crate::network::derive_cidr(bn);
@@ -212,13 +211,11 @@ impl Executor for FirecrackerExecutor {
             crate::network::ensure_bridge_named(bn, &cidr, gw)
                 .map_err(|e| ExecError::ExecutionFailed(format!("bridge setup: {e}")))?;
             let (vm_net, fd) = create_tap_on_bridge(&tap_name, guest_ip, bn, nm, gw)
-                .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
-            ;
+                .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?;
             (vm_net, Some(fd), None)
         } else {
             let (vm_net, fd) = create_tap(&tap_name, guest_ip)
-                .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
-            ;
+                .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?;
             (vm_net, Some(fd), None)
         };
         if let Some(fd) = tap_fd {

@@ -260,8 +260,8 @@ impl Workload {
         // proper /proc (needed by many tools).
         let proc_dest = std::ffi::CString::new(format!("{MOUNT_POINT}/proc"))
             .map_err(|_| InitError::Exec("NUL in proc path".into()))?;
-        let proc_type = std::ffi::CString::new("proc")
-            .map_err(|_| InitError::Exec("NUL in proc".into()))?;
+        let proc_type =
+            std::ffi::CString::new("proc").map_err(|_| InitError::Exec("NUL in proc".into()))?;
         let _ = unsafe {
             libc::mount(
                 c"proc".as_ptr(),
