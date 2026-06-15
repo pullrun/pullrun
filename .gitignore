@@ -47,10 +47,7 @@ CI_GREEN.md
 pullrun.dev/
 
 # Strategy / planning docs
-ENTERPRISE_STRATEGY.md
-FORK_RISK.md
-LICENSING_STRATEGY.md
-desktop_project.md
+.planning/
 
 # Rebuilt Linux CLI binary (cross-compiled for Firecracker/slirp tests)
 cli/pullrun/pullrun-linux-new
