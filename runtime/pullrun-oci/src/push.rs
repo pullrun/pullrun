@@ -1,11 +1,10 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use base64::Engine;
-use serde::Serialize;
 use sha2::{Digest as Sha256Digest, Sha256};
 use tracing::{debug, info};
 
@@ -13,7 +12,8 @@ use pullrun_store::{Digest, MmapStore};
 
 use crate::converter::{DirectoryEntry, ManifestData};
 use crate::puller::{
-    OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest, OciRootFs, OciRuntimeConfig,
+    OciAuth, OciDescriptor, OciError, OciImageConfig, OciImageIndex, OciManifest, OciRootFs,
+    OciRuntimeConfig,
 };
 
 /// Push a DAG image to an OCI-compatible registry.
@@ -22,6 +22,7 @@ pub struct DagPusher {
     client: reqwest::Client,
     auth: Option<OciAuth>,
     insecure_registries: HashSet<String>,
+    compression: crate::puller::CompressionFormat,
 }
 
 impl DagPusher {
@@ -46,7 +47,14 @@ impl DagPusher {
             client,
             auth,
             insecure_registries,
+            compression: crate::puller::CompressionFormat::default(),
         }
+    }
+
+    /// Set the compression format for layer blobs on push.
+    pub fn with_compression(mut self, compression: crate::puller::CompressionFormat) -> Self {
+        self.compression = compression;
+        self
     }
 
     fn scheme(&self, registry: &str) -> &'static str {
@@ -132,27 +140,49 @@ impl DagPusher {
     }
 
     /// Reconstruct an OCI layer tar.gz from a DAG layer node.
-    fn reconstruct_layer(&self, layer_digest: &Digest) -> Result<(Vec<u8>, String), OciError> {
-        let mut tar_buf = Vec::new();
-        let mut gz = flate2::write::GzEncoder::new(&mut tar_buf, flate2::Compression::default());
-        let mut tar = tar::Builder::new(&mut gz);
-        self.walk_tree_for_layer(layer_digest, "", &mut tar)?;
-        tar.finish()?;
-        drop(tar);
-        let _ = gz
-            .finish()
-            .map_err(|e| OciError::Other(format!("gzip finish: {e}")))?;
+    fn reconstruct_layer(
+        &self,
+        layer_digest: &Digest,
+        compression: crate::puller::CompressionFormat,
+    ) -> Result<(Vec<u8>, String), OciError> {
+        use crate::puller::CompressionFormat;
 
-        let digest = format!("sha256:{}", hex::encode(Sha256::digest(&tar_buf)));
-        debug!(%digest, size = tar_buf.len(), "reconstructed OCI layer");
-        Ok((tar_buf, digest))
+        let mut buf = Vec::new();
+        match compression {
+            CompressionFormat::Gzip => {
+                let mut gz =
+                    flate2::write::GzEncoder::new(&mut buf, flate2::Compression::default());
+                {
+                    let mut tar = tar::Builder::new(&mut gz);
+                    self.walk_tree_for_layer(layer_digest, "", &mut tar)?;
+                    tar.finish()?;
+                }
+                gz.finish()
+                    .map_err(|e| OciError::Other(format!("gzip finish: {e}")))?;
+            }
+            CompressionFormat::Zstd => {
+                let mut zst = zstd::Encoder::new(&mut buf, 0)
+                    .map_err(|e| OciError::Other(format!("zstd encoder error: {e}")))?;
+                {
+                    let mut tar = tar::Builder::new(&mut zst);
+                    self.walk_tree_for_layer(layer_digest, "", &mut tar)?;
+                    tar.finish()?;
+                }
+                zst.finish()
+                    .map_err(|e| OciError::Other(format!("zstd finish: {e}")))?;
+            }
+        }
+
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(&buf)));
+        debug!(%digest, size = buf.len(), compression = ?compression, "reconstructed OCI layer");
+        Ok((buf, digest))
     }
 
-    fn walk_tree_for_layer(
+    fn walk_tree_for_layer<W: std::io::Write>(
         &self,
         node_digest: &Digest,
         base_path: &str,
-        tar: &mut tar::Builder<&mut flate2::write::GzEncoder<&mut Vec<u8>>>,
+        tar: &mut tar::Builder<W>,
     ) -> Result<(), OciError> {
         let archived = self
             .store
@@ -357,7 +387,7 @@ impl DagPusher {
             .authorized_put(&manifest_url, token.as_deref())
             .header(
                 reqwest::header::CONTENT_TYPE,
-                "application/vnd.oci.image.manifest.v1+json",
+                crate::puller::media_types::IMAGE_MANIFEST,
             )
             .body(manifest_json)
             .send()
@@ -395,30 +425,6 @@ impl DagPusher {
         }
 
         let manifest_data: ManifestData = serde_json::from_slice(archived.inline_data.as_ref())?;
-        // Reconstruct the OCI image config from the manifest data fields.
-        let oci_config = OciImageConfig {
-            created: None,
-            author: None,
-            architecture: manifest_data.architecture.clone(),
-            os: manifest_data.os.clone(),
-            config: Some(OciRuntimeConfig {
-                user: None,
-                exposed_ports: None,
-                env: Some(manifest_data.env.clone()),
-                entrypoint: Some(manifest_data.entrypoint.clone()),
-                cmd: Some(manifest_data.cmd.clone()),
-                volumes: None,
-                working_dir: manifest_data.working_dir.clone(),
-                labels: None,
-                stop_signal: None,
-            }),
-            rootfs: OciRootFs {
-                diff_ids: vec![],
-                fs_type: "layers".to_string(),
-            },
-            history: None,
-        };
-
         let layer_digests: Vec<Digest> = archived.edges.iter().map(|e| Digest(*e)).collect();
 
         let mut oci_layers = Vec::new();
@@ -426,7 +432,7 @@ impl DagPusher {
 
         for layer_digest in &layer_digests {
             info!(%layer_digest, "reconstructing OCI layer from DAG");
-            let (layer_data, oci_digest) = self.reconstruct_layer(layer_digest)?;
+            let (layer_data, oci_digest) = self.reconstruct_layer(layer_digest, self.compression)?;
 
             self.upload_blob(registry, repository, &oci_digest, &layer_data, token)
                 .await?;
@@ -434,32 +440,94 @@ impl DagPusher {
             total_pushed += layer_data.len() as i64;
 
             oci_layers.push(OciDescriptor {
-                media_type: "application/vnd.oci.image.layer.v1.tar+gzip".to_string(),
+                media_type: self.compression.media_type().to_string(),
                 digest: oci_digest,
                 size: layer_data.len() as u64,
+                urls: None,
                 annotations: None,
+                data: None,
                 platform: None,
+                artifact_type: None,
             });
         }
 
-        let config_json = serde_json::to_vec(&oci_config)?;
-        let config_digest = format!("sha256:{}", hex::encode(Sha256::digest(&config_json)));
-        self.upload_blob(registry, repository, &config_digest, &config_json, token)
-            .await?;
-        total_pushed += config_json.len() as i64;
+        // If there are no layers, use the OCI empty JSON descriptor
+        // instead of constructing a full config (per OCI 1.1 spec for
+        // artifact/referrer manifests).
+        let (config_descriptor, total_pushed) = if layer_digests.is_empty() {
+            (crate::puller::empty_json_descriptor(), total_pushed)
+        } else {
+            let oci_config = OciImageConfig {
+                created: None,
+                author: None,
+                architecture: manifest_data.architecture.clone(),
+                os: manifest_data.os.clone(),
+                os_version: None,
+                os_features: None,
+                variant: manifest_data.variant.clone(),
+                config: Some(OciRuntimeConfig {
+                    user: manifest_data.user.clone(),
+                    exposed_ports: manifest_data
+                        .exposed_ports
+                        .as_ref()
+                        .map(|ports| {
+                            ports
+                                .iter()
+                                .map(|p| {
+                                    (p.clone(), serde_json::Value::Object(Default::default()))
+                                })
+                                .collect()
+                        }),
+                    env: Some(manifest_data.env.clone()),
+                    entrypoint: Some(manifest_data.entrypoint.clone()),
+                    cmd: Some(manifest_data.cmd.clone()),
+                    volumes: manifest_data
+                        .volumes
+                        .as_ref()
+                        .map(|vols| {
+                            vols.iter()
+                                .map(|v| {
+                                    (v.clone(), serde_json::Value::Object(Default::default()))
+                                })
+                                .collect()
+                        }),
+                    working_dir: manifest_data.working_dir.clone(),
+                    labels: None,
+                    stop_signal: manifest_data.stop_signal.clone(),
+                    args_escaped: false,
+                }),
+                rootfs: OciRootFs {
+                    diff_ids: vec![],
+                    fs_type: "layers".to_string(),
+                },
+                history: None,
+            };
+            let config_json = serde_json::to_vec(&oci_config)?;
+            let config_digest = format!("sha256:{}", hex::encode(Sha256::digest(&config_json)));
+            self.upload_blob(registry, repository, &config_digest, &config_json, token)
+                .await?;
+            let t = total_pushed + config_json.len() as i64;
+            let desc = OciDescriptor {
+                media_type: crate::puller::media_types::IMAGE_CONFIG.to_string(),
+                digest: config_digest,
+                size: config_json.len() as u64,
+                urls: None,
+                annotations: None,
+                data: None,
+                platform: None,
+                artifact_type: None,
+            };
+            (desc, t)
+        };
 
         let oci_manifest = OciManifest {
             schema_version: 2,
-            media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
-            config: OciDescriptor {
-                media_type: "application/vnd.oci.image.config.v1+json".to_string(),
-                digest: config_digest,
-                size: config_json.len() as u64,
-                annotations: None,
-                platform: None,
-            },
+            media_type: crate::puller::media_types::IMAGE_MANIFEST.to_string(),
+            artifact_type: None,
+            config: config_descriptor,
             layers: oci_layers,
-            annotations: None,
+            subject: manifest_data.subject,
+            annotations: manifest_data.annotations,
         };
 
         Ok((oci_manifest, total_pushed))
@@ -488,6 +556,21 @@ impl DagPusher {
 
         let token = self.get_token(&registry, &repository, "push,pull").await?;
         let child_digests: Vec<Digest> = list_archived.edges.iter().map(|e| Digest(*e)).collect();
+
+        // Parse the original OCI image index from inline_data to extract
+        // annotations, artifactType, and subject.
+        let list_index: Option<OciImageIndex> =
+            if !list_archived.inline_data.is_empty() {
+                serde_json::from_slice(list_archived.inline_data.as_ref()).ok()
+            } else {
+                None
+            };
+        let list_artifact_type: Option<String> =
+            list_index.as_ref().and_then(|i| i.artifact_type.clone());
+        let list_subject: Option<OciDescriptor> =
+            list_index.as_ref().and_then(|i| i.subject.clone());
+        let list_annotations: Option<HashMap<String, String>> =
+            list_index.as_ref().and_then(|i| i.annotations.clone());
 
         let mut total_pushed: i64 = 0;
         let mut manifests = Vec::with_capacity(child_digests.len());
@@ -518,7 +601,7 @@ impl DagPusher {
                 .authorized_put(&manifest_url, token.as_deref())
                 .header(
                     reqwest::header::CONTENT_TYPE,
-                    "application/vnd.oci.image.manifest.v1+json",
+                    crate::puller::media_types::IMAGE_MANIFEST,
                 )
                 .body(manifest_json)
                 .send()
@@ -533,31 +616,31 @@ impl DagPusher {
             total_pushed += manifest_size;
 
             manifests.push(OciDescriptor {
-                media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+                media_type: crate::puller::media_types::IMAGE_MANIFEST.to_string(),
                 digest: child_digest,
                 size: manifest_size as u64,
-                annotations: None,
+                urls: None,
+                annotations: manifest_data.annotations,
+                data: None,
+                artifact_type: None,
                 platform: Some(crate::puller::OciPlatform {
                     architecture: manifest_data.architecture,
                     os: manifest_data.os,
+                    os_version: None,
+                    os_features: None,
+                    variant: manifest_data.variant,
                 }),
             });
         }
 
         // Build and push the image index (manifest list).
-        #[derive(Serialize)]
-        struct ImageIndex {
-            #[serde(rename = "schemaVersion")]
-            schema_version: u32,
-            #[serde(rename = "mediaType")]
-            media_type: String,
-            manifests: Vec<OciDescriptor>,
-        }
-
-        let index = ImageIndex {
+        let index = OciImageIndex {
             schema_version: 2,
-            media_type: "application/vnd.oci.image.index.v1+json".to_string(),
+            media_type: crate::puller::media_types::IMAGE_INDEX.to_string(),
+            artifact_type: list_artifact_type,
             manifests,
+            subject: list_subject,
+            annotations: list_annotations,
         };
 
         let index_json = serde_json::to_vec(&index)?;
@@ -569,7 +652,7 @@ impl DagPusher {
             .authorized_put(&index_url, token.as_deref())
             .header(
                 reqwest::header::CONTENT_TYPE,
-                "application/vnd.oci.image.index.v1+json",
+                crate::puller::media_types::IMAGE_INDEX,
             )
             .body(index_json)
             .send()

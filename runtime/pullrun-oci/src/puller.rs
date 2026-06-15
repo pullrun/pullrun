@@ -12,6 +12,109 @@ use tracing::{debug, info};
 
 use pullrun_store::Digest;
 
+/// OCI Image Spec v1.1 media type constants.
+/// Mirrors the Go constants in `specs-go/v1/mediatype.go`.
+pub mod media_types {
+    /// Content descriptor JSON.
+    pub const DESCRIPTOR: &str = "application/vnd.oci.descriptor.v1+json";
+    /// OCI image layout header.
+    pub const LAYOUT_HEADER: &str = "application/vnd.oci.layout.header.v1+json";
+    /// Image index (fat manifest for multi-arch).
+    pub const IMAGE_INDEX: &str = "application/vnd.oci.image.index.v1+json";
+    /// Single-platform image manifest.
+    pub const IMAGE_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
+    /// Image configuration JSON.
+    pub const IMAGE_CONFIG: &str = "application/vnd.oci.image.config.v1+json";
+    /// Empty JSON blob `{}` for unused descriptors.
+    pub const EMPTY_JSON: &str = "application/vnd.oci.empty.v1+json";
+
+    /// Uncompressed tar layer.
+    pub const LAYER_TAR: &str = "application/vnd.oci.image.layer.v1.tar";
+    /// Gzip-compressed tar layer.
+    pub const LAYER_TAR_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+    /// Zstd-compressed tar layer.
+    pub const LAYER_TAR_ZSTD: &str = "application/vnd.oci.image.layer.v1.tar+zstd";
+
+    // Deprecated non-distributable layer types (kept for reading legacy images).
+    pub const LAYER_NONDIST_TAR: &str = "application/vnd.oci.image.layer.nondistributable.v1.tar";
+    pub const LAYER_NONDIST_GZIP: &str = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip";
+    pub const LAYER_NONDIST_ZSTD: &str =
+        "application/vnd.oci.image.layer.nondistributable.v1.tar+zstd";
+}
+
+/// Compression format for layer blobs on push.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompressionFormat {
+    Gzip,
+    Zstd,
+}
+
+impl CompressionFormat {
+    pub fn media_type(self) -> &'static str {
+        match self {
+            CompressionFormat::Gzip => media_types::LAYER_TAR_GZIP,
+            CompressionFormat::Zstd => media_types::LAYER_TAR_ZSTD,
+        }
+    }
+}
+
+impl Default for CompressionFormat {
+    fn default() -> Self {
+        CompressionFormat::Gzip
+    }
+}
+
+/// The standard OCI empty descriptor — a descriptor pointing to `{}`
+/// with media type `application/vnd.oci.empty.v1+json`.
+pub fn empty_json_descriptor() -> OciDescriptor {
+    OciDescriptor {
+        media_type: media_types::EMPTY_JSON.to_string(),
+        digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a".to_string(),
+        size: 2,
+        urls: None,
+        annotations: None,
+        data: None,
+        platform: None,
+        artifact_type: None,
+    }
+}
+
+/// The raw bytes of the empty JSON blob `{}`.
+pub const EMPTY_JSON_BYTES: &[u8] = b"{}";
+
+/// OCI Image Spec v1.1 standard annotation key constants.
+/// Mirrors the Go constants in `specs-go/v1/annotations.go`.
+pub mod annotations {
+    /// Date and time on which the image was built, RFC 3339.
+    pub const CREATED: &str = "org.opencontainers.image.created";
+    /// Contact details of the people or organization responsible for the image.
+    pub const AUTHORS: &str = "org.opencontainers.image.authors";
+    /// URL to find more information about the image.
+    pub const URL: &str = "org.opencontainers.image.url";
+    /// URL to get documentation about the image.
+    pub const DOCUMENTATION: &str = "org.opencontainers.image.documentation";
+    /// URL to get the source code for the image.
+    pub const SOURCE: &str = "org.opencontainers.image.source";
+    /// Version of the software in the image.
+    pub const VERSION: &str = "org.opencontainers.image.version";
+    /// Source control revision identifier for the image.
+    pub const REVISION: &str = "org.opencontainers.image.revision";
+    /// Name of the vendor distributing the image.
+    pub const VENDOR: &str = "org.opencontainers.image.vendor";
+    /// License(s) under which the image is distributed.
+    pub const LICENSES: &str = "org.opencontainers.image.licenses";
+    /// Name of the reference for the image (e.g., tag).
+    pub const REF_NAME: &str = "org.opencontainers.image.ref.name";
+    /// Human-readable title of the image.
+    pub const TITLE: &str = "org.opencontainers.image.title";
+    /// Human-readable description of the image.
+    pub const DESCRIPTION: &str = "org.opencontainers.image.description";
+    /// An opaque base64-encoded string that can be used to verify the image.
+    pub const BASE64_DIGEST: &str = "org.opencontainers.image.base.digest";
+    /// The name of the base image (e.g., `docker.io/library/alpine`).
+    pub const BASE64_REF_NAME: &str = "org.opencontainers.image.base.name";
+}
+
 type FetchResult<'a> = std::pin::Pin<
     Box<
         dyn std::future::Future<Output = Result<(Vec<u8>, Vec<OciDescriptor>), OciError>>
@@ -36,6 +139,8 @@ pub enum OciError {
     LayerNotFound(String),
     #[error("Unsupported media type: {0}")]
     UnsupportedMediaType(String),
+    #[error("Digest mismatch for {0}: {1}")]
+    DigestMismatch(String, String),
     #[error("Other: {0}")]
     Other(String),
 }
@@ -44,21 +149,36 @@ pub enum OciError {
 pub struct OciManifest {
     #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
-    #[serde(rename = "mediaType")]
+    #[serde(rename = "mediaType", default, skip_serializing_if = "String::is_empty")]
     pub media_type: String,
+    #[serde(rename = "artifactType", default, skip_serializing_if = "Option::is_none")]
+    pub artifact_type: Option<String>,
     pub config: OciDescriptor,
     pub layers: Vec<OciDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<OciDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OciImageConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
     pub architecture: String,
     pub os: String,
+    #[serde(rename = "os.version", default, skip_serializing_if = "Option::is_none")]
+    pub os_version: Option<String>,
+    #[serde(rename = "os.features", default, skip_serializing_if = "Option::is_none")]
+    pub os_features: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<OciRuntimeConfig>,
     pub rootfs: OciRootFs,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history: Option<Vec<OciHistoryEntry>>,
 }
 
@@ -68,39 +188,58 @@ pub struct OciDescriptor {
     pub media_type: String,
     pub digest: String,
     pub size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub urls: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<HashMap<String, String>>,
+    /// Base64-encoded inline content. The spec uses this for small
+    /// embedded blobs (see DescriptorEmptyJSON).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
     /// OCI image indexes put the platform on each child
     /// descriptor. `None` for layer / config descriptors in
     /// a flat manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<OciPlatform>,
+    /// IANA media type of the artifact this descriptor points to.
+    #[serde(rename = "artifactType", default, skip_serializing_if = "Option::is_none")]
+    pub artifact_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OciPlatform {
     pub architecture: String,
     pub os: String,
+    #[serde(rename = "os.version", default, skip_serializing_if = "Option::is_none")]
+    pub os_version: Option<String>,
+    #[serde(rename = "os.features", default, skip_serializing_if = "Option::is_none")]
+    pub os_features: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OciRuntimeConfig {
-    #[serde(rename = "User")]
+    #[serde(rename = "User", default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    #[serde(rename = "ExposedPorts")]
+    #[serde(rename = "ExposedPorts", default, skip_serializing_if = "Option::is_none")]
     pub exposed_ports: Option<HashMap<String, serde_json::Value>>,
-    #[serde(rename = "Env")]
+    #[serde(rename = "Env", default, skip_serializing_if = "Option::is_none")]
     pub env: Option<Vec<String>>,
-    #[serde(rename = "Entrypoint")]
+    #[serde(rename = "Entrypoint", default, skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<Vec<String>>,
-    #[serde(rename = "Cmd")]
+    #[serde(rename = "Cmd", default, skip_serializing_if = "Option::is_none")]
     pub cmd: Option<Vec<String>>,
-    #[serde(rename = "Volumes")]
+    #[serde(rename = "Volumes", default, skip_serializing_if = "Option::is_none")]
     pub volumes: Option<HashMap<String, serde_json::Value>>,
-    #[serde(rename = "WorkingDir")]
+    #[serde(rename = "WorkingDir", default, skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
-    #[serde(rename = "Labels")]
+    #[serde(rename = "Labels", default, skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
-    #[serde(rename = "StopSignal")]
+    #[serde(rename = "StopSignal", default, skip_serializing_if = "Option::is_none")]
     pub stop_signal: Option<String>,
+    #[serde(rename = "ArgsEscaped", default, skip_serializing_if = "std::ops::Not::not")]
+    pub args_escaped: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,12 +252,29 @@ pub struct OciRootFs {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OciHistoryEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
-    #[serde(rename = "created_by")]
+    #[serde(rename = "created_by", default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
-    #[serde(rename = "empty_layer")]
+    #[serde(rename = "empty_layer", default, skip_serializing_if = "Option::is_none")]
     pub empty_layer: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OciImageIndex {
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: u32,
+    #[serde(rename = "mediaType", default, skip_serializing_if = "String::is_empty")]
+    pub media_type: String,
+    #[serde(rename = "artifactType", default, skip_serializing_if = "Option::is_none")]
+    pub artifact_type: Option<String>,
+    pub manifests: Vec<OciDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<OciDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,7 +289,7 @@ pub struct PulledImage {
     pub manifest: OciManifest,
     pub config: OciImageConfig,
     pub config_digest: Digest,
-    pub layer_blobs: Vec<(Digest, Vec<u8>)>,
+    pub layer_blobs: Vec<(Digest, Vec<u8>, String)>,
 }
 
 /// The result of pulling all platforms from a multi-arch image index.
@@ -345,7 +501,7 @@ impl OciPuller {
             debug!(digest = %layer.digest, size = blob.len(), "layer downloaded");
             let layer_d = Digest::from_hex(&layer.digest)
                 .map_err(|e| OciError::Other(format!("invalid layer digest: {e}")))?;
-            layer_blobs.push((layer_d, blob));
+            layer_blobs.push((layer_d, blob, layer.media_type.clone()));
         }
 
         info!(
@@ -413,7 +569,7 @@ impl OciPuller {
                     .await?;
                 let layer_d = Digest::from_hex(&layer.digest)
                     .map_err(|e| OciError::Other(format!("invalid layer digest: {e}")))?;
-                layer_blobs.push((layer_d, blob));
+                layer_blobs.push((layer_d, blob, layer.media_type.clone()));
             }
 
             images.push(PulledImage {
@@ -450,12 +606,12 @@ impl OciPuller {
             let mut req = self
                 .client
                 .get(&url)
-                .header("Accept", "application/vnd.oci.image.index.v1+json")
+                .header("Accept", media_types::IMAGE_INDEX)
                 .header(
                     "Accept",
                     "application/vnd.docker.distribution.manifest.list.v2+json",
                 )
-                .header("Accept", "application/vnd.oci.image.manifest.v1+json")
+                .header("Accept", media_types::IMAGE_MANIFEST)
                 .header(
                     "Accept",
                     "application/vnd.docker.distribution.manifest.v2+json",
@@ -532,8 +688,8 @@ impl OciPuller {
             let mut req = self
                 .client
                 .get(&url)
-                .header("Accept", "application/vnd.oci.image.manifest.v1+json")
-                .header("Accept", "application/vnd.oci.image.index.v1+json")
+                .header("Accept", media_types::IMAGE_MANIFEST)
+                .header("Accept", media_types::IMAGE_INDEX)
                 .header(
                     "Accept",
                     "application/vnd.docker.distribution.manifest.v2+json",
@@ -571,6 +727,12 @@ impl OciPuller {
 
             let raw = resp.bytes().await?.to_vec();
             let bytes = decode_body(&content_encoding, raw)?;
+
+            // When fetching by digest (not a tag name), verify content.
+            if reference.contains(':') {
+                Digest::verify_oci(&bytes, reference)
+                    .map_err(|e| OciError::DigestMismatch(reference.to_string(), e))?;
+            }
 
             let is_manifest_list = content_type.contains("manifest.list")
                 || content_type.contains("image.index")
@@ -680,6 +842,9 @@ impl OciPuller {
             .to_string();
         let raw = resp.bytes().await?.to_vec();
         let data = decode_body(&content_encoding, raw)?;
+        // Verify the config content matches the claimed digest.
+        Digest::verify_oci(&data, digest)
+            .map_err(|e| OciError::DigestMismatch(digest.to_string(), e))?;
         let config: OciImageConfig = serde_json::from_slice(&data)
             .map_err(|e| OciError::InvalidManifest(format!("config parse: {e}")))?;
         Ok(config)
@@ -708,6 +873,9 @@ impl OciPuller {
             .to_string();
         let raw = resp.bytes().await?.to_vec();
         let data = decode_body(&content_encoding, raw)?;
+        // Verify the downloaded content matches the claimed digest.
+        Digest::verify_oci(&data, digest)
+            .map_err(|e| OciError::DigestMismatch(digest.to_string(), e))?;
         Ok(data)
     }
 
@@ -760,6 +928,43 @@ impl OciPuller {
     ) -> Result<Vec<u8>, OciError> {
         self.fetch_blob(registry, repository, digest, token).await
     }
+
+    /// Fetch all referrers (manifests that reference a subject digest).
+    /// Returns an OCI image index where each manifest descriptor
+    /// represents one referring manifest.
+    /// Optionally filter by artifact type:
+    ///   GET /v2/<name>/referrers/<digest>?artifactType=<type>
+    pub async fn fetch_referrers(
+        &self,
+        registry: &str,
+        repository: &str,
+        digest: &str,
+        artifact_type: Option<&str>,
+        token: Option<&str>,
+    ) -> Result<OciImageIndex, OciError> {
+        let mut url = referrers_url(self, registry, repository, digest);
+        if let Some(at) = artifact_type {
+            url.push_str(&format!("?artifactType={at}"));
+        }
+
+        let mut req = self.client.get(&url);
+        if let Some(t) = token {
+            req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+
+        let resp = req.send().await?;
+        let content_encoding = resp
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        let raw = resp.bytes().await?.to_vec();
+        let bytes = decode_body(&content_encoding, raw)?;
+        let index: OciImageIndex = serde_json::from_slice(&bytes)?;
+        Ok(index)
+    }
 }
 
 fn decode_body(encoding: &str, data: Vec<u8>) -> Result<Vec<u8>, OciError> {
@@ -790,6 +995,17 @@ fn blob_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) 
     } else {
         format!(
             "{}//{registry}/v2/{repository}/blobs/{digest}",
+            puller.scheme(registry)
+        )
+    }
+}
+
+fn referrers_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) -> String {
+    if registry == "registry-1.docker.io" || registry == "docker.io" {
+        format!("https://index.docker.io/v2/{repository}/referrers/{digest}")
+    } else {
+        format!(
+            "{}//{registry}/v2/{repository}/referrers/{digest}",
             puller.scheme(registry)
         )
     }

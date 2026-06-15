@@ -275,7 +275,7 @@ Use --backend=vm explicitly on Linux to run inside a Firecracker micro-VM.
 The kernel is loaded from ~/.pullrun/kernels/ by default, or from
 an OCI image via --kernel-image=<ref>.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
 
 			client, closeFn, err := ensureGRPCClient(opts)

@@ -10,6 +10,36 @@ use pullrun_store::{Digest, MmapStore};
 use crate::converter::ManifestData;
 use crate::puller::OciError;
 
+// Platform-specific helpers for file attributes.
+#[cfg(unix)]
+mod imp {
+    use std::path::Path;
+
+    pub fn set_owner(path: &Path, uid: u32, gid: u32) {
+        use std::os::unix::fs::MetadataExt;
+        // Only chown if the current owner/gid differ from target.
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.uid() != uid || meta.gid() != gid {
+                let _ = std::os::unix::fs::chown(path, Some(uid), Some(gid));
+            }
+        }
+    }
+
+    pub fn set_mtime(path: &Path, mtime: i64) {
+        if mtime < 0 {
+            return;
+        }
+        let ft = filetime::FileTime::from_unix_time(mtime, 0);
+        let _ = filetime::set_file_mtime(path, ft);
+    }
+
+    pub fn set_xattr(path: &Path, name: &[u8], value: &[u8]) {
+        use std::os::unix::ffi::OsStrExt;
+        let name_os = std::ffi::OsStr::from_bytes(name);
+        let _ = xattr::set(path, name_os, value);
+    }
+}
+
 pub struct MaterializedBundle {
     pub rootfs_path: PathBuf,
     pub config_path: PathBuf,
@@ -116,12 +146,69 @@ impl<'a> OciMaterializer<'a> {
             .get_archived(layer_digest)
             .map_err(|e| OciError::Other(format!("corrupt layer node {layer_digest}: {e}")))?;
 
-        if layer_node.is_layer() {
-            let layer_path = String::from_utf8_lossy(&layer_node.inline_data).to_string();
-            for edge in layer_node.edges.iter() {
-                let child_digest = Digest(*edge);
-                self.materialize_tree(&child_digest, rootfs_path, &layer_path)?;
+        if !layer_node.is_layer() {
+            return Ok(());
+        }
+
+        let layer_path = String::from_utf8_lossy(&layer_node.inline_data).to_string();
+
+        // Split edges into tree roots and whiteout nodes.
+        let mut tree_edges = Vec::new();
+        let mut whiteout_edges = Vec::new();
+        for edge in layer_node.edges.iter() {
+            let child_digest = Digest(*edge);
+            match self.store.get_archived(&child_digest) {
+                Ok(child) if child.is_whiteout() || child.is_opaque_dir() => {
+                    whiteout_edges.push((child_digest, child.is_opaque_dir()));
+                }
+                _ => tree_edges.push(child_digest),
             }
+        }
+
+        // Apply whiteouts BEFORE extracting the layer's tree so that
+        // lower-layer entries are removed before this layer's files land.
+        for (whiteout_digest, is_opaque) in &whiteout_edges {
+            let whiteout_node = self.store.get_archived(whiteout_digest).map_err(|e| {
+                OciError::Other(format!("corrupt whiteout node {whiteout_digest}: {e}"))
+            })?;
+            let target_path_str =
+                String::from_utf8_lossy(&whiteout_node.inline_data).to_string();
+
+            if *is_opaque {
+                // Opaque whiteout: remove ALL children of the target directory.
+                let dir_path = if layer_path.is_empty() {
+                    rootfs_path.join(&target_path_str)
+                } else {
+                    rootfs_path.join(&layer_path).join(&target_path_str)
+                };
+                if dir_path.is_dir() {
+                    debug!(target = %dir_path.display(), "applying opaque whiteout");
+                    for entry in std::fs::read_dir(&dir_path)? {
+                        let entry = entry?;
+                        let path = entry.path();
+                        if path.is_dir() {
+                            std::fs::remove_dir_all(&path)?;
+                        } else {
+                            std::fs::remove_file(&path)?;
+                        }
+                    }
+                }
+            } else {
+                // Explicit whiteout: delete a single path.
+                let full_path = if layer_path.is_empty() {
+                    rootfs_path.join(&target_path_str)
+                } else {
+                    rootfs_path.join(&layer_path).join(&target_path_str)
+                };
+                debug!(target = %full_path.display(), "applying whiteout");
+                let _ = std::fs::remove_file(&full_path);
+                let _ = std::fs::remove_dir(&full_path);
+            }
+        }
+
+        // Now extract the tree contents (this layer's actual files).
+        for child_digest in &tree_edges {
+            self.materialize_tree(child_digest, rootfs_path, &layer_path)?;
         }
 
         Ok(())
@@ -182,16 +269,12 @@ impl<'a> OciMaterializer<'a> {
                     } else if let Ok(blob_node) = self.store.get_archived(&entry.digest) {
                         std::fs::write(&full_path, &blob_node.inline_data[..])?;
                     }
+                }
 
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let mode = if entry.mode == 0 { 0o644 } else { entry.mode };
-                        let _ = std::fs::set_permissions(
-                            &full_path,
-                            std::fs::Permissions::from_mode(mode),
-                        );
-                    }
+                // Apply file attributes (mode, uid, gid, mtime, xattrs).
+                #[cfg(unix)]
+                {
+                    apply_unix_attributes(&full_path, &entry);
                 }
             }
         }
@@ -214,13 +297,56 @@ impl<'a> OciMaterializer<'a> {
         manifest_data: &ManifestData,
         rootfs_path: &Path,
     ) -> Result<(), OciError> {
+        // Parse User string per OCI conversion spec.
+        // Formats: "user", "user:group", "uid", "uid:gid", "uid:group"
+        let (uid, gid) = parse_user_string(&manifest_data.user);
+
+        // Build runtime annotations from conversion metadata.
+        let mut annotations = manifest_data.annotations.clone().unwrap_or_default();
+        annotations
+            .entry("org.opencontainers.image.os".to_string())
+            .or_insert_with(|| manifest_data.os.clone());
+        annotations
+            .entry("org.opencontainers.image.architecture".to_string())
+            .or_insert_with(|| manifest_data.architecture.clone());
+        if let Some(variant) = &manifest_data.variant {
+            annotations
+                .entry("org.opencontainers.image.variant".to_string())
+                .or_insert_with(|| variant.clone());
+        }
+        if let Some(signal) = &manifest_data.stop_signal {
+            annotations
+                .entry("org.opencontainers.image.stopSignal".to_string())
+                .or_insert_with(|| signal.clone());
+        }
+        if let Some(ports) = &manifest_data.exposed_ports {
+            if !ports.is_empty() {
+                annotations
+                    .entry("org.opencontainers.image.exposedPorts".to_string())
+                    .or_insert_with(|| ports.join(","));
+            }
+        }
+
+        // Build mounts for volumes.
+        let mut mounts = Vec::new();
+        if let Some(vols) = &manifest_data.volumes {
+            for vol in vols {
+                mounts.push(serde_json::json!({
+                    "destination": vol,
+                    "type": "bind",
+                    "source": vol,
+                    "options": ["rbind", "rw"]
+                }));
+            }
+        }
+
         let oci_spec = serde_json::json!({
             "ociVersion": "1.1.0",
             "process": {
                 "terminal": false,
                 "user": {
-                    "uid": 0,
-                    "gid": 0
+                    "uid": uid,
+                    "gid": gid
                 },
                 "args": if !manifest_data.entrypoint.is_empty() {
                     [manifest_data.entrypoint.clone(), manifest_data.cmd.clone()].concat()
@@ -242,7 +368,9 @@ impl<'a> OciMaterializer<'a> {
                     {"type": "uts"},
                     {"type": "mount"}
                 ]
-            }
+            },
+            "annotations": annotations,
+            "mounts": mounts,
         });
 
         std::fs::write(
@@ -251,5 +379,63 @@ impl<'a> OciMaterializer<'a> {
         )?;
 
         Ok(())
+    }
+}
+
+/// Parse `Config.User` string per OCI conversion spec.
+/// Returns (uid, gid). Defaults to (0, 0) on parse failure.
+fn parse_user_string(user: &Option<String>) -> (u32, u32) {
+    let Some(user_str) = user.as_ref() else {
+        return (0, 0);
+    };
+    let user_str = user_str.trim();
+    if user_str.is_empty() {
+        return (0, 0);
+    }
+
+    // Try parsing as `uid[:gid]` (all numeric).
+    if let Some((uid_str, gid_str)) = user_str.split_once(':') {
+        let uid: u32 = uid_str.parse().unwrap_or(0);
+        let gid: u32 = gid_str.parse().unwrap_or(0);
+        return (uid, gid);
+    }
+
+    // Single value: could be numeric uid or named user.
+    if let Ok(uid) = user_str.parse::<u32>() {
+        return (uid, 0);
+    }
+
+    // Named user — fall back to root (0, 0).
+    (0, 0)
+}
+
+#[cfg(unix)]
+fn apply_unix_attributes(full_path: &Path, entry: &crate::converter::DirectoryEntry) {
+    use std::os::unix::fs::PermissionsExt;
+
+    // Set permissions (mode).
+    let mode = if entry.is_dir {
+        if entry.mode == 0 { 0o755 } else { entry.mode }
+    } else if entry.is_symlink {
+        0o777
+    } else {
+        if entry.mode == 0 { 0o644 } else { entry.mode }
+    };
+    let _ = std::fs::set_permissions(
+        full_path,
+        std::fs::Permissions::from_mode(mode),
+    );
+
+    // Set ownership (best-effort — may fail as non-root).
+    imp::set_owner(full_path, entry.uid, entry.gid);
+
+    // Set mtime (best-effort).
+    imp::set_mtime(full_path, entry.mtime);
+
+    // Apply extended attributes (best-effort).
+    if !entry.xattrs.is_empty() {
+        for (name, value) in &entry.xattrs {
+            imp::set_xattr(full_path, name.as_bytes(), value);
+        }
     }
 }

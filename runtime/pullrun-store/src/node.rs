@@ -23,6 +23,14 @@ pub enum NodeKind {
     Layer,
     Manifest,
     ManifestList,
+    /// OCI whiteout: deletes a path from a lower layer.
+    /// `inline_data` contains the target path. Applied during
+    /// materialization and removed from the final filesystem.
+    Whiteout,
+    /// OCI opaque whiteout: marks a directory as opaque,
+    /// hiding all children from lower layers.
+    /// `inline_data` contains the directory path.
+    OpaqueDir,
 }
 
 impl DagNode {
@@ -94,5 +102,31 @@ impl ArchivedDagNode {
 
     pub fn is_manifest_list(&self) -> bool {
         matches!(self.kind, ArchivedNodeKind::ManifestList)
+    }
+
+    pub fn is_whiteout(&self) -> bool {
+        matches!(self.kind, ArchivedNodeKind::Whiteout)
+    }
+
+    pub fn is_opaque_dir(&self) -> bool {
+        matches!(self.kind, ArchivedNodeKind::OpaqueDir)
+    }
+}
+
+impl DagNode {
+    pub fn whiteout(target_path: Vec<u8>) -> Self {
+        Self {
+            kind: NodeKind::Whiteout,
+            edges: vec![],
+            inline_data: target_path,
+        }
+    }
+
+    pub fn opaque_dir(dir_path: Vec<u8>) -> Self {
+        Self {
+            kind: NodeKind::OpaqueDir,
+            edges: vec![],
+            inline_data: dir_path,
+        }
     }
 }

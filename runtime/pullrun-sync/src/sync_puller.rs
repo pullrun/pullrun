@@ -69,23 +69,20 @@ impl SyncPuller {
             "resolved manifest; fetching blobs via sync"
         );
 
-        let needed_digests: Vec<String> =
-            manifest.layers.iter().map(|l| l.digest.clone()).collect();
-
-        let mut layer_blobs = Vec::with_capacity(needed_digests.len());
-        for digest in &needed_digests {
+        let mut layer_blobs = Vec::with_capacity(manifest.layers.len());
+        for layer in &manifest.layers {
             let blob_data = self
                 .fetch_blob_with_sync(
                     bloom_cache,
-                    digest,
+                    &layer.digest,
                     &registry,
                     &repository,
                     token.as_deref(),
                 )
                 .await?;
-            let d = Digest::from_hex(digest)
+            let d = Digest::from_hex(&layer.digest)
                 .map_err(|e| pullrun_oci::OciError::Other(format!("invalid layer digest: {e}")))?;
-            layer_blobs.push((d, blob_data));
+            layer_blobs.push((d, blob_data, layer.media_type.clone()));
         }
 
         let cd = Digest::from_hex(&config_digest)

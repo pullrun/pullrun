@@ -6,6 +6,7 @@ pub mod dag_export;
 pub mod dag_import;
 pub mod dockerfile;
 pub mod materializer;
+pub mod oci_layout;
 pub mod puller;
 pub mod push;
 
@@ -19,7 +20,8 @@ pub use dockerfile::{
 };
 pub use materializer::OciMaterializer;
 pub use puller::{
-    current_arch, parse_platform, OciAuth, OciDescriptor, OciError, OciImageConfig, OciManifest,
-    OciPuller, PulledImage, PulledImageList,
+    current_arch, empty_json_descriptor, parse_platform, CompressionFormat, OciAuth,
+    OciDescriptor, OciError, OciImageConfig, OciImageIndex, OciManifest, OciPuller,
+    PulledImage, PulledImageList,
 };
 pub use push::DagPusher;

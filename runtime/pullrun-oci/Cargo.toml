@@ -23,6 +23,9 @@ rkyv.workspace = true
 bytes.workspace = true
 walkdir = "2"
 rayon = "1"
+filetime.workspace = true
+xattr.workspace = true
+zstd.workspace = true
 
 [dev-dependencies]
 tempfile = "3.10"

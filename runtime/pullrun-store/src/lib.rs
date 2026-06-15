@@ -49,6 +49,56 @@ impl Digest {
         arr.copy_from_slice(&result);
         Digest(arr)
     }
+
+    /// Parse an OCI digest string `algo:encoded` and return the raw hash.
+    /// Only `sha256` is supported; other algorithms return an error.
+    /// This is the inverse of OCI digest serialization for the DAG store.
+    pub fn from_oci(s: &str) -> Result<Self, String> {
+        let (algo, encoded) = s.split_once(':')
+            .ok_or_else(|| format!("invalid OCI digest, missing algorithm prefix: {s}"))?;
+        match algo {
+            "sha256" => Self::from_hex(encoded),
+            other => Err(format!("unsupported digest algorithm for DAG addressing: {other}")),
+        }
+    }
+
+    /// Verify that `data` matches the claimed OCI digest string `algo:encoded`.
+    /// Supports `sha256` and `sha512`. Unknown algorithms return `Ok(())`
+    /// per spec requirement that implementations pass through unrecognized
+    /// digests without error.
+    pub fn verify_oci(data: &[u8], claimed: &str) -> Result<(), String> {
+        let (algo, encoded) = claimed.split_once(':')
+            .ok_or_else(|| format!("invalid OCI digest: {claimed}"))?;
+        match algo {
+            "sha256" => {
+                let computed = {
+                    use sha2::Digest as Sha256Digest;
+                    let mut hasher = sha2::Sha256::new();
+                    sha2::digest::Digest::update(&mut hasher, data);
+                    hex::encode(hasher.finalize())
+                };
+                if computed != encoded {
+                    return Err(format!("SHA-256 digest mismatch: computed {computed}, claimed {encoded}"));
+                }
+                Ok(())
+            }
+            "sha512" => {
+                let computed = {
+                    use sha2::Digest as Sha512Digest;
+                    let mut hasher = sha2::Sha512::new();
+                    sha2::digest::Digest::update(&mut hasher, data);
+                    hex::encode(hasher.finalize())
+                };
+                if computed != encoded {
+                    return Err(format!("SHA-512 digest mismatch: computed {computed}, claimed {encoded}"));
+                }
+                Ok(())
+            }
+            // Pass through unrecognized algorithms without error (spec: "SHOULD allow
+            // digests with unrecognized algorithms to pass validation").
+            _ => Ok(()),
+        }
+    }
 }
 
 impl fmt::Display for Digest {

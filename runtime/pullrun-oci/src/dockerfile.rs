@@ -458,6 +458,13 @@ pub async fn build_dag_from_directory_with_platform(
         working_dir: None,
         architecture: architecture.to_string(),
         os: os.to_string(),
+        annotations: None,
+        subject: None,
+        user: None,
+        stop_signal: None,
+        exposed_ports: None,
+        volumes: None,
+        variant: None,
     };
     let inline = serde_json::to_vec(&manifest_data).unwrap_or_default();
     let manifest_digest = store
