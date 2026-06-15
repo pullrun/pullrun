@@ -416,11 +416,12 @@ pullrun version
 # Events stream
 pullrun events
 
-# Compose (planned — not yet implemented)
-# pullrun compose up -f docker-compose.yml
-# pullrun compose down
-# pullrun compose ps
-# pullrun compose logs
+# Compose
+pullrun compose up -f docker-compose.yml          # containers (default on Linux)
+pullrun compose up -f docker-compose.yml --backend vm  # same compose, VM isolation
+pullrun compose down
+pullrun compose ps
+pullrun compose logs
 ```
 
 ### Kernel management

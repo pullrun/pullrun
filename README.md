@@ -125,7 +125,8 @@ pullrun export myapp:latest > myapp.tar
 pullrun import < myapp.tar
 
 # ── Compose ────────────────────────────────────────────────────
-pullrun compose up -f myapp/compose.yml
+pullrun compose up -f myapp/compose.yml             # containers (default on Linux)
+pullrun compose up -f myapp/compose.yml --backend vm # same compose, VM isolation
 pullrun compose logs -f
 pullrun compose down
 
@@ -232,6 +233,8 @@ Kernel binaries are first-class OCI content. `pullrun kernel install` downloads 
 
 ### 🐳 Compose
 Full Docker Compose-compatible workflow: `up`, `down`, `logs`, `ps`, `build`. Supports dependency ordering (topological sort), port mapping, environment variables, volumes (bind mounts), resource limits (CPU/memory), labels, and per-project bridge networks for isolation. Parses standard `docker-compose.yml` files via the [`compose-spec/compose-go`](https://github.com/compose-spec/compose-go) library.
+
+Each service can run as a container or VM — use `--backend vm` to boot all services as Firecracker microVMs from the same compose file, no changes required.
 
 ### ☸️ Kubernetes CRI
 Drop-in CRI shim at [`cri/pullrun-cri/`](cri/pullrun-cri/) — implement `RuntimeService` and `ImageService` from the Kubernetes CRI API. Maps pod sandboxes to pullrun workloads, supports RuntimeClass (`pullrun-container` / `pullrun-vm`), pod annotations for image/CPU/memory overrides, and streaming (exec, attach, port-forward).
