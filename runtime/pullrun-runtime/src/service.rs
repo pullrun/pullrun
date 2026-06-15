@@ -1761,7 +1761,11 @@ impl Runtime for RuntimeService {
         // best-effort check post-conversion by re-asking the store.
         // (`Digest` is a type alias for `String`; we can just pass the
         // hex string slice.)
-        let bytes_stored: i64 = pulled.layer_blobs.iter().map(|(_, b, _)| b.len() as i64).sum();
+        let bytes_stored: i64 = pulled
+            .layer_blobs
+            .iter()
+            .map(|(_, b, _)| b.len() as i64)
+            .sum();
         let already_present = self.store.exists(&root_digest);
 
         if already_present {

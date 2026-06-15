@@ -37,7 +37,8 @@ pub mod media_types {
 
     // Deprecated non-distributable layer types (kept for reading legacy images).
     pub const LAYER_NONDIST_TAR: &str = "application/vnd.oci.image.layer.nondistributable.v1.tar";
-    pub const LAYER_NONDIST_GZIP: &str = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip";
+    pub const LAYER_NONDIST_GZIP: &str =
+        "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip";
     pub const LAYER_NONDIST_ZSTD: &str =
         "application/vnd.oci.image.layer.nondistributable.v1.tar+zstd";
 }
@@ -64,7 +65,8 @@ impl CompressionFormat {
 pub fn empty_json_descriptor() -> OciDescriptor {
     OciDescriptor {
         media_type: media_types::EMPTY_JSON.to_string(),
-        digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a".to_string(),
+        digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+            .to_string(),
         size: 2,
         urls: None,
         annotations: None,
@@ -144,9 +146,17 @@ pub enum OciError {
 pub struct OciManifest {
     #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
-    #[serde(rename = "mediaType", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "mediaType",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub media_type: String,
-    #[serde(rename = "artifactType", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "artifactType",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub artifact_type: Option<String>,
     pub config: OciDescriptor,
     pub layers: Vec<OciDescriptor>,
@@ -164,9 +174,17 @@ pub struct OciImageConfig {
     pub author: Option<String>,
     pub architecture: String,
     pub os: String,
-    #[serde(rename = "os.version", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "os.version",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub os_version: Option<String>,
-    #[serde(rename = "os.features", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "os.features",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub os_features: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
@@ -197,7 +215,11 @@ pub struct OciDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<OciPlatform>,
     /// IANA media type of the artifact this descriptor points to.
-    #[serde(rename = "artifactType", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "artifactType",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub artifact_type: Option<String>,
 }
 
@@ -205,9 +227,17 @@ pub struct OciDescriptor {
 pub struct OciPlatform {
     pub architecture: String,
     pub os: String,
-    #[serde(rename = "os.version", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "os.version",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub os_version: Option<String>,
-    #[serde(rename = "os.features", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "os.features",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub os_features: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
@@ -217,23 +247,43 @@ pub struct OciPlatform {
 pub struct OciRuntimeConfig {
     #[serde(rename = "User", default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    #[serde(rename = "ExposedPorts", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "ExposedPorts",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub exposed_ports: Option<HashMap<String, serde_json::Value>>,
     #[serde(rename = "Env", default, skip_serializing_if = "Option::is_none")]
     pub env: Option<Vec<String>>,
-    #[serde(rename = "Entrypoint", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Entrypoint",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub entrypoint: Option<Vec<String>>,
     #[serde(rename = "Cmd", default, skip_serializing_if = "Option::is_none")]
     pub cmd: Option<Vec<String>>,
     #[serde(rename = "Volumes", default, skip_serializing_if = "Option::is_none")]
     pub volumes: Option<HashMap<String, serde_json::Value>>,
-    #[serde(rename = "WorkingDir", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "WorkingDir",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub working_dir: Option<String>,
     #[serde(rename = "Labels", default, skip_serializing_if = "Option::is_none")]
     pub labels: Option<HashMap<String, String>>,
-    #[serde(rename = "StopSignal", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "StopSignal",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub stop_signal: Option<String>,
-    #[serde(rename = "ArgsEscaped", default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(
+        rename = "ArgsEscaped",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub args_escaped: bool,
 }
 
@@ -249,11 +299,19 @@ pub struct OciRootFs {
 pub struct OciHistoryEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
-    #[serde(rename = "created_by", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "created_by",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub created_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
-    #[serde(rename = "empty_layer", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "empty_layer",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub empty_layer: Option<bool>,
 }
 
@@ -261,9 +319,17 @@ pub struct OciHistoryEntry {
 pub struct OciImageIndex {
     #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
-    #[serde(rename = "mediaType", default, skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "mediaType",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub media_type: String,
-    #[serde(rename = "artifactType", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "artifactType",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub artifact_type: Option<String>,
     pub manifests: Vec<OciDescriptor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

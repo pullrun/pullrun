@@ -187,8 +187,8 @@ impl OciToDagConverter {
 
         let store = self.store.clone();
 
-        let (entries, dir_index, whiteout_digests) = tokio::task::spawn_blocking(
-            move || -> Result<_, OciError> {
+        let (entries, dir_index, whiteout_digests) =
+            tokio::task::spawn_blocking(move || -> Result<_, OciError> {
                 let mut entries: Vec<DirectoryEntry> = Vec::new();
                 let mut whiteouts: Vec<WhiteoutEntry> = Vec::new();
                 let dir_index =
@@ -210,10 +210,9 @@ impl OciToDagConverter {
                     }
                 }
                 Ok((entries, dir_index, whiteout_digests))
-            },
-        )
-        .await
-        .map_err(|e| OciError::Other(format!("join error: {e}")))??;
+            })
+            .await
+            .map_err(|e| OciError::Other(format!("join error: {e}")))??;
 
         // Build the tree structure for this layer.
         // `store_trees` returns a Layer node whose edges are Tree nodes.
@@ -396,7 +395,18 @@ fn extract_tar_entries_sync(
 
         // Read header fields in a nested scope so the immutable borrow drops
         // before we call pax_extensions (which needs &mut self).
-        let (is_dir, is_symlink, is_hardlink, mode, size, uid, gid, mtime, symlink_target, hardlink_target) = {
+        let (
+            is_dir,
+            is_symlink,
+            is_hardlink,
+            mode,
+            size,
+            uid,
+            gid,
+            mtime,
+            symlink_target,
+            hardlink_target,
+        ) = {
             let header = entry.header();
             let is_dir = header.entry_type().is_dir();
             let is_symlink = header.entry_type().is_symlink();
@@ -417,7 +427,18 @@ fn extract_tar_entries_sync(
                 None
             };
             // header borrow ends here at block end.
-            (is_dir, is_symlink, is_hardlink, mode, size, uid, gid, mtime, symlink_target, hardlink_target)
+            (
+                is_dir,
+                is_symlink,
+                is_hardlink,
+                mode,
+                size,
+                uid,
+                gid,
+                mtime,
+                symlink_target,
+                hardlink_target,
+            )
         };
 
         // Collect extended attributes from PAX headers.

@@ -432,7 +432,8 @@ impl DagPusher {
 
         for layer_digest in &layer_digests {
             info!(%layer_digest, "reconstructing OCI layer from DAG");
-            let (layer_data, oci_digest) = self.reconstruct_layer(layer_digest, self.compression)?;
+            let (layer_data, oci_digest) =
+                self.reconstruct_layer(layer_digest, self.compression)?;
 
             self.upload_blob(registry, repository, &oci_digest, &layer_data, token)
                 .await?;
@@ -467,30 +468,20 @@ impl DagPusher {
                 variant: manifest_data.variant.clone(),
                 config: Some(OciRuntimeConfig {
                     user: manifest_data.user.clone(),
-                    exposed_ports: manifest_data
-                        .exposed_ports
-                        .as_ref()
-                        .map(|ports| {
-                            ports
-                                .iter()
-                                .map(|p| {
-                                    (p.clone(), serde_json::Value::Object(Default::default()))
-                                })
-                                .collect()
-                        }),
+                    exposed_ports: manifest_data.exposed_ports.as_ref().map(|ports| {
+                        ports
+                            .iter()
+                            .map(|p| (p.clone(), serde_json::Value::Object(Default::default())))
+                            .collect()
+                    }),
                     env: Some(manifest_data.env.clone()),
                     entrypoint: Some(manifest_data.entrypoint.clone()),
                     cmd: Some(manifest_data.cmd.clone()),
-                    volumes: manifest_data
-                        .volumes
-                        .as_ref()
-                        .map(|vols| {
-                            vols.iter()
-                                .map(|v| {
-                                    (v.clone(), serde_json::Value::Object(Default::default()))
-                                })
-                                .collect()
-                        }),
+                    volumes: manifest_data.volumes.as_ref().map(|vols| {
+                        vols.iter()
+                            .map(|v| (v.clone(), serde_json::Value::Object(Default::default())))
+                            .collect()
+                    }),
                     working_dir: manifest_data.working_dir.clone(),
                     labels: None,
                     stop_signal: manifest_data.stop_signal.clone(),
@@ -559,12 +550,11 @@ impl DagPusher {
 
         // Parse the original OCI image index from inline_data to extract
         // annotations, artifactType, and subject.
-        let list_index: Option<OciImageIndex> =
-            if !list_archived.inline_data.is_empty() {
-                serde_json::from_slice(list_archived.inline_data.as_ref()).ok()
-            } else {
-                None
-            };
+        let list_index: Option<OciImageIndex> = if !list_archived.inline_data.is_empty() {
+            serde_json::from_slice(list_archived.inline_data.as_ref()).ok()
+        } else {
+            None
+        };
         let list_artifact_type: Option<String> =
             list_index.as_ref().and_then(|i| i.artifact_type.clone());
         let list_subject: Option<OciDescriptor> =

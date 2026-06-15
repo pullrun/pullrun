@@ -20,8 +20,7 @@ pub use dockerfile::{
 };
 pub use materializer::OciMaterializer;
 pub use puller::{
-    current_arch, empty_json_descriptor, parse_platform, CompressionFormat, OciAuth,
-    OciDescriptor, OciError, OciImageConfig, OciImageIndex, OciManifest, OciPuller,
-    PulledImage, PulledImageList,
+    current_arch, empty_json_descriptor, parse_platform, CompressionFormat, OciAuth, OciDescriptor,
+    OciError, OciImageConfig, OciImageIndex, OciManifest, OciPuller, PulledImage, PulledImageList,
 };
 pub use push::DagPusher;

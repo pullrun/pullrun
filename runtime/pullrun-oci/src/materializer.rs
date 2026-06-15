@@ -171,8 +171,7 @@ impl<'a> OciMaterializer<'a> {
             let whiteout_node = self.store.get_archived(whiteout_digest).map_err(|e| {
                 OciError::Other(format!("corrupt whiteout node {whiteout_digest}: {e}"))
             })?;
-            let target_path_str =
-                String::from_utf8_lossy(&whiteout_node.inline_data).to_string();
+            let target_path_str = String::from_utf8_lossy(&whiteout_node.inline_data).to_string();
 
             if *is_opaque {
                 // Opaque whiteout: remove ALL children of the target directory.
@@ -415,16 +414,21 @@ fn apply_unix_attributes(full_path: &Path, entry: &crate::converter::DirectoryEn
 
     // Set permissions (mode).
     let mode = if entry.is_dir {
-        if entry.mode == 0 { 0o755 } else { entry.mode }
+        if entry.mode == 0 {
+            0o755
+        } else {
+            entry.mode
+        }
     } else if entry.is_symlink {
         0o777
     } else {
-        if entry.mode == 0 { 0o644 } else { entry.mode }
+        if entry.mode == 0 {
+            0o644
+        } else {
+            entry.mode
+        }
     };
-    let _ = std::fs::set_permissions(
-        full_path,
-        std::fs::Permissions::from_mode(mode),
-    );
+    let _ = std::fs::set_permissions(full_path, std::fs::Permissions::from_mode(mode));
 
     // Set ownership (best-effort — may fail as non-root).
     imp::set_owner(full_path, entry.uid, entry.gid);

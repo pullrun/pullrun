@@ -6,8 +6,8 @@ use tracing::info;
 use pullrun_store::{Digest, MmapStore};
 
 use crate::converter::ManifestData;
-use crate::puller::{OciDescriptor, OciError, OciImageIndex, OciManifest};
 use crate::puller::{media_types, OciImageConfig, OciRootFs, OciRuntimeConfig};
+use crate::puller::{OciDescriptor, OciError, OciImageIndex, OciManifest};
 
 /// Export a DAG image to an OCI Image Layout directory.
 /// Produces:
@@ -57,9 +57,8 @@ fn export_single_manifest(
         .get_archived(manifest_digest)
         .map_err(|e| OciError::Other(format!("read manifest node: {e}")))?;
 
-    let manifest_data: ManifestData =
-        serde_json::from_slice(archived.inline_data.as_ref())
-            .map_err(|e| OciError::InvalidManifest(format!("manifest data parse: {e}")))?;
+    let manifest_data: ManifestData = serde_json::from_slice(archived.inline_data.as_ref())
+        .map_err(|e| OciError::InvalidManifest(format!("manifest data parse: {e}")))?;
 
     let layer_digests: Vec<Digest> = archived.edges.iter().map(|e| Digest(*e)).collect();
 
@@ -74,26 +73,20 @@ fn export_single_manifest(
         variant: manifest_data.variant.clone(),
         config: Some(OciRuntimeConfig {
             user: manifest_data.user.clone(),
-            exposed_ports: manifest_data
-                .exposed_ports
-                .as_ref()
-                .map(|ports| {
-                    ports
-                        .iter()
-                        .map(|p| (p.clone(), serde_json::Value::Object(Default::default())))
-                        .collect()
-                }),
+            exposed_ports: manifest_data.exposed_ports.as_ref().map(|ports| {
+                ports
+                    .iter()
+                    .map(|p| (p.clone(), serde_json::Value::Object(Default::default())))
+                    .collect()
+            }),
             env: Some(manifest_data.env.clone()),
             entrypoint: Some(manifest_data.entrypoint.clone()),
             cmd: Some(manifest_data.cmd.clone()),
-            volumes: manifest_data
-                .volumes
-                .as_ref()
-                .map(|vols| {
-                    vols.iter()
-                        .map(|v| (v.clone(), serde_json::Value::Object(Default::default())))
-                        .collect()
-                }),
+            volumes: manifest_data.volumes.as_ref().map(|vols| {
+                vols.iter()
+                    .map(|v| (v.clone(), serde_json::Value::Object(Default::default())))
+                    .collect()
+            }),
             working_dir: manifest_data.working_dir.clone(),
             labels: None,
             stop_signal: manifest_data.stop_signal.clone(),
@@ -223,9 +216,8 @@ fn export_manifest_list(
         let child_node = store
             .get_archived(&child)
             .map_err(|e| OciError::Other(format!("read child: {e}")))?;
-        let child_data: ManifestData =
-            serde_json::from_slice(child_node.inline_data.as_ref())
-                .map_err(|e| OciError::InvalidManifest(format!("child data: {e}")))?;
+        let child_data: ManifestData = serde_json::from_slice(child_node.inline_data.as_ref())
+            .map_err(|e| OciError::InvalidManifest(format!("child data: {e}")))?;
 
         // Reconstruct the OCI manifest to get its digest.
         let oci_config = OciImageConfig {
@@ -235,34 +227,28 @@ fn export_manifest_list(
             os: child_data.os.clone(),
             os_version: None,
             os_features: None,
-        variant: child_data.variant.clone(),
-        config: Some(OciRuntimeConfig {
-            user: child_data.user.clone(),
-            exposed_ports: child_data
-                .exposed_ports
-                .as_ref()
-                .map(|ports| {
+            variant: child_data.variant.clone(),
+            config: Some(OciRuntimeConfig {
+                user: child_data.user.clone(),
+                exposed_ports: child_data.exposed_ports.as_ref().map(|ports| {
                     ports
                         .iter()
                         .map(|p| (p.clone(), serde_json::Value::Object(Default::default())))
                         .collect()
                 }),
-            env: Some(child_data.env.clone()),
-            entrypoint: Some(child_data.entrypoint.clone()),
-            cmd: Some(child_data.cmd.clone()),
-            volumes: child_data
-                .volumes
-                .as_ref()
-                .map(|vols| {
+                env: Some(child_data.env.clone()),
+                entrypoint: Some(child_data.entrypoint.clone()),
+                cmd: Some(child_data.cmd.clone()),
+                volumes: child_data.volumes.as_ref().map(|vols| {
                     vols.iter()
                         .map(|v| (v.clone(), serde_json::Value::Object(Default::default())))
                         .collect()
                 }),
-            working_dir: child_data.working_dir.clone(),
-            labels: None,
-            stop_signal: child_data.stop_signal.clone(),
-            args_escaped: false,
-        }),
+                working_dir: child_data.working_dir.clone(),
+                labels: None,
+                stop_signal: child_data.stop_signal.clone(),
+                args_escaped: false,
+            }),
             rootfs: OciRootFs {
                 diff_ids: vec![],
                 fs_type: "layers".to_string(),
@@ -339,7 +325,10 @@ fn export_manifest_list(
 }
 
 /// Reconstruct a gzip-compressed OCI layer from a DAG layer node.
-fn reconstruct_layer(store: &MmapStore, layer_digest: &Digest) -> Result<(Vec<u8>, String), OciError> {
+fn reconstruct_layer(
+    store: &MmapStore,
+    layer_digest: &Digest,
+) -> Result<(Vec<u8>, String), OciError> {
     let mut tar_buf = Vec::new();
     let mut gz = flate2::write::GzEncoder::new(&mut tar_buf, flate2::Compression::default());
     let mut tar = tar::Builder::new(&mut gz);
@@ -516,7 +505,8 @@ mod tests {
         // Verify index.json exists and is valid JSON.
         let index_path = export_dir.join("index.json");
         assert!(index_path.exists(), "index.json missing");
-        let index: serde_json::Value = serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
+        let index: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
         assert_eq!(index["schemaVersion"], 2);
         assert!(index["manifests"].is_array());
         assert!(!index["manifests"].as_array().unwrap().is_empty());
