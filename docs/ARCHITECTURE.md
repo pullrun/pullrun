@@ -242,6 +242,51 @@ and rules.
 `ProcessHandle` is the language-neutral "what got created": backend
 name, optional PID, optional internal IP.
 
+### Warm VM Pool (`VmPool`)
+
+For the Firecracker backend, the runtime maintains a pool of
+pre-booted VMs to eliminate cold-boot latency. A background
+`refill_loop` keeps `pool_size` VMs alive; each VM boots a minimal
+32 MiB scratch rootfs containing only an idle `/init` that loops
+on `sleep 3600`. When a workload arrives, `create()` first calls
+`pool.acquire()`. If a pool entry is available, the fast path runs:
+
+1. **Materialize** the workload's ext4 rootfs from the DAG store,
+2. **Hot-swap** the rootfs into the running Firecracker VM via
+   `PUT /drives/rootfs` over its UDS API socket,
+3. **Reboot** the VM via `PUT /actions` with `SendCtrlAltDel` so it
+   boots the workload's rootfs,
+4. **Return** a `ProcessHandle` with the pool VM's pre-allocated IP
+   and TAP device (no IPAM, bridge, or proxy setup needed).
+
+This reduces perceived boot time from ~500 ms (cold `mkfs.ext4` +
+`firecracker --api-sock`) to ~200 ms (rootfs materialization +
+hot-swap + reboot), and reuses pre-warmed page cache and kernel
+state. Pool health is checked every 30 seconds; dead VMs are
+removed and replaced. The pool is configured via `--vm-warm-pool-size
+N` (default 0, disabled).
+
+```
+ Firecracker Warm Pool Flow:
+
+ ┌─ pullrun-runtime ──────────────────────────────────────────┐
+ │                                                             │
+ │  VmPool (background loops)                                  │
+ │    ├─ refill_loop (every 5s)                                │
+ │    │   └─ boot_pool_vm → push_back into pool                │
+ │    └─ health_loop (every 30s)                               │
+ │        └─ check_health → remove dead VMs                   │
+ │                                                             │
+ │  FirecrackerExecutor::create()                               │
+ │    ├─ pool.acquire() → PooledVm                            │
+ │    │   ├─ materialize_ext4_rootfs (workload rootfs)         │
+ │    │   ├─ pool_entry.swap_rootfs (hot-swap via FC API)     │
+ │    │   ├─ pool_entry.reboot (CtrlAltDel)                    │
+ │    │   └─ return ProcessHandle (pre-allocated IP)           │
+ │    └─ fallback: cold boot (if pool empty)                   │
+ └─────────────────────────────────────────────────────────────┘
+```
+
 ### Container backend (`LinuxContainerExecutor`)
 
 A thin wrapper around `runc`. The work of pulling the OCI image is

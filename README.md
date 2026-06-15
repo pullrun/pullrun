@@ -204,12 +204,14 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 | First `alpine:3.18` pull | **968 ms** | ~2 s |
 | Container run latency | **~400 ms** | ~800 ms |
 | Apple Virt VM boot | **~160 ms** | N/A |
+| Firecracker VM cold boot | **~500 ms** | N/A |
+| Firecracker VM warm pool | **~200 ms** | N/A |
 | Idle daemon RSS | **24.6 MiB** | ~90 MiB |
 | Binary size | **12 MB** | ~75 MB |
 | Rootless by default | ✅ | ❌ (`dockerd` as root) |
 | Central daemon | Optional | Required |
 
-<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 14) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.</sup>
+<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 14) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Firecracker measurements on Linux x86_64 with KVM; warm pool configured with `--vm-warm-pool-size 4`. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.</sup>
 
 ---
 
@@ -342,7 +344,7 @@ Each block verified by content hash before acceptance — no trust required.
 | Backend | Isolation | Platform | Boot Time | Best For |
 |---------|-----------|----------|:---------:|----------|
 | 🐧 Linux Containers (runc) | Process (namespace) | Linux, macOS, Windows (WSL2) | ~400 ms | Dev, CI/CD, dense packing |
-| 🔥 Firecracker microVM | Per-VM kernel (KVM) | Linux x86_64, Windows (WSL2 x86_64) | ~500 ms | Multi-tenant, untrusted workloads, compliance |
+| 🔥 Firecracker microVM | Per-VM kernel (KVM) | Linux x86_64, Windows (WSL2 x86_64) | ~500 ms cold / ~200 ms warm pool | Multi-tenant, untrusted workloads, compliance, fast-recycling sandboxes |
 | 🍎 Apple Virtualization | Per-VM kernel (Hypervisor.framework) | macOS Apple Silicon | ~160 ms | macOS dev, Apple Silicon CI |
 
 ---
@@ -358,12 +360,12 @@ Each block verified by content hash before acceptance — no trust required.
                               ▼
                    ┌─────────────────────────────────────┐
                    │         pullrun-runtime             │
-                   │  ┌──────────┐   ┌──────────────┐    │
-                   │  │ Store    │   │ Executor     │    │
-                   │  │ (DAG)    │   │ runc / VM    │    │
-                   │  │ └ rkyv   │   │              │    │
-                   │  │ └ mmap   │   │              │    │
-                   │  │ └ DashMap│   │              │    │
+                    │  ┌──────────┐   ┌──────────────────┐ │
+                    │  │ Store    │   │ Executor         │ │
+                    │  │ (DAG)    │   │ runc / VM        │ │
+                    │  │ └ rkyv   │   │ └ VmPool (warm)  │ │
+                    │  │ └ mmap   │   │                  │ │
+                    │  │ └ DashMap│   │                  │ │
                    │  └────┬─────┘   └──────┬───────┘    │
                    │       │                │            │
                    │  ┌────┴────────────────┴────┐       │
@@ -393,7 +395,7 @@ runtime/          # Rust workspace — core data plane
   pullrun-store/   # Zero-copy DAG store (rkyv + mmap + DashMap concurrent cache)
   pullrun-oci/     # OCI client + DAG converter
   pullrun-exec/    # Executor trait + runc wrapper
-  pullrun-vm/      # Firecracker + Apple Virt backends + pullrun-init guest agent
+  pullrun-vm/      # Firecracker + Apple Virt backends, warm VM pool (pool.rs), pullrun-init guest agent
   pullrun-net/     # IPAM, proxy, DNS, iptables, slirp4netns
   pullrun-dns/     # In-process DNS server for workload resolution
   pullrun-vsock/   # Vsock transport layer for VM guest-host communication

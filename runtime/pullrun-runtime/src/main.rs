@@ -101,6 +101,12 @@ enum Commands {
         vm_mem_mib: u32,
         #[arg(long, default_value_t = 256, help = "Rootfs size (MiB) per VM")]
         vm_size_mb: u64,
+        #[arg(
+            long,
+            default_value_t = 0,
+            help = "Number of pre-booted VMs in the warm pool (0 = disabled)"
+        )]
+        vm_warm_pool_size: usize,
 
         // OCI pull configuration.
         #[arg(
@@ -398,6 +404,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_vcpus,
         vm_mem_mib,
         vm_size_mb,
+        vm_warm_pool_size,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -423,6 +430,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_vcpus,
         vm_mem_mib,
         vm_size_mb,
+        vm_warm_pool_size,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -549,6 +557,7 @@ async fn run_daemon(
     vm_vcpus: u8,
     vm_mem_mib: u32,
     vm_size_mb: u64,
+    vm_warm_pool_size: usize,
     insecure_registry: Vec<String>,
     sync_addr: SocketAddr,
     registrar_addr: Option<SocketAddr>,
@@ -582,6 +591,7 @@ async fn run_daemon(
             vcpus: vm_vcpus,
             mem_mib: vm_mem_mib,
             size_mb: vm_size_mb,
+            warm_pool_size: vm_warm_pool_size,
         });
     }
     info!(%socket, store_root = %config.store_root.display(), "starting pullrun-runtime daemon");

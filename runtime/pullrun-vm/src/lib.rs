@@ -7,6 +7,7 @@ pub mod attach;
 pub mod ext4;
 pub mod network;
 pub mod oci_kernel;
+pub mod pool;
 
 #[cfg(target_os = "macos")]
 pub mod apple;
@@ -29,8 +30,9 @@ pub use network::{
     ensure_bridge_named, mac_from_ip, teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME, GATEWAY_IP,
     NETMASK,
 };
+pub use pool::{PooledVm, VmPool, VmPoolConfig};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -103,6 +105,14 @@ pub struct FirecrackerExecutor {
     /// Each child provides userspace NAT for one VM's TAP device. Killed
     /// in `stop()`.
     slirp_children: Mutex<HashMap<String, std::process::Child>>,
+    /// Warm VM pool: pre-booted Firecracker VMs for fast allocation.
+    /// When set, `create()` attempts to acquire from the pool before
+    /// falling back to cold boot.
+    pool: Option<Arc<VmPool>>,
+    /// Track workload ids that were allocated from the warm pool.
+    /// These skip certain cleanup in `stop()` because the pool entry
+    /// has already been consumed.
+    pool_allocations: Mutex<HashSet<String>>,
 }
 
 impl FirecrackerExecutor {
@@ -119,7 +129,14 @@ impl FirecrackerExecutor {
             proxy,
             tap_fds: Mutex::new(HashMap::new()),
             slirp_children: Mutex::new(HashMap::new()),
+            pool: None,
+            pool_allocations: Mutex::new(HashSet::new()),
         }
+    }
+
+    pub fn with_pool(mut self, pool: Arc<VmPool>) -> Self {
+        self.pool = Some(pool);
+        self
     }
 
     fn vm_dir(&self, id: &str) -> PathBuf {
@@ -164,6 +181,115 @@ impl FirecrackerExecutor {
         let suffix = format!("{:02x}{:02x}{:02x}{:02x}", h[0], h[1], h[2], h[3]);
         format!("tap-{suffix}")
     }
+
+    /// Fast path: create a workload from a pre-booted pool VM.
+    /// Materializes the workload's ext4 rootfs, hot-swaps it into the
+    /// running pool VM via the Firecracker API, and reboots the VM so
+    /// it boots with the new rootfs. Returns a `ProcessHandle` with the
+    /// pool VM's pre-allocated IP and network info.
+    async fn create_from_pool(
+        &self,
+        spec: WorkloadSpec,
+        pooled: crate::pool::PooledVm,
+    ) -> Result<ProcessHandle, ExecError> {
+        let pool_id = pooled.pool_id().to_string();
+        let guest_ip = pooled.guest_ip();
+        let vm_dir = self.vm_dir(&spec.id);
+        std::fs::create_dir_all(&vm_dir)?;
+
+        // Materialize the workload's ext4 rootfs.
+        let ext4_path = ext4_path_for(&self.config.rootfs_dir, &spec.id);
+        let options = Ext4Options {
+            size_mb: self.config.size_mb,
+            label: Some(format!("pullrun-{}", spec.id)),
+        };
+        let store = self.store.clone();
+        let root_digest = spec.image_root;
+        let ext4_path_owned = ext4_path.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(async {
+                materialize_ext4_rootfs(&store, &root_digest, &ext4_path_owned, options)
+                    .await
+                    .map_err(|e| ExecError::ExecutionFailed(format!("ext4 materialization: {e}")))
+            })
+        })
+        .await
+        .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking: {e}")))??;
+
+        // Hot-swap the rootfs on the running pool VM.
+        pooled
+            .swap_rootfs(&ext4_path)
+            .map_err(|e| ExecError::ExecutionFailed(format!("rootfs hot-swap: {e}")))?;
+
+        // Persist the network sidecar (pool VM's pre-configured network).
+        let sidecar = VmSidecar {
+            vm_net: pooled.vm_net().clone(),
+            endpoint: pooled.endpoint().clone(),
+            tap_name: pooled.tap_name().to_string(),
+        };
+        let sidecar_path = vm_dir.join("network.json");
+        let sidecar_json = serde_json::to_string_pretty(&sidecar)
+            .map_err(|e| ExecError::ExecutionFailed(format!("serialize sidecar: {e}")))?;
+        std::fs::write(&sidecar_path, sidecar_json)?;
+
+        // Persist the kernel path sidecar if specified.
+        if let Some(kp) = &spec.kernel_path {
+            let kernel_path_sidecar = vm_dir.join("kernel_path");
+            std::fs::write(&kernel_path_sidecar, kp.to_string_lossy().as_bytes())?;
+        }
+
+        // Copy the pool VM's console.log for attach streaming.
+        let pool_console = pooled.vm_dir().join("console.log");
+        let wl_console = vm_dir.join("console.log");
+        if pool_console.exists() {
+            let _ = std::fs::copy(&pool_console, &wl_console);
+        }
+
+        // Reboot the VM so it boots with the new rootfs.
+        pooled
+            .reboot()
+            .map_err(|e| ExecError::ExecutionFailed(format!("reboot: {e}")))?;
+
+        info!(
+            id = %spec.id,
+            pool_id = %pool_id,
+            ip = %guest_ip,
+            "workload created from warm pool VM"
+        );
+
+        // Track this id as a pool allocation so start() becomes a no-op
+        // and stop() skips Firecracker-specific cleanup.
+        self.pool_allocations
+            .lock()
+            .expect("pool_allocations lock poisoned")
+            .insert(spec.id.clone());
+
+        // Register proxy listeners for declared inbound rules.
+        let _ = self
+            .proxy
+            .register_endpoint(&spec.id, guest_ip.to_string(), &spec.network_rules)
+            .await;
+
+        let handle = ProcessHandle {
+            id: spec.id.clone(),
+            pid: None,
+            internal_ip: Some(guest_ip.to_string()),
+            host_ports: vec![],
+            backend: "vm".to_string(),
+            bridge_name: None,
+        };
+
+        Ok(handle)
+    }
+
+    fn is_pool_allocated(&self, id: &str) -> bool {
+        self.pool_allocations
+            .lock()
+            .expect("pool_allocations lock poisoned")
+            .contains(id)
+    }
 }
 
 #[async_trait]
@@ -172,6 +298,14 @@ impl Executor for FirecrackerExecutor {
         self.check_firecracker().await?;
 
         info!(id = %spec.id, "creating Firecracker VM");
+
+        // Try warm pool first (fast path: pre-booted VM, hot-swap rootfs).
+        if let Some(pool) = &self.pool {
+            if let Some(pooled) = pool.acquire() {
+                return self.create_from_pool(spec, pooled).await;
+            }
+            info!("warm pool exhausted, falling back to cold boot");
+        }
 
         // 1. Allocate an IP. Use a per-project IPAM if bridge_name
         //    is set (per-project isolation), otherwise the global pool.
@@ -255,7 +389,7 @@ impl Executor for FirecrackerExecutor {
         let store = self.store.clone();
         let root_digest = spec.image_root;
         let ext4_path_owned = ext4_path.clone();
-        let id = spec.id.clone();
+        let ext4_id = spec.id.clone();
 
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Handle::current();
@@ -268,14 +402,14 @@ impl Executor for FirecrackerExecutor {
         .await
         .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking: {e}")))??;
 
-        info!(id = %id, ip = %guest_ip, "ext4 rootfs ready, VM wired to bridge");
+        info!(id = %ext4_id, ip = %guest_ip, "ext4 rootfs ready, VM wired to bridge");
 
         // 5. Persist the kernel path sidecar if the workload
         //    specified a kernel_image (OCI-staged kernel).
         if let Some(kp) = &spec.kernel_path {
             let kernel_path_sidecar = vm_dir.join("kernel_path");
             std::fs::write(&kernel_path_sidecar, kp.to_string_lossy().as_bytes())?;
-            info!(id = %id, kernel = %kp.display(), "per-workload kernel path saved");
+            info!(id = %ext4_id, kernel = %kp.display(), "per-workload kernel path saved");
         }
 
         // 6. Persist the network sidecar (so stop() can teardown).
@@ -302,6 +436,15 @@ impl Executor for FirecrackerExecutor {
     }
 
     async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
+        // Pool-allocated VMs are already booted — no-op.
+        {
+            let pa = self.pool_allocations.lock().expect("pool_allocations lock poisoned");
+            if pa.contains(&handle.id) {
+                info!(id = %handle.id, "pool VM already running; skipping start");
+                return Ok(());
+            }
+        }
+
         info!(id = %handle.id, "starting Firecracker VM");
 
         let vm_dir = self.vm_dir(&handle.id);
@@ -399,6 +542,36 @@ impl Executor for FirecrackerExecutor {
     }
 
     async fn stop(&self, id: &str) -> Result<(), ExecError> {
+        // Pool-allocated VMs: the Firecracker process and TAP device
+        // belong to the pool, not the workload. We only clean up the
+        // workload's ext4 rootfs and vm_dir.
+        if self.is_pool_allocated(id) {
+            self.pool_allocations
+                .lock()
+                .expect("pool_allocations lock poisoned")
+                .remove(id);
+            info!(%id, "stopping pool-allocated VM workload (keeping FC + TAP)");
+            let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
+            if ext4_path.exists() {
+                let _ = std::fs::remove_file(&ext4_path);
+            }
+            let vm_dir = self.vm_dir(id);
+            if vm_dir.exists() {
+                tokio::fs::remove_dir_all(&vm_dir).await.ok();
+            }
+            let proxy = self.proxy.clone();
+            let id_owned = id.to_string();
+            let dummy_endpoint = pullrun_net::NetworkEndpoint {
+                internal_ip: String::new(),
+                host_port_mappings: vec![],
+                namespace_path: None,
+            };
+            tokio::spawn(async move {
+                let _ = proxy.teardown(&id_owned, &dummy_endpoint).await;
+            });
+            return Ok(());
+        }
+
         info!(%id, "stopping Firecracker VM");
 
         let vm_dir = self.vm_dir(id);

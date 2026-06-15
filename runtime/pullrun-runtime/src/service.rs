@@ -80,6 +80,9 @@ pub struct VmBackendConfig {
     pub vcpus: u8,
     pub mem_mib: u32,
     pub size_mb: u64,
+    /// Number of Firecracker VMs to keep pre-booted in the warm pool.
+    /// 0 (default) disables the warm pool.
+    pub warm_pool_size: usize,
 }
 
 /// All knobs needed to build a `RuntimeService`.
@@ -460,12 +463,34 @@ impl RuntimeCommand {
                 size_mb: cfg.size_mb,
             };
             let _ = std::fs::create_dir_all(&cfg.vm_root);
-            Arc::new(FirecrackerExecutor::new(
-                fc_cfg,
+            let executor = FirecrackerExecutor::new(
+                fc_cfg.clone(),
                 Arc::new(MmapStore::new(self.config.store_root.clone())),
                 ipam.clone(),
                 proxy.clone(),
-            ))
+            );
+
+            // Wire up warm VM pool if configured.
+            if cfg.warm_pool_size > 0 {
+                let pool_cfg = pullrun_vm::VmPoolConfig {
+                    pool_size: cfg.warm_pool_size,
+                    vm_root: cfg.vm_root.join("pool"),
+                };
+                let pool = pullrun_vm::VmPool::new(
+                    pool_cfg,
+                    fc_cfg,
+                    Arc::new(MmapStore::new(self.config.store_root.clone())),
+                    ipam.clone(),
+                    proxy.clone(),
+                );
+                info!(
+                    warm_pool_size = cfg.warm_pool_size,
+                    "warm VM pool enabled"
+                );
+                Arc::new(executor.with_pool(pool))
+            } else {
+                Arc::new(executor)
+            }
         });
 
         if vm.is_some() {
