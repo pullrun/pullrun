@@ -55,6 +55,7 @@ pub enum NetworkMode {
     Loopback,
     Bridge,
     Host,
+    Slirp,
 }
 
 #[derive(Debug, Clone)]

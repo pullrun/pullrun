@@ -223,12 +223,75 @@ impl Workload {
         Ok(())
     }
 
+    /// Mount the OCI rootfs VirtioFS share and chroot into it, so
+    /// the workload sees the OCI image's full userland (not just
+    /// the minimal initramfs).  The VirtioFS tag is
+    /// "pullrun-rootfs", configured by the AppleVM host in
+    /// `apple/attach.rs`.
+    #[cfg(target_os = "linux")]
+    fn mount_rootfs(&self) -> Result<(), InitError> {
+        const ROOTFS_TAG: &str = "pullrun-rootfs";
+        const MOUNT_POINT: &str = "/mnt/root";
+
+        std::fs::create_dir_all(MOUNT_POINT).map_err(InitError::Io)?;
+
+        let tag_c =
+            std::ffi::CString::new(ROOTFS_TAG).map_err(|_| InitError::Exec("NUL in tag".into()))?;
+        let mnt_c = std::ffi::CString::new(MOUNT_POINT)
+            .map_err(|_| InitError::Exec("NUL in mount point".into()))?;
+        let fs_type_c = std::ffi::CString::new("virtiofs")
+            .map_err(|_| InitError::Exec("NUL in virtiofs".into()))?;
+
+        let ret = unsafe {
+            libc::mount(
+                tag_c.as_ptr(),
+                mnt_c.as_ptr(),
+                fs_type_c.as_ptr(),
+                0,
+                std::ptr::null(),
+            )
+        };
+        if ret != 0 {
+            return Err(InitError::Io(std::io::Error::last_os_error()));
+        }
+        info!("mounted OCI rootfs via VirtioFS");
+
+        // Mount /proc inside the new root so the workload sees a
+        // proper /proc (needed by many tools).
+        let proc_dest = std::ffi::CString::new(format!("{MOUNT_POINT}/proc"))
+            .map_err(|_| InitError::Exec("NUL in proc path".into()))?;
+        let proc_type = std::ffi::CString::new("proc")
+            .map_err(|_| InitError::Exec("NUL in proc".into()))?;
+        let _ = unsafe {
+            libc::mount(
+                c"proc".as_ptr(),
+                proc_dest.as_ptr(),
+                proc_type.as_ptr(),
+                0,
+                std::ptr::null(),
+            )
+        };
+
+        // chroot into the OCI rootfs.
+        let ret = unsafe { libc::chroot(mnt_c.as_ptr()) };
+        if ret != 0 {
+            return Err(InitError::Io(std::io::Error::last_os_error()));
+        }
+        unsafe { libc::chdir(c"/".as_ptr()) };
+        info!("chrooted into OCI rootfs");
+
+        Ok(())
+    }
+
     /// Spawn the workload, wire stdio to vsock, and return when
     /// the workload exits.  Dispatches to the PTY or piped
     /// implementation based on `self.tty`.
     async fn run(self, client: &mut VsockClient) -> Result<WorkloadExit, InitError> {
         #[cfg(target_os = "linux")]
-        self.mount_volumes()?;
+        {
+            self.mount_volumes()?;
+            self.mount_rootfs()?;
+        }
         if self.tty {
             self.run_tty(client).await
         } else {
@@ -335,7 +398,7 @@ impl Workload {
             let mut termios: libc::termios = std::mem::zeroed();
             libc::tcgetattr(slave, &mut termios);
             libc::cfmakeraw(&mut termios);
-            termios.c_lflag |= libc::ISIG;
+            termios.c_lflag |= libc::ISIG | libc::ECHO;
             termios.c_oflag |= libc::OPOST | libc::ONLCR;
             libc::tcsetattr(slave, libc::TCSANOW, &termios);
 

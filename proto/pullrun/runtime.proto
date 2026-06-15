@@ -157,6 +157,9 @@ message ComposeService {
     repeated Mount mounts = 14;
     // Health check configuration for this service.
     HealthCheck health_check = 15;
+    // Execution backend: "container" (default), "vm", or "sandbox".
+    // When empty, the runtime uses its own default.
+    string backend = 16;
 }
 
 message ComposePort {

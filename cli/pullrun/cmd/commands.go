@@ -373,6 +373,10 @@ an OCI image via --kernel-image=<ref>.`,
 			if err != nil {
 				return err
 			}
+			netMode := networkMode
+			if backend == "vm" && !cmd.Flags().Changed("net") && netMode == "isolated" {
+				netMode = "slirp"
+			}
 			resp, err := client.RunWorkload(ctx, &runtimepb.RunRequest{
 				Id:            id,
 				RootDigest:    rootDigest,
@@ -381,7 +385,7 @@ an OCI image via --kernel-image=<ref>.`,
 				Env:           envMap,
 				CpuMillicores: cpuMillicores,
 				MemoryBytes:   memoryBytes,
-				NetworkMode:   networkMode,
+				NetworkMode:   netMode,
 				NetworkRules:  rules,
 				KernelImage:   kernelImage,
 				Mounts:        mounts,
@@ -450,7 +454,7 @@ an OCI image via --kernel-image=<ref>.`,
 	cmd.Flags().StringSliceVar(&command, "cmd", nil, "Override entrypoint command")
 	cmd.Flags().Uint64Var(&cpuMillicores, "cpu", 1000, "CPU millicores (1000 = 1 vCPU)")
 	cmd.Flags().Uint64Var(&memoryBytes, "memory", 512*1024*1024, "Memory limit in bytes")
-	cmd.Flags().StringVar(&networkMode, "net", "isolated", "Network mode: isolated|host|none")
+	cmd.Flags().StringVar(&networkMode, "net", "isolated", "Network mode: isolated|host|none|slirp")
 	cmd.Flags().StringVar(&kernelImage, "kernel-image", "", "OCI reference for the kernel image (optional on macOS when ~/.pullrun/kernels/ has one, e.g. 'pullrun/kernel-asahi:6.19.14')")
 	cmd.Flags().StringVar(&registry, "registry", "", "Registry to pull the workload image from (default: docker.io; use 'localhost:5000' for local registries)")
 	cmd.Flags().StringSliceVarP(&volumes, "volume", "v", nil, "Bind mount (source:destination[:options]), e.g. /host/path:/container/path:ro")

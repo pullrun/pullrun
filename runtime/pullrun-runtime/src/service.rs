@@ -1230,6 +1230,7 @@ async fn attempt_restart(
     let network_mode_enum = match network_mode_str.as_str() {
         "bridge" => NetworkMode::Bridge,
         "host" => NetworkMode::Host,
+        "slirp" => NetworkMode::Slirp,
         _ => NetworkMode::Loopback,
     };
     let kernel_path = if kernel_image_ref.is_empty() {
@@ -1922,6 +1923,7 @@ impl Runtime for RuntimeService {
         let network_mode = match req.network_mode.as_str() {
             "bridge" => NetworkMode::Bridge,
             "host" => NetworkMode::Host,
+            "slirp" => NetworkMode::Slirp,
             _ if has_inbound_ports => NetworkMode::Bridge,
             _ => NetworkMode::Loopback,
         };
@@ -2390,10 +2392,15 @@ impl Runtime for RuntimeService {
                 })
                 .collect();
 
+            let backend = if service.backend.is_empty() {
+                "container".to_string()
+            } else {
+                service.backend.clone()
+            };
             let run_req = tonic::Request::new(RunRequest {
                 id: id.clone(),
                 root_digest,
-                backend: "container".to_string(),
+                backend,
                 command: service.command.clone(),
                 env: service.environment.clone(),
                 cpu_millicores: service.cpu_millicores,

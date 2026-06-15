@@ -76,12 +76,13 @@ microVM. The CRI shim handles the translation.
   least resistance. In v1 we'll narrow this with
   `deviceGroups` / `cgroupAccess`.
 - **iptables with the nat table available.** Required for VM
-  outbound NAT. Most distros have this; in a locked-down
-  container image, you may need `iptables-nft` or
-  `iptables-legacy` and a custom kubelet.
-- **bridge / tun kernel modules.** Required for the shared
-  workload network. Most distros have them; the kernel
-  autoloads on first use.
+  outbound NAT in bridge mode. Not needed for slirp mode
+  (`--net slirp`, which uses userspace NAT via slirp4netns).
+  Most distros have iptables; in a locked-down container image,
+  use slirp mode to avoid it.
+- **bridge / tun kernel modules.** Required for bridge mode
+  (`--net bridge`). Slirp mode uses a TAP device but does not
+  need the bridge kernel module.
 - **Disk space.** A pull of `alpine:3.18` uses ~3 MB; a full
   Ubuntu image with apt cache uses ~700 MB. The store grows
   monotonically; the `PullrunStoreGrowingFast` alert fires
@@ -92,12 +93,13 @@ microVM. The CRI shim handles the translation.
 Pullrun can run most VM operations without root:
 
 | Operation | Rootless? | How |
-|---|---|---|
+|---|---|---|---|
 | OCI pull → DAG store | ✅ Always | Filesystem writes only |
 | ext4 rootfs build | ✅ Always | `mkfs.ext4 -d` (no loop-mount) |
 | TAP device creation | ✅ With setcap | `ioctl(TUNSETIFF)` on `/dev/net/tun`; binary needs `setcap cap_net_admin=eip` |
-| Bridge creation + `ip link` | ⚠️ Needs `CAP_NET_ADMIN` | `ip link add type bridge` via subprocess |
-| iptables NAT rules | ❌ Needs root | `iptables` subprocess |
+| Bridge creation + `ip link` | ⚠️ Needs `CAP_NET_ADMIN` | `ip link add type bridge` via subprocess (bridge mode only) |
+| iptables NAT rules | ❌ Needs root | `iptables` subprocess (bridge mode only) |
+| slirp4netns userspace NAT | ✅ With setcap | `slirp4netns` binary needs `setcap cap_net_admin+ep` |
 | Firecracker VM boot | ⚠️ Needs `/dev/kvm` access | kvm group or privileged |
 
 To enable rootless TAP creation:

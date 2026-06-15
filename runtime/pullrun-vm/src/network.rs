@@ -102,6 +102,8 @@ pub enum VmNetError {
     NotLinux,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("slirp4netns not found on PATH (install with: apt install slirp4netns or brew install slirp4netns)")]
+    Slirp4netnsNotFound,
 }
 
 /// All host-side state for one VM's network interface. Drop with care
@@ -327,6 +329,82 @@ pub fn create_tap_on_bridge(
 pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<(VmNetwork, File), VmNetError> {
     ensure_bridge()?;
     create_tap_on_bridge(tap_name, guest_ip, BRIDGE_NAME, NETMASK, GATEWAY_IP)
+}
+
+/// Create a TAP device with userspace NAT via slirp4netns.
+///
+/// Replaces the bridge + iptables chain with a pure-userspace NAT.
+/// slirp4netns creates the TAP device and transparently NATs all
+/// guest traffic — no bridge, no iptables, no kernel IP forwarding.
+///
+/// The returned `std::process::Child` keeps slirp4netns alive; the
+/// caller must kill it on teardown. When slirp4netns exits, the
+/// TAP device is destroyed.
+///
+/// ## Root requirements
+///
+/// slirp4netns opens `/dev/net/tun`, which needs `CAP_NET_ADMIN`.
+/// Set `setcap cap_net_admin+ep` on the slirp4netns binary, or on
+/// the pullrun binary if using the ioctl-based fallback.
+#[cfg(target_os = "linux")]
+pub fn create_slirp_tap(
+    tap_name: &str,
+    guest_ip: Ipv4Addr,
+    netmask: Ipv4Addr,
+    gateway: Ipv4Addr,
+) -> Result<(VmNetwork, std::process::Child), VmNetError> {
+    info!(
+        tap = tap_name,
+        guest = %guest_ip,
+        gateway = %gateway,
+        "creating slirp4netns TAP"
+    );
+
+    let child = std::process::Command::new("slirp4netns")
+        .args([
+            "--netns-type=path",
+            "--mtu=65520",
+            "--configure",
+            "--cidr=10.42.0.0/16",
+            "/proc/self/ns/net",
+            tap_name,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                VmNetError::Slirp4netnsNotFound
+            } else {
+                VmNetError::IpCommand(format!("spawn slirp4netns: {e}"))
+            }
+        })?;
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let guest_mac = mac_from_ip(guest_ip);
+
+    let vm_net = VmNetwork {
+        tap_name: tap_name.to_string(),
+        bridge_name: String::new(),
+        guest_ip,
+        guest_mac,
+        netmask,
+        gateway,
+    };
+
+    Ok((vm_net, child))
+}
+
+/// Stub for non-Linux platforms.
+#[cfg(not(target_os = "linux"))]
+pub fn create_slirp_tap(
+    _tap_name: &str,
+    _guest_ip: Ipv4Addr,
+    _netmask: Ipv4Addr,
+    _gateway: Ipv4Addr,
+) -> Result<(VmNetwork, std::process::Child), VmNetError> {
+    Err(VmNetError::NotLinux)
 }
 
 /// Remove a tap device. Drops the fd (which destroys the TAP in the

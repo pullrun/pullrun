@@ -18,7 +18,7 @@ import (
 
 // composeToProto converts a parsed docker-compose project into
 // RunComposeRequest proto messages, one per service.
-func composeToProto(project *types.Project) *runtimeapi.RunComposeRequest {
+func composeToProto(project *types.Project, backend string) *runtimeapi.RunComposeRequest {
 	req := &runtimeapi.RunComposeRequest{
 		ProjectName: project.Name,
 	}
@@ -28,7 +28,7 @@ func composeToProto(project *types.Project) *runtimeapi.RunComposeRequest {
 
 	for _, name := range names {
 		svc := project.Services[name]
-		protoSvc := toProtoService(name, svc)
+		protoSvc := toProtoService(name, svc, backend)
 		req.Services = append(req.Services, protoSvc)
 	}
 
@@ -36,7 +36,7 @@ func composeToProto(project *types.Project) *runtimeapi.RunComposeRequest {
 }
 
 // toProtoService converts a single compose service to the proto type.
-func toProtoService(name string, svc types.ServiceConfig) *runtimeapi.ComposeService {
+func toProtoService(name string, svc types.ServiceConfig, backend string) *runtimeapi.ComposeService {
 	env := make(map[string]string)
 	for k, v := range svc.Environment {
 		if v != nil {
@@ -103,6 +103,13 @@ func toProtoService(name string, svc types.ServiceConfig) *runtimeapi.ComposeSer
 		})
 	}
 
+	// Default network mode: slirp (userspace NAT) for VMs,
+	// bridge (kernel TAP+bridge+iptables) for containers.
+	netMode := "bridge"
+	if backend == "vm" {
+		netMode = "slirp"
+	}
+
 	return &runtimeapi.ComposeService{
 		Name:          name,
 		Image:         svc.Image,
@@ -111,7 +118,7 @@ func toProtoService(name string, svc types.ServiceConfig) *runtimeapi.ComposeSer
 		Ports:         ports,
 		WorkingDir:    workingDir,
 		Labels:        labels,
-		NetworkMode:   "bridge",
+		NetworkMode:   netMode,
 		CpuMillicores: cpuMillis,
 		MemoryBytes:   memBytes,
 		DependsOn:     dependsOn,

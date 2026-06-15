@@ -389,10 +389,19 @@ init system, udev, or getty. The vsock protocol is a simple
 framed message stream (length-prefixed JSON for control,
 raw bytes for stdio).
 
-Networking for the VM uses a tap device attached to the shared
-`pullrun-br0` bridge — same L2 segment as the containers. The
-guest gets a static IP, with a deterministic MAC derived from the
-IP (so two VMs can't collide).
+Networking for the VM uses either:
+
+- **Bridge mode** (default with `--net bridge`): a tap device
+  attached to the shared `pullrun-br0` bridge — same L2 segment
+  as the containers. The guest gets a static IP, with a
+  deterministic MAC derived from the IP.
+- **Slirp mode** (default with `--net slirp` or `--backend vm`):
+  a tap device created by `slirp4netns` with a pure-userspace NAT
+  stack. No bridge, no iptables, no kernel IP forwarding. Each VM
+  gets its own private subnet; VMs cannot communicate with each
+  other or with containers on the bridge. The only capability
+  required is `CAP_NET_ADMIN` (for TAP creation), settable via
+  `setcap cap_net_admin+ep` on the slirp4netns binary.
 
 Pullrun uses a generic 6.x Linux kernel configured for minimal
 boot time (no ACPI, no SCSI, no DRM, no sound). The kernel is
@@ -421,9 +430,13 @@ request names a VM but the VM backend isn't configured (returns
 
 ## 4. The shared network model (`pullrun-net`)
 
-This is the most opinionated design decision in Pullrun: **all
-workloads, regardless of backend, live on the same L2 segment**
-behind a single userspace proxy.
+Pullrun supports two network models:
+
+### Bridge model (default for containers)
+
+**All workloads, regardless of backend, live on the same L2
+segment** behind a single userspace proxy. This enables
+inter-workload communication and shared IPAM.
 
 ```
                   ┌──────── pullrun-br0 (Linux bridge, 10.42.0.0/16) ────────┐
@@ -451,6 +464,28 @@ behind a single userspace proxy.
                                               the internet
 ```
 
+### Slirp model (default for VMs, `--net slirp`)
+
+Slirp mode replaces the shared bridge with per-VM userspace NAT,
+eliminating the bridge and iptables entirely. Each VM gets its own
+TAP device created by `slirp4netns`, which provides a lightweight
+TCP/UDP/ICMP stack in userspace.
+
+```
+   VM C (10.42.1.100)      VM D (10.42.2.100)
+   │                       │
+   └─ tap-vm-c (slirp) ────┘  └─ tap-vm-d (slirp) ─────
+         │                              │
+   slirp4netns (userspace NAT)    slirp4netns (userspace NAT)
+         │                              │
+         └────────────── the internet ──┘
+```
+
+VMs in slirp mode cannot communicate with each other or with
+bridge-mode workloads. This is the right choice for rootless
+setups (no `iptables` or bridge kernel module required) and for
+single-VM workloads that only need outbound internet access.
+
 ### IPAM
 
 A single `Arc<Ipam>` is held by the runtime and shared between
@@ -473,14 +508,14 @@ semantics in v0 — it's a list of explicit port mappings. See
 [docs/POLICY.md](./POLICY.md) for how this composes with
 NetworkPolicy in v1.
 
-### Outbound: iptables MASQUERADE for VMs
+### Outbound: iptables MASQUERADE for VMs (bridge mode)
 
 Containers in v0 share the host's network namespace for outbound
 traffic (or use `NetworkMode::Host` directly). VMs need NAT
 because their tap devices only see the bridge.
 
-Pullrun writes three iptables rules at boot (and on every
-`ensure_bridge` call, idempotently):
+In bridge mode, Pullrun writes three iptables rules at boot
+(and on every `ensure_bridge` call, idempotently):
 
 ```bash
 iptables -t nat -A POSTROUTING \
@@ -494,6 +529,23 @@ iptables -A FORWARD -i <outbound_iface> -o pullrun-br0 \
 The outbound interface is auto-detected by parsing
 `ip route show default`; this works on cloud VMs, bare metal,
 and most home routers.
+
+### Outbound: slirp4netns userspace NAT (slirp mode)
+
+In slirp mode, outbound NAT is provided entirely in userspace by
+`slirp4netns`, which runs as a child process of `pullrun-runtime`.
+It reads raw ethernet frames from the TAP device via its
+`/dev/net/tun` fd, implements a minimal TCP/UDP/ICMP stack (based
+on QEMU's libslirp), and forwards traffic through the host's
+network stack as a regular userspace process. No iptables rules,
+no kernel IP forwarding, no bridge.
+
+**Requirements:**
+- `slirp4netns` on PATH (install: `apt install slirp4netns` or
+  `brew install slirp4netns`)
+- `CAP_NET_ADMIN` on the slirp4netns binary (set once via
+  `sudo setcap cap_net_admin+ep $(which slirp4netns)`)
+- No bridge kernel module, no iptables, no root access at runtime
 
 ### Why a single shared segment?
 

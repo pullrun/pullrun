@@ -8,12 +8,21 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	runtimeapi "pullrun/protoapi/pullrun/runtime"
 )
+
+// defaultBackend returns "vm" on macOS (no runc) and "container" on Linux.
+func defaultBackend() string {
+	if runtime.GOOS == "darwin" {
+		return "vm"
+	}
+	return "container"
+}
 
 // bridgeNameForProject derives a deterministic bridge name from the project name.
 func bridgeNameForProject(projectName string) string {
@@ -22,7 +31,9 @@ func bridgeNameForProject(projectName string) string {
 }
 
 func newUpCommand() *cobra.Command {
-	return &cobra.Command{
+	var backend string
+
+	cmd := &cobra.Command{
 		Use:   "up [service...]",
 		Short: "Create and start services",
 		Long:  `Create and start all services defined in the compose file. If service names are given as arguments, only those services are started.`,
@@ -39,6 +50,9 @@ func newUpCommand() *cobra.Command {
 			}
 
 			fmt.Printf("Project: %s (%d services)\n", project.Name, len(project.Services))
+			if verbose {
+				fmt.Fprintf(os.Stderr, "  backend: %s\n", backend)
+			}
 
 			// Derive per-project bridge for network isolation (D4).
 			bridgeName := bridgeNameForProject(project.Name)
@@ -112,14 +126,20 @@ func newUpCommand() *cobra.Command {
 					workingDir = "/"
 				}
 
+			// Default network mode: slirp (userspace NAT) for VMs,
+			// bridge (kernel TAP+bridge+iptables) for containers.
+			netMode := "bridge"
+			if backend == "vm" {
+				netMode = "slirp"
+			}
 			runResp, err := client.RunWorkload(ctx, &runtimeapi.RunRequest{
 				Id:           id,
 				RootDigest:   pullResp.RootDigest,
-				Backend:      "container",
+				Backend:      backend,
 				Command:      svc.Command,
 				Env:          env,
 				NetworkRules: networkRules,
-				NetworkMode:  "bridge",
+				NetworkMode:  netMode,
 				WorkingDir:   workingDir,
 				BridgeName:   bridgeName,
 			})
@@ -135,4 +155,7 @@ func newUpCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&backend, "backend", defaultBackend(), "Execution backend: container, vm")
+	return cmd
 }

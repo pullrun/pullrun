@@ -98,7 +98,7 @@ To talk to an existing daemon, use `--socket /tmp/pullrun.sock` or
            ▼              ▼
    ┌───────────────────────────────────────────────────────────┐
    │  ProxyNetwork (10.42.0.0/16)                              │
-   │  userspace TCP/UDP proxy + DNS + IPAM + iptables          │
+    │  userspace TCP/UDP proxy + DNS + IPAM + iptables/slirp    │
    └───────────────────────────────────────────────────────────┘
 ```
 
@@ -490,6 +490,16 @@ pullrun run nginx:alpine -p 8080:80 --cmd nginx -g 'daemon off;'
 # Verify: curl http://localhost:8080
 ```
 
+For VMs, the default is `--net slirp` (userspace NAT via
+`slirp4netns` — no bridge, no iptables). Explicit modes:
+
+| `--net`     | Backend      | Description |
+|-------------|--------------|-------------|
+| `isolated`  | any          | Loopback only, no outbound |
+| `bridge`    | any          | Shared `pullrun-br0`, inter-workload comms |
+| `slirp`     | vm           | Per-VM userspace NAT (rootless) |
+| `host`      | container    | Host network namespace |
+
 ### Running detached and exec-ing
 
 ```bash
@@ -555,8 +565,10 @@ pullrun run alpine:3.18 --backend vm \
 ```
 
 The workload command runs as PID 1 inside the VM via the injected
-`/init` shell script. The VM gets a TAP+bridge network and IPAM
-allocation. With `--attach`, the CLI polls `GetWorkload` until the
+`/init` shell script. By default the VM uses **slirp networking**
+(userspace NAT via `slirp4netns` — no bridge, no iptables). Pass
+`--net bridge` for a shared bridge on the same L2 segment as
+containers. With `--attach`, the CLI polls `GetWorkload` until the
 workload exits and reports the exit code. (Real-time stdio streaming
 is not yet supported on this backend — output goes to the VM serial
 console.)

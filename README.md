@@ -259,7 +259,7 @@ Compose all four: `--require-signature --readonly-rootfs --no-new-privileges --s
 Nodes share image blocks peer-to-peer via gRPC + Bloom filters. One node pulls from the registry, the rest delta-sync from each other. Features: mDNS/discovery for zero-config LAN peer finding, Bloom filter cache to avoid redundant transfers, gossip protocol for peer state, delta computation, registrar service for peer tracking.
 
 ### 📡 Networking
-User-defined bridge networks with IPAM, inbound/outbound port forwarding, DNS resolution, and `iptables` integration. Three modes per workload via `--net`: **`isolated`** (default, loopback only with host proxy on `10.42.0.1`), **`host`** (shares host namespace), **`none`** (no network). Isolation is enforced by the proxy, not per-workload VLANs.
+User-defined bridge networks with IPAM, inbound/outbound port forwarding, DNS resolution, and `iptables` integration. Four modes per workload via `--net`: **`isolated`** (default for containers, loopback only with host proxy on `10.42.0.1`), **`bridge`** (shared `pullrun-br0` bridge, inter-workload communication), **`slirp`** (default for VMs, userspace NAT via slirp4netns — no bridge, no iptables), **`host`** (shares host namespace), **`none`** (no network). Isolation is enforced by the proxy, not per-workload VLANs.
 
 ### 🗝️ Encrypted Secrets
 AES-256-GCM encryption at rest, decrypted into workload tmpfs at runtime. `pullrun secret create/get/ls/inspect/rm` — data stays encrypted on disk, only the runtime process can decrypt.
@@ -394,7 +394,7 @@ runtime/          # Rust workspace — core data plane
   pullrun-oci/     # OCI client + DAG converter
   pullrun-exec/    # Executor trait + runc wrapper
   pullrun-vm/      # Firecracker + Apple Virt backends + pullrun-init guest agent
-  pullrun-net/     # IPAM, proxy, DNS, iptables
+  pullrun-net/     # IPAM, proxy, DNS, iptables, slirp4netns
   pullrun-dns/     # In-process DNS server for workload resolution
   pullrun-vsock/   # Vsock transport layer for VM guest-host communication
   pullrun-sync/    # P2P block sync (Bloom, mDNS, gossip)

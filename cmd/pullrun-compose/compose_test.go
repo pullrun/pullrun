@@ -104,7 +104,10 @@ func TestToProtoService_PortMapping(t *testing.T) {
 			{Target: 53, Published: "5353", Protocol: "udp"},
 		},
 	}
-	proto := toProtoService("web", svc)
+	proto := toProtoService("web", svc, "container")
+	if proto.NetworkMode != "bridge" {
+		t.Errorf("NetworkMode = %q, want bridge for container backend", proto.NetworkMode)
+	}
 	if proto.Image != "nginx:latest" {
 		t.Errorf("Image = %q, want nginx:latest", proto.Image)
 	}
@@ -127,7 +130,7 @@ func TestToProtoService_Environment(t *testing.T) {
 			"BAZ": strPtr("qux"),
 		},
 	}
-	proto := toProtoService("env-test", svc)
+	proto := toProtoService("env-test", svc, "container")
 	if len(proto.Environment) != 2 {
 		t.Fatalf("len(env) = %d, want 2", len(proto.Environment))
 	}
@@ -148,7 +151,7 @@ func TestToProtoService_DeployResources(t *testing.T) {
 			},
 		},
 	}
-	proto := toProtoService("cache", svc)
+	proto := toProtoService("cache", svc, "container")
 	if proto.CpuMillicores != 500 {
 		t.Errorf("CpuMillicores = %d, want 500", proto.CpuMillicores)
 	}
@@ -161,7 +164,7 @@ func TestToProtoService_WorkingDirDefault(t *testing.T) {
 	svc := types.ServiceConfig{
 		Image: "busybox:latest",
 	}
-	proto := toProtoService("worker", svc)
+	proto := toProtoService("worker", svc, "container")
 	if proto.WorkingDir != "/" {
 		t.Errorf("WorkingDir = %q, want /", proto.WorkingDir)
 	}

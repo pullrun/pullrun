@@ -201,7 +201,7 @@ func main() {
 	var (
 		socketPath   = flag.String("socket", "/var/run/pullrun/pullrun-cri.sock", "CRI socket path")
 		runtimeSock  = flag.String("runtime-socket", "/var/run/pullrun/runtime.sock", "pullrun-runtime gRPC UDS")
-		networkMode  = flag.String("network-mode", "bridge", "Network mode for workloads: 'isolated' (no cluster IP) or 'bridge' (shared pullrun-br0)")
+		networkMode  = flag.String("network-mode", "bridge", "Network mode: bridge|isolated|host|slirp")
 	)
 	flag.Parse()
 

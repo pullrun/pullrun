@@ -25,8 +25,9 @@ pub use attach::{
 pub use oci_kernel::{OciKernelError, StagedKernel, KERNEL_INITRAMFS_PATH, KERNEL_VMLINUX_PATH};
 
 pub use network::{
-    create_tap, create_tap_on_bridge, derive_cidr, ensure_bridge, ensure_bridge_named, mac_from_ip,
-    teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME, GATEWAY_IP, NETMASK,
+    create_slirp_tap, create_tap, create_tap_on_bridge, derive_cidr, ensure_bridge,
+    ensure_bridge_named, mac_from_ip, teardown_tap, VmNetError, VmNetwork, BRIDGE_NAME, GATEWAY_IP,
+    NETMASK,
 };
 
 use std::collections::HashMap;
@@ -42,6 +43,7 @@ use tokio::process::Command;
 use tracing::{info, warn};
 
 use pullrun_exec::{ExecError, Executor, ProcessHandle};
+use pullrun_exec::types::NetworkMode;
 use pullrun_net::{Ipam, NetworkEndpoint, NetworkManager, ProxyNetwork};
 use pullrun_store::MmapStore;
 
@@ -97,6 +99,10 @@ pub struct FirecrackerExecutor {
     /// the `Mutex` contention is negligible. The inner `File` is `Send` but
     /// not `Sync`, hence `Mutex` rather than `RwLock`.
     tap_fds: Mutex<HashMap<String, File>>,
+    /// Long-running slirp4netns child processes, keyed by workload id.
+    /// Each child provides userspace NAT for one VM's TAP device. Killed
+    /// in `stop()`.
+    slirp_children: Mutex<HashMap<String, std::process::Child>>,
 }
 
 impl FirecrackerExecutor {
@@ -112,6 +118,7 @@ impl FirecrackerExecutor {
             ipam,
             proxy,
             tap_fds: Mutex::new(HashMap::new()),
+            slirp_children: Mutex::new(HashMap::new()),
         }
     }
 
@@ -190,23 +197,42 @@ impl Executor for FirecrackerExecutor {
                 )
             };
 
-        // 2. Plumb the host-side network: bridge (idempotent) + tap.
+        // 2. Plumb the host-side network: bridge + tap, or slirp4netns.
         let tap_name = self.tap_name_for(&spec.id);
-        let (vm_net, tap_fd) = if let Some(ref bn) = spec.bridge_name {
+        let use_slirp = matches!(spec.network_mode, NetworkMode::Slirp);
+        let (vm_net, tap_fd, slirp_child) = if use_slirp {
+            let (vm_net, child) = crate::network::create_slirp_tap(
+                &tap_name, guest_ip, _netmask, _gateway,
+            )
+                .map_err(|e| ExecError::ExecutionFailed(format!("slirp network setup: {e}")))?;
+            (vm_net, None, Some(child))
+        } else if let Some(ref bn) = spec.bridge_name {
             let (gw, nm, _) = crate::network::derive_cidr(bn);
             let cidr = format!("10.{}.{}.0/24", gw.octets()[1], gw.octets()[2]);
             crate::network::ensure_bridge_named(bn, &cidr, gw)
                 .map_err(|e| ExecError::ExecutionFailed(format!("bridge setup: {e}")))?;
-            create_tap_on_bridge(&tap_name, guest_ip, bn, nm, gw)
+            let (vm_net, fd) = create_tap_on_bridge(&tap_name, guest_ip, bn, nm, gw)
                 .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
+            ;
+            (vm_net, Some(fd), None)
         } else {
-            create_tap(&tap_name, guest_ip)
+            let (vm_net, fd) = create_tap(&tap_name, guest_ip)
                 .map_err(|e| ExecError::ExecutionFailed(format!("vm network setup: {e}")))?
+            ;
+            (vm_net, Some(fd), None)
         };
-        self.tap_fds
-            .lock()
-            .expect("tap_fds lock poisoned")
-            .insert(spec.id.clone(), tap_fd);
+        if let Some(fd) = tap_fd {
+            self.tap_fds
+                .lock()
+                .expect("tap_fds lock poisoned")
+                .insert(spec.id.clone(), fd);
+        }
+        if let Some(child) = slirp_child {
+            self.slirp_children
+                .lock()
+                .expect("slirp_children lock poisoned")
+                .insert(spec.id.clone(), child);
+        }
 
         // 3. Start the inbound proxy listeners (for any declared rules).
         //    The listeners bind on 0.0.0.0:host_port and forward into
@@ -417,6 +443,20 @@ impl Executor for FirecrackerExecutor {
                     let _ = proxy.teardown(&id_owned, &endpoint_for_proxy).await;
                 });
             }
+        }
+
+        // Kill slirp4netns if it was used (closes the TAP fd, destroying
+        // the device). This runs unconditionally — the map entry is
+        // absent for bridge-mode VMs.
+        if let Some(mut child) = self
+            .slirp_children
+            .lock()
+            .expect("slirp_children lock poisoned")
+            .remove(id)
+        {
+            let _ = child.kill();
+            let _ = child.wait();
+            info!(%id, "slirp4netns child killed");
         }
 
         let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
