@@ -68,7 +68,7 @@ Create and start a workload (container or VM).
 |-----------|------|----------|-------------|
 | `image` | string | yes | OCI image reference (e.g. `alpine:latest`) |
 | `id` | string | no | Workload ID (auto-generated if omitted) |
-| `command` | string | no | Command to run (space-separated) |
+| `command` | string | no | Command to run (space-separated, e.g. `echo hello world`) |
 | `env` | array | no | Environment variables (KEY=VALUE strings) |
 | `backend` | string | no | Backend: `container` (default) or `vm` |
 | `cpus` | number | no | CPU count (e.g. `2`) |
@@ -144,17 +144,20 @@ Build an OCI image from a Dockerfile.
 |-----------|------|----------|-------------|
 | `dockerfile` | string | yes | Path to Dockerfile or directory containing one |
 | `tag` | string | no | Image tag (e.g. `myapp:latest`) |
+| `platform` | string | no | Target platform (e.g. `linux/amd64`, `linux/arm64`) |
+| `build_arg` | array | no | Build arguments (`KEY=VALUE` strings, repeatable) |
+| `push` | boolean | no | Push the built image to the registry after build |
 
 #### `push`
 Push a local image to a registry.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `image` | string | yes | Image reference (e.g. `myapp:latest`) |
-| `registry` | string | no | Target registry |
+| `root_digest` | string | yes | Root digest of the image (e.g. `sha256:abc123...`) |
+| `target` | string | yes | Target reference (e.g. `registry.example.com/repo:tag`) |
 
 #### `prune`
-Garbage-collect unused DAG nodes and free disk space. No parameters.
+Garbage-collect unused DAG nodes and free disk space.
 
 ### Compose / orchestration
 

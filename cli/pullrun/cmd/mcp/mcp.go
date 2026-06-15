@@ -34,7 +34,7 @@
 //   pull_image    — Pull an OCI image from a registry
 //   list_images   — List images in the local DAG store
 //   build         — Build an OCI image from a Dockerfile
-//   push          — Push a local image to a registry
+//   push          — Push a local image to a registry (takes root_digest + target)
 //   prune         — Garbage-collect unused DAG nodes
 //
 // Compose / orchestration:
@@ -206,7 +206,7 @@ func (s *Server) defineRun() mcp.Tool {
 			mcp.Description("Workload ID (auto-generated if omitted)"),
 		),
 		mcp.WithString("command",
-			mcp.Description("Command to run (space-separated, e.g., '/bin/sh -c \"echo hi\"')"),
+			mcp.Description("Command to run (space-separated, e.g., '/bin/echo hello')"),
 		),
 		mcp.WithArray("env",
 			mcp.Description("Environment variables (array of KEY=VALUE strings)"),
@@ -307,23 +307,29 @@ func (s *Server) defineBuild() mcp.Tool {
 			mcp.Description("Path to Dockerfile or directory containing one"),
 		),
 		mcp.WithString("tag", mcp.Description("Image tag (e.g., 'myapp:latest')")),
+		mcp.WithString("platform",
+			mcp.Description("Target platform (e.g., 'linux/amd64', 'linux/arm64')"),
+		),
+		mcp.WithArray("build_arg",
+			mcp.Description("Build arguments (array of KEY=VALUE strings)"),
+		),
+		mcp.WithBoolean("push",
+			mcp.Description("Push the built image to the registry after build"),
+		),
 	)
 }
 
 func (s *Server) definePush() mcp.Tool {
 	return mcp.NewTool("push",
 		mcp.WithDescription("Push a local image to a registry"),
-		mcp.WithString("image", mcp.Required(), mcp.Description("Image reference (e.g., 'myapp:latest')")),
-		mcp.WithString("registry", mcp.Description("Target registry")),
+		mcp.WithString("root_digest", mcp.Required(), mcp.Description("Root digest of the image (e.g., 'sha256:abc123...')")),
+		mcp.WithString("target", mcp.Required(), mcp.Description("Target reference (e.g., 'registry.example.com/repo:tag')")),
 	)
 }
 
 func (s *Server) definePrune() mcp.Tool {
 	return mcp.NewTool("prune",
 		mcp.WithDescription("Garbage-collect unused DAG nodes and free disk space"),
-		mcp.WithBoolean("dry_run",
-			mcp.Description("Report what would be freed without deleting (default true)"),
-		),
 	)
 }
 
@@ -569,10 +575,26 @@ func (s *Server) handleBuild(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	tag, _ := args["tag"].(string)
+	platform, _ := args["platform"].(string)
+	push, _ := args["push"].(bool)
+
+	buildArgs := make(map[string]string)
+	if buildRaw, ok := args["build_arg"].([]interface{}); ok {
+		for _, e := range buildRaw {
+			if s, ok := e.(string); ok {
+				if k, v, ok := strings.Cut(s, "="); ok {
+					buildArgs[k] = v
+				}
+			}
+		}
+	}
 
 	resp, err := s.client.BuildImage(ctx, &runtimepb.BuildImageRequest{
 		Dockerfile: dockerfile,
 		Tag:        tag,
+		Platform:   platform,
+		BuildArgs:  buildArgs,
+		Push:       push,
 	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("build failed: %v", err)), nil
@@ -584,14 +606,17 @@ func (s *Server) handleBuild(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 func (s *Server) handlePush(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := req.GetArguments()
-	image, _ := args["image"].(string)
-	if image == "" {
-		return mcp.NewToolResultError("'image' is required"), nil
+	rootDigest, _ := args["root_digest"].(string)
+	if rootDigest == "" {
+		return mcp.NewToolResultError("'root_digest' is required"), nil
 	}
 
-	registry, _ := args["registry"].(string)
+	target, _ := args["target"].(string)
+	if target == "" {
+		return mcp.NewToolResultError("'target' is required"), nil
+	}
 
-	resp, err := s.client.PushImage(ctx, image, registry)
+	resp, err := s.client.PushImage(ctx, rootDigest, target)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("push failed: %v", err)), nil
 	}

@@ -244,7 +244,7 @@ Drop-in CRI shim at [`cri/pullrun-cri/`](cri/pullrun-cri/) — implement `Runtim
 A native **control-plane stub** lives in [`control-plane/`](control-plane/): `pullrun-controller` (scheduler) + `pullrun-agent` (per-node deployer) communicating over gRPC. This is a v1 work-in-progress with etcd, `.pullrun.local` DNS, and admission control planned — but the wire protocol is stable today.
 
 ### 🤖 MCP AI Integration
-Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing 15+ runtime operations as MCP tools — `run`, `stop`, `exec`, `list`, `get`, `inspect`, `logs`, `stats`, `pull_image`, `list_images`, `build`, `push`, `prune`, `compose_up`, `compose_down` plus MCP resources (`pullrun://workload/{id}`, `pullrun://workload/{id}/logs`, `pullrun://store/info`, `pullrun://images`). Works in stdio mode (for opencode, Claude Code, Cursor) or SSE mode (for remote agents via HTTP).
+Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing 15 runtime operations as MCP tools — `run`, `stop`, `exec`, `list`, `get`, `inspect`, `logs`, `stats`, `pull_image`, `list_images`, `build`, `push`, `prune`, `compose_up`, `compose_down` plus MCP resources (`pullrun://workload/{id}`, `pullrun://workload/{id}/logs`, `pullrun://store/info`, `pullrun://images`). Works in stdio mode (for opencode, Claude Code, Cursor) or SSE mode (for remote agents via HTTP).
 
 ### 🔐 Policy Engine
 Gate workloads before they run — built-in support for:
@@ -320,7 +320,7 @@ pullrun mcp
 #   "run docker-compose up from my project"
 ```
 
-The MCP server exposes 15+ tools and 4 resource types. SSE mode for remote agents: `pullrun mcp --sse :8080`.
+The MCP server exposes 15 tools and 4 resource types. SSE mode for remote agents: `pullrun mcp --sse :8080`.
 
 ---
 
