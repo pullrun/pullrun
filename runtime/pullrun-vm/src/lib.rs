@@ -438,7 +438,10 @@ impl Executor for FirecrackerExecutor {
     async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
         // Pool-allocated VMs are already booted — no-op.
         {
-            let pa = self.pool_allocations.lock().expect("pool_allocations lock poisoned");
+            let pa = self
+                .pool_allocations
+                .lock()
+                .expect("pool_allocations lock poisoned");
             if pa.contains(&handle.id) {
                 info!(id = %handle.id, "pool VM already running; skipping start");
                 return Ok(());

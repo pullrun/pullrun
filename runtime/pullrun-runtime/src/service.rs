@@ -483,10 +483,7 @@ impl RuntimeCommand {
                     ipam.clone(),
                     proxy.clone(),
                 );
-                info!(
-                    warm_pool_size = cfg.warm_pool_size,
-                    "warm VM pool enabled"
-                );
+                info!(warm_pool_size = cfg.warm_pool_size, "warm VM pool enabled");
                 Arc::new(executor.with_pool(pool))
             } else {
                 Arc::new(executor)

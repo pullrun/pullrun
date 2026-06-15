@@ -117,9 +117,7 @@ impl VmPool {
                     ip = %entry.guest_ip,
                     "acquired warm VM from pool"
                 );
-                Some(PooledVm {
-                    entry: Some(entry),
-                })
+                Some(PooledVm { entry: Some(entry) })
             }
             None => None,
         }
@@ -141,7 +139,12 @@ impl VmPool {
         if needed == 0 {
             return;
         }
-        info!(current = current_size, target = self.config.pool_size, fill = needed, "refilling warm VM pool");
+        info!(
+            current = current_size,
+            target = self.config.pool_size,
+            fill = needed,
+            "refilling warm VM pool"
+        );
         for _ in 0..needed {
             match self.boot_pool_vm().await {
                 Ok(entry) => {
@@ -169,9 +172,10 @@ impl VmPool {
             .map_err(|e| ExecError::ExecutionFailed(format!("create pool rootfs: {e}")))?;
 
         let tap_name = format!("tap-{}", &id[..8]);
-        let ip_u32 = self.ipam.allocate().ok_or_else(|| {
-            ExecError::ExecutionFailed("no IPs available in shared IPAM".into())
-        })?;
+        let ip_u32 = self
+            .ipam
+            .allocate()
+            .ok_or_else(|| ExecError::ExecutionFailed("no IPs available in shared IPAM".into()))?;
         let guest_ip = Ipv4Addr::from(ip_u32);
 
         let (vm_net, tap_fd) = create_tap(&tap_name, guest_ip)
@@ -228,9 +232,11 @@ impl VmPool {
             .arg(vm_dir.join("firecracker.metrics"))
             .arg("--level")
             .arg("Info")
-            .stdout(console_file.try_clone().map_err(|e| {
-                ExecError::ExecutionFailed(format!("clone console fd: {e}"))
-            })?)
+            .stdout(
+                console_file
+                    .try_clone()
+                    .map_err(|e| ExecError::ExecutionFailed(format!("clone console fd: {e}")))?,
+            )
             .stderr(console_file)
             .spawn()
             .map_err(|e| ExecError::ExecutionFailed(format!("spawn firecracker: {e}")))?;
@@ -286,9 +292,10 @@ pub struct PooledVm {
 
 impl PooledVm {
     pub fn swap_rootfs(&self, new_ext4_path: &Path) -> Result<(), ExecError> {
-        let entry = self.entry.as_ref().ok_or_else(|| {
-            ExecError::ExecutionFailed("pool entry already consumed".into())
-        })?;
+        let entry = self
+            .entry
+            .as_ref()
+            .ok_or_else(|| ExecError::ExecutionFailed("pool entry already consumed".into()))?;
 
         let body = serde_json::json!({
             "drive_id": "rootfs",
@@ -313,9 +320,10 @@ impl PooledVm {
     }
 
     pub fn reboot(&self) -> Result<(), ExecError> {
-        let entry = self.entry.as_ref().ok_or_else(|| {
-            ExecError::ExecutionFailed("pool entry already consumed".into())
-        })?;
+        let entry = self
+            .entry
+            .as_ref()
+            .ok_or_else(|| ExecError::ExecutionFailed("pool entry already consumed".into()))?;
 
         let body = serde_json::json!({
             "action_type": "SendCtrlAltDel",
@@ -333,11 +341,17 @@ impl PooledVm {
     }
 
     pub fn guest_ip(&self) -> Ipv4Addr {
-        self.entry.as_ref().map(|e| e.guest_ip).unwrap_or(Ipv4Addr::UNSPECIFIED)
+        self.entry
+            .as_ref()
+            .map(|e| e.guest_ip)
+            .unwrap_or(Ipv4Addr::UNSPECIFIED)
     }
 
     pub fn tap_name(&self) -> &str {
-        self.entry.as_ref().map(|e| e.tap_name.as_str()).unwrap_or("")
+        self.entry
+            .as_ref()
+            .map(|e| e.tap_name.as_str())
+            .unwrap_or("")
     }
 
     pub fn vm_net(&self) -> &VmNetwork {
@@ -419,14 +433,12 @@ fn create_pool_rootfs(path: &Path, size_mb: u64) -> Result<(), String> {
 
     let init_content = "#!/bin/sh\nwhile true; do sleep 3600; done\n";
     let init_path = dir.path().join("init");
-    std::fs::write(&init_path, init_content)
-        .map_err(|e| format!("write init: {e}"))?;
+    std::fs::write(&init_path, init_content).map_err(|e| format!("write init: {e}"))?;
     std::fs::set_permissions(&init_path, PermissionsExt::from_mode(0o755))
         .map_err(|e| format!("chmod init: {e}"))?;
 
     let etc_dir = dir.path().join("etc");
-    std::fs::create_dir_all(&etc_dir)
-        .map_err(|e| format!("create /etc: {e}"))?;
+    std::fs::create_dir_all(&etc_dir).map_err(|e| format!("create /etc: {e}"))?;
     std::fs::write(
         etc_dir.join("os-release"),
         b"NAME=\"Pullrun Pool\"\nID=pullrun-pool\nVERSION_ID=0\n",
