@@ -122,14 +122,20 @@ getcap /usr/local/bin/pullrun-runtime
 | `--require-sbom` | false | Reject images without a CycloneDX SBOM |
 | `--max-cvss <SCORE>` | (none) | Reject images with vulnerabilities above this CVSS |
 | `--readonly-rootfs` | false | Declare the rootfs must be read-only |
-| `--no-new-privileges` | false | Set `no_new_privs` on the container |
-| `--seccomp-profile <PROFILE>` | `default` | Seccomp profile: `default`, `unconfined`, or path to custom JSON |
-| `--insecure-registry <HOST>` | (none) | Allow plain-HTTP connections to this registry (repeatable) |
-| `--vm-firecracker <path>` | (none) | Path to the `firecracker` binary |
+| `--no-new-privileges` | false | Forbid privilege escalation |
+| `--deny-license <ID>` | (repeatable) | Banned SPDX license identifiers |
+| `--trusted-key <id:base64>` | (repeatable) | Trusted cosign public key |
+| `--insecure-registry <HOST>` | (repeatable) | Allow plain-HTTP connections to this registry |
+| `--vm-firecracker <path>` | (none) | Path to the `firecracker` binary (enables VM backend) |
 | `--vm-kernel <path>` | (none) | Path to the Linux kernel image for VMs |
-| `--vm-root <path>` | (none) | Where VM rootfs blobs are materialized |
-| `--vm-vcpus <N>` | 1 | Default vCPUs per VM |
-| `--vm-mem <MiB>` | 512 | Default memory per VM |
+| `--vm-root <path>` | `/var/lib/pullrun/vm` | Where VM rootfs blobs are materialized |
+| `--vm-vcpus <N>` | 2 | Default vCPUs per VM |
+| `--vm-mem-mib <MiB>` | 512 | Default memory per VM |
+| `--vm-size-mb <MiB>` | 256 | Rootfs size per VM |
+| `--vm-warm-pool-size <N>` | 0 | Pre-booted VMs in warm pool (0 = disabled) |
+| `--sync-addr <ADDR>` | `0.0.0.0:0` | BlockSync gRPC address (port 0 = disabled) |
+| `--registrar-addr <ADDR>` | (none) | Host Registrar gRPC service on this address |
+| `--registrar-connect <ADDR>` | (none) | Register with a remote Registrar |
 
 ### Health checks
 

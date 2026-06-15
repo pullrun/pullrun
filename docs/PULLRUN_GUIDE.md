@@ -235,6 +235,7 @@ pullrun-runtime daemon --require-signature --max-cvss 7.0
 | `--vm-vcpus` | 2 | vCPUs per VM |
 | `--vm-mem-mib` | 512 | Memory per VM (MiB) |
 | `--vm-size-mb` | 256 | Rootfs size per VM (MiB) |
+| `--vm-warm-pool-size` | 0 | Pre-booted VMs in warm pool (0 = disabled) |
 | `--sync-addr` | `0.0.0.0:0` | BlockSync gRPC (port 0 = disabled) |
 | `--registrar-addr` | (none) | Host Registrar gRPC service |
 | `--registrar-connect` | (none) | Connect to remote Registrar |
@@ -450,7 +451,7 @@ or `PULLRUN_INITRAMFS_PATH` environment variables.
 | `--name` | Workload name (auto-generated if empty) |
 | `--memory` | Memory limit in bytes (default 512MiB) |
 | `--cpu` | CPU millicores (1000 = 1 vCPU) |
-| `--net` | Network mode: `isolated`, `host`, `none` |
+| `--net` | Network mode: `isolated`, `bridge`, `slirp`, `host`, `none` |
 | `-p` / `--publish` | Publish port (`host:container` or just `port`) |
 | `--allow-inbound` | Expose port (repeatable) |
 | `--allow-outbound` | Allow outbound (`tcp:host:port`) |
@@ -459,8 +460,13 @@ or `PULLRUN_INITRAMFS_PATH` environment variables.
 | `--platform` | Target platform for pull (`linux/amd64`, `linux/arm64`) |
 | `--restart` | Restart policy: `no`, `on-failure`, `always`, `unless-stopped` |
 | `--health-cmd` | Health check command |
+| `--health-interval` | Health check interval (default 30s) |
+| `--health-timeout` | Health check timeout (default 10s) |
+| `--health-retries` | Consecutive failures before unhealthy (default 3) |
+| `--health-start-period` | Grace period before first check (default 0s) |
 | `--secret` | Mount a secret at `/run/secrets/<name>` |
 | `--config` | Mount a config at `/<name>` |
+| `-t` / `--tty` | Allocate a PTY (interactive shell) |
 | `-a` / `--attach` | Attach after start: streams stdout/stderr (Apple Virt VM / container with `--tty`) or polls for exit code (Firecracker VM / container without `--tty`). Detach via Ctrl-P Ctrl-Q. For Apple Virt VMs the VM is persistent — re-attach later with `pullrun exec <id> -t -- /bin/sh`. |
 | `-v` / `--volume` | Bind mount (`source:destination[:options]`). Supported on all backends: containers (Linux kernel bind mount), VMs (VirtioFS directory share). The `:ro` option enforces read-only. Multiple volumes allowed. |
 | `--direct` | Spawn runtime as child (default: true) |
