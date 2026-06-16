@@ -859,8 +859,13 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 	var restore func()
 	if tty {
 		restore, err = setupRawTerminal()
-		if err == nil && restore != nil {
-			defer restore()
+		if err == nil {
+			restoreWrap := restore
+			defer func() {
+				if restoreWrap != nil {
+					restoreWrap()
+				}
+			}()
 		}
 
 		go watchWindowSize(stream)
@@ -981,18 +986,17 @@ loop:
 		}
 	}
 
-	// Wake the stdin goroutine (blocked on os.Stdin.Read) with a
-	// read deadline so it can exit cleanly. Do NOT close os.Stdin
-	// — the deferred restore() needs fd 0 alive to restore
-	// terminal settings.
-	os.Stdin.SetReadDeadline(time.Now())
+	// Restore the terminal before closing stdin — term.Restore
+	// needs fd 0 alive. Close stdin afterwards to wake the stdin
+	// goroutine (blocked on os.Stdin.Read after the guest exits).
+	if restore != nil {
+		restore()
+		restore = nil
+	}
+	os.Stdin.Close()
 	<-stdinDone
-	os.Stdin.SetReadDeadline(time.Time{})
 
 	if exitCode != 0 {
-		if restore != nil {
-			restore()
-		}
 		os.Exit(exitCode)
 	}
 	return nil
