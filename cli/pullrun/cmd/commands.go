@@ -856,8 +856,9 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 		return fmt.Errorf("send open: %w", err)
 	}
 
+	var restore func()
 	if tty {
-		restore, err := setupRawTerminal()
+		restore, err = setupRawTerminal()
 		if err == nil && restore != nil {
 			defer restore()
 		}
@@ -986,6 +987,9 @@ loop:
 	<-stdinDone
 
 	if exitCode != 0 {
+		if restore != nil {
+			restore()
+		}
 		os.Exit(exitCode)
 	}
 	return nil

@@ -38,6 +38,7 @@ func setupRawTerminal() (func(), error) {
 			}
 		}
 		_ = os.Stdin.SetReadDeadline(time.Time{})
+		os.Stderr.WriteString("\r\n")
 		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 	}, nil
 }
