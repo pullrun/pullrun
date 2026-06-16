@@ -4016,9 +4016,9 @@ impl Runtime for RuntimeService {
                 .ok_or_else(|| Status::invalid_argument("container_path has no filename"))?;
             parent_canonical.join(file_name)
         } else {
-            full_path.canonicalize().map_err(|e| {
-                Status::internal(format!("cannot resolve path: {e}"))
-            })?
+            full_path
+                .canonicalize()
+                .map_err(|e| Status::internal(format!("cannot resolve path: {e}")))?
         };
         if !canonical.starts_with(&rootfs_path) {
             return Err(Status::invalid_argument(

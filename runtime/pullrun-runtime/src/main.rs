@@ -205,7 +205,10 @@ fn default_store_root() -> PathBuf {
     // $HOME/.local/share/pullrun (matches CLI default)
     if let Ok(home) = std::env::var("HOME") {
         if !home.is_empty() {
-            return PathBuf::from(home).join(".local").join("share").join("pullrun");
+            return PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("pullrun");
         }
     }
     // Last-resort fallback
