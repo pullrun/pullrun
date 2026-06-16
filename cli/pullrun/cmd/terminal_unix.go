@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"google.golang.org/grpc"
 	"golang.org/x/term"
@@ -29,15 +28,6 @@ func setupRawTerminal() (func(), error) {
 	}
 
 	return func() {
-		buf := make([]byte, 1024)
-		_ = os.Stdin.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
-		for {
-			_, err := os.Stdin.Read(buf)
-			if err != nil {
-				break
-			}
-		}
-		_ = os.Stdin.SetReadDeadline(time.Time{})
 		os.Stderr.WriteString("\r\n")
 		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 	}, nil

@@ -871,9 +871,7 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 		go watchWindowSize(stream)
 	}
 
-	stdinDone := make(chan struct{})
 	go func() {
-		defer close(stdinDone)
 		buf := make([]byte, 65536)
 		var pending10 bool
 		for {
@@ -986,15 +984,14 @@ loop:
 		}
 	}
 
-	// Restore the terminal before closing stdin — term.Restore
-	// needs fd 0 alive. Close stdin afterwards to wake the stdin
-	// goroutine (blocked on os.Stdin.Read after the guest exits).
+	// Restore the terminal while fd 0 is still alive, then return.
+	// The stdin goroutine is abandoned here — it's blocked on
+	// os.Stdin.Read and close() does not reliably wake blocked
+	// readers on macOS. The goroutine is collected on process exit.
 	if restore != nil {
 		restore()
 		restore = nil
 	}
-	os.Stdin.Close()
-	<-stdinDone
 
 	if exitCode != 0 {
 		os.Exit(exitCode)
