@@ -75,7 +75,7 @@ curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
 | Platform | What you get |
 |----------|-------------|
 | **macOS** | `brew install pullrun` → native binary, no Xcode |
-| **Linux** | APT package or direct download, systemd service |
+| **Linux** | APT package or direct download, systemd service (requires `runc` for containers, `/dev/kvm` for VMs) |
 | **Windows** | `pullrun.exe` + WSL2 auto-provisioning, runc + Firecracker |
 
 <details>

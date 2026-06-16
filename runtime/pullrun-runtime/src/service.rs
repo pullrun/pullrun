@@ -2987,6 +2987,35 @@ impl Runtime for RuntimeService {
                 state.backend
             )));
         }
+        // Rootless containers don't support attach because the attach
+        // path runs runc directly (not via rootless-exec) and rootless
+        // runc uses a different state directory.
+        if state.backend == "rootless" {
+            return Err(tonic::Status::failed_precondition(format!(
+                "workload {workload_id} is a rootless container, which does not support \
+                 interactive attach. Use a non-rootless container backend instead."
+            )));
+        }
+        // Check that runc is available before proceeding.
+        if is_container {
+            match std::process::Command::new("runc").arg("--version").output() {
+                Err(e) => {
+                    return Err(tonic::Status::failed_precondition(format!(
+                        "workload {workload_id} has backend=container but runc is not \
+                         available: {e}. Install runc: \
+                         https://github.com/opencontainers/runc/releases"
+                    )));
+                }
+                Ok(o) if !o.status.success() => {
+                    return Err(tonic::Status::failed_precondition(format!(
+                        "workload {workload_id} has backend=container but runc is not \
+                         functional: {}",
+                        String::from_utf8_lossy(&o.stderr)
+                    )));
+                }
+                _ => {}
+            }
+        }
         let kernel_image_ref = state.kernel_image_ref.clone();
         let rootfs_dir = if is_vm {
             match state.rootfs_dir.clone() {

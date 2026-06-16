@@ -50,13 +50,14 @@ if [ "$OS" = "linux" ] && command -v apt-get &>/dev/null; then
   KEY_URL="https://pullrun.github.io/apt/key.gpg"
   KEYRING="/usr/share/keyrings/pullrun.gpg"
   SOURCES="/etc/apt/sources.list.d/pullrun.list"
-  curl -fsSL "$KEY_URL" | sudo gpg --dearmor -o "$KEYRING" 2>/dev/null
+  curl -fsSL "$KEY_URL" | sudo gpg --dearmor -o "$KEYRING" 2>/dev/null || true
   echo "deb [signed-by=$KEYRING] https://pullrun.github.io/apt stable main" \
-    | sudo tee "$SOURCES" >/dev/null
-  sudo apt-get update -qq 2>/dev/null
-  sudo apt-get install -y -qq pullrun 2>/dev/null
-  info "Done! Run 'pullrun --help' to get started."
-  exit 0
+    | sudo tee "$SOURCES" >/dev/null 2>/dev/null || true
+  if sudo apt-get update -qq 2>/dev/null && sudo apt-get install -y -qq pullrun 2>/dev/null; then
+    info "Done! Run 'pullrun --help' to get started."
+    exit 0
+  fi
+  warn "APT install failed — falling back to binary download..."
 fi
 
 # ── Windows / WSL2 install ─────────────────────────────────────────

@@ -240,14 +240,15 @@ impl LinuxContainerExecutor {
             .await
             .map_err(|e| {
                 ExecError::BackendNotAvailable(format!(
-                    "runc not found at {}: {e}",
+                    "runc not found at {} — container backend unavailable. \
+                     Install runc: https://github.com/opencontainers/runc/releases ({e})",
                     self.runc_path.display()
                 ))
             })?;
 
         if !output.status.success() {
             return Err(ExecError::BackendNotAvailable(
-                "runc returned non-zero exit code".into(),
+                "runc returned a non-zero exit code — is it a valid runc binary?".into(),
             ));
         }
 
