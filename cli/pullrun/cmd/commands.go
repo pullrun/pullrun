@@ -981,10 +981,13 @@ loop:
 		}
 	}
 
-	// Close stdin to wake up the stdin goroutine (it may be
-	// blocked on os.Stdin.Read() after the workload exits).
-	os.Stdin.Close()
+	// Wake the stdin goroutine (blocked on os.Stdin.Read) with a
+	// read deadline so it can exit cleanly. Do NOT close os.Stdin
+	// — the deferred restore() needs fd 0 alive to restore
+	// terminal settings.
+	os.Stdin.SetReadDeadline(time.Now())
 	<-stdinDone
+	os.Stdin.SetReadDeadline(time.Time{})
 
 	if exitCode != 0 {
 		if restore != nil {
