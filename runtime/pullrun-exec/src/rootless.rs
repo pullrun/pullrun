@@ -51,6 +51,7 @@ impl RootlessConfig {
 pub fn rootless_runc_command(config: &RootlessConfig, id: &str, bundle: &Path) -> Command {
     let mut cmd = Command::new(&config.runc_path);
     cmd.arg("run")
+        .arg("-d")
         .arg("--bundle")
         .arg(bundle)
         .arg("--root")

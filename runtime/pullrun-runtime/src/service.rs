@@ -569,8 +569,15 @@ impl RuntimeCommand {
         }
         let workloads: Arc<RwLock<HashMap<String, WorkloadState>>> =
             Arc::new(RwLock::new(recovered));
-        let image_tags: Arc<RwLock<HashMap<String, String>>> =
-            Arc::new(RwLock::new(HashMap::new()));
+        let image_tags: Arc<RwLock<HashMap<String, String>>> = {
+            let tags_path = self.config.store_root.join("image_tags.json");
+            let map = if let Ok(file) = std::fs::File::open(&tags_path) {
+                serde_json::from_reader(file).unwrap_or_default()
+            } else {
+                HashMap::new()
+            };
+            Arc::new(RwLock::new(map))
+        };
 
         // Spawn the workload-exit watcher. Every 5s it walks the
         // `workloads` map and asks the executor for the live status
@@ -1454,6 +1461,15 @@ pub struct RuntimeService {
 }
 
 impl RuntimeService {
+    /// Persist the image_tags map to disk so it survives restarts.
+    fn save_image_tags(&self) {
+        let tags = self.image_tags.blocking_read();
+        if let Ok(json) = serde_json::to_string(&*tags) {
+            let path = self.config.store_root.join("image_tags.json");
+            let _ = std::fs::write(&path, &json);
+        }
+    }
+
     /// Evaluate the policy for an image that was just pulled.
     /// `image_ref` is the user-supplied reference; `manifest_digest` is
     /// the rkyv root returned by the converter.
@@ -1666,6 +1682,23 @@ impl Runtime for RuntimeService {
         };
         let image_ref = req.image_ref.clone();
 
+        // Check if this image reference is already known locally
+        // (committed, built, or previously pulled). If so, return
+        // the cached digest without hitting the registry.
+        {
+            let tags = self.image_tags.read().await;
+            for (digest, tag) in tags.iter() {
+                if *tag == image_ref {
+                    debug!(%image_ref, %digest, "local image tag hit");
+                    return Ok(tonic::Response::new(PullImageResponse {
+                        root_digest: digest.clone(),
+                        bytes_stored: 0,
+                        bytes_deduplicated: 0,
+                    }));
+                }
+            }
+        }
+
         // Metrics: record the registry label even on the failure
         // path. The `registry` label is the user-supplied string
         // (or "default" if empty). We do *not* put the full image
@@ -1742,6 +1775,7 @@ impl Runtime for RuntimeService {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), image_ref.clone());
         }
+        self.save_image_tags();
 
         // Policy gate.
         if let Err(e) = self.evaluate_pulled(&image_ref, &root_digest).await {
@@ -2466,6 +2500,17 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<StopResponse>, tonic::Status> {
         let req = request.into_inner();
         let id = req.id.clone();
+
+        // Verify the workload exists before proceeding.
+        {
+            let workloads = self.workloads.read().await;
+            if !workloads.contains_key(&id) {
+                return Err(tonic::Status::not_found(format!(
+                    "workload {} not found",
+                    id
+                )));
+            }
+        }
 
         // Check workload status before trying to stop any OS process.
         // If the status is not "running", there is nothing to stop.
@@ -3788,6 +3833,7 @@ impl Runtime for RuntimeService {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), tag.clone());
         }
+        self.save_image_tags();
 
         // Push after build if requested.
         if req.push {
@@ -3953,9 +3999,27 @@ impl Runtime for RuntimeService {
         let full_path = rootfs_path.join(container_path);
 
         // Security: ensure we don't escape the rootfs via symlinks or "..".
-        let canonical = full_path
-            .canonicalize()
-            .map_err(|e| Status::internal(format!("cannot resolve path: {e}")))?;
+        // For "in" direction the destination doesn't exist yet, so we
+        // canonicalize the parent and validate the final path manually.
+        let canonical = if req.direction == "in" {
+            let parent = full_path.parent().unwrap_or(&rootfs_path);
+            let parent_canonical = parent
+                .canonicalize()
+                .map_err(|e| Status::internal(format!("cannot resolve parent path: {e}")))?;
+            if !parent_canonical.starts_with(&rootfs_path) {
+                return Err(Status::invalid_argument(
+                    "container_path escapes the root filesystem",
+                ));
+            }
+            let file_name = full_path
+                .file_name()
+                .ok_or_else(|| Status::invalid_argument("container_path has no filename"))?;
+            parent_canonical.join(file_name)
+        } else {
+            full_path.canonicalize().map_err(|e| {
+                Status::internal(format!("cannot resolve path: {e}"))
+            })?
+        };
         if !canonical.starts_with(&rootfs_path) {
             return Err(Status::invalid_argument(
                 "container_path escapes the root filesystem",
@@ -4077,6 +4141,7 @@ impl Runtime for RuntimeService {
         if !req.tag.is_empty() {
             let mut tags = self.image_tags.write().await;
             tags.insert(manifest_digest.as_hex(), req.tag.clone());
+            self.save_image_tags();
         }
 
         Ok(tonic::Response::new(CommitImageResponse {
