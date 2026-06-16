@@ -42,8 +42,8 @@ enum Commands {
     Daemon {
         #[arg(short, long, default_value = "/tmp/pullrun.sock")]
         socket: String,
-        #[arg(long, default_value = "/var/lib/pullrun")]
-        store_root: PathBuf,
+        #[arg(long)]
+        store_root: Option<PathBuf>,
 
         // Observability.
         //
@@ -143,8 +143,8 @@ enum Commands {
         image_ref: String,
         #[arg(long)]
         registry: Option<String>,
-        #[arg(long, default_value = "/var/lib/pullrun")]
-        store_root: PathBuf,
+        #[arg(long)]
+        store_root: Option<PathBuf>,
         #[arg(
             long = "insecure-registry",
             help = "Treat the registry as plain-HTTP (no TLS). Repeatable."
@@ -167,20 +167,49 @@ enum Commands {
         allow_outbound: Vec<String>,
         #[arg(long)]
         publish: Vec<u16>,
-        #[arg(long, default_value = "/var/lib/pullrun")]
-        store_root: PathBuf,
+        #[arg(long)]
+        store_root: Option<PathBuf>,
     },
     /// Stop a workload
     Stop {
         id: String,
-        #[arg(long, default_value = "/var/lib/pullrun")]
-        store_root: PathBuf,
+        #[arg(long)]
+        store_root: Option<PathBuf>,
     },
     /// List running workloads
     List {
-        #[arg(long, default_value = "/var/lib/pullrun")]
-        store_root: PathBuf,
+        #[arg(long)]
+        store_root: Option<PathBuf>,
     },
+}
+
+fn default_store_root() -> PathBuf {
+    // $PULLRUN_STORE env var (highest priority — matches CLI)
+    if let Ok(path) = std::env::var("PULLRUN_STORE") {
+        if !path.is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+    // Running as root → /var/lib/pullrun
+    #[cfg(target_family = "unix")]
+    // SAFETY: geteuid is async-signal-safe.
+    if unsafe { libc::geteuid() } == 0 {
+        return PathBuf::from("/var/lib/pullrun");
+    }
+    // $XDG_DATA_HOME/pullrun
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg).join("pullrun");
+        }
+    }
+    // $HOME/.local/share/pullrun (matches CLI default)
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            return PathBuf::from(home).join(".local").join("share").join("pullrun");
+        }
+    }
+    // Last-resort fallback
+    PathBuf::from("/var/lib/pullrun")
 }
 
 fn build_policy(
@@ -349,6 +378,7 @@ async fn run_one_shot(cmd: Commands) -> Result<(), Box<dyn std::error::Error>> {
             store_root,
             insecure_registry,
         } => {
+            let store_root = store_root.unwrap_or_else(default_store_root);
             run_pull(
                 &image_ref,
                 registry.as_deref(),
@@ -367,6 +397,7 @@ async fn run_one_shot(cmd: Commands) -> Result<(), Box<dyn std::error::Error>> {
             publish,
             store_root,
         } => {
+            let store_root = store_root.unwrap_or_else(default_store_root);
             run_workload(
                 &root_digest,
                 &name,
@@ -379,8 +410,14 @@ async fn run_one_shot(cmd: Commands) -> Result<(), Box<dyn std::error::Error>> {
             )
             .await?;
         }
-        Commands::Stop { id, store_root } => run_stop(&id, &store_root).await?,
-        Commands::List { store_root } => run_list(&store_root).await?,
+        Commands::Stop { id, store_root } => {
+            let store_root = store_root.unwrap_or_else(default_store_root);
+            run_stop(&id, &store_root).await?
+        }
+        Commands::List { store_root } => {
+            let store_root = store_root.unwrap_or_else(default_store_root);
+            run_list(&store_root).await?
+        }
         Commands::Daemon { .. } => unreachable!("daemon commands are dispatched via daemon_main"),
     }
     Ok(())
@@ -413,6 +450,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     else {
         unreachable!("daemon_main only passes the Daemon variant")
     };
+    let store_root = store_root.unwrap_or_else(default_store_root);
     run_daemon(
         &socket,
         store_root,
