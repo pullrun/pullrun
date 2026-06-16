@@ -1462,8 +1462,8 @@ pub struct RuntimeService {
 
 impl RuntimeService {
     /// Persist the image_tags map to disk so it survives restarts.
-    fn save_image_tags(&self) {
-        let tags = self.image_tags.blocking_read();
+    async fn save_image_tags(&self) {
+        let tags = self.image_tags.read().await;
         if let Ok(json) = serde_json::to_string(&*tags) {
             let path = self.config.store_root.join("image_tags.json");
             let _ = std::fs::write(&path, &json);
@@ -1775,7 +1775,7 @@ impl Runtime for RuntimeService {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), image_ref.clone());
         }
-        self.save_image_tags();
+        self.save_image_tags().await;
 
         // Policy gate.
         if let Err(e) = self.evaluate_pulled(&image_ref, &root_digest).await {
@@ -3833,7 +3833,7 @@ impl Runtime for RuntimeService {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), tag.clone());
         }
-        self.save_image_tags();
+        self.save_image_tags().await;
 
         // Push after build if requested.
         if req.push {
@@ -4141,7 +4141,7 @@ impl Runtime for RuntimeService {
         if !req.tag.is_empty() {
             let mut tags = self.image_tags.write().await;
             tags.insert(manifest_digest.as_hex(), req.tag.clone());
-            self.save_image_tags();
+            self.save_image_tags().await;
         }
 
         Ok(tonic::Response::new(CommitImageResponse {
