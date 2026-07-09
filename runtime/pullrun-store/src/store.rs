@@ -10,9 +10,14 @@ use std::sync::{Arc, Mutex};
 use dashmap::DashMap;
 use memmap2::Mmap;
 use rkyv::Deserialize;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{node::ArchivedDagNode, DagNode, Digest};
+
+/// Monotonically increasing counter used to generate unique temp file
+/// suffixes. Combined with PID, this guarantees no two concurrent
+/// `write_atomically` calls produce the same tmp name.
+static WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -48,6 +53,7 @@ pub struct MmapStore {
 /// A guard that keeps the underlying `Mmap` alive and provides
 /// `Deref` access to the archived DAG node. Prevents use-after-free
 /// if the LRU cache evicts the entry while a reference is held.
+#[derive(Debug)]
 pub struct ArchivedNodeGuard {
     _mmap: Arc<Mmap>,
     archived: *const ArchivedDagNode,
@@ -80,6 +86,60 @@ impl Deref for ArchivedNodeGuard {
 // across threads is safe.
 unsafe impl Send for ArchivedNodeGuard {}
 unsafe impl Sync for ArchivedNodeGuard {}
+
+/// Write `bytes` to `path` atomically via write-then-rename.
+///
+/// 1. Write to `<path>.tmp.<pid>.<counter>` (unique per writer — no race
+///    when two threads write the same digest concurrently).
+/// 2. `fsync` the temp file (data + metadata).
+/// 3. `rename` the temp file over the final path (atomic on POSIX).
+/// 4. `fsync` the parent directory (required for durability on ext4/XFS/btrfs).
+///
+/// On failure the temp file is removed to avoid orphan accumulation.
+///
+/// **Known limitation:** newly-created shard directories
+/// (e.g. `00/11/ab/` for a fresh digest) above the immediate parent are
+/// not individually `fsync`ed. A crash after rename but before the shard
+/// dir metadata reaches disk can lose the file. This window is accepted:
+/// shard dirs are quickly reused, and `recover()` handles orphaned temps.
+/// Full shard pre-creation (256² = 65k dirs) was judged too expensive.
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+    let parent = path.parent().expect("write_atomically: no parent directory");
+    std::fs::create_dir_all(parent)?;
+
+    let pid = std::process::id();
+    let seq = WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_name = format!(
+        "{}.tmp.{}.{:016x}",
+        path.file_name()
+            .expect("write_atomically: no file name")
+            .to_string_lossy(),
+        pid,
+        seq,
+    );
+    let tmp_path = parent.join(tmp_name);
+
+    let result = (|| -> Result<(), StoreError> {
+        std::fs::write(&tmp_path, bytes)?;
+
+        let f = std::fs::File::open(&tmp_path)?;
+        f.sync_all()?;
+        drop(f);
+
+        std::fs::rename(&tmp_path, path)?;
+
+        let parent_f = std::fs::File::open(parent)?;
+        parent_f.sync_all()?;
+
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    result
+}
 
 impl MmapStore {
     pub fn new(root: PathBuf) -> Self {
@@ -159,18 +219,28 @@ impl MmapStore {
         let digest = Self::compute_digest(&bytes);
         let path = self.path_for(&digest);
 
+        // Lazy dedup: file existence is sufficient. Content is validated
+        // on read via rkyv::check_archived_root in get_archived(). A
+        // partial file left by a pre-WAL crash will be caught on first
+        // read (Corrupted error), not silently served.
         if tokio::fs::metadata(&path).await.is_ok() {
             debug!(%digest, "node already exists (deduplicated)");
             return Ok(digest);
         }
 
-        let parent = path.parent().expect("path must have parent");
-        tokio::fs::create_dir_all(parent).await?;
-
-        tokio::fs::write(&path, &bytes).await?;
-        trace!(%digest, path = %path.display(), "node stored");
-
-        Ok(digest)
+        let path_c = path.clone();
+        let bytes_c = bytes.to_vec();
+        match tokio::task::spawn_blocking(move || write_atomically(&path_c, &bytes_c)).await {
+            Ok(Ok(())) => {
+                trace!(%digest, path = %path.display(), "node stored");
+                Ok(digest)
+            }
+            Ok(Err(e)) => Err(e),
+            Err(join_err) => Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                join_err,
+            ))),
+        }
     }
 
     pub fn put_blocking(&self, node: &DagNode) -> Result<Digest, StoreError> {
@@ -185,9 +255,7 @@ impl MmapStore {
             return Ok(digest);
         }
 
-        let parent = path.parent().expect("path must have parent");
-        std::fs::create_dir_all(parent)?;
-        std::fs::write(&path, &bytes)?;
+        write_atomically(&path, &bytes)?;
         trace!(%digest, path = %path.display(), "node stored");
 
         Ok(digest)
@@ -282,11 +350,16 @@ impl MmapStore {
             return Ok(());
         }
 
-        let parent = path.parent().expect("path must have parent");
-        tokio::fs::create_dir_all(parent).await?;
-        tokio::fs::write(&path, data).await?;
-
-        Ok(())
+        let path_c = path.clone();
+        let data_c = data.to_vec();
+        match tokio::task::spawn_blocking(move || write_atomically(&path_c, &data_c)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e),
+            Err(join_err) => Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                join_err,
+            ))),
+        }
     }
 
     pub fn put_blob_blocking(&self, digest: &Digest, data: &[u8]) -> Result<(), StoreError> {
@@ -296,10 +369,7 @@ impl MmapStore {
             return Ok(());
         }
 
-        let parent = path.parent().expect("path must have parent");
-        std::fs::create_dir_all(parent)?;
-        std::fs::write(&path, data)?;
-
+        write_atomically(&path, data)?;
         Ok(())
     }
 
@@ -326,6 +396,11 @@ impl MmapStore {
         // SAFETY: Same invariants as `get_deserialized` — blob files
         // are write-once, read-many, so the mapping will not be mutated.
         let mmap = unsafe { Mmap::map(&file)? };
+        // Note: we do NOT content-validate blobs here because the
+        // policy layer stores blobs at digests derived from logical
+        // keys, not from content. Corruption detection relies on the
+        // atomic-write guarantee from write_atomically. For nodes,
+        // rkyv::check_archived_root provides structural validation.
         let len = mmap.len() as u64;
 
         // Evict before inserting so the new entry survives this round.
@@ -393,6 +468,59 @@ impl MmapStore {
     /// Evict a single entry from the in-memory node cache. Updates the
     /// LRU tracker and total byte count. This is a no-op if the
     /// digest is not currently cached.
+    /// Recover from a prior crash: walk the store root and remove any
+    /// orphaned `*.tmp.*` files left by interrupted `write_atomically`
+    /// calls. Idempotent and safe to call on a healthy store (no-ops).
+    ///
+    /// Returns the number of orphaned files removed and bytes freed.
+    pub fn recover(&self) -> Result<(u64, u64), StoreError> {
+        let mut files_removed = 0u64;
+        let mut bytes_freed = 0u64;
+        self.recover_dir(&self.root, &mut files_removed, &mut bytes_freed)?;
+        if files_removed > 0 {
+            info!(
+                files_removed,
+                bytes_freed,
+                "store recovery: removed orphaned temp files"
+            );
+        }
+        Ok((files_removed, bytes_freed))
+    }
+
+    fn recover_dir(
+        &self,
+        dir: &Path,
+        files_removed: &mut u64,
+        bytes_freed: &mut u64,
+    ) -> Result<(), StoreError> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                self.recover_dir(&path, files_removed, bytes_freed)?;
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.contains(".tmp.") {
+                    if let Ok(meta) = path.metadata() {
+                        *bytes_freed += meta.len();
+                    }
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => {
+                            *files_removed += 1;
+                            trace!("recovered: removed orphaned tmp file {:?}", path);
+                        }
+                        Err(e) => {
+                            warn!("recover: failed to remove {:?}: {}", path, e);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn evict_cache_entry(&self, digest: &Digest) {
         if let Some((_, evicted)) = self.cache.remove(digest) {
             self.total_node_bytes
@@ -410,6 +538,113 @@ mod tests {
 
     fn d(hex: &str) -> Digest {
         Digest::from_hex(hex).unwrap()
+    }
+
+    #[test]
+    fn test_write_atomically_no_partial_visible() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.node.rkyv");
+
+        // Write normally, verify final file exists.
+        write_atomically(&path, b"hello").unwrap();
+        assert!(path.exists());
+
+        // After success, no tmp files should remain.
+        let tmp_count = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.contains(".tmp."))
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(tmp_count, 0, "no orphaned tmp files after success");
+    }
+
+    #[tokio::test]
+    async fn test_corrupted_file_returns_error_on_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Write a valid node, then replace the file with garbage.
+        let node = DagNode::blob(b"valid data".to_vec());
+        let digest = store.put(&node).await.unwrap();
+        let path = store.path_for(&digest);
+        std::fs::write(&path, b"truncated garbage").unwrap();
+
+        // get_archived() validates rkyv — must return Corrupted.
+        match store.get_archived(&digest) {
+            Err(StoreError::Corrupted(d, _)) if d == digest => {}
+            other => panic!("expected Corrupted for truncated archive, got {other:?}"),
+        }
+
+        // get_deserialized() also validates.
+        match store.get_deserialized(&digest) {
+            Err(StoreError::Corrupted(d, _)) if d == digest => {}
+            other => panic!("expected Corrupted for truncated archive, got {other:?}"),
+        }
+
+        // get_blob() does NOT content-validate (callers use logical-key
+        // digests). get() for nodes validates via rkyv — tested above.
+    }
+
+    #[test]
+    fn test_recover_removes_orphaned_tmps() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Create orphaned tmp files at various nesting depths.
+        let file_1 = dir.path().join("aa").join("bb").join("node.rkyv.tmp.1234.0000000000000001");
+        let file_2 = dir.path().join("aa").join("bb").join("blob.raw.tmp.1234.0000000000000002");
+        let file_3 = dir.path().join("zz").join("orphan.tmp.9999.ffffffffffffffff");
+        for f in [&file_1, &file_2, &file_3] {
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, b"orphaned").unwrap();
+        }
+
+        // Also place a valid-looking node.rkyv (no .tmp suffix) — must survive.
+        let valid_path = dir.path().join("00").join("00").join("node.rkyv");
+        std::fs::create_dir_all(valid_path.parent().unwrap()).unwrap();
+        std::fs::write(&valid_path, b"real data").unwrap();
+
+        let (count, bytes) = store.recover().unwrap();
+        assert_eq!(count, 3, "all three orphaned tmp files removed");
+        assert!(bytes > 0, "should report freed bytes");
+
+        // Valid files untouched.
+        assert!(valid_path.exists(), "valid node.rkyv must survive recovery");
+
+        // Orphans gone.
+        assert!(!file_1.exists(), "file_1 must be removed");
+        assert!(!file_2.exists(), "file_2 must be removed");
+        assert!(!file_3.exists(), "file_3 must be removed");
+    }
+
+    #[tokio::test]
+    async fn test_old_store_readable() {
+        // Simulate a store written by the old code (direct write, no tmp/rename).
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        let bytes = rkyv::to_bytes::<_, 256>(&DagNode::blob(b"old data".to_vec())).unwrap();
+        // Old write path: direct write to final path, no fsync, no rename.
+        let digest = MmapStore::compute_digest(&bytes);
+        let path = store.path_for(&digest);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+
+        // Backward compat: the new read path must still load it.
+        let mmap = store.get(&digest).unwrap();
+        let archived = unsafe { rkyv::archived_root::<DagNode>(&mmap[..]) };
+        assert_eq!(archived.inline_data.as_ref(), b"old data");
+
+        // New writes must also coexist using the new code path.
+        let d2 = store.put(&DagNode::blob(b"new data".to_vec())).await.unwrap();
+        let mmap2 = store.get(&d2).unwrap();
+        let archived2 = unsafe { rkyv::archived_root::<DagNode>(&mmap2[..]) };
+        assert_eq!(archived2.inline_data.as_ref(), b"new data");
     }
 
     #[tokio::test]

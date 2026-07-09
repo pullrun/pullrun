@@ -660,6 +660,14 @@ async fn run_daemon(
     // Build the store early so BlockSync and Discovery can share it.
     let store = Arc::new(MmapStore::new(config.store_root.clone()));
 
+    // Recover from any prior crash: remove orphaned temp files left by
+    // interrupted write-then-rename sequences. Content-addressing means
+    // every write is idempotent, so the only state to clean up are .tmp.*
+    // files that never completed rename. Safe to call on a healthy store.
+    if let Err(e) = store.recover() {
+        warn!(error = %e, "store recovery encountered errors (non-fatal, continuing)");
+    }
+
     // Clean up any leftover secrets-stage directories from a previous
     // crash or unclean shutdown.
     let staged_root = config.store_root.join("run").join("secrets-stage");
