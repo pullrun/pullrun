@@ -104,7 +104,9 @@ unsafe impl Sync for ArchivedNodeGuard {}
 /// shard dirs are quickly reused, and `recover()` handles orphaned temps.
 /// Full shard pre-creation (256² = 65k dirs) was judged too expensive.
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
-    let parent = path.parent().expect("write_atomically: no parent directory");
+    let parent = path
+        .parent()
+        .expect("write_atomically: no parent directory");
     std::fs::create_dir_all(parent)?;
 
     let pid = std::process::id();
@@ -236,10 +238,7 @@ impl MmapStore {
                 Ok(digest)
             }
             Ok(Err(e)) => Err(e),
-            Err(join_err) => Err(StoreError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                join_err,
-            ))),
+            Err(join_err) => Err(StoreError::Io(std::io::Error::other(join_err))),
         }
     }
 
@@ -355,10 +354,7 @@ impl MmapStore {
         match tokio::task::spawn_blocking(move || write_atomically(&path_c, &data_c)).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(e),
-            Err(join_err) => Err(StoreError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                join_err,
-            ))),
+            Err(join_err) => Err(StoreError::Io(std::io::Error::other(join_err))),
         }
     }
 
@@ -480,8 +476,7 @@ impl MmapStore {
         if files_removed > 0 {
             info!(
                 files_removed,
-                bytes_freed,
-                "store recovery: removed orphaned temp files"
+                bytes_freed, "store recovery: removed orphaned temp files"
             );
         }
         Ok((files_removed, bytes_freed))
@@ -596,9 +591,20 @@ mod tests {
         let store = MmapStore::new(dir.path().to_path_buf());
 
         // Create orphaned tmp files at various nesting depths.
-        let file_1 = dir.path().join("aa").join("bb").join("node.rkyv.tmp.1234.0000000000000001");
-        let file_2 = dir.path().join("aa").join("bb").join("blob.raw.tmp.1234.0000000000000002");
-        let file_3 = dir.path().join("zz").join("orphan.tmp.9999.ffffffffffffffff");
+        let file_1 = dir
+            .path()
+            .join("aa")
+            .join("bb")
+            .join("node.rkyv.tmp.1234.0000000000000001");
+        let file_2 = dir
+            .path()
+            .join("aa")
+            .join("bb")
+            .join("blob.raw.tmp.1234.0000000000000002");
+        let file_3 = dir
+            .path()
+            .join("zz")
+            .join("orphan.tmp.9999.ffffffffffffffff");
         for f in [&file_1, &file_2, &file_3] {
             std::fs::create_dir_all(f.parent().unwrap()).unwrap();
             std::fs::write(f, b"orphaned").unwrap();
@@ -641,7 +647,10 @@ mod tests {
         assert_eq!(archived.inline_data.as_ref(), b"old data");
 
         // New writes must also coexist using the new code path.
-        let d2 = store.put(&DagNode::blob(b"new data".to_vec())).await.unwrap();
+        let d2 = store
+            .put(&DagNode::blob(b"new data".to_vec()))
+            .await
+            .unwrap();
         let mmap2 = store.get(&d2).unwrap();
         let archived2 = unsafe { rkyv::archived_root::<DagNode>(&mmap2[..]) };
         assert_eq!(archived2.inline_data.as_ref(), b"new data");
