@@ -5,9 +5,11 @@ use std::fmt;
 use std::str::FromStr;
 
 pub mod node;
+pub mod op_lock;
 pub mod store;
 
 pub use node::{ArchivedDagNode, DagNode, NodeKind};
+pub use op_lock::{clean_stale_op_locks, read_op_lock, OpLock};
 pub use store::{ArchivedNodeGuard, MmapStore, StoreError};
 
 use serde::{Deserialize, Serialize};

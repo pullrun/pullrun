@@ -33,7 +33,7 @@ use pullrun_oci::{
     OciToDagConverter,
 };
 use pullrun_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
-use pullrun_store::{Digest, MmapStore};
+use pullrun_store::{Digest, MmapStore, OpLock};
 use pullrun_sync::PeerBloomCache;
 use pullrun_vm::{ext4_path_for, FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
@@ -411,6 +411,7 @@ impl RuntimeCommand {
         }
         let _ = std::fs::create_dir_all(&self.config.bundle_root);
         let _ = std::fs::create_dir_all(&self.config.checkpoints_dir);
+        let _ = std::fs::create_dir_all(self.config.store_root.join("ops"));
 
         let policy_engine = self.config.policy.as_ref().map(|p| {
             Arc::new(
@@ -587,6 +588,12 @@ impl RuntimeCommand {
         // their digest remains empty and the kernel layers are
         // not pinned by GC (acceptable for legacy checkpoints).
         migrate_kernel_digests(&workloads, &image_tags, &self.config.checkpoints_dir).await;
+
+        // Clean up stale op locks from previous daemon runs.
+        // Fresh locks are loaded into the GC root set in a later phase.
+        if let Ok(fresh) = pullrun_store::clean_stale_op_locks(&self.config.store_root) {
+            info!(count = fresh.len(), "fresh op locks recovered at startup");
+        }
 
         // Spawn the workload-exit watcher. Every 5s it walks the
         // `workloads` map and asks the executor for the live status
@@ -1813,11 +1820,22 @@ impl Runtime for RuntimeService {
             }
         };
 
+        // Create an op lock to protect intermediate DAG layers
+        // from GC until the image tag is written.
+        let op_lock = OpLock::new(&self.config.store_root)
+            .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
+
         let converter = OciToDagConverter::new(self.store.clone());
-        let convert_result = converter.convert(&pulled).await;
-        let root_digest = match convert_result {
-            Ok(d) => d,
+        let root_digest = match converter.convert(&pulled).await {
+            Ok(d) => {
+                // Register the root digest so GC can BFS-walk it.
+                op_lock
+                    .append(&d.as_hex())
+                    .map_err(|e| tonic::Status::internal(format!("op lock append: {e}")))?;
+                d
+            }
             Err(e) => {
+                op_lock.remove();
                 record_pull(&registry_label, "failed");
                 self.event_bus.emit(
                     Event::new(&image_ref, EventKind::ImagePulled)
@@ -1835,6 +1853,7 @@ impl Runtime for RuntimeService {
             tags.insert(root_digest.as_hex(), image_ref.clone());
         }
         self.save_image_tags().await;
+        op_lock.remove();
 
         // Policy gate.
         if let Err(e) = self.evaluate_pulled(&image_ref, &root_digest).await {
@@ -3852,6 +3871,9 @@ impl Runtime for RuntimeService {
 
         let build_args: std::collections::HashMap<String, String> = req.build_args.clone();
 
+        let op_lock = OpLock::new(&self.config.store_root)
+            .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
+
         let root_digest = if !req.platforms.is_empty() {
             // Multi-platform build.
             let platforms: Vec<String> = req
@@ -3903,6 +3925,10 @@ impl Runtime for RuntimeService {
             result.root_digest
         };
 
+        op_lock
+            .append(&root_digest.as_hex())
+            .map_err(|e| tonic::Status::internal(format!("op lock append: {e}")))?;
+
         let tag = if req.tag.is_empty() {
             root_digest.as_hex()[..12].to_string()
         } else {
@@ -3915,6 +3941,7 @@ impl Runtime for RuntimeService {
             tags.insert(root_digest.as_hex(), tag.clone());
         }
         self.save_image_tags().await;
+        op_lock.remove();
 
         // Push after build if requested.
         if req.push {
@@ -4028,11 +4055,26 @@ impl Runtime for RuntimeService {
         }
 
         // Import from the buffered data.
+        let op_lock = OpLock::new(&self.config.store_root)
+            .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
+
         let (root_digest, bytes_stored, bytes_deduplicated) =
             tokio::task::spawn_blocking(move || import_dag_from_tar(&store, &buf[..]))
                 .await
-                .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
-                .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
+                .map_err(|e| {
+                    op_lock.remove();
+                    tonic::Status::internal(format!("import task join: {e}"))
+                })?
+                .map_err(|e| {
+                    op_lock.remove();
+                    tonic::Status::internal(format!("import failed: {e}"))
+                })?;
+
+        op_lock.append(&root_digest).map_err(|e| {
+            op_lock.remove();
+            tonic::Status::internal(format!("op lock append: {e}"))
+        })?;
+        op_lock.remove();
 
         Ok(tonic::Response::new(ImportImageResponse {
             root_digest,
@@ -4210,13 +4252,23 @@ impl Runtime for RuntimeService {
         };
 
         // Scan the container rootfs into new DAG nodes.
+        let op_lock = OpLock::new(&self.config.store_root)
+            .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
+
         let DagDirectory {
             manifest_digest,
             node_count,
             blob_bytes: _,
         } = build_dag_from_directory_with_platform(&self.store, &rootfs_path, &orig_arch, &orig_os)
             .await
-            .map_err(|e| Status::internal(format!("commit failed: {e}")))?;
+            .map_err(|e| {
+                op_lock.remove();
+                Status::internal(format!("commit failed: {e}"))
+            })?;
+
+        op_lock
+            .append(&manifest_digest.as_hex())
+            .map_err(|e| tonic::Status::internal(format!("op lock append: {e}")))?;
 
         // If a tag was provided, record it in the image tag map.
         if !req.tag.is_empty() {
@@ -4224,6 +4276,7 @@ impl Runtime for RuntimeService {
             tags.insert(manifest_digest.as_hex(), req.tag.clone());
             self.save_image_tags().await;
         }
+        op_lock.remove();
 
         Ok(tonic::Response::new(CommitImageResponse {
             root_digest: manifest_digest.as_hex(),
