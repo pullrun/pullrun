@@ -590,11 +590,9 @@ impl RuntimeCommand {
             let workloads = workloads.clone();
             let image_tags = image_tags.clone();
             let checkpoints_dir = self.config.checkpoints_dir.clone();
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.block_on(async {
-                    migrate_kernel_digests(&workloads, &image_tags, &checkpoints_dir).await;
-                });
-            }
+            tokio::spawn(async move {
+                migrate_kernel_digests(&workloads, &image_tags, &checkpoints_dir).await;
+            });
         }
 
         // Spawn the workload-exit watcher. Every 5s it walks the
@@ -1198,7 +1196,7 @@ async fn migrate_kernel_digests(
 ) {
     let tags = image_tags.read().await;
     let mut migrated = false;
-    for (_id, state) in workloads.write().await.iter_mut() {
+    for state in workloads.write().await.values_mut() {
         if !state.kernel_image_ref.is_empty() && state.kernel_image_digest.is_empty() {
             let found = tags.iter().find_map(|(digest, ref_)| {
                 if ref_ == &state.kernel_image_ref {
