@@ -3,19 +3,19 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// An operation lock file that registers intermediate digests as GC roots
-/// while an operation (pull, build, commit, load) is in progress.
+/// An operation lock file whose existence signals 'operation in progress'
+/// to the garbage collector. GC checks for active op locks and defers
+/// if any are found.
 ///
-/// Lock protocol:
-///   1. Create `OpLock` → writes `<store_root>/ops/<op_id>`
-///   2. For each digest materialized: `lock.append(digest_hex)` → fsync
-///   3. On success: `lock.remove()` → deletes the file
-///   4. On error: `lock.remove()` → deletes the file
+/// The lock file is automatically removed when the `OpLock` is dropped
+/// (RAII pattern), covering both success and error paths without manual
+/// cleanup calls.
 ///
-/// GC's root set includes all unexpired op lock digests.
+/// v1: Lock existence alone is the signal — per-digest registration
+/// (append-then-put) is deferred to v2.
+///
+/// File format (v2): one hex digest per line, UTF-8.
 /// Stale lock detection: if file mtime is older than 1h, it's stale.
-///
-/// File format: one hex digest per line, UTF-8.
 /// Heartbeat: `lock.touch()` refreshes the mtime.
 pub struct OpLock {
     path: PathBuf,
@@ -66,6 +66,19 @@ impl OpLock {
     /// The path to the lock file.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Consume the lock, removing the file immediately.
+    /// Call on the success path to release the lock early.
+    /// On error paths, just let the lock go out of scope — Drop handles it.
+    pub fn complete(self) {
+        // Drop runs here and removes the file
+    }
+}
+
+impl Drop for OpLock {
+    fn drop(&mut self) {
+        self.remove();
     }
 }
 

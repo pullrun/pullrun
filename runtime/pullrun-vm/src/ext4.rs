@@ -5,6 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(test)]
+#[allow(unused_imports)]
 use std::sync::Arc;
 
 use pullrun_oci::OciMaterializer;
@@ -553,6 +554,8 @@ mod tests {
         eprintln!("  - Generated valid Firecracker config");
     }
 
+    #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
     fn fs_size_mb(path: &Path) -> u64 {
         std::fs::metadata(path)
             .map(|m| m.len() / 1024 / 1024)

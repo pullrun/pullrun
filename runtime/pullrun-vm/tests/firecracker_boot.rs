@@ -22,8 +22,8 @@
 //! The CI / dev environment must stage:
 //! - `PULLRUN_FC_BIN`     — path to a firecracker v1.10+ binary
 //! - `PULLRUN_FC_VMLINUX` — path to an uncompressed vmlinux ELF that
-//!                         boots on this host (e.g. extracted from
-//!                         `linux-image-virtual` or the host kernel)
+//!   boots on this host (e.g. extracted from
+//!   `linux-image-virtual` or the host kernel)
 //!
 //! To reproduce on the staging host (Ubuntu 24.04):
 //!

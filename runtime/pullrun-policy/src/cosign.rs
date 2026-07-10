@@ -122,7 +122,7 @@ mod tests {
 
     fn fresh_keypair() -> (CosignKey, SigningKey) {
         let sk = SigningKey::generate(&mut OsRng);
-        let vk = sk.verifying_key().clone();
+        let vk = sk.verifying_key();
         let key = CosignKey {
             id: format!("test-key-{}", hex::encode(vk.to_bytes()[..4].as_ref())),
             verifying_key: vk,

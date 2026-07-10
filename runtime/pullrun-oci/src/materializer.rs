@@ -421,12 +421,10 @@ fn apply_unix_attributes(full_path: &Path, entry: &crate::converter::DirectoryEn
         }
     } else if entry.is_symlink {
         0o777
+    } else if entry.mode == 0 {
+        0o644
     } else {
-        if entry.mode == 0 {
-            0o644
-        } else {
-            entry.mode
-        }
+        entry.mode
     };
     let _ = std::fs::set_permissions(full_path, std::fs::Permissions::from_mode(mode));
 

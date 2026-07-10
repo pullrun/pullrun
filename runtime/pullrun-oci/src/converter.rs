@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tar::Archive;
 use tracing::{debug, info};
 
-use pullrun_store::{DagNode, Digest, MmapStore, NodeKind, OpLock, SMALL_FILE_THRESHOLD};
+use pullrun_store::{DagNode, Digest, MmapStore, NodeKind, SMALL_FILE_THRESHOLD};
 
 use crate::puller::{OciError, PulledImage, PulledImageList};
 
@@ -123,30 +123,11 @@ pub struct ManifestData {
 /// Convert OCI images to Pullrun DAG nodes.
 pub struct OciToDagConverter {
     store: Arc<MmapStore>,
-    op_lock: Option<Arc<OpLock>>,
 }
 
 impl OciToDagConverter {
     pub fn new(store: Arc<MmapStore>) -> Self {
-        Self {
-            store,
-            op_lock: None,
-        }
-    }
-
-    /// Create a converter that also appends each put digest to the given
-    /// op lock, so GC can see intermediate layers before the final tag.
-    pub fn new_with_lock(store: Arc<MmapStore>, op_lock: Arc<OpLock>) -> Self {
-        Self {
-            store,
-            op_lock: Some(op_lock),
-        }
-    }
-
-    fn record_digest(&self, digest: &Digest) {
-        if let Some(ref lock) = self.op_lock {
-            let _ = lock.append(&digest.as_hex());
-        }
+        Self { store }
     }
 
     pub async fn convert(&self, image: &PulledImage) -> Result<Digest, OciError> {
@@ -188,7 +169,6 @@ impl OciToDagConverter {
         let n = manifest_digests.len();
         let list_node = DagNode::manifest_list(manifest_digests, list.list_bytes.clone());
         let list_digest = self.store.put(&list_node).await?;
-        self.record_digest(&list_digest);
 
         info!(%list_digest, children = n, "manifest list DAG conversion complete");
         Ok(list_digest)
@@ -206,7 +186,6 @@ impl OciToDagConverter {
         let decompressed = decompress_layer(blob, media_type)?;
 
         let store = self.store.clone();
-        let op_lock = self.op_lock.clone();
 
         let (entries, dir_index, whiteout_digests) =
             tokio::task::spawn_blocking(move || -> Result<_, OciError> {
@@ -221,17 +200,11 @@ impl OciToDagConverter {
                         WhiteoutEntry::Delete(path) => {
                             let node = DagNode::whiteout(path.as_bytes().to_vec());
                             let d = store.put_blocking(&node)?;
-                            if let Some(ref lock) = op_lock {
-                                let _ = lock.append(&d.as_hex());
-                            }
                             whiteout_digests.push(d);
                         }
                         WhiteoutEntry::OpaqueDir(path) => {
                             let node = DagNode::opaque_dir(path.as_bytes().to_vec());
                             let d = store.put_blocking(&node)?;
-                            if let Some(ref lock) = op_lock {
-                                let _ = lock.append(&d.as_hex());
-                            }
                             whiteout_digests.push(d);
                         }
                     }
@@ -251,7 +224,6 @@ impl OciToDagConverter {
             let mut layer_node = self.store.get_deserialized(&layer_digest)?;
             layer_node.edges.extend(whiteout_digests);
             let new_digest = self.store.put(&layer_node).await?;
-            self.record_digest(&new_digest);
             Ok(new_digest)
         } else {
             Ok(layer_digest)
@@ -298,7 +270,6 @@ impl OciToDagConverter {
             };
 
             let tree_digest = self.store.put(&tree_node).await?;
-            self.record_digest(&tree_digest);
 
             let layer_node = DagNode {
                 kind: NodeKind::Layer,
@@ -307,7 +278,6 @@ impl OciToDagConverter {
             };
 
             let digest = self.store.put(&layer_node).await?;
-            self.record_digest(&digest);
             Ok(digest)
         })
     }
@@ -370,7 +340,6 @@ impl OciToDagConverter {
         };
 
         let digest = self.store.put(&manifest_node).await?;
-        self.record_digest(&digest);
         Ok(digest)
     }
 }

@@ -13,7 +13,7 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use ed25519_dalek::{Signer, SigningKey};
@@ -29,11 +29,11 @@ mod tests {
     /// Build a RuntimeService rooted at `dir` with the given policy and keys.
     /// Bypasses the gRPC socket.
     async fn make_service(
-        dir: &PathBuf,
+        dir: &Path,
         policy: Policy,
         keys: Vec<CosignKey>,
     ) -> pullrun_runtime::service::RuntimeService {
-        let mut cfg = ServiceConfig::new(dir.clone());
+        let mut cfg = ServiceConfig::new(dir.to_path_buf());
         cfg = cfg.with_policy(policy).trusted_keys(keys);
         RuntimeCommand::new(cfg).service().await
     }
@@ -116,7 +116,7 @@ mod tests {
         let sk = SigningKey::generate(&mut OsRng);
         let key = CosignKey {
             id: "trusted".into(),
-            verifying_key: sk.verifying_key().clone(),
+            verifying_key: sk.verifying_key(),
         };
         let image_ref = "alpine:latest";
         let manifest = "abc123";
@@ -149,7 +149,7 @@ mod tests {
         // Trusted key is B, signature is from A -> Deny.
         let key_b = CosignKey {
             id: "trusted".into(),
-            verifying_key: sk_b.verifying_key().clone(),
+            verifying_key: sk_b.verifying_key(),
         };
         let engine = PolicyEngine::new(policy.clone()).with_trusted_keys(vec![key_b]);
         let decision = engine

@@ -265,7 +265,7 @@ mod tests {
         let store = Arc::new(MmapStore::new(dir));
 
         let sk = SigningKey::generate(&mut OsRng);
-        let vk = sk.verifying_key().clone();
+        let vk = sk.verifying_key();
         let key = CosignKey {
             id: "test-1".into(),
             verifying_key: vk,
@@ -298,8 +298,10 @@ mod tests {
     #[test]
     fn test_seccomp_profile_default_ok() {
         let engine = PolicyEngine::new(Policy::default());
-        let mut policy = Policy::default();
-        policy.seccomp_profile = Some("default".into());
+        let policy = Policy {
+            seccomp_profile: Some("default".into()),
+            ..Default::default()
+        };
         let store = Arc::new(MmapStore::new(
             std::env::temp_dir().join("pullrun-test-policy"),
         ));
@@ -312,8 +314,10 @@ mod tests {
     #[test]
     fn test_seccomp_profile_unknown_denies() {
         let engine = PolicyEngine::new(Policy::default());
-        let mut policy = Policy::default();
-        policy.seccomp_profile = Some("bogus-profile".into());
+        let policy = Policy {
+            seccomp_profile: Some("bogus-profile".into()),
+            ..Default::default()
+        };
         let store = Arc::new(MmapStore::new(
             std::env::temp_dir().join("pullrun-test-policy"),
         ));

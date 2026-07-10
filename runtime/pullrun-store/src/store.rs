@@ -773,7 +773,6 @@ mod tests {
         let mut handles = vec![];
         for _ in 0..100 {
             let store = store.clone();
-            let digest = digest.clone();
             handles.push(thread::spawn(move || {
                 let mmap = store.get(&digest).unwrap();
                 let archived = unsafe { rkyv::archived_root::<DagNode>(&mmap[..]) };
@@ -806,7 +805,6 @@ mod tests {
         let mut handles = vec![];
         for _ in 0..100 {
             let store = store.clone();
-            let digest = digest.clone();
             handles.push(thread::spawn(move || {
                 let archived_ref = store.get_archived(&digest).unwrap();
                 assert!(archived_ref.is_manifest());

@@ -1829,7 +1829,6 @@ impl Runtime for RuntimeService {
         let root_digest = match converter.convert(&pulled).await {
             Ok(d) => d,
             Err(e) => {
-                op_lock.remove();
                 record_pull(&registry_label, "failed");
                 self.event_bus.emit(
                     Event::new(&image_ref, EventKind::ImagePulled)
@@ -1847,7 +1846,7 @@ impl Runtime for RuntimeService {
             tags.insert(root_digest.as_hex(), image_ref.clone());
         }
         self.save_image_tags().await;
-        op_lock.remove();
+        op_lock.complete();
 
         // Policy gate.
         if let Err(e) = self.evaluate_pulled(&image_ref, &root_digest).await {
@@ -3931,7 +3930,7 @@ impl Runtime for RuntimeService {
             tags.insert(root_digest.as_hex(), tag.clone());
         }
         self.save_image_tags().await;
-        op_lock.remove();
+        op_lock.complete();
 
         // Push after build if requested.
         if req.push {
@@ -4054,7 +4053,7 @@ impl Runtime for RuntimeService {
                 .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
                 .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
 
-        op_lock.remove();
+        op_lock.complete();
 
         Ok(tonic::Response::new(ImportImageResponse {
             root_digest,
@@ -4241,10 +4240,7 @@ impl Runtime for RuntimeService {
             blob_bytes: _,
         } = build_dag_from_directory_with_platform(&self.store, &rootfs_path, &orig_arch, &orig_os)
             .await
-            .map_err(|e| {
-                op_lock.remove();
-                Status::internal(format!("commit failed: {e}"))
-            })?;
+            .map_err(|e| Status::internal(format!("commit failed: {e}")))?;
 
         // If a tag was provided, record it in the image tag map.
         if !req.tag.is_empty() {
@@ -4252,7 +4248,7 @@ impl Runtime for RuntimeService {
             tags.insert(manifest_digest.as_hex(), req.tag.clone());
             self.save_image_tags().await;
         }
-        op_lock.remove();
+        op_lock.complete();
 
         Ok(tonic::Response::new(CommitImageResponse {
             root_digest: manifest_digest.as_hex(),
