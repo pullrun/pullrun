@@ -571,7 +571,10 @@ pub fn walk_reachable(
                 continue;
             }
             Err(StoreError::Corrupted(d, _)) => {
-                return Err(StoreError::Corrupted(d, "corrupted node during BFS walk — aborting to prevent subtree deletion".into()));
+                return Err(StoreError::Corrupted(
+                    d,
+                    "corrupted node during BFS walk — aborting to prevent subtree deletion".into(),
+                ));
             }
             Err(e) => {
                 // Unexpected error — abort to be safe.

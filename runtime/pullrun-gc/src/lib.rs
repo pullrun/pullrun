@@ -119,8 +119,8 @@ impl GarbageCollector {
 
         // 5. BFS walk from roots to find reachable digests.
         //    Aborts on corrupted nodes to prevent subtree deletion.
-        let (reachable_nodes, _reachable_blobs) = walk_reachable(&self.store, roots)
-            .map_err(|e| match e {
+        let (reachable_nodes, _reachable_blobs) =
+            walk_reachable(&self.store, roots).map_err(|e| match e {
                 StoreError::Corrupted(d, _) => GcError::CorruptedNodeDuringWalk(d),
                 other => GcError::Store(other),
             })?;
@@ -183,9 +183,7 @@ impl GarbageCollector {
             // Delete node file.
             let node_path = self.store.node_path(digest);
             if node_path.exists() {
-                let size = fs::metadata(&node_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let size = fs::metadata(&node_path).map(|m| m.len()).unwrap_or(0);
                 fs::remove_file(&node_path)?;
                 bytes_freed += size;
                 deleted_nodes += 1;
@@ -194,9 +192,7 @@ impl GarbageCollector {
             // Delete associated blob file if it exists.
             let blob_path = self.store.blob_path(digest);
             if blob_path.exists() {
-                let size = fs::metadata(&blob_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let size = fs::metadata(&blob_path).map(|m| m.len()).unwrap_or(0);
                 fs::remove_file(&blob_path)?;
                 bytes_freed += size;
                 deleted_blobs += 1;
@@ -235,10 +231,7 @@ impl GarbageCollector {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if name == "ops" || name.starts_with('.') {
                     continue;
                 }
@@ -267,12 +260,7 @@ impl GarbageCollector {
         let great = grandparent.parent()?;
         let head = great.file_name()?;
 
-        let hex = format!(
-            "{}{}{}",
-            head.to_str()?,
-            mid.to_str()?,
-            tail.to_str()?
-        );
+        let hex = format!("{}{}{}", head.to_str()?, mid.to_str()?, tail.to_str()?);
         Digest::from_hex(&hex).ok()
     }
 
@@ -349,8 +337,8 @@ mod tests {
         let (store, _dir) = store_and_dir();
         let root = insert_test_graph(&store);
         let orphan = insert_orphan(&store);
-        let gc = GarbageCollector::new(store.clone(), _dir.path().join("store"))
-            .with_dry_run(false);
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
         let report = gc.collect(&[root]).unwrap();
         assert!(!report.dry_run);
         assert_eq!(report.deleted_nodes, 1);
@@ -363,8 +351,8 @@ mod tests {
         let (store, _dir) = store_and_dir();
         let root = insert_test_graph(&store);
         insert_orphan(&store);
-        let gc = GarbageCollector::new(store.clone(), _dir.path().join("store"))
-            .with_dry_run(false);
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
         let report = gc.collect(&[root]).unwrap();
         assert_eq!(report.deleted_nodes, 1);
         assert!(store.exists(&root));
@@ -436,8 +424,8 @@ mod tests {
             .unwrap();
         let orphan = insert_orphan(&store);
 
-        let gc = GarbageCollector::new(store.clone(), _dir.path().join("store"))
-            .with_dry_run(false);
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
         let report = gc.collect(&[root_a, manifest_b]).unwrap();
         assert_eq!(report.deleted_nodes, 1);
         assert!(store.exists(&root_a));
@@ -463,8 +451,8 @@ mod tests {
         std::fs::write(&tree_path, b"corrupted garbage data").unwrap();
         store.evict_cache_entry(&tree_a);
 
-        let gc = GarbageCollector::new(store.clone(), _dir.path().join("store"))
-            .with_dry_run(false);
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
         let err = gc.collect(&[root]).unwrap_err();
         assert!(
             matches!(err, GcError::CorruptedNodeDuringWalk(_)),
@@ -513,8 +501,8 @@ mod tests {
             .unwrap();
         let orphan = insert_orphan(&store);
 
-        let gc = GarbageCollector::new(store.clone(), _dir.path().join("store"))
-            .with_dry_run(false);
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
         let report = gc.collect(&[manifest_list]).unwrap();
         assert_eq!(report.deleted_nodes, 1);
         assert!(store.exists(&manifest_list));
@@ -529,8 +517,8 @@ mod tests {
         let root = insert_test_graph(&store);
         let orphan = insert_orphan(&store);
 
-        let gc = GarbageCollector::new(store.clone(), _dir.path().join("store"))
-            .with_dry_run(false);
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
         let first = gc.collect(&[root]).unwrap();
         assert_eq!(first.deleted_nodes, 1);
         assert!(!store.exists(&orphan));
