@@ -90,6 +90,7 @@ mod tests {
                     network_rules: vec![network_rule.clone()],
                     policy_decisions: policy_decisions.clone(),
                     kernel_image_ref: String::new(),
+                    kernel_image_digest: String::new(),
                     working_dir: String::new(),
                     rootfs_dir: None,
                     health_check: None,

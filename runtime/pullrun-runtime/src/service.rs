@@ -579,6 +579,24 @@ impl RuntimeCommand {
             Arc::new(RwLock::new(map))
         };
 
+        // Auto-migration: for checkpoints saved before the
+        // `kernel_image_digest` field was introduced, try to
+        // populate it by reverse-lookup through the tag index.
+        // This is best-effort — kernel images pulled internally
+        // (not via `pullrun pull`) are not in image_tags, so
+        // their digest remains empty and the kernel layers are
+        // not pinned by GC (acceptable for legacy checkpoints).
+        {
+            let workloads = workloads.clone();
+            let image_tags = image_tags.clone();
+            let checkpoints_dir = self.config.checkpoints_dir.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.block_on(async {
+                    migrate_kernel_digests(&workloads, &image_tags, &checkpoints_dir).await;
+                });
+            }
+        }
+
         // Spawn the workload-exit watcher. Every 5s it walks the
         // `workloads` map and asks the executor for the live status
         // of each id. If the executor reports anything other than
@@ -1168,6 +1186,45 @@ fn load_workload_checkpoints(dir: &std::path::Path) -> HashMap<String, WorkloadS
     workloads
 }
 
+/// At daemon startup, populate `kernel_image_digest` for checkpoints
+/// that predate the field's introduction. Reverse-looks up the
+/// `kernel_image_ref` in `image_tags` to find the corresponding DAG
+/// root digest. Best-effort — kernel images pulled internally are
+/// not in `image_tags`, so their digest remains empty.
+async fn migrate_kernel_digests(
+    workloads: &Arc<RwLock<HashMap<String, WorkloadState>>>,
+    image_tags: &Arc<RwLock<HashMap<String, String>>>,
+    checkpoints_dir: &std::path::Path,
+) {
+    let tags = image_tags.read().await;
+    let mut migrated = false;
+    for (_id, state) in workloads.write().await.iter_mut() {
+        if !state.kernel_image_ref.is_empty() && state.kernel_image_digest.is_empty() {
+            let found = tags.iter().find_map(|(digest, ref_)| {
+                if ref_ == &state.kernel_image_ref {
+                    Some(digest.clone())
+                } else {
+                    None
+                }
+            });
+            if let Some(digest) = found {
+                state.kernel_image_digest = digest;
+                migrated = true;
+                info!(
+                    "auto-migrated kernel_image_digest for {} (ref={})",
+                    state.kernel_image_ref, state.kernel_image_digest
+                );
+            }
+        }
+    }
+    drop(tags);
+    if migrated {
+        for (id, state) in workloads.read().await.iter() {
+            write_workload_checkpoint(checkpoints_dir, id, state);
+        }
+    }
+}
+
 /// Parse a proto RestartPolicy enum value into the runtime type.
 /// Proto RESTART_UNSPECIFIED (0) and RESTART_NO (1) both map to No.
 fn parse_restart_policy(p: i32) -> pullrun_exec::types::RestartPolicy {
@@ -1205,6 +1262,7 @@ async fn attempt_restart(
         memory_bytes,
         network_rules,
         kernel_image_ref,
+        _kernel_image_digest,
         _working_dir,
         bridge_name,
         mounts,
@@ -1231,6 +1289,7 @@ async fn attempt_restart(
                     s.memory_bytes,
                     s.network_rules.clone(),
                     s.kernel_image_ref.clone(),
+                    s.kernel_image_digest.clone(),
                     s.working_dir.clone(),
                     s.bridge_name.clone(),
                     s.mounts.clone(),
@@ -1354,6 +1413,13 @@ pub struct WorkloadState {
     /// `attach_workload` looks it up by this string to boot the
     /// same VM again. Empty for container workloads.
     pub kernel_image_ref: String,
+    /// DAG root digest of the kernel OCI image, used by GC to
+    /// pin kernel layers for running/stopped VMs. Populated at
+    /// workload start when a kernel image is pulled from OCI.
+    /// Empty for container workloads and for locally-sourced
+    /// kernels (macOS Apple Virt with ~/.pullrun/kernels/).
+    #[serde(default)]
+    pub kernel_image_digest: String,
     /// Working directory inside the workload. Empty means
     /// "/" (the default).
     pub working_dir: String,
@@ -1566,6 +1632,7 @@ impl RuntimeService {
         final_image_root: String,
         final_command: Vec<String>,
         final_kernel_image_ref: String,
+        final_kernel_image_digest: String,
         final_working_dir: String,
         network_rules: Vec<NetworkRule>,
         policy_decisions: HashMap<String, String>,
@@ -1598,6 +1665,7 @@ impl RuntimeService {
             network_rules: network_rules.clone(),
             policy_decisions,
             kernel_image_ref: final_kernel_image_ref.clone(),
+            kernel_image_digest: final_kernel_image_digest,
             working_dir: final_working_dir.clone(),
             rootfs_dir,
             health_check: None,
@@ -2234,6 +2302,16 @@ impl Runtime for RuntimeService {
                         let image_root = req_for_state.root_digest.clone();
                         let command = req_for_state.command.clone();
                         let kernel_image = req_for_state.kernel_image.clone();
+                        let kernel_image_digest = if kernel_image.is_empty() {
+                            String::new()
+                        } else {
+                            self.kernel_cache
+                                .read()
+                                .await
+                                .get(&kernel_image)
+                                .and_then(|k| k.root_digest().map(|d| d.to_string()))
+                                .unwrap_or_default()
+                        };
                         let working_dir = if req_for_state.working_dir.is_empty() {
                             "/".to_string()
                         } else {
@@ -2258,6 +2336,7 @@ impl Runtime for RuntimeService {
                                 image_root,
                                 command,
                                 kernel_image,
+                                kernel_image_digest,
                                 working_dir,
                                 network_rules,
                                 policy_decisions,
@@ -2317,6 +2396,16 @@ impl Runtime for RuntimeService {
         let final_image_root = req.root_digest.clone();
         let final_command = req.command.clone();
         let final_kernel_image_ref = req.kernel_image.clone();
+        let kernel_image_digest = if final_kernel_image_ref.is_empty() {
+            String::new()
+        } else {
+            self.kernel_cache
+                .read()
+                .await
+                .get(&final_kernel_image_ref)
+                .and_then(|k| k.root_digest().map(|d| d.to_string()))
+                .unwrap_or_default()
+        };
         let final_working_dir = if req.working_dir.is_empty() {
             "/".to_string()
         } else {
@@ -2355,6 +2444,7 @@ impl Runtime for RuntimeService {
             network_rules: network_rules.clone(),
             policy_decisions,
             kernel_image_ref: final_kernel_image_ref.clone(),
+            kernel_image_digest,
             working_dir: final_working_dir.clone(),
             rootfs_dir,
             health_check: hc,

@@ -88,6 +88,10 @@ pub struct StagedKernel {
     /// Owns the temp dir if we created one. None if the caller
     /// owns the underlying directory (e.g. for tests).
     _temp_dir: Option<TempDir>,
+    /// DAG root digest of the kernel image, populated when the
+    /// kernel was pulled from OCI. Used by GC to pin kernel
+    /// layers for running/stopped VMs. None for local kernels.
+    root_digest: Option<String>,
 }
 
 impl StagedKernel {
@@ -127,6 +131,7 @@ impl StagedKernel {
             vmlinux,
             initramfs,
             _temp_dir: None,
+            root_digest: None,
         })
     }
 
@@ -214,6 +219,7 @@ impl StagedKernel {
             vmlinux,
             initramfs,
             _temp_dir: Some(temp_dir),
+            root_digest: Some(root_digest.to_string()),
         })
     }
 
@@ -226,6 +232,12 @@ impl StagedKernel {
     /// contained one.
     pub fn initramfs_path(&self) -> Option<&Path> {
         self.initramfs.as_deref()
+    }
+
+    /// DAG root digest of the kernel image, if the kernel was
+    /// pulled from OCI. Returns None for locally-sourced kernels.
+    pub fn root_digest(&self) -> Option<&str> {
+        self.root_digest.as_deref()
     }
 
     /// Size of the vmlinux file in bytes, or 0 if the file
