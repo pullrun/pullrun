@@ -531,7 +531,15 @@ impl MmapStore {
 ///
 /// Returns `(node_digests, blob_digests)` where `blob_digests` is a
 /// subset of `node_digests`.
-pub fn walk_reachable(store: &MmapStore, roots: &[Digest]) -> (Vec<Digest>, Vec<Digest>) {
+///
+/// # Errors
+///
+/// Returns `StoreError::Corrupted` if a reachable node fails archive
+/// validation. NotFound digests are silently skipped (concurrent deletion).
+pub fn walk_reachable(
+    store: &MmapStore,
+    roots: &[Digest],
+) -> Result<(Vec<Digest>, Vec<Digest>), StoreError> {
     let mut visited: HashSet<Digest> = HashSet::new();
     let mut queue: VecDeque<Digest> = VecDeque::new();
     let mut node_digests: Vec<Digest> = Vec::new();
@@ -552,14 +560,27 @@ pub fn walk_reachable(store: &MmapStore, roots: &[Digest]) -> (Vec<Digest>, Vec<
         if store.blob_path(&digest).exists() {
             blob_digests.push(digest);
         }
-        if let Ok(archived) = store.get_archived(&digest) {
-            for edge in archived.edges.iter() {
-                queue.push_back(Digest(*edge));
+        match store.get_archived(&digest) {
+            Ok(archived) => {
+                for edge in archived.edges.iter() {
+                    queue.push_back(Digest(*edge));
+                }
+            }
+            Err(StoreError::NotFound(_)) => {
+                // Node was deleted concurrently — skip.
+                continue;
+            }
+            Err(StoreError::Corrupted(d, _)) => {
+                return Err(StoreError::Corrupted(d, "corrupted node during BFS walk — aborting to prevent subtree deletion".into()));
+            }
+            Err(e) => {
+                // Unexpected error — abort to be safe.
+                return Err(e);
             }
         }
     }
 
-    (node_digests, blob_digests)
+    Ok((node_digests, blob_digests))
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ pub mod op_lock;
 pub mod store;
 
 pub use node::{ArchivedDagNode, DagNode, NodeKind};
-pub use op_lock::{clean_stale_op_locks, read_op_lock, OpLock};
+pub use op_lock::{clean_stale_op_locks, list_fresh_op_locks, read_op_lock, OpLock};
 pub use store::{ArchivedNodeGuard, MmapStore, StoreError, walk_reachable};
 
 use serde::{Deserialize, Serialize};

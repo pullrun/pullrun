@@ -33,7 +33,8 @@ pub fn export_dag_to_tar<W: Write>(
     let mut tar = tar::Builder::new(writer);
 
     // BFS walk to collect all reachable digests.
-    let (node_digests, blob_digests) = walk_dag_collect(store, root_digest);
+    let (node_digests, blob_digests) = walk_dag_collect(store, root_digest)
+        .map_err(|e| OciError::Other(format!("BFS walk failed: {e}")))?;
 
     // Write manifest.
     let manifest = ExportManifest {
@@ -92,7 +93,10 @@ pub fn export_dag_to_tar<W: Write>(
 
 /// BFS walk from `root_digest`, collecting all node digests and
 /// which ones have separate blob files on disk.
-fn walk_dag_collect(store: &MmapStore, root_digest: &str) -> (Vec<Digest>, Vec<Digest>) {
+fn walk_dag_collect(
+    store: &MmapStore,
+    root_digest: &str,
+) -> Result<(Vec<Digest>, Vec<Digest>), pullrun_store::StoreError> {
     let root = Digest::from_hex(root_digest).unwrap_or(Digest([0u8; 32]));
     walk_reachable(store, &[root])
 }

@@ -102,6 +102,26 @@ pub fn is_op_lock_stale(path: &Path) -> std::io::Result<bool> {
     Ok(age > Duration::from_secs(3600))
 }
 
+/// List fresh (non-stale) op locks in `<store_root>/ops/` without mutating
+/// the filesystem. Used by GC to check whether in-flight operations exist.
+pub fn list_fresh_op_locks(store_root: &Path) -> std::io::Result<Vec<(String, Vec<String>)>> {
+    let ops_dir = store_root.join("ops");
+    if !ops_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut fresh = Vec::new();
+    for entry in fs::read_dir(&ops_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && !is_op_lock_stale(&path)? {
+            let op_id = entry.file_name().to_string_lossy().into_owned();
+            let digests = read_op_lock(&path).unwrap_or_default();
+            fresh.push((op_id, digests));
+        }
+    }
+    Ok(fresh)
+}
+
 /// Clean up stale op lock files in `<store_root>/ops/`.
 /// Returns the list of (op_id, digests) for locks that are still fresh.
 pub fn clean_stale_op_locks(store_root: &Path) -> std::io::Result<Vec<(String, Vec<String>)>> {
