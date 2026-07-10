@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 — 2026-07-11
+
+### Fixes
+- **Sync tests fail on macOS with ProtonVPN.** VPN client reassigns the
+  loopback interface from 127.0.0.1 to 127.0.0.2, causing
+  `TcpListener::bind("127.0.0.1:0")` to return `EADDRNOTAVAIL`.
+  `loopback_ip()` helper scans `127.0.0.1..=127.0.0.16` for the first
+  bindable address. Applied to both `start_block_sync_server` and
+  `start_registrar_server` test helpers.
+
 ## 0.4.1 — 2026-07-11
 
 ### Features
