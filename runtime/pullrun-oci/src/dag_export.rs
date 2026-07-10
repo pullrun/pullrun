@@ -1,13 +1,12 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{HashSet, VecDeque};
 use std::io::Write;
 
 use serde::Serialize;
 use tracing::debug;
 
-use pullrun_store::{Digest, MmapStore};
+use pullrun_store::{walk_reachable, Digest, MmapStore};
 
 use crate::puller::OciError;
 
@@ -95,37 +94,5 @@ pub fn export_dag_to_tar<W: Write>(
 /// which ones have separate blob files on disk.
 fn walk_dag_collect(store: &MmapStore, root_digest: &str) -> (Vec<Digest>, Vec<Digest>) {
     let root = Digest::from_hex(root_digest).unwrap_or(Digest([0u8; 32]));
-    let mut visited: HashSet<Digest> = HashSet::new();
-    let mut queue: VecDeque<Digest> = VecDeque::new();
-    let mut node_digests: Vec<Digest> = Vec::new();
-    let mut blob_digests: Vec<Digest> = Vec::new();
-
-    queue.push_back(root);
-
-    while let Some(digest) = queue.pop_front() {
-        if !visited.insert(digest) {
-            continue;
-        }
-
-        // Check node exists.
-        if !store.exists(&digest) {
-            continue;
-        }
-
-        node_digests.push(digest);
-
-        // Check if this node has a separate blob file.
-        if store.blob_path(&digest).exists() {
-            blob_digests.push(digest);
-        }
-
-        // Enqueue edges.
-        if let Ok(archived) = store.get_archived(&digest) {
-            for edge in archived.edges.iter() {
-                queue.push_back(Digest(*edge));
-            }
-        }
-    }
-
-    (node_digests, blob_digests)
+    walk_reachable(store, &[root])
 }

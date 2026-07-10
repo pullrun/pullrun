@@ -10,6 +10,7 @@ members = [
     "runtime/pullrun-policy",
     "runtime/pullrun-sync",
     "runtime/pullrun-runtime",
+    "runtime/pullrun-gc",
 ]
 resolver = "2"
 

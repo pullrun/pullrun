@@ -1,7 +1,7 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -524,6 +524,42 @@ impl MmapStore {
             lru.retain(|d| d != digest);
         }
     }
+}
+
+/// BFS walk from the given root digests, collecting all reachable node
+/// digests and detecting which ones have separate blob files on disk.
+///
+/// Returns `(node_digests, blob_digests)` where `blob_digests` is a
+/// subset of `node_digests`.
+pub fn walk_reachable(store: &MmapStore, roots: &[Digest]) -> (Vec<Digest>, Vec<Digest>) {
+    let mut visited: HashSet<Digest> = HashSet::new();
+    let mut queue: VecDeque<Digest> = VecDeque::new();
+    let mut node_digests: Vec<Digest> = Vec::new();
+    let mut blob_digests: Vec<Digest> = Vec::new();
+
+    for root in roots {
+        queue.push_back(*root);
+    }
+
+    while let Some(digest) = queue.pop_front() {
+        if !visited.insert(digest) {
+            continue;
+        }
+        if !store.exists(&digest) {
+            continue;
+        }
+        node_digests.push(digest);
+        if store.blob_path(&digest).exists() {
+            blob_digests.push(digest);
+        }
+        if let Ok(archived) = store.get_archived(&digest) {
+            for edge in archived.edges.iter() {
+                queue.push_back(Digest(*edge));
+            }
+        }
+    }
+
+    (node_digests, blob_digests)
 }
 
 #[cfg(test)]

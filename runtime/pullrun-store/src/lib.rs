@@ -10,7 +10,7 @@ pub mod store;
 
 pub use node::{ArchivedDagNode, DagNode, NodeKind};
 pub use op_lock::{clean_stale_op_locks, read_op_lock, OpLock};
-pub use store::{ArchivedNodeGuard, MmapStore, StoreError};
+pub use store::{ArchivedNodeGuard, MmapStore, StoreError, walk_reachable};
 
 use serde::{Deserialize, Serialize};
 

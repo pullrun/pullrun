@@ -1895,6 +1895,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pullrun-gc"
+version = "0.3.5"
+dependencies = [
+ "pullrun-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
 name = "pullrun-init"
 version = "0.3.5"
 dependencies = [
