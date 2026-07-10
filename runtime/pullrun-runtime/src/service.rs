@@ -1820,20 +1820,14 @@ impl Runtime for RuntimeService {
             }
         };
 
-        // Create an op lock to protect intermediate DAG layers
-        // from GC until the image tag is written.
+        // Create an op lock to signal "operation in progress" to GC.
+        // GC checks for active op locks and defers if any exist.
         let op_lock = OpLock::new(&self.config.store_root)
             .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
 
         let converter = OciToDagConverter::new(self.store.clone());
         let root_digest = match converter.convert(&pulled).await {
-            Ok(d) => {
-                // Register the root digest so GC can BFS-walk it.
-                op_lock
-                    .append(&d.as_hex())
-                    .map_err(|e| tonic::Status::internal(format!("op lock append: {e}")))?;
-                d
-            }
+            Ok(d) => d,
             Err(e) => {
                 op_lock.remove();
                 record_pull(&registry_label, "failed");
@@ -3925,10 +3919,6 @@ impl Runtime for RuntimeService {
             result.root_digest
         };
 
-        op_lock
-            .append(&root_digest.as_hex())
-            .map_err(|e| tonic::Status::internal(format!("op lock append: {e}")))?;
-
         let tag = if req.tag.is_empty() {
             root_digest.as_hex()[..12].to_string()
         } else {
@@ -4061,19 +4051,9 @@ impl Runtime for RuntimeService {
         let (root_digest, bytes_stored, bytes_deduplicated) =
             tokio::task::spawn_blocking(move || import_dag_from_tar(&store, &buf[..]))
                 .await
-                .map_err(|e| {
-                    op_lock.remove();
-                    tonic::Status::internal(format!("import task join: {e}"))
-                })?
-                .map_err(|e| {
-                    op_lock.remove();
-                    tonic::Status::internal(format!("import failed: {e}"))
-                })?;
+                .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
+                .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
 
-        op_lock.append(&root_digest).map_err(|e| {
-            op_lock.remove();
-            tonic::Status::internal(format!("op lock append: {e}"))
-        })?;
         op_lock.remove();
 
         Ok(tonic::Response::new(ImportImageResponse {
@@ -4265,10 +4245,6 @@ impl Runtime for RuntimeService {
                 op_lock.remove();
                 Status::internal(format!("commit failed: {e}"))
             })?;
-
-        op_lock
-            .append(&manifest_digest.as_hex())
-            .map_err(|e| tonic::Status::internal(format!("op lock append: {e}")))?;
 
         // If a tag was provided, record it in the image tag map.
         if !req.tag.is_empty() {
