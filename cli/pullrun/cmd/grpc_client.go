@@ -233,6 +233,11 @@ func (c *GRPCClient) Prune(ctx context.Context, req *runtimepb.PruneRequest) (*r
 	return c.client.Prune(ctx, req)
 }
 
+// Gc runs garbage collection on the DAG store.
+func (c *GRPCClient) Gc(ctx context.Context, req *runtimepb.GcRequest) (*runtimepb.GcResponse, error) {
+	return c.client.Gc(ctx, req)
+}
+
 // ListImages enumerates all images in the local DAG store.
 func (c *GRPCClient) ListImages(ctx context.Context) (*runtimepb.ListImagesResponse, error) {
 	return c.client.ListImages(ctx, &runtimepb.ListImagesRequest{})

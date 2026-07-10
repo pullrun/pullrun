@@ -5825,6 +5825,174 @@ func (*RemoveConfigResponse) Descriptor() ([]byte, []int) {
 	return file_pullrun_runtime_proto_rawDescGZIP(), []int{94}
 }
 
+type GcRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DryRun        bool                   `protobuf:"varint,1,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
+	Verbose       bool                   `protobuf:"varint,3,opt,name=verbose,proto3" json:"verbose,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GcRequest) Reset() {
+	*x = GcRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GcRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GcRequest) ProtoMessage() {}
+
+func (x *GcRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GcRequest.ProtoReflect.Descriptor instead.
+func (*GcRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *GcRequest) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
+func (x *GcRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+func (x *GcRequest) GetVerbose() bool {
+	if x != nil {
+		return x.Verbose
+	}
+	return false
+}
+
+type GcResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TotalNodes       uint64                 `protobuf:"varint,1,opt,name=total_nodes,json=totalNodes,proto3" json:"total_nodes,omitempty"`
+	ReachableNodes   uint64                 `protobuf:"varint,2,opt,name=reachable_nodes,json=reachableNodes,proto3" json:"reachable_nodes,omitempty"`
+	UnreachableNodes uint64                 `protobuf:"varint,3,opt,name=unreachable_nodes,json=unreachableNodes,proto3" json:"unreachable_nodes,omitempty"`
+	DeletedNodes     uint64                 `protobuf:"varint,4,opt,name=deleted_nodes,json=deletedNodes,proto3" json:"deleted_nodes,omitempty"`
+	DeletedBlobs     uint64                 `protobuf:"varint,5,opt,name=deleted_blobs,json=deletedBlobs,proto3" json:"deleted_blobs,omitempty"`
+	BytesFreed       uint64                 `protobuf:"varint,6,opt,name=bytes_freed,json=bytesFreed,proto3" json:"bytes_freed,omitempty"`
+	DryRun           bool                   `protobuf:"varint,7,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	CollectedDigests []string               `protobuf:"bytes,8,rep,name=collected_digests,json=collectedDigests,proto3" json:"collected_digests,omitempty"`
+	Error            string                 `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GcResponse) Reset() {
+	*x = GcResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GcResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GcResponse) ProtoMessage() {}
+
+func (x *GcResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GcResponse.ProtoReflect.Descriptor instead.
+func (*GcResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *GcResponse) GetTotalNodes() uint64 {
+	if x != nil {
+		return x.TotalNodes
+	}
+	return 0
+}
+
+func (x *GcResponse) GetReachableNodes() uint64 {
+	if x != nil {
+		return x.ReachableNodes
+	}
+	return 0
+}
+
+func (x *GcResponse) GetUnreachableNodes() uint64 {
+	if x != nil {
+		return x.UnreachableNodes
+	}
+	return 0
+}
+
+func (x *GcResponse) GetDeletedNodes() uint64 {
+	if x != nil {
+		return x.DeletedNodes
+	}
+	return 0
+}
+
+func (x *GcResponse) GetDeletedBlobs() uint64 {
+	if x != nil {
+		return x.DeletedBlobs
+	}
+	return 0
+}
+
+func (x *GcResponse) GetBytesFreed() uint64 {
+	if x != nil {
+		return x.BytesFreed
+	}
+	return 0
+}
+
+func (x *GcResponse) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
+func (x *GcResponse) GetCollectedDigests() []string {
+	if x != nil {
+		return x.CollectedDigests
+	}
+	return nil
+}
+
+func (x *GcResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_pullrun_runtime_proto protoreflect.FileDescriptor
 
 const file_pullrun_runtime_proto_rawDesc = "" +
@@ -6277,14 +6445,31 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x06config\x18\x01 \x01(\v2\x1b.pullrun.runtime.ConfigInfoR\x06config\")\n" +
 	"\x13RemoveConfigRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x16\n" +
-	"\x14RemoveConfigResponse*\x80\x01\n" +
+	"\x14RemoveConfigResponse\"T\n" +
+	"\tGcRequest\x12\x17\n" +
+	"\adry_run\x18\x01 \x01(\bR\x06dryRun\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\x12\x18\n" +
+	"\averbose\x18\x03 \x01(\bR\averbose\"\xca\x02\n" +
+	"\n" +
+	"GcResponse\x12\x1f\n" +
+	"\vtotal_nodes\x18\x01 \x01(\x04R\n" +
+	"totalNodes\x12'\n" +
+	"\x0freachable_nodes\x18\x02 \x01(\x04R\x0ereachableNodes\x12+\n" +
+	"\x11unreachable_nodes\x18\x03 \x01(\x04R\x10unreachableNodes\x12#\n" +
+	"\rdeleted_nodes\x18\x04 \x01(\x04R\fdeletedNodes\x12#\n" +
+	"\rdeleted_blobs\x18\x05 \x01(\x04R\fdeletedBlobs\x12\x1f\n" +
+	"\vbytes_freed\x18\x06 \x01(\x04R\n" +
+	"bytesFreed\x12\x17\n" +
+	"\adry_run\x18\a \x01(\bR\x06dryRun\x12+\n" +
+	"\x11collected_digests\x18\b \x03(\tR\x10collectedDigests\x12\x14\n" +
+	"\x05error\x18\t \x01(\tR\x05error*\x80\x01\n" +
 	"\rRestartPolicy\x12\x17\n" +
 	"\x13RESTART_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"RESTART_NO\x10\x01\x12\x16\n" +
 	"\x12RESTART_ON_FAILURE\x10\x02\x12\x12\n" +
 	"\x0eRESTART_ALWAYS\x10\x03\x12\x1a\n" +
-	"\x16RESTART_UNLESS_STOPPED\x10\x042\x81\x1a\n" +
+	"\x16RESTART_UNLESS_STOPPED\x10\x042\xc0\x1a\n" +
 	"\aRuntime\x12R\n" +
 	"\tPullImage\x12!.pullrun.runtime.PullImageRequest\x1a\".pullrun.runtime.PullImageResponse\x12H\n" +
 	"\vRunWorkload\x12\x1b.pullrun.runtime.RunRequest\x1a\x1c.pullrun.runtime.RunResponse\x12K\n" +
@@ -6319,7 +6504,8 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\rCreateNetwork\x12%.pullrun.runtime.CreateNetworkRequest\x1a&.pullrun.runtime.CreateNetworkResponse\x12^\n" +
 	"\rRemoveNetwork\x12%.pullrun.runtime.RemoveNetworkRequest\x1a&.pullrun.runtime.RemoveNetworkResponse\x12[\n" +
 	"\fListNetworks\x12$.pullrun.runtime.ListNetworksRequest\x1a%.pullrun.runtime.ListNetworksResponse\x12F\n" +
-	"\x05Prune\x12\x1d.pullrun.runtime.PruneRequest\x1a\x1e.pullrun.runtime.PruneResponse\x12[\n" +
+	"\x05Prune\x12\x1d.pullrun.runtime.PruneRequest\x1a\x1e.pullrun.runtime.PruneResponse\x12=\n" +
+	"\x02Gc\x12\x1a.pullrun.runtime.GcRequest\x1a\x1b.pullrun.runtime.GcResponse\x12[\n" +
 	"\fCreateSecret\x12$.pullrun.runtime.CreateSecretRequest\x1a%.pullrun.runtime.CreateSecretResponse\x12X\n" +
 	"\vListSecrets\x12#.pullrun.runtime.ListSecretsRequest\x1a$.pullrun.runtime.ListSecretsResponse\x12^\n" +
 	"\rInspectSecret\x12%.pullrun.runtime.InspectSecretRequest\x1a&.pullrun.runtime.InspectSecretResponse\x12[\n" +
@@ -6342,7 +6528,7 @@ func file_pullrun_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_pullrun_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 103)
+var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 105)
 var file_pullrun_runtime_proto_goTypes = []any{
 	(RestartPolicy)(0),              // 0: pullrun.runtime.RestartPolicy
 	(*Mount)(nil),                   // 1: pullrun.runtime.Mount
@@ -6440,24 +6626,26 @@ var file_pullrun_runtime_proto_goTypes = []any{
 	(*InspectConfigResponse)(nil),   // 93: pullrun.runtime.InspectConfigResponse
 	(*RemoveConfigRequest)(nil),     // 94: pullrun.runtime.RemoveConfigRequest
 	(*RemoveConfigResponse)(nil),    // 95: pullrun.runtime.RemoveConfigResponse
-	nil,                             // 96: pullrun.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 97: pullrun.runtime.ComposeService.LabelsEntry
-	nil,                             // 98: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 99: pullrun.runtime.RunRequest.EnvEntry
-	nil,                             // 100: pullrun.runtime.Event.MetadataEntry
-	nil,                             // 101: pullrun.runtime.AttachOpen.EnvEntry
-	nil,                             // 102: pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 103: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	(*GcRequest)(nil),               // 96: pullrun.runtime.GcRequest
+	(*GcResponse)(nil),              // 97: pullrun.runtime.GcResponse
+	nil,                             // 98: pullrun.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 99: pullrun.runtime.ComposeService.LabelsEntry
+	nil,                             // 100: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 101: pullrun.runtime.RunRequest.EnvEntry
+	nil,                             // 102: pullrun.runtime.Event.MetadataEntry
+	nil,                             // 103: pullrun.runtime.AttachOpen.EnvEntry
+	nil,                             // 104: pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 105: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_pullrun_runtime_proto_depIdxs = []int32{
-	96,  // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
+	98,  // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
 	3,   // 1: pullrun.runtime.ComposeService.ports:type_name -> pullrun.runtime.ComposePort
-	97,  // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
+	99,  // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
 	1,   // 3: pullrun.runtime.ComposeService.mounts:type_name -> pullrun.runtime.Mount
 	43,  // 4: pullrun.runtime.ComposeService.health_check:type_name -> pullrun.runtime.HealthCheck
 	2,   // 5: pullrun.runtime.RunComposeRequest.services:type_name -> pullrun.runtime.ComposeService
-	98,  // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	99,  // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
+	100, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	101, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
 	9,   // 8: pullrun.runtime.RunRequest.network_rules:type_name -> pullrun.runtime.NetworkRule
 	1,   // 9: pullrun.runtime.RunRequest.mounts:type_name -> pullrun.runtime.Mount
 	43,  // 10: pullrun.runtime.RunRequest.health_check:type_name -> pullrun.runtime.HealthCheck
@@ -6466,7 +6654,7 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	77,  // 13: pullrun.runtime.RunRequest.configs:type_name -> pullrun.runtime.ConfigRef
 	0,   // 14: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
 	14,  // 15: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
-	100, // 16: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
+	102, // 16: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
 	24,  // 17: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
 	25,  // 18: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
 	26,  // 19: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
@@ -6475,12 +6663,12 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	29,  // 22: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
 	30,  // 23: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
 	31,  // 24: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
-	101, // 25: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
+	103, // 25: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
 	36,  // 26: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
-	102, // 27: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	104, // 27: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
 	9,   // 28: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
 	57,  // 29: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
-	103, // 30: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	105, // 30: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 	0,   // 31: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
 	68,  // 32: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
 	78,  // 33: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
@@ -6517,54 +6705,56 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	65,  // 64: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
 	67,  // 65: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
 	72,  // 66: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
-	79,  // 67: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
-	81,  // 68: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
-	83,  // 69: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
-	85,  // 70: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
-	88,  // 71: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
-	90,  // 72: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
-	92,  // 73: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
-	94,  // 74: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
-	7,   // 75: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
-	10,  // 76: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
-	12,  // 77: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
-	14,  // 78: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
-	16,  // 79: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
-	18,  // 80: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
-	20,  // 81: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
-	22,  // 82: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
-	58,  // 83: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
-	23,  // 84: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
-	33,  // 85: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
-	35,  // 86: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
-	38,  // 87: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
-	40,  // 88: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
-	42,  // 89: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
-	45,  // 90: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
-	47,  // 91: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
-	49,  // 92: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
-	51,  // 93: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
-	53,  // 94: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
-	55,  // 95: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
-	5,   // 96: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
-	60,  // 97: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
-	62,  // 98: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
-	75,  // 99: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
-	71,  // 100: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
-	64,  // 101: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
-	66,  // 102: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
-	69,  // 103: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
-	73,  // 104: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
-	80,  // 105: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
-	82,  // 106: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
-	84,  // 107: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
-	86,  // 108: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
-	89,  // 109: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
-	91,  // 110: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
-	93,  // 111: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
-	95,  // 112: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
-	75,  // [75:113] is the sub-list for method output_type
-	37,  // [37:75] is the sub-list for method input_type
+	96,  // 67: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
+	79,  // 68: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
+	81,  // 69: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
+	83,  // 70: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
+	85,  // 71: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
+	88,  // 72: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
+	90,  // 73: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
+	92,  // 74: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
+	94,  // 75: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
+	7,   // 76: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
+	10,  // 77: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
+	12,  // 78: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
+	14,  // 79: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
+	16,  // 80: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
+	18,  // 81: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
+	20,  // 82: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
+	22,  // 83: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
+	58,  // 84: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
+	23,  // 85: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
+	33,  // 86: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
+	35,  // 87: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
+	38,  // 88: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
+	40,  // 89: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
+	42,  // 90: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
+	45,  // 91: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
+	47,  // 92: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
+	49,  // 93: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
+	51,  // 94: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
+	53,  // 95: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
+	55,  // 96: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
+	5,   // 97: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
+	60,  // 98: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
+	62,  // 99: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
+	75,  // 100: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
+	71,  // 101: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
+	64,  // 102: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
+	66,  // 103: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
+	69,  // 104: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
+	73,  // 105: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
+	97,  // 106: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
+	80,  // 107: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
+	82,  // 108: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
+	84,  // 109: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
+	86,  // 110: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
+	89,  // 111: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
+	91,  // 112: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
+	93,  // 113: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
+	95,  // 114: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
+	76,  // [76:115] is the sub-list for method output_type
+	37,  // [37:76] is the sub-list for method input_type
 	37,  // [37:37] is the sub-list for extension type_name
 	37,  // [37:37] is the sub-list for extension extendee
 	0,   // [0:37] is the sub-list for field type_name
@@ -6591,7 +6781,7 @@ func file_pullrun_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pullrun_runtime_proto_rawDesc), len(file_pullrun_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   103,
+			NumMessages:   105,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

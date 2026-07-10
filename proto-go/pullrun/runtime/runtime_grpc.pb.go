@@ -52,6 +52,7 @@ const (
 	Runtime_RemoveNetwork_FullMethodName    = "/pullrun.runtime.Runtime/RemoveNetwork"
 	Runtime_ListNetworks_FullMethodName     = "/pullrun.runtime.Runtime/ListNetworks"
 	Runtime_Prune_FullMethodName            = "/pullrun.runtime.Runtime/Prune"
+	Runtime_Gc_FullMethodName               = "/pullrun.runtime.Runtime/Gc"
 	Runtime_CreateSecret_FullMethodName     = "/pullrun.runtime.Runtime/CreateSecret"
 	Runtime_ListSecrets_FullMethodName      = "/pullrun.runtime.Runtime/ListSecrets"
 	Runtime_InspectSecret_FullMethodName    = "/pullrun.runtime.Runtime/InspectSecret"
@@ -140,6 +141,8 @@ type RuntimeClient interface {
 	// Prune removes stopped workloads, stale bundles, and temporary
 	// materialized rootfs directories to reclaim disk space.
 	Prune(ctx context.Context, in *PruneRequest, opts ...grpc.CallOption) (*PruneResponse, error)
+	// Garbage collect unreachable DAG nodes.
+	Gc(ctx context.Context, in *GcRequest, opts ...grpc.CallOption) (*GcResponse, error)
 	// Secret CRUD.
 	CreateSecret(ctx context.Context, in *CreateSecretRequest, opts ...grpc.CallOption) (*CreateSecretResponse, error)
 	ListSecrets(ctx context.Context, in *ListSecretsRequest, opts ...grpc.CallOption) (*ListSecretsResponse, error)
@@ -502,6 +505,16 @@ func (c *runtimeClient) Prune(ctx context.Context, in *PruneRequest, opts ...grp
 	return out, nil
 }
 
+func (c *runtimeClient) Gc(ctx context.Context, in *GcRequest, opts ...grpc.CallOption) (*GcResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GcResponse)
+	err := c.cc.Invoke(ctx, Runtime_Gc_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) CreateSecret(ctx context.Context, in *CreateSecretRequest, opts ...grpc.CallOption) (*CreateSecretResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateSecretResponse)
@@ -660,6 +673,8 @@ type RuntimeServer interface {
 	// Prune removes stopped workloads, stale bundles, and temporary
 	// materialized rootfs directories to reclaim disk space.
 	Prune(context.Context, *PruneRequest) (*PruneResponse, error)
+	// Garbage collect unreachable DAG nodes.
+	Gc(context.Context, *GcRequest) (*GcResponse, error)
 	// Secret CRUD.
 	CreateSecret(context.Context, *CreateSecretRequest) (*CreateSecretResponse, error)
 	ListSecrets(context.Context, *ListSecretsRequest) (*ListSecretsResponse, error)
@@ -769,6 +784,9 @@ func (UnimplementedRuntimeServer) ListNetworks(context.Context, *ListNetworksReq
 }
 func (UnimplementedRuntimeServer) Prune(context.Context, *PruneRequest) (*PruneResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Prune not implemented")
+}
+func (UnimplementedRuntimeServer) Gc(context.Context, *GcRequest) (*GcResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Gc not implemented")
 }
 func (UnimplementedRuntimeServer) CreateSecret(context.Context, *CreateSecretRequest) (*CreateSecretResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateSecret not implemented")
@@ -1305,6 +1323,24 @@ func _Runtime_Prune_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_Gc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GcRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).Gc(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_Gc_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).Gc(ctx, req.(*GcRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Runtime_CreateSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateSecretRequest)
 	if err := dec(in); err != nil {
@@ -1551,6 +1587,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Prune",
 			Handler:    _Runtime_Prune_Handler,
+		},
+		{
+			MethodName: "Gc",
+			Handler:    _Runtime_Gc_Handler,
 		},
 		{
 			MethodName: "CreateSecret",

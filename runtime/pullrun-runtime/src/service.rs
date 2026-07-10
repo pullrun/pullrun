@@ -34,6 +34,7 @@ use pullrun_oci::{
 };
 use pullrun_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use pullrun_store::{Digest, MmapStore, OpLock};
+use pullrun_gc::{GarbageCollector, GcError};
 use pullrun_sync::PeerBloomCache;
 use pullrun_vm::{ext4_path_for, FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
@@ -49,7 +50,7 @@ use crate::proto::{
     CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse,
     DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest, DiffResponse,
     Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk, ExportImageRequest,
-    GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest, HasImageResponse,
+    GcRequest, GcResponse, GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest, HasImageResponse,
     ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
     InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
     InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListImagesRequest,
@@ -1731,6 +1732,42 @@ impl RuntimeService {
             backend_used: final_backend,
             internal_ip: final_ip,
         }))
+    }
+
+    /// Enumerate all GC root digests from the daemon's in-memory state.
+    /// Roots come from three sources:
+    ///   1. `image_tags` keys — every tagged image root
+    ///   2. `workloads` values — every workload's `image_root` manifest
+    ///   3. `workloads` values — every VM workload's `kernel_image_digest`
+    fn enumerate_gc_roots(&self) -> Vec<Digest> {
+        let mut roots = Vec::new();
+
+        // Source 1: image_tags keys (tagged image root digests).
+        if let Ok(tags) = self.image_tags.try_read() {
+            for hex in tags.keys() {
+                if let Ok(d) = Digest::from_hex(hex) {
+                    roots.push(d);
+                }
+            }
+        }
+
+        // Sources 2 & 3: workload image_root + kernel_image_digest.
+        if let Ok(workloads) = self.workloads.try_read() {
+            for state in workloads.values() {
+                if !state.image_root.is_empty() {
+                    if let Ok(d) = Digest::from_hex(&state.image_root) {
+                        roots.push(d);
+                    }
+                }
+                if !state.kernel_image_digest.is_empty() {
+                    if let Ok(d) = Digest::from_hex(&state.kernel_image_digest) {
+                        roots.push(d);
+                    }
+                }
+            }
+        }
+
+        roots
     }
 }
 
@@ -3716,6 +3753,61 @@ impl Runtime for RuntimeService {
         Err(tonic::Status::unimplemented(
             "has_image not yet implemented",
         ))
+    }
+
+    async fn gc(
+        &self,
+        request: tonic::Request<GcRequest>,
+    ) -> Result<tonic::Response<GcResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let roots = self.enumerate_gc_roots();
+        if roots.is_empty() {
+            return Err(tonic::Status::failed_precondition(
+                "no GC roots found — nothing to preserve",
+            ));
+        }
+        let gc = GarbageCollector::new(self.store.clone(), self.config.store_root.clone())
+            .with_dry_run(req.dry_run)
+            .with_force(req.force);
+        match gc.collect(&roots) {
+            Ok(report) => {
+                let resp = GcResponse {
+                    total_nodes: report.total_nodes as u64,
+                    reachable_nodes: report.reachable_nodes as u64,
+                    unreachable_nodes: report.unreachable_nodes as u64,
+                    deleted_nodes: report.deleted_nodes as u64,
+                    deleted_blobs: report.deleted_blobs as u64,
+                    bytes_freed: report.bytes_freed,
+                    dry_run: report.dry_run,
+                    collected_digests: vec![],
+                    error: String::new(),
+                };
+                if req.verbose {
+                    // collected_digests is only populated in non-dry-run mode
+                    // when verbose is requested. For now, leave it empty.
+                }
+                Ok(tonic::Response::new(resp))
+            }
+            Err(GcError::ActiveOpLocks) => Err(tonic::Status::failed_precondition(
+                "active operation locks exist, GC deferred",
+            )),
+            Err(GcError::EmptyRootSet) => Err(tonic::Status::failed_precondition(
+                "root set is empty",
+            )),
+            Err(GcError::RootDigestMissing(d)) => Err(tonic::Status::failed_precondition(
+                format!("root digest {} not found in store", d.as_hex()),
+            )),
+            Err(GcError::CorruptedNodeDuringWalk(d)) => Err(tonic::Status::internal(
+                format!("corrupted node {} during reachability walk", d.as_hex()),
+            )),
+            Err(GcError::WouldFreeTooMuch { pct, total_mb, max_pct }) => Err(
+                tonic::Status::failed_precondition(format!(
+                    "would free {pct}% of {total_mb} MB store (max {max_pct}%); use --force to override",
+                )),
+            ),
+            Err(GcError::Io(e)) => Err(tonic::Status::internal(format!("I/O error: {e}"))),
+            Err(GcError::Store(e)) => Err(tonic::Status::internal(format!("store error: {e}"))),
+        }
     }
 
     async fn list_images(

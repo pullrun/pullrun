@@ -2003,6 +2003,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "prost",
  "pullrun-exec",
+ "pullrun-gc",
  "pullrun-net",
  "pullrun-oci",
  "pullrun-policy",

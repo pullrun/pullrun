@@ -17,6 +17,7 @@ pullrun-vm = { path = "../pullrun-vm" }
 pullrun-vsock = { path = "../pullrun-vsock" }
 pullrun-policy = { path = "../pullrun-policy" }
 pullrun-sync = { path = "../pullrun-sync" }
+pullrun-gc = { path = "../pullrun-gc" }
 libc.workspace = true
 bytes = "1"
 tokio.workspace = true

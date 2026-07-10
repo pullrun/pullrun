@@ -110,6 +110,9 @@ service Runtime {
     // materialized rootfs directories to reclaim disk space.
     rpc Prune(PruneRequest) returns (PruneResponse);
 
+    // Garbage collect unreachable DAG nodes.
+    rpc Gc(GcRequest) returns (GcResponse);
+
     // --- Secret / Config management (docker secret/config equivalent) ---
 
     // Secret CRUD.
@@ -816,3 +819,23 @@ message RemoveConfigRequest {
     string name = 1;
 }
 message RemoveConfigResponse {}
+
+// ─── Garbage Collection ─────────────────────────────────────────────
+
+message GcRequest {
+    bool dry_run = 1;
+    bool force = 2;
+    bool verbose = 3;
+}
+
+message GcResponse {
+    uint64 total_nodes = 1;
+    uint64 reachable_nodes = 2;
+    uint64 unreachable_nodes = 3;
+    uint64 deleted_nodes = 4;
+    uint64 deleted_blobs = 5;
+    uint64 bytes_freed = 6;
+    bool dry_run = 7;
+    repeated string collected_digests = 8;
+    string error = 9;
+}
