@@ -10,7 +10,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20679669.svg)](https://doi.org/10.5281/zenodo.20679669)
-[![Version](https://img.shields.io/badge/version-0.3.3-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
+[![Version](https://img.shields.io/badge/version-0.4.0-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
 [![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
@@ -19,7 +19,7 @@
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![Rust](https://img.shields.io/badge/Rust-1.77+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
-[![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen?logo=checkmarx)](#testing)
+[![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
@@ -136,6 +136,11 @@ pullrun stop <id>
 pullrun exec <id> /bin/echo hello
 pullrun attach <id>
 
+# ── GC (DAG store garbage collection) ─────────────────────────
+pullrun gc                    # dry-run — report what would be deleted
+pullrun gc --apply            # actually delete unreachable nodes
+pullrun gc --apply --force    # bypass 90% safety guard
+
 # ── Events & Stats ─────────────────────────────────────────────
 pullrun events --types=WORKLOAD_STARTED,POLICY_DENIED
 pullrun stats <id>
@@ -218,7 +223,7 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 ## ✨ Features
 
 ### 🏃 Workload Lifecycle
-`pull`, `run`, `stop`, `exec`, `attach`, `list`, `logs`, `stats`, `events`, `inspect`, `prune` plus:
+`pull`, `run`, `stop`, `exec`, `attach`, `list`, `logs`, `stats`, `events`, `inspect`, `prune`, `gc` plus:
 
 * **`commit`** — create a new image layer from a running container's current filesystem. The DAG store computes the delta against the original image, producing a content-addressed layer.
 * **`diff`** — show file-level changes between a running workload and its original image. The store compares DAG trees to produce an add/modify/delete listing.
@@ -271,6 +276,9 @@ Single-file OCI-compatible tarball export for air-gapped environments. Re-import
 
 ### 📊 Events & Observability
 Real-time event stream via `pullrun events` — `IMAGE_PULLED`, `WORKLOAD_STARTED`, `POLICY_DENIED`, etc. Per-workload `stats` with CPU/memory. Prometheus metrics exporter built into the daemon. PrometheusRule alerting config in [`deploy/`](deploy/).
+
+### 🧹 DAG Store Garbage Collection
+`pullrun gc` reclaims unreachable DAG nodes (orphaned layers, manifests, blobs) that are no longer reachable from any tagged image or running workload. Features: dry-run by default (report only), `--apply` to actually delete, `--force` to bypass the 90% safety guard, op-lock protection for in-flight operations, VM kernel image pinning via `kernel_image_digest`. The store no longer grows forever.
 
 ### 🖥️ Interactive Shells
 Full TTY support with **detach/re-attach** via `Ctrl-P Ctrl-Q`. Works across all backends (container, Firecracker VM, Apple VM). Detached workloads keep running — re-attach with `pullrun exec --tty <id> /bin/sh`. Even works on exited workloads (daemon starts a fresh sleep container).
