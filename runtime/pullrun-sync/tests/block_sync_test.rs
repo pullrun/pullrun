@@ -21,9 +21,26 @@ fn seed_blob(store: &MmapStore, data: &[u8]) -> Digest {
     digest
 }
 
+/// Find a bindable loopback address.
+///
+/// Some VPN clients (e.g. ProtonVPN) reassign the loopback address from
+/// 127.0.0.1 to 127.0.0.2, making 127.0.0.1 unavailable. We scan the
+/// 127.0.0.0/24 block until we find one that works.
+fn loopback_ip() -> String {
+    for i in 1u8..=16u8 {
+        let addr = format!("127.0.0.{i}:0");
+        if std::net::TcpListener::bind(&addr[..]).is_ok() {
+            return format!("127.0.0.{i}");
+        }
+    }
+    panic!("no loopback address available (VPN conflict?)");
+}
+
 async fn start_block_sync_server(store: Arc<MmapStore>) -> (SocketAddr, BlockSyncService) {
     let svc = BlockSyncService::new(store);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("{}:0", loopback_ip()))
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     let server = BlockSyncServer::new(svc.clone());
     tokio::spawn(async move {
@@ -188,7 +205,9 @@ use pullrun_sync::{RegistrarClient, RegistrarServer, RegistrarService};
 async fn start_registrar_server() -> (SocketAddr, RegistrarService) {
     let svc = RegistrarService::new();
     let server = RegistrarServer::new(svc.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("{}:0", loopback_ip()))
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         tonic::transport::Server::builder()
