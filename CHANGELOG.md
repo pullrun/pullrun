@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.1 — 2026-07-11
+
+### Features
+- **Async I/O for store reads** (`get_archived_async`, `get_blob_async`).  
+  New async methods on `MmapStore` that check a non-blocking cache first,
+  then fall back to `spawn_blocking`. Prevents tokio worker starvation
+  during concurrent cold reads.
+- **GC handler uses `spawn_blocking`.** Batch GC operations no longer
+  run on the async runtime thread pool.
+- **`inspect_workload` DAG walk uses `spawn_blocking`.** Large DAG walks
+  in the inspect handler no longer block async workers.
+
+### Tests
+- **4 new tests** for async read methods:
+  - `test_get_archived_async_matches_sync` — correctness vs synchronous path
+  - `test_get_archived_async_cache_hit_is_fast` — sub-millisecond cache hits
+  - `test_get_blob_async_matches_sync` — blob correctness
+  - `test_concurrent_cold_reads_dont_starve_runtime` — 50 concurrent cold
+    reads with timer probe (verifies no tokio starvation)
+
 ## 0.4.0 — 2026-07-10
 
 ### Features

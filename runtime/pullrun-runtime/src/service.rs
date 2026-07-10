@@ -1773,6 +1773,32 @@ impl RuntimeService {
 
         roots
     }
+
+    /// Map GcError to a tonic::Status for the gRPC response.
+    fn gc_error_to_status(err: GcError) -> tonic::Status {
+        match err {
+            GcError::ActiveOpLocks => tonic::Status::failed_precondition(
+                "active operation locks exist, GC deferred",
+            ),
+            GcError::EmptyRootSet => tonic::Status::failed_precondition("root set is empty"),
+            GcError::RootDigestMissing(d) => tonic::Status::failed_precondition(
+                format!("root digest {} not found in store", d.as_hex()),
+            ),
+            GcError::CorruptedNodeDuringWalk(d) => tonic::Status::internal(format!(
+                "corrupted node {} during reachability walk",
+                d.as_hex()
+            )),
+            GcError::WouldFreeTooMuch {
+                pct,
+                total_mb,
+                max_pct,
+            } => tonic::Status::failed_precondition(format!(
+                "would free {pct}% of {total_mb} MB store (max {max_pct}%); use --force to override",
+            )),
+            GcError::Io(e) => tonic::Status::internal(format!("I/O error: {e}")),
+            GcError::Store(e) => tonic::Status::internal(format!("store error: {e}")),
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -3030,11 +3056,14 @@ impl Runtime for RuntimeService {
             .collect();
 
         // Walk the DAG from the workload's image_root. BFS, manifest
-        // first. We use a VecDeque and a HashSet to guard against
-        // accidental cycles (the OCI DAG is acyclic, but defensive
-        // coding is cheap and the store itself can have weird shapes
-        // if a converter ever introduces one).
-        let dag_path = walk_dag(&self.store, &state.image_root);
+        // first. Done in spawn_blocking because it reads many nodes.
+        let store = self.store.clone();
+        let root = state.image_root.clone();
+        let dag_path = tokio::task::spawn_blocking(move || walk_dag(&store, &root))
+            .await
+            .map_err(|join_err| {
+                tonic::Status::internal(format!("DAG walk task panicked: {join_err}"))
+            })?;
 
         use crate::proto::RestartPolicy;
         let restart_proto = match state.restart_policy {
@@ -3770,48 +3799,33 @@ impl Runtime for RuntimeService {
                 "no GC roots found — nothing to preserve",
             ));
         }
-        let gc = GarbageCollector::new(self.store.clone(), self.config.store_root.clone())
-            .with_dry_run(req.dry_run)
-            .with_force(req.force);
-        match gc.collect(&roots) {
-            Ok(report) => {
-                let resp = GcResponse {
-                    total_nodes: report.total_nodes as u64,
-                    reachable_nodes: report.reachable_nodes as u64,
-                    unreachable_nodes: report.unreachable_nodes as u64,
-                    deleted_nodes: report.deleted_nodes as u64,
-                    deleted_blobs: report.deleted_blobs as u64,
-                    bytes_freed: report.bytes_freed,
-                    dry_run: report.dry_run,
-                    collected_digests: vec![],
-                    error: String::new(),
-                };
-                if req.verbose {
-                    // collected_digests is only populated in non-dry-run mode
-                    // when verbose is requested. For now, leave it empty.
-                }
-                Ok(tonic::Response::new(resp))
-            }
-            Err(GcError::ActiveOpLocks) => Err(tonic::Status::failed_precondition(
-                "active operation locks exist, GC deferred",
-            )),
-            Err(GcError::EmptyRootSet) => Err(tonic::Status::failed_precondition(
-                "root set is empty",
-            )),
-            Err(GcError::RootDigestMissing(d)) => Err(tonic::Status::failed_precondition(
-                format!("root digest {} not found in store", d.as_hex()),
-            )),
-            Err(GcError::CorruptedNodeDuringWalk(d)) => Err(tonic::Status::internal(
-                format!("corrupted node {} during reachability walk", d.as_hex()),
-            )),
-            Err(GcError::WouldFreeTooMuch { pct, total_mb, max_pct }) => Err(
-                tonic::Status::failed_precondition(format!(
-                    "would free {pct}% of {total_mb} MB store (max {max_pct}%); use --force to override",
-                )),
-            ),
-            Err(GcError::Io(e)) => Err(tonic::Status::internal(format!("I/O error: {e}"))),
-            Err(GcError::Store(e)) => Err(tonic::Status::internal(format!("store error: {e}"))),
-        }
+        let store = self.store.clone();
+        let store_root = self.config.store_root.clone();
+        let dry_run = req.dry_run;
+        let force = req.force;
+        let report = tokio::task::spawn_blocking(move || {
+            let gc = GarbageCollector::new(store, store_root)
+                .with_dry_run(dry_run)
+                .with_force(force);
+            gc.collect(&roots)
+        })
+        .await
+        .map_err(|join_err| tonic::Status::internal(format!("GC task panicked: {join_err}")))?;
+
+        let report = report.map_err(Self::gc_error_to_status)?;
+
+        let resp = GcResponse {
+            total_nodes: report.total_nodes as u64,
+            reachable_nodes: report.reachable_nodes as u64,
+            unreachable_nodes: report.unreachable_nodes as u64,
+            deleted_nodes: report.deleted_nodes as u64,
+            deleted_blobs: report.deleted_blobs as u64,
+            bytes_freed: report.bytes_freed,
+            dry_run: report.dry_run,
+            collected_digests: vec![],
+            error: String::new(),
+        };
+        Ok(tonic::Response::new(resp))
     }
 
     async fn list_images(

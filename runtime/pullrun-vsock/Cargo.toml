@@ -1,6 +1,6 @@
 [package]
 name = "pullrun-vsock"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 publish = false
 description = "Wire protocol and async codec for host-guest vsock communication in Pullrun microVMs"

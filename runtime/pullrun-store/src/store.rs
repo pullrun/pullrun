@@ -265,7 +265,6 @@ impl MmapStore {
         if let Some(entry) = self.cache.get(digest) {
             let result = entry.value().clone();
             drop(entry);
-            // Mark as recently used and trigger eviction.
             let mut lru = self.lru.lock().expect("lru lock poisoned");
             if let Some(pos) = lru.iter().position(|d| d == digest) {
                 lru.remove(pos);
@@ -275,21 +274,23 @@ impl MmapStore {
             return Ok(result);
         }
 
-        // Slow path: load from disk, insert, then evict.
+        // Slow path: load from disk via shared helper.
+        self.load_node_from_disk(digest)
+    }
+
+    /// Load a node from disk, insert into cache, return mmap.
+    /// Shared by sync `get()` and async `get_archived_async()`.
+    fn load_node_from_disk(&self, digest: &Digest) -> Result<Arc<Mmap>, StoreError> {
         let path = self.path_for(digest);
         if !path.exists() {
             return Err(StoreError::NotFound(*digest));
         }
         let file = std::fs::File::open(&path)?;
-        // SAFETY: `file` is opened read-only and is not modified while
-        // the mapping exists. `memmap2::Mmap::map` requires the caller
-        // to ensure the underlying file doesn't change — the store's
-        // write path only appends new blobs, never modifies existing ones.
+        // SAFETY: file is read-only, never modified after creation.
+        // write-then-rename ensures no partial files reach the final path.
         let mmap = unsafe { Mmap::map(&file)? };
         let len = mmap.len() as u64;
 
-        // Evict before inserting so the new entry can't be evicted
-        // in the same round.
         let mut lru = self.lru.lock().expect("lru lock poisoned");
         self.evict_lru_locked(&mut lru);
         lru.push_back(*digest);
@@ -324,6 +325,29 @@ impl MmapStore {
 
     pub fn get_archived(&self, digest: &Digest) -> Result<ArchivedNodeGuard, StoreError> {
         let mmap = self.get(digest)?;
+        ArchivedNodeGuard::new(digest, mmap)
+    }
+
+    /// Async get_archived — cache hit is non-blocking, cache miss
+    /// runs in spawn_blocking to avoid starving tokio workers.
+    pub async fn get_archived_async(
+        self: &Arc<Self>,
+        digest: &Digest,
+    ) -> Result<ArchivedNodeGuard, StoreError> {
+        if let Some(mmap) = self.cache.get(digest) {
+            return ArchivedNodeGuard::new(digest, mmap.clone());
+        }
+        let store = Arc::clone(self);
+        let d = *digest;
+        let inner = tokio::task::spawn_blocking(move || {
+            if let Some(mmap) = store.cache.get(&d) {
+                return Ok(mmap.clone());
+            }
+            store.load_node_from_disk(&d)
+        })
+        .await
+        .map_err(|join_err| StoreError::Io(std::io::Error::other(join_err)))?;
+        let mmap = inner?;
         ArchivedNodeGuard::new(digest, mmap)
     }
 
@@ -383,23 +407,23 @@ impl MmapStore {
             return Ok(result);
         }
 
-        // Slow path: load from disk.
+        // Slow path: load from disk via shared helper.
+        self.load_blob_from_disk(digest)
+    }
+
+    /// Load a blob from disk, insert into blob cache, return mmap.
+    /// Shared by sync `get_blob()` and async `get_blob_async()`.
+    fn load_blob_from_disk(&self, digest: &Digest) -> Result<Arc<Mmap>, StoreError> {
         let path = self.path_for_blob(digest);
         if !path.exists() {
             return Err(StoreError::NotFound(*digest));
         }
         let file = std::fs::File::open(&path)?;
-        // SAFETY: Same invariants as `get_deserialized` — blob files
+        // SAFETY: Same invariants as get_deserialized — blob files
         // are write-once, read-many, so the mapping will not be mutated.
         let mmap = unsafe { Mmap::map(&file)? };
-        // Note: we do NOT content-validate blobs here because the
-        // policy layer stores blobs at digests derived from logical
-        // keys, not from content. Corruption detection relies on the
-        // atomic-write guarantee from write_atomically. For nodes,
-        // rkyv::check_archived_root provides structural validation.
         let len = mmap.len() as u64;
 
-        // Evict before inserting so the new entry survives this round.
         let mut lru = self.blob_lru.lock().expect("blob_lru lock poisoned");
         self.evict_blob_lru_locked(&mut lru);
         lru.push_back(*digest);
@@ -409,6 +433,28 @@ impl MmapStore {
         let mmap = Arc::new(mmap);
         self.blob_cache.insert(*digest, mmap.clone());
         Ok(mmap)
+    }
+
+    /// Async get_blob — cache hit is non-blocking, cache miss
+    /// runs in spawn_blocking to avoid starving tokio workers.
+    pub async fn get_blob_async(
+        self: &Arc<Self>,
+        digest: &Digest,
+    ) -> Result<Arc<Mmap>, StoreError> {
+        if let Some(blob) = self.blob_cache.get(digest) {
+            return Ok(blob.clone());
+        }
+        let store = Arc::clone(self);
+        let d = *digest;
+        let inner = tokio::task::spawn_blocking(move || {
+            if let Some(blob) = store.blob_cache.get(&d) {
+                return Ok(blob.clone());
+            }
+            store.load_blob_from_disk(&d)
+        })
+        .await
+        .map_err(|join_err| StoreError::Io(std::io::Error::other(join_err)))?;
+        inner
     }
 
     /// Evict the least-recently-used blob cache entries until total
@@ -927,5 +973,112 @@ mod tests {
         let blob_node = unsafe { rkyv::archived_root::<DagNode>(&blob_mmap[..]) };
         assert!(blob_node.is_blob());
         assert_eq!(blob_node.inline_data.as_ref(), b"file content");
+    }
+
+    // ── Async read method tests ─────────────────────────────────
+
+    #[tokio::test]
+    async fn test_get_archived_async_matches_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MmapStore::new(dir.path().join("store")));
+        let digest = store
+            .put_blocking(&DagNode::blob(b"test data".to_vec()))
+            .unwrap();
+
+        // Clear cache to force disk read.
+        store.evict_cache_entry(&digest);
+
+        let async_result = store.get_archived_async(&digest).await.unwrap();
+        let sync_result = store.get_archived(&digest).unwrap();
+
+        assert_eq!(async_result.edges, sync_result.edges);
+        assert_eq!(async_result.kind, sync_result.kind);
+    }
+
+    #[tokio::test]
+    async fn test_get_blob_async_matches_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MmapStore::new(dir.path().join("store")));
+        let digest = Digest::compute(b"blob data");
+        store.put_blob_blocking(&digest, b"blob data").unwrap();
+
+        // Clear cache to force disk read.
+        store.evict_cache_entry(&digest);
+
+        let async_result = store.get_blob_async(&digest).await.unwrap();
+        let sync_result = store.get_blob(&digest).unwrap();
+
+        assert_eq!(async_result.len(), 9);
+        assert_eq!(&async_result[..], b"blob data");
+        assert_eq!(&sync_result[..], b"blob data");
+    }
+
+    #[tokio::test]
+    async fn test_get_archived_async_cache_hit_is_fast() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MmapStore::new(dir.path().join("store")));
+        let digest = store
+            .put_blocking(&DagNode::blob(b"cache hit".to_vec()))
+            .unwrap();
+
+        // Warm the cache.
+        let _ = store.get_archived_async(&digest).await.unwrap();
+
+        // Second read must be a cache hit — sub-millisecond.
+        let start = std::time::Instant::now();
+        let _ = store.get_archived_async(&digest).await.unwrap();
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(1),
+            "cache hit should be sub-millisecond"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_cold_reads_dont_starve_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MmapStore::new(dir.path().join("store")));
+
+        // Insert 50 nodes of meaningful size.
+        let digests: Vec<_> = (0..50)
+            .map(|i| {
+                store
+                    .put_blocking(&DagNode::blob(vec![i as u8; 4096]))
+                    .unwrap()
+            })
+            .collect();
+
+        // Clear cache so every read hits disk.
+        for d in &digests {
+            store.evict_cache_entry(d);
+        }
+
+        // Spawn a timer that should complete in ~10ms.
+        let timer_start = std::time::Instant::now();
+        let timer_task = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            timer_start.elapsed()
+        });
+
+        // Spawn 50 concurrent cold reads.
+        let mut handles = vec![];
+        for d in &digests {
+            let store = Arc::clone(&store);
+            let d = *d;
+            handles.push(tokio::spawn(async move {
+                store.get_archived_async(&d).await.unwrap();
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let elapsed = timer_task.await.unwrap();
+        // If the timer was delayed significantly, tokio workers
+        // were starved by blocking reads.
+        assert!(
+            elapsed < std::time::Duration::from_millis(50),
+            "timer was delayed by {elapsed:?} — tokio thread starvation detected"
+        );
     }
 }
