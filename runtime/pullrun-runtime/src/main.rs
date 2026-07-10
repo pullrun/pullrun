@@ -798,7 +798,7 @@ async fn run_daemon(
     }
 
     let cmd = RuntimeCommand::new(config);
-    let service: RuntimeService = cmd.service();
+    let service: RuntimeService = cmd.service().await;
 
     // Spawn the periodic gauge updater for store stats. We sample
     // every 60s; the gauges are not on the hot path so a coarse

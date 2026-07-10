@@ -33,7 +33,7 @@ mod tests {
         // to inspect calls.
         let dir = fresh_dir("unknown");
         let cfg = ServiceConfig::new(dir);
-        let svc = RuntimeCommand::new(cfg).service();
+        let svc = RuntimeCommand::new(cfg).service().await;
 
         // Drive the trait method directly. We don't have a tonic
         // Request wrapper in scope; build one on the fly. The
@@ -53,7 +53,7 @@ mod tests {
         // Build the service.
         let dir = fresh_dir("known");
         let cfg = ServiceConfig::new(dir);
-        let svc = RuntimeCommand::new(cfg).service();
+        let svc = RuntimeCommand::new(cfg).service().await;
 
         // Insert a synthetic workload. We bypass `run_workload` and
         // write the WorkloadState directly into the shared map. This

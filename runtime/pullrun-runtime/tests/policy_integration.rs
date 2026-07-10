@@ -28,14 +28,14 @@ mod tests {
 
     /// Build a RuntimeService rooted at `dir` with the given policy and keys.
     /// Bypasses the gRPC socket.
-    fn make_service(
+    async fn make_service(
         dir: &PathBuf,
         policy: Policy,
         keys: Vec<CosignKey>,
     ) -> pullrun_runtime::service::RuntimeService {
         let mut cfg = ServiceConfig::new(dir.clone());
         cfg = cfg.with_policy(policy).trusted_keys(keys);
-        RuntimeCommand::new(cfg).service()
+        RuntimeCommand::new(cfg).service().await
     }
 
     fn fresh_dir(name: &str) -> PathBuf {
@@ -65,7 +65,7 @@ mod tests {
         // Policy engine disabled -> no evaluation, image_ref tag is recorded.
         let dir = fresh_dir("no-engine");
         let cfg = ServiceConfig::new(dir.clone());
-        let svc = RuntimeCommand::new(cfg).service();
+        let svc = RuntimeCommand::new(cfg).service().await;
         assert!(svc.policy_engine.is_none());
     }
 
@@ -75,7 +75,7 @@ mod tests {
         // the image_tags map directly and verify run-time lookup works.
         let dir = fresh_dir("tag-lookup");
         let policy = Policy::default();
-        let svc = make_service(&dir, policy, vec![]);
+        let svc = make_service(&dir, policy, vec![]).await;
 
         let root = "deadbeef".to_string();
         let image_ref = "alpine:latest".to_string();
@@ -200,7 +200,7 @@ mod tests {
         // Sanity check: service exposes the image_tags RwLock for tests.
         let dir = fresh_dir("rwlock");
         let cfg = ServiceConfig::new(dir.clone()).with_policy(Policy::default());
-        let svc = RuntimeCommand::new(cfg).service();
+        let svc = RuntimeCommand::new(cfg).service().await;
         let mut tags = svc.image_tags.write().await;
         tags.insert("root1".into(), "alpine:latest".into());
         drop(tags);
@@ -215,7 +215,7 @@ mod tests {
         // expected for the run-time defense-in-depth lookup.
         let dir = fresh_dir("pull-records");
         let cfg = ServiceConfig::new(dir.clone()).with_policy(Policy::default());
-        let svc = RuntimeCommand::new(cfg).service();
+        let svc = RuntimeCommand::new(cfg).service().await;
 
         let root = "deadbeef".to_string();
         let image_ref = "alpine@sha256:abc".to_string();

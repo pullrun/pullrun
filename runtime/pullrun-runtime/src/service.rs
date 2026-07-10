@@ -404,7 +404,7 @@ impl RuntimeCommand {
         Self { config }
     }
 
-    pub fn service(&self) -> RuntimeService {
+    pub async fn service(&self) -> RuntimeService {
         let store = Arc::new(MmapStore::new(self.config.store_root.clone()));
         if let Some(parent) = self.config.bundle_root.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -586,14 +586,7 @@ impl RuntimeCommand {
         // (not via `pullrun pull`) are not in image_tags, so
         // their digest remains empty and the kernel layers are
         // not pinned by GC (acceptable for legacy checkpoints).
-        {
-            let workloads = workloads.clone();
-            let image_tags = image_tags.clone();
-            let checkpoints_dir = self.config.checkpoints_dir.clone();
-            tokio::spawn(async move {
-                migrate_kernel_digests(&workloads, &image_tags, &checkpoints_dir).await;
-            });
-        }
+        migrate_kernel_digests(&workloads, &image_tags, &self.config.checkpoints_dir).await;
 
         // Spawn the workload-exit watcher. Every 5s it walks the
         // `workloads` map and asks the executor for the live status
