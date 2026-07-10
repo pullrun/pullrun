@@ -562,4 +562,122 @@ mod tests {
             "dry-run GC must not remove lock files"
         );
     }
+
+    // ── Shared-layer survival test ──────────────────────────────────────
+
+    #[test]
+    fn test_gc_shared_layers_survive_tag_deletion() {
+        let (store, _dir) = store_and_dir();
+
+        // Create a shared blob + shared layer.
+        let blob_shared = store
+            .put_blocking(&DagNode::blob(b"shared blob".to_vec()))
+            .unwrap();
+        let layer_shared = store
+            .put_blocking(&DagNode::layer(vec![blob_shared], b"shared layer".to_vec()))
+            .unwrap();
+
+        // Both manifests point to the SAME layer digest.
+        let manifest_a = store
+            .put_blocking(&DagNode::manifest(vec![layer_shared], b"config a".to_vec()))
+            .unwrap();
+        let manifest_b = store
+            .put_blocking(&DagNode::manifest(vec![layer_shared], b"config b".to_vec()))
+            .unwrap();
+
+        let orphan = store
+            .put_blocking(&DagNode::blob(b"orphan".to_vec()))
+            .unwrap();
+
+        // GC with only manifest_b as root — simulates tag A being removed.
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
+        let report = gc.collect(&[manifest_b]).unwrap();
+
+        assert!(store.exists(&layer_shared), "shared layer must survive");
+        assert!(store.exists(&blob_shared), "shared blob must survive");
+        assert!(store.exists(&manifest_b), "root manifest must survive");
+        assert!(
+            !store.exists(&manifest_a),
+            "manifest A (only from removed tag) must be deleted"
+        );
+        assert!(!store.exists(&orphan), "orphan must be deleted");
+        assert_eq!(report.deleted_nodes, 2);
+    }
+
+    // ── Concurrent put-during-sweep test ────────────────────────────────
+
+    #[test]
+    fn test_gc_concurrent_put_during_sweep() {
+        let (store, _dir) = store_and_dir();
+        let root = insert_test_graph(&store);
+
+        // Insert an orphan and capture its digest.  We'll concurrently
+        // re-put the same content (same digest) while GC tries to delete it.
+        let orphan_data = b"concurrent orphan blob".to_vec();
+        let orphan_digest = store
+            .put_blocking(&DagNode::blob(orphan_data.clone()))
+            .unwrap();
+
+        // Spawn a thread that continuously re-puts the orphan content.
+        let store_clone = store.clone();
+        let put_handle = std::thread::spawn(move || {
+            for i in 0..200 {
+                let _ = store_clone.put_blocking(&DagNode::blob(orphan_data.clone()));
+                if i % 50 == 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        });
+
+        // Run GC while the put thread is active.
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
+        let result = gc.collect(&[root]);
+
+        put_handle.join().unwrap();
+
+        assert!(
+            result.is_ok(),
+            "GC must not panic or error during concurrent put"
+        );
+
+        // The node must exist — put re-created it if GC deleted it.
+        assert!(
+            store.exists(&orphan_digest),
+            "concurrently-put node must exist after GC"
+        );
+    }
+
+    // ── Concurrent get-during-sweep test (Unix only) ────────────────────
+
+    #[cfg(unix)]
+    #[test]
+    fn test_gc_concurrent_get_during_sweep() {
+        let (store, _dir) = store_and_dir();
+        let root = insert_test_graph(&store);
+        let orphan = insert_orphan(&store);
+
+        // Get an ArchivedNodeGuard on the orphan *before* GC deletes it.
+        let guard = store.get_archived(&orphan).unwrap();
+
+        // Run GC — this will unlink the orphan's node.rkyv from disk.
+        let gc =
+            GarbageCollector::new(store.clone(), _dir.path().join("store")).with_dry_run(false);
+        let report = gc.collect(&[root]).unwrap();
+        assert_eq!(report.deleted_nodes, 1);
+
+        // On Unix, the mmap keeps the data alive even after unlink.
+        // Reading from the guard must not SIGSEGV.
+        assert!(
+            !guard.edges.is_empty() || guard.kind == pullrun_store::node::ArchivedNodeKind::Blob,
+            "guard must still be readable after GC unlinks the file"
+        );
+
+        // The file must be gone from disk.
+        assert!(!store.exists(&orphan), "orphan must be deleted from disk");
+
+        // Dropping the guard releases the Arc<Mmap> reference.
+        drop(guard);
+    }
 }
