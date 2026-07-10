@@ -36,16 +36,12 @@ reports what would be deleted). Use --apply to actually delete.`,
 			defer cleanup()
 
 			resp, err := client.Gc(ctx, &runtimepb.GcRequest{
-				DryRun: !apply,
-				Force:  force,
+				DryRun:  !apply,
+				Force:   force,
+				Verbose: verbose,
 			})
 			if err != nil {
 				return fmt.Errorf("gc: %w", err)
-			}
-
-			if resp.Error != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", resp.Error)
-				return nil
 			}
 
 			if verbose || !resp.DryRun {

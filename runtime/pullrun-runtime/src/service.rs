@@ -26,6 +26,7 @@ use tracing::{debug, info, warn};
 use pullrun_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
 use pullrun_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use pullrun_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
+use pullrun_gc::{GarbageCollector, GcError};
 use pullrun_net::{Ipam, ProxyNetwork};
 use pullrun_oci::{
     build_dag_from_directory_with_platform, current_arch, export_dag_to_tar, import_dag_from_tar,
@@ -34,7 +35,6 @@ use pullrun_oci::{
 };
 use pullrun_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
 use pullrun_store::{Digest, MmapStore, OpLock};
-use pullrun_gc::{GarbageCollector, GcError};
 use pullrun_sync::PeerBloomCache;
 use pullrun_vm::{ext4_path_for, FirecrackerConfig, FirecrackerExecutor, StagedKernel};
 
@@ -50,19 +50,19 @@ use crate::proto::{
     CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse,
     DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest, DiffResponse,
     Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk, ExportImageRequest,
-    GcRequest, GcResponse, GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest, HasImageResponse,
-    ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
-    InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
-    InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListImagesRequest,
-    ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
-    ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
-    NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
-    PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
-    RemoveConfigRequest, RemoveConfigResponse, RemoveImageRequest, RemoveImageResponse,
-    RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest, RemoveSecretResponse,
-    RunComposeRequest, RunComposeResponse, RunRequest, RunResponse, StopRequest, StopResponse,
-    StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
-    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    GcRequest, GcResponse, GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest,
+    HasImageResponse, ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse,
+    InspectConfigRequest, InspectConfigResponse, InspectRequest, InspectResponse,
+    InspectSecretRequest, InspectSecretResponse, ListConfigsRequest, ListConfigsResponse,
+    ListImagesRequest, ListImagesResponse, ListNetworksRequest, ListNetworksResponse,
+    ListSecretsRequest, ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk,
+    NetworkInfo, NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest,
+    PruneRequest, PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest,
+    PushImageResponse, RemoveConfigRequest, RemoveConfigResponse, RemoveImageRequest,
+    RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest,
+    RemoveSecretResponse, RunComposeRequest, RunComposeResponse, RunRequest, RunResponse,
+    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
+    UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -1739,33 +1739,37 @@ impl RuntimeService {
     ///   1. `image_tags` keys — every tagged image root
     ///   2. `workloads` values — every workload's `image_root` manifest
     ///   3. `workloads` values — every VM workload's `kernel_image_digest`
-    fn enumerate_gc_roots(&self) -> Vec<Digest> {
+    ///
+    /// Uses blocking `read()` (not `try_read()`) to guarantee a complete root
+    /// set — skipping a root because a write lock happens to be held could
+    /// cause GC to delete reachable nodes.
+    async fn enumerate_gc_roots(&self) -> Vec<Digest> {
         let mut roots = Vec::new();
 
         // Source 1: image_tags keys (tagged image root digests).
-        if let Ok(tags) = self.image_tags.try_read() {
-            for hex in tags.keys() {
-                if let Ok(d) = Digest::from_hex(hex) {
+        let tags = self.image_tags.read().await;
+        for hex in tags.keys() {
+            if let Ok(d) = Digest::from_hex(hex) {
+                roots.push(d);
+            }
+        }
+        drop(tags);
+
+        // Sources 2 & 3: workload image_root + kernel_image_digest.
+        let workloads = self.workloads.read().await;
+        for state in workloads.values() {
+            if !state.image_root.is_empty() {
+                if let Ok(d) = Digest::from_hex(&state.image_root) {
+                    roots.push(d);
+                }
+            }
+            if !state.kernel_image_digest.is_empty() {
+                if let Ok(d) = Digest::from_hex(&state.kernel_image_digest) {
                     roots.push(d);
                 }
             }
         }
-
-        // Sources 2 & 3: workload image_root + kernel_image_digest.
-        if let Ok(workloads) = self.workloads.try_read() {
-            for state in workloads.values() {
-                if !state.image_root.is_empty() {
-                    if let Ok(d) = Digest::from_hex(&state.image_root) {
-                        roots.push(d);
-                    }
-                }
-                if !state.kernel_image_digest.is_empty() {
-                    if let Ok(d) = Digest::from_hex(&state.kernel_image_digest) {
-                        roots.push(d);
-                    }
-                }
-            }
-        }
+        drop(workloads);
 
         roots
     }
@@ -3760,7 +3764,7 @@ impl Runtime for RuntimeService {
         request: tonic::Request<GcRequest>,
     ) -> Result<tonic::Response<GcResponse>, tonic::Status> {
         let req = request.into_inner();
-        let roots = self.enumerate_gc_roots();
+        let roots = self.enumerate_gc_roots().await;
         if roots.is_empty() {
             return Err(tonic::Status::failed_precondition(
                 "no GC roots found — nothing to preserve",
@@ -5745,4 +5749,148 @@ fn list_persisted_networks(store_root: &std::path::Path) -> Result<Vec<(String, 
     let mut result: Vec<(String, String)> = networks.into_iter().collect();
     result.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pullrun_store::Digest;
+
+    fn fresh_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pullrun-gc-enum-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn enumerate_gc_roots_all_sources() {
+        let dir = fresh_dir("all-sources");
+        let cfg = ServiceConfig::new(dir);
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        // Insert a tagged image (source 1).
+        let tag_digest = "2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c";
+        {
+            let mut tags = svc.image_tags.write().await;
+            tags.insert(tag_digest.to_string(), "alpine:latest".to_string());
+        }
+
+        // Insert a workload with image_root + kernel_image_digest (sources 2 & 3).
+        let root_digest = "4813494d137e1631bba301d5acab6e7bb7aa74ce1185d456565ef51d737677b2";
+        let kernel_digest = "6923dd1bc0460082c5d55a831908c24a282860b7f1cd6c2b79cf1bc8857c639c";
+        {
+            let mut wl = svc.workloads.write().await;
+            wl.insert(
+                "wl-1".to_string(),
+                WorkloadState {
+                    status: "running".to_string(),
+                    start_time: 1000,
+                    exit_time: 0,
+                    exit_code: None,
+                    backend: "container".to_string(),
+                    internal_ip: None,
+                    pid: 0,
+                    image_root: root_digest.to_string(),
+                    command: vec![],
+                    network_rules: vec![],
+                    policy_decisions: HashMap::new(),
+                    kernel_image_ref: String::new(),
+                    kernel_image_digest: kernel_digest.to_string(),
+                    working_dir: String::new(),
+                    rootfs_dir: None,
+                    health_check: None,
+                    health: String::new(),
+                    health_failures: 0,
+                    health_last_success: 0,
+                    restart_policy: pullrun_exec::types::RestartPolicy::No,
+                    restart_count: 0,
+                    env: HashMap::new(),
+                    cpu_millicores: None,
+                    memory_bytes: None,
+                    bridge_name: None,
+                    mounts: vec![],
+                    console_log_path: None,
+                },
+            );
+        }
+
+        let roots = svc.enumerate_gc_roots().await;
+
+        assert_eq!(
+            roots.len(),
+            3,
+            "should find 3 roots: 1 tag + 1 image_root + 1 kernel_digest"
+        );
+
+        let expected: Vec<Digest> = vec![
+            Digest::from_hex(tag_digest).unwrap(),
+            Digest::from_hex(root_digest).unwrap(),
+            Digest::from_hex(kernel_digest).unwrap(),
+        ];
+        for d in &expected {
+            assert!(roots.contains(d), "root set should contain {d:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn enumerate_gc_roots_empty_when_nothing_inserted() {
+        let dir = fresh_dir("empty");
+        let cfg = ServiceConfig::new(dir);
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        let roots = svc.enumerate_gc_roots().await;
+        assert_eq!(
+            roots.len(),
+            0,
+            "no roots with empty image_tags and workloads"
+        );
+    }
+
+    #[tokio::test]
+    async fn enumerate_gc_roots_skips_empty_digest_strings() {
+        let dir = fresh_dir("skip-empty");
+        let cfg = ServiceConfig::new(dir);
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        // Insert a workload with empty image_root and kernel_image_digest.
+        {
+            let mut wl = svc.workloads.write().await;
+            wl.insert(
+                "wl-no-image".to_string(),
+                WorkloadState {
+                    status: "stopped".to_string(),
+                    start_time: 2000,
+                    exit_time: 2100,
+                    exit_code: Some(0),
+                    backend: "container".to_string(),
+                    internal_ip: None,
+                    pid: 0,
+                    image_root: String::new(), // empty — should not contribute
+                    command: vec![],
+                    network_rules: vec![],
+                    policy_decisions: HashMap::new(),
+                    kernel_image_ref: String::new(),
+                    kernel_image_digest: String::new(), // empty — should not contribute
+                    working_dir: String::new(),
+                    rootfs_dir: None,
+                    health_check: None,
+                    health: String::new(),
+                    health_failures: 0,
+                    health_last_success: 0,
+                    restart_policy: pullrun_exec::types::RestartPolicy::No,
+                    restart_count: 0,
+                    env: HashMap::new(),
+                    cpu_millicores: None,
+                    memory_bytes: None,
+                    bridge_name: None,
+                    mounts: vec![],
+                    console_log_path: None,
+                },
+            );
+        }
+
+        let roots = svc.enumerate_gc_roots().await;
+        assert_eq!(roots.len(), 0, "empty digest strings should be skipped");
+    }
 }
