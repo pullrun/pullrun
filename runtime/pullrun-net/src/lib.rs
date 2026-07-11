@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod dns;
+pub mod firewall;
 pub mod ipam;
 pub mod loopback;
 pub mod proxy;
 
+pub use firewall::{
+    detect_backend, FirewallBackend, FirewallError, IptablesBackend, NftablesBackend,
+};
 pub use ipam::{IpRange, Ipam};
 pub use loopback::LoopbackNetwork;
 pub use proxy::ProxyNetwork;

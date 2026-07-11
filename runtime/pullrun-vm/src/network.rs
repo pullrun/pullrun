@@ -54,6 +54,7 @@ use std::net::Ipv4Addr;
 use std::os::fd::AsRawFd;
 use std::process::Command;
 
+use pullrun_net::firewall::{detect_backend, FirewallBackend};
 use pullrun_net::Ipam;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -92,10 +93,8 @@ pub fn derive_cidr(bridge_name: &str) -> (Ipv4Addr, Ipv4Addr, Ipam) {
 pub enum VmNetError {
     #[error("`ip` command failed: {0}")]
     IpCommand(String),
-    #[error("`iptables` command failed: {0}")]
-    IptablesCommand(String),
-    #[error("`iptables` not found on host (required for outbound NAT)")]
-    IptablesNotFound,
+    #[error("firewall error: {0}")]
+    Firewall(#[from] pullrun_net::firewall::FirewallError),
     #[error("could not detect the default outbound interface (no default route?)")]
     NoDefaultRoute,
     #[error("VM networking is only supported on Linux")]
@@ -259,23 +258,34 @@ pub fn ensure_bridge_named(
         debug!("enabled /proc/sys/net/ipv4/ip_forward");
     }
 
-    // Outbound NAT.
-    match detect_outbound_iface() {
-        Ok(iface) => {
-            if let Err(e) = enable_nat(bridge_name, &iface) {
-                warn!(
-                    error = %e,
-                    bridge = bridge_name,
-                    outbound = iface.as_str(),
-                    "could not install outbound NAT (inbound still works)"
-                );
+    // Outbound NAT via auto-detected backend.
+    match detect_backend() {
+        Some(backend) => {
+            let backup = backend;
+            let backend: &dyn FirewallBackend = &*backup;
+            let backend_ref: &dyn FirewallBackend = backend;
+            match detect_outbound_iface() {
+                Ok(iface) => {
+                    if let Err(e) = backend_ref.enable_nat(bridge_name, cidr, &iface) {
+                        warn!(
+                            backend = backend_ref.name(),
+                            error = %e,
+                            bridge = bridge_name,
+                            outbound = iface.as_str(),
+                            "could not install outbound NAT (inbound still works)"
+                        );
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        "could not detect default outbound iface — outbound NAT skipped"
+                    );
+                }
             }
         }
-        Err(e) => {
-            warn!(
-                error = %e,
-                "could not detect default outbound iface — outbound NAT skipped"
-            );
+        None => {
+            warn!("no firewall backend found (nft or iptables) — outbound NAT unavailable");
         }
     }
 
@@ -483,180 +493,15 @@ pub fn parse_default_route_iface(text: &str) -> Option<String> {
     None
 }
 
-/// Install iptables rules to MASQUERADE outbound traffic from the
-/// bridge, plus the FORWARD rules to allow it. Idempotent: each rule
-/// is checked with `iptables -C` first; if absent, it's appended with
-/// `-A`. Existing rules are left untouched.
-///
-/// Requires `iptables` on PATH and `CAP_NET_ADMIN` (or root). This is
-/// the last remaining root-required operation in the Pullrun data path.
-/// Without it, VMs/containers on the bridge can communicate among
-/// themselves but cannot reach the internet. A future phase may
-/// replace this with a userspace NAT (e.g. slirp4netns or a custom
-/// nftables netlink path that can use ambient capabilities).
-///
-/// Returns `Ok(true)` if any rule was installed, `Ok(false)` if all
-/// rules were already present.
+/// Install iptables/nftables rules to MASQUERADE outbound traffic from the
+/// bridge. Delegates to the auto-detected firewall backend.
 pub fn enable_nat(bridge_name: &str, outbound_iface: &str) -> Result<bool, VmNetError> {
-    if !cfg!(target_os = "linux") {
-        return Err(VmNetError::NotLinux);
-    }
-
-    // 1. Enable IPv4 forwarding. Required for the bridge to route
-    //    traffic to the outside world. Some sandboxes disallow
-    //    writing to /proc/sys; treat as a warning.
-    if let Err(e) = std::fs::write("/proc/sys/net/ipv4/ip_forward", b"1") {
-        warn!(
-            error = %e,
-            "could not enable /proc/sys/net/ipv4/ip_forward (continuing — may already be set)"
-        );
-    } else {
-        debug!("enabled /proc/sys/net/ipv4/ip_forward");
-    }
-
-    let mut installed = false;
-
-    // 2. POSTROUTING MASQUERADE: rewrite source IP of packets leaving
-    //    `bridge_name` to the host's IP on `outbound_iface`.
-    let cidr = "10.42.0.0/16";
-    if iptables_check(&[
-        "-t",
-        "nat",
-        "-C",
-        "POSTROUTING",
-        "-s",
-        cidr,
-        "!",
-        "-d",
-        cidr,
-        "-o",
-        outbound_iface,
-        "-j",
-        "MASQUERADE",
-    ])? {
-        debug!(
-            bridge = bridge_name,
-            outbound = outbound_iface,
-            "MASQUERADE rule already present"
-        );
-    } else {
-        iptables_run(&[
-            "-t",
-            "nat",
-            "-A",
-            "POSTROUTING",
-            "-s",
-            cidr,
-            "!",
-            "-d",
-            cidr,
-            "-o",
-            outbound_iface,
-            "-j",
-            "MASQUERADE",
-        ])?;
-        installed = true;
-        info!(
-            bridge = bridge_name,
-            outbound = outbound_iface,
-            "installed MASQUERADE rule"
-        );
-    }
-
-    // 3. FORWARD bridge -> outbound: allow new connections out.
-    if iptables_check(&[
-        "-C",
-        "FORWARD",
-        "-i",
-        bridge_name,
-        "-o",
-        outbound_iface,
-        "-j",
-        "ACCEPT",
-    ])? {
-        debug!("FORWARD bridge->outbound rule already present");
-    } else {
-        iptables_run(&[
-            "-A",
-            "FORWARD",
-            "-i",
-            bridge_name,
-            "-o",
-            outbound_iface,
-            "-j",
-            "ACCEPT",
-        ])?;
-        installed = true;
-        info!("installed FORWARD bridge->outbound rule");
-    }
-
-    // 4. FORWARD outbound -> bridge: allow established/related back.
-    if iptables_check(&[
-        "-C",
-        "FORWARD",
-        "-i",
-        outbound_iface,
-        "-o",
-        bridge_name,
-        "-m",
-        "state",
-        "--state",
-        "RELATED,ESTABLISHED",
-        "-j",
-        "ACCEPT",
-    ])? {
-        debug!("FORWARD outbound->bridge established rule already present");
-    } else {
-        iptables_run(&[
-            "-A",
-            "FORWARD",
-            "-i",
-            outbound_iface,
-            "-o",
-            bridge_name,
-            "-m",
-            "state",
-            "--state",
-            "RELATED,ESTABLISHED",
-            "-j",
-            "ACCEPT",
-        ])?;
-        installed = true;
-        info!("installed FORWARD outbound->bridge established rule");
-    }
-
-    Ok(installed)
-}
-
-fn iptables_check(args: &[&str]) -> Result<bool, VmNetError> {
-    let out = Command::new("iptables").args(args).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            VmNetError::IptablesNotFound
-        } else {
-            VmNetError::IptablesCommand(format!("iptables {args:?}: {e}"))
-        }
-    })?;
-    // iptables -C returns 0 if the rule exists, 1 if not (or 2 on
-    // parse error). We treat anything but 0 as "rule not present",
-    // and let the caller's iptables -A surface real errors.
-    Ok(out.status.success())
-}
-
-fn iptables_run(args: &[&str]) -> Result<(), VmNetError> {
-    let out = Command::new("iptables").args(args).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            VmNetError::IptablesNotFound
-        } else {
-            VmNetError::IptablesCommand(format!("iptables {args:?}: {e}"))
-        }
-    })?;
-    if !out.status.success() {
-        return Err(VmNetError::IptablesCommand(format!(
-            "iptables {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        )));
-    }
-    Ok(())
+    let backend = pullrun_net::firewall::detect_backend().ok_or(VmNetError::Firewall(
+        pullrun_net::firewall::FirewallError::CommandNotFound {
+            command: "iptables".into(),
+        },
+    ))?;
+    Ok(backend.enable_nat(bridge_name, "10.42.0.0/16", outbound_iface)?)
 }
 
 fn link_exists(name: &str) -> Result<bool, VmNetError> {
@@ -882,21 +727,19 @@ mod tests {
         assert_eq!(parse_default_route_iface(s).as_deref(), Some("eth0"));
     }
 
-    /// Linux-only: actually install the NAT rules and confirm via
-    /// `iptables -C` that they're present, then `enable_nat()` again
-    /// and confirm it's a no-op. Requires `iptables` and CAP_NET_ADMIN.
-    /// Uses a non-default outbound iface name (`lo`) to avoid touching
-    /// the host's real default route. Cleans up rules on the way out.
+    /// Linux-only: actually install the NAT rules and confirm
+    /// idempotency with whichever backend is available (nftables or
+    /// iptables). Requires CAP_NET_ADMIN (or root). Uses a non-default
+    /// outbound iface name (`lo`) to avoid touching the host's real
+    /// default route. Cleans up rules on the way out.
     #[cfg(target_os = "linux")]
     #[test]
-    fn integration_enable_nat_is_idempotent() {
+    fn integration_nat_is_idempotent_with_detected_backend() {
         // Skip if we can't even create a tap (no privs) — same gate
         // the bridge test uses.
         let probe = create_tap_ioctl("tap-probe");
         match probe {
             Ok(_file) => {
-                // Dropping _file destroys the tap device.
-                // Also try ip link del as a fallback.
                 drop(_file);
                 let _ = Command::new("ip")
                     .args(["link", "del", "tap-probe"])
@@ -908,114 +751,51 @@ mod tests {
             }
         }
 
-        // Pre-check: iptables is on PATH.
-        if Command::new("iptables").arg("-V").output().is_err() {
-            eprintln!("skipping: iptables not on PATH");
-            return;
-        }
+        // Find whatever firewall backend is available.
+        let backend = match pullrun_net::firewall::detect_backend() {
+            Some(b) => b,
+            None => {
+                eprintln!("skipping: no firewall backend (nft or iptables)");
+                return;
+            }
+        };
 
         ensure_bridge().expect("ensure_bridge");
 
         // Use a fake outbound iface — doesn't have to exist for
-        // iptables to accept the rules; they only matter when a
-        // packet actually traverses them. This avoids ever using
-        // the host's real outbound interface as the NAT target.
+        // the firewall commands to succeed; rules are only
+        // traversed when a packet arrives.
         let fake_outbound = "lo";
+        let cidr = "10.42.0.0/16";
 
         // First install: should report at least one new rule.
-        let _ = enable_nat(BRIDGE_NAME, fake_outbound).expect("first enable_nat");
+        let first = backend
+            .enable_nat(BRIDGE_NAME, cidr, fake_outbound)
+            .expect("first enable_nat");
 
         // Second install: must be a no-op (returns Ok(false)).
-        // Even if the first install failed because rules existed
-        // already from a previous run, this is still the right
-        // shape.
-        let _ = enable_nat(BRIDGE_NAME, fake_outbound).expect("second enable_nat");
+        let second = backend
+            .enable_nat(BRIDGE_NAME, cidr, fake_outbound)
+            .expect("second enable_nat");
+        assert!(!second, "second enable_nat must be a no-op");
 
-        // Verify with `iptables -C` directly.
-        for cmd in [
-            vec![
-                "-t",
-                "nat",
-                "-C",
-                "POSTROUTING",
-                "-s",
-                "10.42.0.0/16",
-                "!",
-                "-d",
-                "10.42.0.0/16",
-                "-o",
-                fake_outbound,
-                "-j",
-                "MASQUERADE",
-            ],
-            vec![
-                "-C",
-                "FORWARD",
-                "-i",
-                BRIDGE_NAME,
-                "-o",
-                fake_outbound,
-                "-j",
-                "ACCEPT",
-            ],
-        ] {
-            let out = Command::new("iptables").args(&cmd).output().unwrap();
-            assert!(
-                out.status.success(),
-                "rule not present after enable_nat: {:?} (stderr: {})",
-                cmd,
-                String::from_utf8_lossy(&out.stderr)
-            );
-        }
+        // Verify rules are present using the backend's own check.
+        assert!(
+            backend
+                .rules_present(BRIDGE_NAME, cidr, fake_outbound)
+                .unwrap(),
+            "rules must be present after enable_nat"
+        );
 
-        // Cleanup: drop the rules we added (best-effort, ignore errors).
-        let _ = Command::new("iptables")
-            .args([
-                "-t",
-                "nat",
-                "-D",
-                "POSTROUTING",
-                "-s",
-                "10.42.0.0/16",
-                "!",
-                "-d",
-                "10.42.0.0/16",
-                "-o",
-                fake_outbound,
-                "-j",
-                "MASQUERADE",
-            ])
-            .output();
-        let _ = Command::new("iptables")
-            .args([
-                "-D",
-                "FORWARD",
-                "-i",
-                BRIDGE_NAME,
-                "-o",
-                fake_outbound,
-                "-j",
-                "ACCEPT",
-            ])
-            .output();
-        // The third rule (outbound->bridge RELATED,ESTABLISHED)
-        // is also keyed on `fake_outbound`, so it gets a matching
-        // teardown for consistency.
-        let _ = Command::new("iptables")
-            .args([
-                "-D",
-                "FORWARD",
-                "-i",
-                fake_outbound,
-                "-o",
-                BRIDGE_NAME,
-                "-m",
-                "state",
-                "--state",
-                "RELATED,ESTABLISHED",
-                "-j",
-                "ACCEPT",
-            ])
-            .output();
+        // Cleanup: use the backend's disable method.
+        backend
+            .disable_nat(BRIDGE_NAME, cidr, fake_outbound)
+            .expect("disable_nat");
+        assert!(
+            !backend
+                .rules_present(BRIDGE_NAME, cidr, fake_outbound)
+                .unwrap(),
+            "rules must be absent after disable_nat"
+        );
     }
 }

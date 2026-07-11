@@ -24,14 +24,17 @@ fn seed_blob(store: &MmapStore, data: &[u8]) -> Digest {
 /// Find a bindable loopback address.
 ///
 /// Some VPN clients (e.g. ProtonVPN) reassign the loopback address from
-/// 127.0.0.1 to 127.0.0.2, making 127.0.0.1 unavailable. We scan the
-/// 127.0.0.0/24 block until we find one that works.
+/// 127.0.0.1 to 127.0.0.2, or remove IPv4 from lo0 entirely. We scan
+/// 127.0.0.0/24 first, then fall back to ::1 (IPv6 loopback).
 fn loopback_ip() -> String {
     for i in 1u8..=16u8 {
         let addr = format!("127.0.0.{i}:0");
         if std::net::TcpListener::bind(&addr[..]).is_ok() {
             return format!("127.0.0.{i}");
         }
+    }
+    if std::net::TcpListener::bind("[::1]:0").is_ok() {
+        return "::1".to_string();
     }
     panic!("no loopback address available (VPN conflict?)");
 }

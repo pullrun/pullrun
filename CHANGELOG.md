@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0 — 2026-07-11
+
+### Features
+- **nftables support for bridge NAT** (`FirewallBackend` trait).
+  Auto-detects the host's firewall backend at daemon startup — nftables
+  (preferred, modern distros) or iptables (fallback, legacy). The
+  `pullrun-net` crate now owns the firewall abstraction in
+  `runtime/pullrun-net/src/firewall.rs`.
+- **`IptablesBackend`** — ports the existing iptables logic (3 rules:
+  MASQUERADE, 2×FORWARD) into the trait.
+- **`NftablesBackend`** — equivalent rules via `nft -f -` atomic
+  transactions (preferred). `inet` family table handles IPv4+IPv6.
+  Table-based `delete table inet pullrun` for cleanup.
+- **`detect_backend()`** — probes `nft --version` first, then
+  `iptables --version`. Returns `None` on systems with neither.
+- **`ensure_bridge_named` now uses the detected backend.** No behavior
+  change for existing deployments — iptables is used where nft is
+  unavailable. Backward compatible.
+
+### Fixes
+- **Sync tests: IPv6 loopback fallback.** ProtonVPN can remove all IPv4
+  from `lo0`, not just reassign it. `loopback_ip()` now falls back to
+  `::1` (IPv6 loopback) when no 127.0.0.x address is bindable.
+
 ## 0.4.2 — 2026-07-11
 
 ### Fixes
