@@ -164,6 +164,7 @@
         nav .container{display:flex;align-items:center;justify-content:space-between;height:64px}
         nav .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.125rem;color:var(--text)}
         nav .logo img{height:56px;width:auto}
+        [data-theme=dark] .logo-light,[data-theme=light] .logo-dark{display:none}
         nav .links{display:flex;align-items:center;gap:16px}
         nav .links a{color:var(--text-muted);font-size:.875rem;font-weight:500;transition:color .2s}
         nav .links a:hover{color:var(--text);text-decoration:none}
@@ -658,10 +659,16 @@
 
     <nav>
         <div class="container">
-            <a href="#" class="logo">
+            <a href="#" class="logo logo-dark">
                 <picture>
-                    <source srcset="/logo-2x.webp 2x, /logo-q90.webp 1x" type="image/webp">
-                    <img src="/logo.png" alt="Pullrun" width="112" height="56" fetchpriority="high">
+                    <source srcset="/logo-nav.webp" type="image/webp">
+                    <img src="/logo-nav.png" alt="Pullrun" width="112" height="56" fetchpriority="high">
+                </picture>
+            </a>
+            <a href="#" class="logo logo-light">
+                <picture>
+                    <source srcset="/logo-nav-light.v2.webp" type="image/webp">
+                    <img src="/logo-nav-light.v2.png" alt="Pullrun" width="112" height="56" loading="lazy">
                 </picture>
             </a>
             <div class="links">
@@ -696,6 +703,7 @@
                         <span class="tag">🧬 DAG Store</span>
                         <span class="tag">🌐 P2P Sync</span>
                         <span class="tag">🤖 MCP Native</span>
+                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.5.0 — GC · nftables · Async I/O</span>
                     </div>
                     <div class="buttons">
                         <a href="#install" class="btn btn-primary" onclick="track('hero_cta_click')">⚡ Install Now</a>
@@ -730,7 +738,8 @@
                         </g>
 
                         <g class="diagram-node anim-logo" data-tip="Content-addressed DAG store with zero-copy mmap reads">
-                            <image href="/logo.png" x="40" y="80" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
+                            <image class="logo-dark" href="/logo-svg.png" x="40" y="80" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
+                            <image class="logo-light" href="/logo-svg-light.v2.png" x="40" y="80" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
                         </g>
 
                         <g class="anim-branches">
@@ -745,7 +754,7 @@
                         </g>
                         <g class="diagram-node anim-platform" data-tip="Apple Silicon VM via Virtualization.framework">
                             <rect x="140" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
-                            <text x="200" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">🍎 macOS</text>
+                            <text x="200" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">⌘ macOS</text>
                         </g>
                         <g class="diagram-node anim-platform" data-tip="Windows WSL2 + Firecracker support">
                             <rect x="260" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
@@ -837,7 +846,7 @@
                 <div class="feature-card featured">
                     <div class="icon">🧬</div>
                     <h3>Content-Addressed DAG Store</h3>
-                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash — byte-identical across every node. No overlayfs, no layer duplication, no escape CVEs.</p>
+                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash — byte-identical across every node. Mark-and-sweep GC reclaims unreachable blobs. No overlayfs, no layer duplication, no escape CVEs.</p>
                 </div>
                 <div class="feature-card featured">
                     <div class="icon">🔄</div>
@@ -1042,7 +1051,7 @@
                 </details>
                 <details class="faq-item">
                     <summary>Is this production-ready?</summary>
-                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable and used in production today. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. All core operations are covered by 135+ tests passing on CI.</div>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable and used in production today. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. All core operations are covered by 175+ tests passing on CI. v0.5.0 adds DAG garbage collection, crash-atomic writes, async I/O, and nftables firewall support — the store doesn't grow forever, and it works on modern distros out of the box.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Does it require root or a daemon?</summary>
@@ -1197,7 +1206,7 @@
 
     // Interactive terminal
     var terminalResponses = {
-        'help': 'One OCI image. Any execution target. A single 12 MB binary.\n\nAvailable commands: pull, run, build, compose, stop, exec, logs, mcp, network, secret, stats, info, version\nType any command to see it in action.',
+        'help': 'One OCI image. Any execution target. A single 12 MB binary.\n\nAvailable commands: pull, run, build, compose, stop, exec, logs, mcp, network, secret, stats, info, gc, version\nType any command to see it in action.',
         'pullrun pull alpine:3.18': 'Pulling alpine:3.18...\n✓ 968 ms — 7 layers, 7.05 MB\nContent-addressed and verified.',
         'pullrun run alpine:3.18 --cmd echo hello': 'Starting alpine:3.18 (container)...\n✓ 401 ms\nhello',
         'pullrun run alpine:3.18 --backend vm': 'Starting alpine:3.18 (Firecracker VM)...\n✓ 512 ms\nBooted with per-VM kernel isolation.',
@@ -1208,6 +1217,8 @@
         'pullrun stats': 'WORKLOAD   CPU    MEMORY    DISK\nalpine     0.01   2.1 MiB   7.1 MB\nmyapp      0.12   18.4 MiB  128 MB',
         'pullrun network create my-net': 'Creating network my-net (10.43.1.0/24)...\n✓ Bridge pullrun-br-my-net created.',
         'pullrun secret create db_password': 'Enter secret (stdin): ***\n✓ Encrypted with AES-256-GCM and stored.',
+        'pullrun gc': 'Running GC (dry-run)...\n🔍 Walked 142 reachable nodes\n🧹 0 unreachable blobs (store is clean)',
+        'pullrun gc --apply': 'Running GC (apply)...\n🔍 Walked 142 reachable nodes\n🧹 0 unreachable blobs removed\n✓ Store size: 128 MB — no change (no garbage found)',
     };
     var terminalEl = document.getElementById('terminal-input');
     var outputEl = document.getElementById('terminal-output');
