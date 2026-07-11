@@ -243,6 +243,11 @@ func (c *GRPCClient) ListImages(ctx context.Context) (*runtimepb.ListImagesRespo
 	return c.client.ListImages(ctx, &runtimepb.ListImagesRequest{})
 }
 
+// RemoveImage removes an image by its root digest from the local store.
+func (c *GRPCClient) RemoveImage(ctx context.Context, rootDigest string) (*runtimepb.RemoveImageResponse, error) {
+	return c.client.RemoveImage(ctx, &runtimepb.RemoveImageRequest{RootDigest: rootDigest})
+}
+
 // ─── Secret / Config ──────────────────────────────────────────
 
 func (c *GRPCClient) CreateSecret(ctx context.Context, name string, data []byte) (*runtimepb.CreateSecretResponse, error) {

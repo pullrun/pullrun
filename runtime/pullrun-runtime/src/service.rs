@@ -596,6 +596,28 @@ impl RuntimeCommand {
             info!(count = fresh.len(), "fresh op locks recovered at startup");
         }
 
+        // Rebuild refcounts from all roots (tags + workloads) for crash recovery.
+        {
+            let tags = image_tags.read().await;
+            let wl = workloads.read().await;
+            let tag_roots: Vec<Digest> = tags
+                .keys()
+                .filter_map(|k| Digest::from_hex(k).ok())
+                .collect();
+            let wl_roots: Vec<Digest> = wl
+                .values()
+                .filter_map(|s| Digest::from_hex(&s.image_root).ok())
+                .collect();
+            let mut all_roots: Vec<Digest> = Vec::with_capacity(tag_roots.len() + wl_roots.len());
+            all_roots.extend(tag_roots);
+            all_roots.extend(wl_roots);
+            if !all_roots.is_empty() {
+                if let Err(e) = store.recompute_all_refcounts(&all_roots) {
+                    warn!("refcount rebuild failed at startup: {e}");
+                }
+            }
+        }
+
         // Spawn the workload-exit watcher. Every 5s it walks the
         // `workloads` map and asks the executor for the live status
         // of each id. If the executor reports anything other than
@@ -1912,6 +1934,7 @@ impl Runtime for RuntimeService {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), image_ref.clone());
         }
+        let _ = self.store.increment_refcount(&root_digest);
         self.save_image_tags().await;
         op_lock.complete();
 
@@ -3832,17 +3855,84 @@ impl Runtime for RuntimeService {
         &self,
         _request: tonic::Request<ListImagesRequest>,
     ) -> Result<tonic::Response<ListImagesResponse>, tonic::Status> {
-        Ok(tonic::Response::new(ListImagesResponse { images: vec![] }))
+        let tags = self.image_tags.read().await;
+        let mut images = Vec::with_capacity(tags.len());
+        for (root_digest, image_ref) in tags.iter() {
+            let digest = match Digest::from_hex(root_digest) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            let size_bytes = self
+                .store
+                .path_for(&digest)
+                .metadata()
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
+            images.push(crate::proto::ImageInfo {
+                image_ref: image_ref.clone(),
+                root_digest: root_digest.clone(),
+                size_bytes,
+                created_at: 0,
+            });
+        }
+        Ok(tonic::Response::new(ListImagesResponse { images }))
     }
 
     async fn remove_image(
         &self,
         request: tonic::Request<RemoveImageRequest>,
     ) -> Result<tonic::Response<RemoveImageResponse>, tonic::Status> {
-        let _ = request;
+        let req = request.into_inner();
+        let root_digest = req.root_digest;
+        let digest = Digest::from_hex(&root_digest)
+            .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
+
+        // Check the image exists in the tag map.
+        let entry_count = {
+            let tags = self.image_tags.read().await;
+            tags.iter().filter(|(k, _)| *k == &root_digest).count()
+        };
+        if entry_count == 0 {
+            return Err(Status::not_found(format!(
+                "image {root_digest} not found"
+            )));
+        }
+
+        // Check if any running workload uses this image.
+        {
+            let workloads = self.workloads.read().await;
+            for (id, ws) in workloads.iter() {
+                if ws.image_root == root_digest {
+                    return Err(Status::failed_precondition(format!(
+                        "image is in use by workload {id}"
+                    )));
+                }
+            }
+        }
+
+        // Remove all tag entries for this root_digest.
+        {
+            let mut tags = self.image_tags.write().await;
+            tags.retain(|k, _| k != &root_digest);
+        }
+        self.save_image_tags().await;
+
+        // Cascade-delete: each removed tag decrements the refcount once;
+        // the last decrement triggers subtree deletion.
+        let mut total_freed = 0u64;
+        for _ in 0..entry_count {
+            match self.store.remove_tag(&digest) {
+                Ok(freed) => total_freed += freed,
+                Err(e) => {
+                    warn!(%root_digest, error = %e, "rmi cascade encountered error");
+                }
+            }
+        }
+
+        info!(%root_digest, bytes_freed = total_freed, "image removed");
         Ok(tonic::Response::new(RemoveImageResponse {
-            success: false,
-            bytes_freed: 0,
+            success: true,
+            bytes_freed: total_freed as i64,
         }))
     }
 
@@ -4038,6 +4128,10 @@ impl Runtime for RuntimeService {
         {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), tag.clone());
+        }
+        let rc = self.store.increment_refcount(&root_digest);
+        if let Err(e) = rc {
+            warn!(%root_digest, error = %e, "failed to increment refcount for built image");
         }
         self.save_image_tags().await;
         op_lock.complete();
@@ -4356,6 +4450,7 @@ impl Runtime for RuntimeService {
         if !req.tag.is_empty() {
             let mut tags = self.image_tags.write().await;
             tags.insert(manifest_digest.as_hex(), req.tag.clone());
+            let _ = self.store.increment_refcount(&manifest_digest);
             self.save_image_tags().await;
         }
         op_lock.complete();

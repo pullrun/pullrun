@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{HashSet, VecDeque};
+use std::io::Read;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -190,7 +191,7 @@ impl MmapStore {
         &self.root
     }
 
-    fn path_for(&self, digest: &Digest) -> PathBuf {
+    pub fn path_for(&self, digest: &Digest) -> PathBuf {
         let hex = digest.as_hex();
         assert!(
             hex.len() >= 4 && hex.is_char_boundary(4),
@@ -208,6 +209,179 @@ impl MmapStore {
         );
         let (a, b, rest) = (&hex[0..2], &hex[2..4], &hex[4..]);
         self.root.join(a).join(b).join(rest).join("blob.raw")
+    }
+
+    fn refcount_path(&self, digest: &Digest) -> PathBuf {
+        let hex = digest.as_hex();
+        let (a, b, rest) = (&hex[0..2], &hex[2..4], &hex[4..]);
+        self.root.join(a).join(b).join(rest).join("node.refcount")
+    }
+
+    /// Read the reference count for a digest. Returns 0 if no refcount
+    /// file exists (node was created before refcounting, or never referenced).
+    pub fn get_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
+        let path = self.refcount_path(digest);
+        if !path.exists() {
+            return Ok(0);
+        }
+        let mut buf = [0u8; 8];
+        let mut f = std::fs::File::open(&path)?;
+        f.read_exact(&mut buf)?;
+        Ok(u64::from_le_bytes(buf))
+    }
+
+    /// Set the reference count for a digest, persisted atomically.
+    pub fn set_refcount(&self, digest: &Digest, count: u64) -> Result<(), StoreError> {
+        if count == 0 {
+            let path = self.refcount_path(digest);
+            let _ = std::fs::remove_file(&path);
+            return Ok(());
+        }
+        write_atomically(&self.refcount_path(digest), &count.to_le_bytes())
+    }
+
+    /// Increment the reference count for a digest. Returns the new count.
+    pub fn increment_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
+        let count = self.get_refcount(digest)? + 1;
+        self.set_refcount(digest, count)?;
+        Ok(count)
+    }
+
+    /// Decrement the reference count for a digest. Returns the new count.
+    pub fn decrement_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
+        let count = self.get_refcount(digest)?;
+        let new = count.saturating_sub(1);
+        self.set_refcount(digest, new)?;
+        Ok(new)
+    }
+
+    /// Rebuild all refcounts from scratch by BFS-walking from the given roots.
+    /// Called on startup for crash recovery. Idempotent.
+    pub fn recompute_all_refcounts(&self, roots: &[Digest]) -> Result<(), StoreError> {
+        use std::collections::HashMap;
+        // Count how many times each digest appears as a root.
+        let mut root_counts: HashMap<Digest, u64> = HashMap::new();
+        for root in roots {
+            *root_counts.entry(*root).or_default() += 1;
+        }
+
+        // BFS from all distinct roots.
+        let mut visited: HashSet<Digest> = HashSet::new();
+        let mut queue: VecDeque<Digest> = VecDeque::new();
+
+        for (root, count) in &root_counts {
+            self.set_refcount(root, *count)?;
+            queue.push_back(*root);
+        }
+
+        while let Some(node) = queue.pop_front() {
+            if !visited.insert(node) {
+                continue;
+            }
+            if !self.path_for(&node).exists() {
+                continue;
+            }
+            let archived = match self.get_archived(&node) {
+                Ok(a) => a,
+                Err(StoreError::NotFound(_)) => continue,
+                Err(e) => return Err(e),
+            };
+            for edge in archived.edges.iter() {
+                let child = Digest(*edge);
+                self.increment_refcount(&child)?;
+                queue.push_back(child);
+            }
+        }
+
+        info!("refcounts rebuilt from {} roots", roots.len());
+        Ok(())
+    }
+
+    /// Remove a tag root: decrement its refcount and cascade-delete the
+    /// entire subtree when refcount reaches zero. Returns bytes freed.
+    pub fn remove_tag(&self, root: &Digest) -> Result<u64, StoreError> {
+        let remaining = self.decrement_refcount(root)?;
+        if remaining > 0 {
+            debug!(%root, remaining, "root still referenced, not deleting");
+            return Ok(0);
+        }
+
+        let mut queue: VecDeque<Digest> = VecDeque::new();
+        let mut deleted: HashSet<Digest> = HashSet::new();
+        let mut bytes_freed = 0u64;
+        queue.push_back(*root);
+
+        while let Some(node) = queue.pop_front() {
+            if !deleted.insert(node) {
+                continue;
+            }
+            let node_path = self.path_for(&node);
+            if !node_path.exists() {
+                continue;
+            }
+
+            // Read edges before deleting the node file.
+            let edges: Vec<Digest> = match self.get_archived(&node) {
+                Ok(archived) => archived.edges.iter().map(|e| Digest(*e)).collect(),
+                Err(StoreError::NotFound(_)) => vec![],
+                Err(e) => return Err(e),
+            };
+
+            for child in &edges {
+                if self.decrement_refcount(child)? == 0 {
+                    queue.push_back(*child);
+                }
+            }
+
+            // Evict from in-memory cache.
+            self.evict_cache_entry(&node);
+
+            // Delete node file.
+            if let Ok(meta) = std::fs::metadata(&node_path) {
+                bytes_freed += meta.len();
+            }
+            let _ = std::fs::remove_file(&node_path);
+
+            // Delete blob file if present.
+            let blob_path = self.path_for_blob(&node);
+            if blob_path.exists() {
+                if let Ok(meta) = std::fs::metadata(&blob_path) {
+                    bytes_freed += meta.len();
+                }
+                let _ = std::fs::remove_file(&blob_path);
+            }
+
+            // Delete refcount file.
+            let rc_path = self.refcount_path(&node);
+            let _ = std::fs::remove_file(&rc_path);
+
+            // Remove empty shard dirs.
+            self.remove_empty_dirs(&node_path);
+        }
+
+        info!(%root, bytes_freed, "rmi complete");
+        Ok(bytes_freed)
+    }
+
+    /// Walk up from a deleted node's parent directory, removing empty
+    /// shard directories until reaching the store root or a non-empty dir.
+    fn remove_empty_dirs(&self, path: &Path) {
+        let store_root = &self.root;
+        let mut dir = path.parent().unwrap_or(path);
+        loop {
+            if !dir.starts_with(store_root) || dir == store_root.as_path() {
+                break;
+            }
+            let is_empty = std::fs::read_dir(dir)
+                .map(|mut it| it.next().is_none())
+                .unwrap_or(false);
+            if is_empty {
+                let _ = std::fs::remove_dir(dir);
+                dir = dir.parent().unwrap_or(dir);
+            } else {
+                break;
+            }
+        }
     }
 
     pub fn compute_digest(data: &[u8]) -> Digest {
@@ -235,6 +409,10 @@ impl MmapStore {
         match tokio::task::spawn_blocking(move || write_atomically(&path_c, &bytes_c)).await {
             Ok(Ok(())) => {
                 trace!(%digest, path = %path.display(), "node stored");
+                // Increment refcounts for all child edges (new parent references).
+                for edge in &node.edges {
+                    let _ = self.increment_refcount(edge);
+                }
                 Ok(digest)
             }
             Ok(Err(e)) => Err(e),
@@ -256,6 +434,9 @@ impl MmapStore {
 
         write_atomically(&path, &bytes)?;
         trace!(%digest, path = %path.display(), "node stored");
+        for edge in &node.edges {
+            let _ = self.increment_refcount(edge);
+        }
 
         Ok(digest)
     }
