@@ -37,7 +37,7 @@ if [ "$OS" = "darwin" ] && command -v brew &>/dev/null; then
   info "Installing via Homebrew..."
   brew tap pullrun/tap 2>/dev/null
   brew trust pullrun/tap 2>/dev/null || true
-  if brew install pullrun 2>/dev/null; then
+  if brew install pullrun; then
     info "Done! Run 'pullrun --help' to get started."
     exit 0
   fi
@@ -53,7 +53,7 @@ if [ "$OS" = "linux" ] && command -v apt-get &>/dev/null; then
   curl -fsSL "$KEY_URL" | sudo gpg --dearmor -o "$KEYRING" 2>/dev/null || true
   echo "deb [signed-by=$KEYRING] https://pullrun.github.io/apt stable main" \
     | sudo tee "$SOURCES" >/dev/null 2>/dev/null || true
-  if sudo apt-get update -qq 2>/dev/null && sudo apt-get install -y -qq pullrun 2>/dev/null; then
+  if sudo apt-get update -qq && sudo apt-get install -y -qq pullrun; then
     info "Done! Run 'pullrun --help' to get started."
     exit 0
   fi
@@ -83,7 +83,7 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
   # Download Windows CLI
   TARBALL="pullrun-${TAG#v}-windows-${ARCH}.tar.gz"
   info "  downloading $TARBALL..."
-  if ! curl -fsSL "$BASE/$TARBALL" | tar -xzf - -C "$TMPDIR"; then
+  if ! curl -fsSL "$BASE/$TARBALL" | tar -xzf - --strip-components=1 -C "$TMPDIR"; then
     warn "  Failed to download $TARBALL"
     warn "  Check that version $TAG exists at:"
     warn "    $BASE/$TARBALL"
@@ -102,7 +102,7 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
   RUNTIME_TARBALL="pullrun-${TAG#v}-linux-${ARCH}.tar.gz"
   info "  downloading $RUNTIME_TARBALL..."
   RUNTIME_DIR=$(mktemp -d)
-  if ! curl -fsSL "$BASE/$RUNTIME_TARBALL" | tar -xzf - -C "$RUNTIME_DIR"; then
+  if ! curl -fsSL "$BASE/$RUNTIME_TARBALL" | tar -xzf - --strip-components=1 -C "$RUNTIME_DIR"; then
     warn "  Failed to download $RUNTIME_TARBALL"
     warn "  WSL2 runtime setup skipped. Run the installer again after the release is published."
   fi
@@ -246,17 +246,23 @@ trap cleanup EXIT
 TARBALL="pullrun-${TAG#v}-${OS}-${ARCH}.tar.gz"
 URL="$BASE/$TARBALL"
 info "  downloading $TARBALL..."
-curl -fsSL "$URL" | tar -xzf - -C "$TMPDIR"
+curl -fsSL "$URL" | tar -xzf - --strip-components=1 -C "$TMPDIR"
 
 # Install binaries
+installed=0
 for BIN in pullrun pullrun-runtime apple-virt-exec; do
   for SRC in "$TMPDIR/bin/$BIN" "$TMPDIR/bin/$BIN.exe"; do
     if [ -f "$SRC" ]; then
       sudo mv "$SRC" "/usr/local/bin/$BIN"
       sudo chmod "+x" "/usr/local/bin/$BIN"
+      installed=1
       break
     fi
   done
 done
+
+if [ "$installed" = "0" ]; then
+  error "No binaries found in tarball. Please report this at https://github.com/$REPO/issues"
+fi
 
 info "Done! Run 'pullrun --help' to get started."
