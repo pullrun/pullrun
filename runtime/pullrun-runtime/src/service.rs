@@ -3888,9 +3888,7 @@ impl Runtime for RuntimeService {
             tags.iter().filter(|(k, _)| *k == &root_digest).count()
         };
         if entry_count == 0 {
-            return Err(Status::not_found(format!(
-                "image {root_digest} not found"
-            )));
+            return Err(Status::not_found(format!("image {root_digest} not found")));
         }
 
         // Check if any running workload uses this image.

@@ -325,7 +325,11 @@ impl MmapStore {
             self.set_refcount(digest, *count)?;
         }
 
-        info!("refcounts rebuilt: {} nodes from {} roots", counts.len(), roots.len());
+        info!(
+            "refcounts rebuilt: {} nodes from {} roots",
+            counts.len(),
+            roots.len()
+        );
         Ok(())
     }
 
@@ -1347,8 +1351,12 @@ mod tests {
         let store = MmapStore::new(dir.path().to_path_buf());
 
         // Create two leaf blobs.
-        let b1 = store.put_blocking(&DagNode::blob(b"leaf1".to_vec())).unwrap();
-        let b2 = store.put_blocking(&DagNode::blob(b"leaf2".to_vec())).unwrap();
+        let b1 = store
+            .put_blocking(&DagNode::blob(b"leaf1".to_vec()))
+            .unwrap();
+        let b2 = store
+            .put_blocking(&DagNode::blob(b"leaf2".to_vec()))
+            .unwrap();
         assert_eq!(store.get_refcount(&b1).unwrap(), 0);
         assert_eq!(store.get_refcount(&b2).unwrap(), 0);
 
@@ -1380,7 +1388,9 @@ mod tests {
 
         // Build: tag_a → manifest_a → layer_shared → blob_shared
         //        tag_b → manifest_b → layer_shared → blob_shared
-        let blob_shared = store.put_blocking(&DagNode::blob(b"shared data".to_vec())).unwrap();
+        let blob_shared = store
+            .put_blocking(&DagNode::blob(b"shared data".to_vec()))
+            .unwrap();
         let layer_shared = store
             .put_blocking(&DagNode::layer(vec![blob_shared], vec![]))
             .unwrap();
@@ -1425,7 +1435,9 @@ mod tests {
         let store = MmapStore::new(dir.path().to_path_buf());
 
         // Single blob with two tags (simulated by refcount 2).
-        let blob = store.put_blocking(&DagNode::blob(b"data".to_vec())).unwrap();
+        let blob = store
+            .put_blocking(&DagNode::blob(b"data".to_vec()))
+            .unwrap();
         store.set_refcount(&blob, 2).unwrap();
 
         // First remove_tag decrements to 1 — no deletion.
@@ -1447,7 +1459,9 @@ mod tests {
         let store = MmapStore::new(dir.path().to_path_buf());
 
         // Build: root → middle → leaf
-        let leaf = store.put_blocking(&DagNode::blob(b"leaf".to_vec())).unwrap();
+        let leaf = store
+            .put_blocking(&DagNode::blob(b"leaf".to_vec()))
+            .unwrap();
         let middle = store
             .put_blocking(&DagNode::tree(vec![leaf], b"middle".to_vec()))
             .unwrap();
@@ -1510,13 +1524,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = MmapStore::new(dir.path().to_path_buf());
 
-        let leaf = store.put_blocking(&DagNode::blob(b"leaf".to_vec())).unwrap();
+        let leaf = store
+            .put_blocking(&DagNode::blob(b"leaf".to_vec()))
+            .unwrap();
         let root = store
             .put_blocking(&DagNode::manifest(vec![leaf], b"root".to_vec()))
             .unwrap();
 
         // Delete the leaf node to simulate a partial deletion.
-        std::fs::remove_file(&store.path_for(&leaf)).unwrap();
+        std::fs::remove_file(store.path_for(&leaf)).unwrap();
 
         // Recompute from root should handle the missing leaf gracefully.
         store.recompute_all_refcounts(&[root]).unwrap();
@@ -1535,7 +1551,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = MmapStore::new(dir.path().to_path_buf());
 
-        let blob = store.put_blocking(&DagNode::blob(b"data".to_vec())).unwrap();
+        let blob = store
+            .put_blocking(&DagNode::blob(b"data".to_vec()))
+            .unwrap();
         store.set_refcount(&blob, 1).unwrap();
 
         let node_dir = store.path_for(&blob).parent().unwrap().to_path_buf();
@@ -1560,16 +1578,26 @@ mod tests {
         let big_data = b"this is exactly 32 bytes of data!!!";
         let medium_data = b"twenty bytes";
 
-        let small = store.put_blocking(&DagNode::blob(small_data.to_vec())).unwrap();
-        let big = store.put_blocking(&DagNode::blob(big_data.to_vec())).unwrap();
-        let medium = store.put_blocking(&DagNode::blob(medium_data.to_vec())).unwrap();
+        let small = store
+            .put_blocking(&DagNode::blob(small_data.to_vec()))
+            .unwrap();
+        let big = store
+            .put_blocking(&DagNode::blob(big_data.to_vec()))
+            .unwrap();
+        let medium = store
+            .put_blocking(&DagNode::blob(medium_data.to_vec()))
+            .unwrap();
 
         let small_len = small_data.len() as u64;
         let big_len = big_data.len() as u64;
         let medium_len = medium_data.len() as u64;
 
         // A blob with no edges — inline is not a separate blob file.
-        assert_eq!(store.compute_image_size(&small), 0, "inline blobs have no blob.raw");
+        assert_eq!(
+            store.compute_image_size(&small),
+            0,
+            "inline blobs have no blob.raw"
+        );
 
         // Manually set up blob.raw files by writing them.
         std::fs::write(store.path_for_blob(&small), small_data).unwrap();
@@ -1591,7 +1619,10 @@ mod tests {
             .put_blocking(&DagNode::tree(vec![medium], b"".to_vec()))
             .unwrap();
         let root2 = store
-            .put_blocking(&DagNode::manifest(vec![big, intermediate], b"config2".to_vec()))
+            .put_blocking(&DagNode::manifest(
+                vec![big, intermediate],
+                b"config2".to_vec(),
+            ))
             .unwrap();
         assert_eq!(
             store.compute_image_size(&root2),
