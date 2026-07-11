@@ -1,6 +1,6 @@
 [package]
 name = "pullrun-init"
-version = "0.5.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "Guest-side init daemon for Pullrun microVMs. Runs as PID 1 inside the VM, connects to the host over vsock, execs the workload, and streams I/O."
