@@ -769,7 +769,7 @@ mod tests {
         let cidr = "10.42.0.0/16";
 
         // First install: should report at least one new rule.
-        let first = backend
+        let _first = backend
             .enable_nat(BRIDGE_NAME, cidr, fake_outbound)
             .expect("first enable_nat");
 
