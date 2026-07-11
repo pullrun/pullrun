@@ -1,0 +1,1552 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pullrun — One OCI Image. Any Execution Target. A Single 12 MB Binary.</title>
+    <meta name="description" content="Unified OCI platform: run the same image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task — with a content-addressed DAG store, P2P sync, and zero daemon tax. 12 MB binary.">
+    <meta property="og:title" content="Pullrun — One OCI Image. Any Execution Target. A Single 12 MB Binary.">
+    <meta property="og:description" content="Same OCI image as container, VM, K8s workload, or AI agent. 12 MB. No daemon. No overlayfs. No separate VM images.">
+    <meta property="og:image" content="https://pullrun.dev/og-image.jpg">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Pullrun — One OCI Image. Any Execution Target. A Single 12 MB Binary.">
+    <meta name="twitter:description" content="Same OCI image as container, VM, K8s workload, or AI agent. 12 MB. No daemon. No overlayfs. No separate VM images.">
+    <meta name="twitter:image" content="https://pullrun.dev/og-image.jpg">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Pullrun",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "downloadUrl": "https://github.com/pullrun/pullrun",
+        "description": "One OCI image. Any execution target. A single 12 MB binary — unified OCI platform with content-addressed DAG store, P2P sync, zero daemon tax.",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }
+    }
+    </script>
+    <!-- Google tag (gtag.js) — loaded after onload to reduce unused JS -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      window.addEventListener('load', function(){
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=G-15NZ4TXNVN';
+        document.head.appendChild(s);
+        gtag('js', new Date());
+        gtag('config', 'G-15NZ4TXNVN');
+      });
+    </script>
+    <link rel="icon" href="/favicon.ico" sizes="32x32">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        :root,[data-theme=dark]{
+            --bg:#0a0a0f;
+            --bg-card:#12121a;
+            --bg-card-hover:#1a1a26;
+            --border:#1e1e30;
+            --text:#e4e4ed;
+            --text-muted:#8888a0;
+            --accent:#7c5cfc;
+            --accent-hover:#6a4ae0;
+            --accent-glow:rgba(124,92,252,.25);
+            --accent-light:rgba(124,92,252,.12);
+            --green:#4ade80;
+            --orange:#fb923c;
+            --blue:#60a5fa;
+            --code-bg:#08080e;
+            --toast-bg:#1a1a26;
+            --toast-text:#e4e4ed;
+            --radius:12px;
+            --radius-lg:20px
+        }
+        [data-theme=light]{
+            --bg:#fafafa;
+            --bg-card:#fff;
+            --bg-card-hover:#f0f0f5;
+            --border:#d4d4e0;
+            --text:#111;
+            --text-muted:#666;
+            --accent:#6d4cf5;
+            --accent-hover:#5a3dd6;
+            --accent-glow:rgba(109,76,245,.15);
+            --accent-light:rgba(109,76,245,.08);
+            --green:#16a34a;
+            --orange:#d97706;
+            --blue:#2563eb;
+            --code-bg:#f4f4f8;
+            --toast-bg:#222;
+            --toast-text:#fff;
+            --radius:12px;
+            --radius-lg:20px
+        }
+        html{scroll-behavior:smooth}
+        body{
+            font-family:'Inter',-apple-system,sans-serif;
+            background:var(--bg);
+            color:var(--text);
+            line-height:1.6;
+            -webkit-font-smoothing:antialiased;
+            transition:background .3s,color .3s
+        }
+        a{color:var(--accent);text-decoration:none}
+        a:hover{text-decoration:underline}
+        code{font-family:'JetBrains Mono',monospace;font-size:.875em}
+        .container{max-width:1100px;margin:0 auto;padding:0 24px}
+
+        :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+        /* Toast */
+        #toast{
+            position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+            background:var(--toast-bg);color:var(--toast-text);
+            padding:12px 24px;border-radius:8px;font-size:.875rem;font-weight:500;
+            z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;
+            border:1px solid var(--border)
+        }
+        #toast.show{opacity:1}
+
+        /* Keyboard hint */
+        #kbd-hint{
+            position:fixed;bottom:24px;right:24px;
+            background:var(--bg-card);color:var(--text-muted);
+            border:1px solid var(--border);border-radius:8px;
+            padding:8px 14px;font-size:.75rem;z-index:99;cursor:pointer;
+            transition:opacity .3s
+        }
+        #kbd-hint:hover{color:var(--text)}
+        @media(max-width:768px){#kbd-hint{display:none}}
+
+        /* Keyboard modal */
+        #kbd-modal{
+            display:none;position:fixed;inset:0;z-index:200;
+            background:rgba(0,0,0,.6);align-items:center;justify-content:center
+        }
+        #kbd-modal.open{display:flex}
+        #kbd-modal .box{
+            background:var(--bg-card);border:1px solid var(--border);
+            border-radius:var(--radius-lg);padding:32px;max-width:420px;width:90%
+        }
+        #kbd-modal h3{font-size:1.125rem;margin-bottom:16px}
+        #kbd-modal table{width:100%;font-size:.8125rem}
+        #kbd-modal td{padding:6px 0}
+        #kbd-modal td:first-child{
+            font-family:'JetBrains Mono',monospace;
+            background:var(--accent-light);color:var(--accent);
+            padding:2px 10px;border-radius:4px;display:inline-block;
+            font-size:.75rem;font-weight:600
+        }
+        #kbd-modal td:last-child{color:var(--text-muted);padding-left:16px}
+        #kbd-modal .close{
+            margin-top:16px;text-align:right;font-size:.8125rem;color:var(--text-muted);cursor:pointer
+        }
+        #kbd-modal .close:hover{color:var(--text)}
+
+        /* Nav */
+        nav{
+            position:fixed;top:0;left:0;right:0;z-index:100;
+            background:rgba(10,10,15,.8);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+            border-bottom:1px solid var(--border)
+        }
+        [data-theme=light] nav{background:rgba(250,250,250,.9)}
+        nav .container{display:flex;align-items:center;justify-content:space-between;height:64px}
+        nav .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.125rem;color:var(--text)}
+        nav .logo img{height:56px;width:auto}
+        nav .links{display:flex;align-items:center;gap:16px}
+        nav .links a{color:var(--text-muted);font-size:.875rem;font-weight:500;transition:color .2s}
+        nav .links a:hover{color:var(--text);text-decoration:none}
+        .nav-cta{
+            background:var(--accent-light);color:var(--accent) !important;
+            padding:6px 16px;border-radius:6px;font-weight:600;
+            border:1px solid rgba(124,92,252,.25);transition:all .2s
+        }
+        .nav-cta:hover{background:var(--accent);color:#fff !important;border-color:var(--accent)}
+        .theme-toggle{
+            background:none;border:1px solid var(--border);border-radius:6px;
+            color:var(--text-muted);cursor:pointer;padding:6px 10px;
+            font-size:.875rem;transition:all .2s;display:flex;align-items:center;gap:4px
+        }
+        .theme-toggle:hover{color:var(--text);border-color:var(--accent)}
+
+        /* Mobile sticky nav */
+        .mobile-nav{
+            display:none;position:fixed;bottom:0;left:0;right:0;z-index:100;
+            background:var(--bg-card);border-top:1px solid var(--border);
+            padding:8px 16px;justify-content:space-around
+        }
+        .mobile-nav a{
+            display:flex;flex-direction:column;align-items:center;gap:2px;
+            color:var(--text-muted);font-size:.6875rem;font-weight:500;text-decoration:none
+        }
+        .mobile-nav a span{font-size:1.125rem}
+        @media(max-width:768px){
+            .mobile-nav{display:flex}
+            nav .links a{font-size:.75rem}
+            body{padding-bottom:56px}
+        }
+
+        /* Hero */
+        .hero{
+            padding:160px 0 100px;
+            text-align:center;
+            position:relative;
+            overflow:hidden
+        }
+        .hero::before{
+            content:'';
+            position:absolute;top:50%;left:50%;translate:-50% -50%;
+            width:900px;height:900px;
+            background:radial-gradient(circle,var(--accent-glow) 0%,transparent 70%);
+            pointer-events:none
+        }
+        .hero .inner{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;text-align:left}
+        @media(max-width:800px){.hero .inner{grid-template-columns:1fr;text-align:center}}
+        .hero .left{position:relative;z-index:1}
+        .hero h1{
+            font-size:clamp(2.5rem,6vw,5rem);
+            font-weight:800;
+            letter-spacing:-.05em;
+            line-height:1.02;
+            margin-bottom:16px
+        }
+        .hero h1 .tagline{background:linear-gradient(135deg,var(--accent),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+        .hero .sub{
+            font-size:clamp(1.1rem,2vw,1.35rem);
+            color:var(--text-muted);
+            margin-bottom:8px;
+            font-weight:500
+        }
+        .hero .sub strong{color:var(--text)}
+        .hero .tags{
+            display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px
+        }
+        @media(max-width:800px){.hero .tags{justify-content:center}}
+        .hero .tag{
+            display:inline-flex;align-items:center;gap:6px;
+            padding:6px 14px;border-radius:20px;
+            font-size:.8125rem;font-weight:500;
+            background:var(--accent-light);color:var(--accent);
+            border:1px solid rgba(124,92,252,.2)
+        }
+        .hero .buttons{display:flex;gap:12px;flex-wrap:wrap}
+        @media(max-width:800px){.hero .buttons{justify-content:center}}
+        .btn{
+            display:inline-flex;align-items:center;gap:8px;
+            padding:12px 28px;border-radius:8px;
+            font-size:.9375rem;font-weight:600;
+            border:none;cursor:pointer;
+            transition:all .2s;font-family:inherit
+        }
+        .btn-primary{background:var(--accent);color:#fff}
+        .btn-primary:hover{background:var(--accent-hover);text-decoration:none;box-shadow:0 0 30px var(--accent-glow)}
+        .btn-secondary{background:var(--bg-card);color:var(--text);border:1px solid var(--border)}
+        .btn-secondary:hover{background:var(--bg-card-hover);text-decoration:none}
+        .btn-ghost{background:transparent;color:var(--text-muted);border:1px solid var(--border)}
+        .btn-ghost:hover{color:var(--text);border-color:var(--accent)}
+
+        /* Sections */
+        section{padding:80px 0}
+        .section-label{
+            display:inline-block;
+            font-size:.75rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+            color:var(--accent);margin-bottom:8px
+        }
+        section h2{
+            font-size:clamp(1.5rem,3vw,2.25rem);
+            font-weight:700;
+            letter-spacing:-.02em;
+            margin-bottom:12px
+        }
+        section h2 + p{
+            color:var(--text-muted);
+            font-size:1.05rem;
+            max-width:600px
+        }
+
+        /* Problem section */
+        #problem{text-align:center}
+        #problem h2{max-width:700px;margin-left:auto;margin-right:auto}
+        #problem h2 + p{max-width:700px;margin:0 auto 48px}
+        .problem-grid{
+            display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;
+            text-align:left;max-width:1000px;margin:0 auto
+        }
+        .problem-card{
+            background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+            padding:24px;transition:all .2s
+        }
+        .problem-card .icon{font-size:1.5rem;margin-bottom:10px}
+        .problem-card h3{font-size:1rem;font-weight:600;margin-bottom:6px}
+        .problem-card p{font-size:.8125rem;color:var(--text-muted);line-height:1.6}
+        .problem-card.highlighted{
+            background:linear-gradient(135deg,var(--accent-light) 0%,var(--bg-card) 70%);
+            border-color:var(--accent);box-shadow:0 0 30px rgba(124,92,252,.08)
+        }
+
+        /* Features grid */
+        #features{text-align:center}
+        #features h2 + p{margin:0 auto 48px}
+        .features-grid{
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+            gap:16px;
+            text-align:left
+        }
+        .feature-card{
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius);
+            padding:28px;
+            transition:all .2s
+        }
+        .feature-card:hover{background:var(--bg-card-hover);border-color:var(--accent)}
+        .feature-card.featured{
+            background:linear-gradient(135deg,var(--accent-light) 0%,var(--bg-card) 60%);
+            border-color:rgba(124,92,252,.25);
+            box-shadow:0 0 30px rgba(124,92,252,.06)
+        }
+        .feature-card.featured:hover{border-color:var(--accent);box-shadow:0 0 40px var(--accent-glow)}
+        .feature-card .icon{font-size:1.5rem;margin-bottom:12px}
+        .feature-card h3{font-size:1rem;font-weight:600;margin-bottom:6px}
+        .feature-card p{font-size:.875rem;color:var(--text-muted);line-height:1.5}
+
+        /* Scroll stats */
+        #scroll-stats{
+            text-align:center;
+            background:var(--bg-card);
+            border-top:1px solid var(--border);
+            border-bottom:1px solid var(--border)
+        }
+        #scroll-stats h2 + p{margin:0 auto 48px}
+        .stats-grid{
+            display:grid;
+            grid-template-columns:repeat(4,1fr);
+            gap:24px;
+            max-width:800px;
+            margin:0 auto
+        }
+        @media(max-width:600px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+        .stat-item{text-align:center}
+        .stat-item .num{
+            font-size:clamp(2rem,4vw,3rem);
+            font-weight:800;
+            letter-spacing:-.03em;
+            background:linear-gradient(135deg,var(--accent),var(--blue));
+            -webkit-background-clip:text;
+            -webkit-text-fill-color:transparent;
+            background-clip:text
+        }
+        .stat-item .label{font-size:.8125rem;color:var(--text-muted);margin-top:4px}
+        .stat-item .sub{font-size:.6875rem;color:var(--text-muted);margin-top:2px;opacity:.6}
+
+        /* Terminal demo */
+        #demo{background:var(--bg-card);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+        #demo .container{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+        @media(max-width:768px){#demo .container{grid-template-columns:1fr}}
+        #demo h2{font-size:clamp(1.25rem,2.5vw,1.75rem)}
+        #demo h2 + p{font-size:.9375rem}
+        .terminal{
+            background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);
+            font-family:'JetBrains Mono',monospace;font-size:.8125rem;line-height:1.7;
+            overflow:hidden;position:relative
+        }
+        .terminal-bar{
+            display:flex;align-items:center;gap:8px;
+            padding:10px 16px;border-bottom:1px solid var(--border);
+            background:rgba(0,0,0,.2)
+        }
+        .terminal-bar .dot{width:10px;height:10px;border-radius:50%}
+        .terminal-bar .dot.r{background:#ff5f57}
+        .terminal-bar .dot.y{background:#ffbd2e}
+        .terminal-bar .dot.g{background:#28c840}
+        .terminal-bar .title{font-size:.75rem;color:var(--text-muted);margin-left:8px}
+        .terminal-body{padding:16px 20px;min-height:260px;position:relative}
+        .terminal-line{white-space:pre-wrap;word-break:break-all}
+        .terminal-line .prompt{color:var(--green)}
+        .terminal-line .output{color:var(--text-muted)}
+        .terminal-line .fn{color:var(--blue)}
+        .terminal-line .cm{color:#5a5a72;font-style:italic}
+        .terminal-cursor{
+            display:inline-block;width:8px;height:1.1em;
+            background:var(--accent);vertical-align:text-bottom;
+            animation:blink 1s step-end infinite
+        }
+        @keyframes blink{50%{opacity:0}}
+        .terminal-input-line{display:flex;align-items:center;gap:4px;margin-top:8px}
+        .terminal-input-line .prompt{color:var(--green)}
+        .terminal-input{
+            background:transparent;border:none;color:var(--text);
+            font-family:'JetBrains Mono',monospace;font-size:.8125rem;
+            flex:1;outline:none;caret-color:var(--accent)
+        }
+        .terminal-copy-btn{
+            position:absolute;top:8px;right:8px;
+            background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+            color:var(--text-muted);cursor:pointer;padding:4px 10px;
+            font-size:.75rem;transition:all .2s;font-family:inherit
+        }
+        .terminal-copy-btn:hover{color:var(--text);border-color:var(--accent)}
+
+        /* Why section */
+        #why{text-align:center}
+        #why h2 + p{margin:0 auto 48px}
+        .why-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+        .why-card{
+            background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+            padding:20px;text-align:center
+        }
+        .why-card .big{font-size:1.5rem;font-weight:800;color:var(--accent);margin-bottom:4px}
+        .why-card .label{font-size:.8125rem;color:var(--text-muted)}
+        .why-card .sub{font-size:.75rem;color:var(--text-muted);margin-top:2px}
+
+        /* Comparison */
+        #comparison{text-align:center}
+        #comparison h2 + p{margin:0 auto 48px}
+        .benchmark-bar{
+            display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:20px
+        }
+        .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-lg)}
+        table{width:100%;border-collapse:collapse;font-size:.875rem;text-align:left}
+        th,td{padding:14px 20px;border-bottom:1px solid var(--border)}
+        th{background:var(--bg-card);font-weight:600;white-space:nowrap}
+        tr:last-child td{border-bottom:none}
+        td:first-child{font-weight:500}
+        .check{color:var(--green)}
+        .cross{color:#555}
+        td.center{text-align:center}
+        .disclaimer{font-size:.75rem;color:var(--text-muted);margin-top:12px}
+        @media(max-width:600px){
+            .table-wrap table,.table-wrap thead,.table-wrap tbody,.table-wrap tr,.table-wrap th,.table-wrap td{display:block}
+            .table-wrap thead{display:none}
+            .table-wrap td{padding:10px 14px;text-align:right;border-bottom:none}
+            .table-wrap td:first-child{text-align:left;font-weight:600;padding-top:14px;border-bottom:1px solid var(--border)}
+            .table-wrap td.center{text-align:right}
+            .table-wrap td:not(:first-child){padding-top:2px;padding-bottom:2px}
+            .table-wrap td:not(:first-child)::before{content:attr(data-label);float:left;color:var(--text-muted);font-weight:400}
+        }
+
+        /* Animated SVG */
+        .diagram-wrapper{position:relative}
+        .diagram-wrapper svg{width:100%;max-width:400px;height:auto}
+        .diagram-wrapper .diagram-node{cursor:pointer}
+        .diagram-wrapper .diagram-node:hover{opacity:.85}
+        /* Animation states — start hidden, fade in via JS */
+        .anim-arrow,.anim-logo,.anim-branches,.anim-platform,.anim-arrows2,.anim-backend{opacity:0;transition:opacity .7s ease}
+        .anim-arrow.visible,.anim-logo.visible,.anim-branches.visible,.anim-platform.visible,.anim-arrows2.visible,.anim-backend.visible{opacity:1}
+        .diagram-tooltip{
+            position:absolute;background:var(--bg-card);border:1px solid var(--border);
+            border-radius:8px;padding:12px 16px;font-size:.75rem;
+            color:var(--text-muted);z-index:10;pointer-events:none;
+            opacity:0;transition:opacity .2s;max-width:200px;
+            box-shadow:0 8px 24px rgba(0,0,0,.4)
+        }
+        .diagram-tooltip.show{opacity:1}
+        .diagram-tooltip strong{color:var(--text);display:block;margin-bottom:4px}
+        .diagram-tooltip code{font-size:.6875rem;color:var(--accent)}
+
+        /* Architecture section */
+        #architecture{text-align:center}
+        #architecture h2 + p{margin:0 auto 48px;max-width:650px}
+        .arch-layers{max-width:600px;margin:0 auto 32px}
+        .arch-layer{
+            background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+            padding:20px 24px;margin:0
+        }
+        .arch-layer.top{border-color:rgba(96,165,250,.3)}
+        .arch-layer.middle{background:linear-gradient(135deg,var(--accent-light),var(--bg-card));border-color:var(--accent)}
+        .arch-layer.bottom{border-color:rgba(251,191,36,.2)}
+        .arch-label{font-size:.6875rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
+        .arch-subtext{font-size:.8125rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+        .arch-grid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+        .arch-pill{
+            display:inline-flex;padding:6px 16px;border-radius:20px;
+            font-size:.8125rem;font-weight:600;
+            background:var(--accent-light);color:var(--accent);
+            border:1px solid rgba(124,92,252,.2)
+        }
+        .arch-pill.sm{font-size:.75rem;padding:4px 12px;background:#2a2a15;color:#fcd34d;border-color:rgba(251,191,36,.2)}
+        .arch-arrow{font-size:1.25rem;color:var(--text-muted);padding:6px 0;opacity:.5}
+        .arch-note{font-size:.8125rem;color:var(--text-muted);max-width:550px;margin:0 auto;line-height:1.6}
+
+        /* Ecosystem section */
+        #ecosystem{text-align:center}
+        #ecosystem h2 + p{margin:0 auto 48px;max-width:600px}
+        .ecosystem-table-wrap{overflow-x:auto;max-width:700px;margin:0 auto}
+        .ecosystem-table{width:100%;border-collapse:collapse;font-size:.875rem;text-align:left}
+        .ecosystem-table th,.ecosystem-table td{padding:14px 20px;border-bottom:1px solid var(--border)}
+        .ecosystem-table th{background:var(--bg-card);font-weight:600;white-space:nowrap;font-size:.8125rem}
+        .ecosystem-table tr:last-child td{border-bottom:none}
+        .ecosystem-table td:first-child{font-weight:600;white-space:nowrap}
+        @media(max-width:600px){
+            .ecosystem-table,.ecosystem-table thead,.ecosystem-table tbody,.ecosystem-table tr,.ecosystem-table th,.ecosystem-table td{display:block}
+            .ecosystem-table thead{display:none}
+            .ecosystem-table td{padding:10px 14px;text-align:right;border-bottom:none}
+            .ecosystem-table td:first-child{text-align:left;font-weight:600;padding-top:14px;border-bottom:1px solid var(--border)}
+            .ecosystem-table td::before{content:attr(data-label);float:left;color:var(--text-muted);font-weight:400}
+        }
+
+        /* CTA */
+        .cta{
+            text-align:center;
+            padding:100px 0;
+            position:relative
+        }
+        .cta::before{
+            content:'';
+            position:absolute;top:50%;left:50%;translate:-50% -50%;
+            width:600px;height:600px;
+            background:radial-gradient(circle,var(--accent-glow) 0%,transparent 70%);
+            pointer-events:none
+        }
+        .cta h2{font-size:clamp(1.5rem,3vw,2.5rem);margin-bottom:12px}
+        .cta p{color:var(--text-muted);margin-bottom:28px;font-size:1.05rem}
+        .cta .btn-group{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;position:relative}
+        .cta .code-block{
+            background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);
+            padding:16px 20px;font-family:'JetBrains Mono',monospace;font-size:.8125rem;line-height:1.7;
+            overflow-x:auto;white-space:pre;color:#c4c4d4;position:relative;
+            margin-top:32px;text-align:left;max-width:600px;margin-left:auto;margin-right:auto
+        }
+        .cta .code-block .prompt{color:var(--green)}
+        .cta .code-block .fn{color:var(--blue)}
+        .cta .code-block .output{color:var(--text-muted)}
+
+        /* Social proof bar */
+        .trust-bar{
+            padding:20px 0;
+            border-top:1px solid var(--border);
+            border-bottom:1px solid var(--border);
+            background:var(--bg-card);
+            font-size:.8125rem;
+            color:var(--text-muted)
+        }
+        .trust-bar .inner{
+            display:flex;align-items:center;justify-content:center;gap:32px;
+            flex-wrap:wrap
+        }
+        .trust-bar .item{
+            display:flex;align-items:center;gap:8px;
+            white-space:nowrap
+        }
+        .trust-bar .item .star{color:var(--orange)}
+        .trust-bar .item strong{color:var(--text);font-weight:600}
+        .trust-bar .item a{color:var(--text-muted);text-decoration:underline}
+        .trust-bar .item a:hover{color:var(--accent)}
+        .trust-bar .divider{width:1px;height:20px;background:var(--border)}
+        @media(max-width:600px){.trust-bar .divider{display:none}}
+        .trust-bar .gh-count{font-weight:700;color:var(--accent)}
+
+        /* FAQ */
+        #faq{text-align:center}
+        #faq h2 + p{margin:0 auto 48px}
+        .faq-list{max-width:700px;margin:0 auto;text-align:left}
+        .faq-item{
+            border:1px solid var(--border);
+            border-radius:var(--radius);
+            margin-bottom:8px;
+            overflow:hidden;
+            transition:border-color .2s
+        }
+        .faq-item:hover{border-color:var(--accent)}
+        .faq-item summary{
+            padding:16px 20px;
+            font-size:.9375rem;
+            font-weight:600;
+            cursor:pointer;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            list-style:none;
+            color:var(--text);
+            transition:color .2s
+        }
+        .faq-item summary::-webkit-details-marker{display:none}
+        .faq-item summary::after{
+            content:'+';
+            font-size:1.25rem;
+            color:var(--accent);
+            transition:transform .2s;
+            font-weight:400
+        }
+        .faq-item[open] summary::after{content:'−'}
+        .faq-item .answer{
+            padding:0 20px 16px;
+            font-size:.875rem;
+            color:var(--text-muted);
+            line-height:1.7
+        }
+        .faq-item .answer code{
+            font-size:.8125rem;
+            color:var(--accent);
+            background:var(--accent-light);
+            padding:1px 6px;
+            border-radius:4px
+        }
+
+        /* Animated data blocks in SVG */
+        .data-block{
+            animation:dataflow 3s ease-in-out infinite
+        }
+        @keyframes dataflow{
+            0%{opacity:0;transform:translateY(0)}
+            20%{opacity:1}
+            80%{opacity:1}
+            100%{opacity:0;transform:translateY(12px)}
+        }
+
+        /* Reveal animations */
+        .reveal{
+            opacity:0;
+            transform:translateY(24px);
+            transition:opacity .6s ease-out,transform .6s ease-out
+        }
+        .reveal.visible{
+            opacity:1;
+            transform:translateY(0)
+        }
+        @media(prefers-reduced-motion:reduce){
+            .reveal{opacity:1;transform:none}
+        }
+
+        /* Footer */
+        footer{
+            border-top:1px solid var(--border);
+            padding:32px 0;
+            text-align:center;
+            color:var(--text-muted);
+            font-size:.8125rem
+        }
+        footer a{color:var(--text-muted)}
+        footer a:hover{color:var(--text)}
+    </style>
+</head>
+<body>
+
+    <a href="#main-content" class="skip-link" style="position:absolute;top:-999px;left:-999px;z-index:999;background:var(--accent);color:#fff;padding:12px 24px;border-radius:0 0 8px 0;font-weight:600;text-decoration:none">&nbsp;Skip to content&nbsp;</a>
+    <script>
+      document.querySelector('.skip-link')?.addEventListener('focus',function(){this.style.top='0';this.style.left='0'});
+      document.querySelector('.skip-link')?.addEventListener('blur',function(){this.style.top='-999px';this.style.left='-999px'});
+    </script>
+    <div id="toast"></div>
+    <div id="kbd-hint" onclick="showKbdModal()" role="button" tabindex="0" aria-label="Keyboard shortcuts">? keys</div>
+
+    <div id="kbd-modal">
+        <div class="box">
+            <h3>Keyboard Shortcuts</h3>
+            <table>
+                <tr><td>j / k</td><td>Scroll down / up by section</td></tr>
+                <tr><td>g / G</td><td>Go to top / bottom</td></tr>
+                <tr><td>1–9</td><td>Jump to section</td></tr>
+                <tr><td>t</td><td>Toggle dark/light mode</td></tr>
+                <tr><td>?</td><td>Toggle this modal</td></tr>
+            </table>
+            <div class="close" onclick="hideKbdModal()">Press <code>?</code> or click to close</div>
+        </div>
+    </div>
+
+    <nav>
+        <div class="container">
+            <a href="#" class="logo">
+                <picture>
+                    <source srcset="/logo-2x.webp 2x, /logo-q90.webp 1x" type="image/webp">
+                    <img src="/logo.png" alt="Pullrun" width="112" height="56" fetchpriority="high">
+                </picture>
+            </a>
+            <div class="links">
+                <a href="#features">Features</a>
+                <a href="#architecture">Architecture</a>
+                <a href="#demo">Quick Start</a>
+                <a href="#comparison">Benchmarks</a>
+                <a href="#ecosystem">Ecosystem</a>
+                <a href="#install" class="nav-cta">⚡ Install</a>
+                <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme (t)">🌓</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="mobile-nav">
+        <a href="#features"><span>🗺️</span>Features</a>
+        <a href="#architecture"><span>🏗️</span>Architecture</a>
+        <a href="#demo"><span>⚡</span>Quick Start</a>
+        <a href="#comparison"><span>📊</span>Benchmarks</a>
+        <a href="#install"><span>📦</span>Install</a>
+    </div>
+
+    <main id="main-content">
+    <section class="hero">
+        <div class="container">
+            <div class="inner">
+                <div class="left">
+                    <h1><span class="tagline">One OCI image. Any execution target. A single 12 MB binary.</span></h1>
+                    <p class="sub">Run the <strong>same OCI image</strong> as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. <strong>No daemon required. No overlayfs. No separate VM images.</strong></p>
+                    <div class="tags">
+                        <span class="tag">🔄 Container · VM · K8s</span>
+                        <span class="tag">🧬 DAG Store</span>
+                        <span class="tag">🌐 P2P Sync</span>
+                        <span class="tag">🤖 MCP Native</span>
+                    </div>
+                    <div class="buttons">
+                        <a href="#install" class="btn btn-primary" onclick="track('hero_cta_click')">⚡ Install Now</a>
+                        <a href="https://github.com/pullrun/pullrun" class="btn btn-secondary" onclick="track('hero_github_click')">GitHub →</a>
+                    </div>
+                </div>
+                <div class="right diagram-wrapper">
+                    <svg viewBox="0 0 400 460" fill="none" xmlns="http://www.w3.org/2000/svg" id="arch-diagram">
+                        <defs>
+                            <linearGradient id="pg" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#7c5cfc"/>
+                                <stop offset="100%" stop-color="#60a5fa"/>
+                            </linearGradient>
+                            <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#7c5cfc" stop-opacity=".12"/>
+                                <stop offset="100%" stop-color="#7c5cfc" stop-opacity=".04"/>
+                            </linearGradient>
+                            <filter id="glow">
+                                <feGaussianBlur stdDeviation="3" result="blur"/>
+                                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                            </filter>
+                        </defs>
+
+                        <g class="diagram-node" data-tip="OCI-compatible images pulled from any registry">
+                            <rect x="100" y="0" width="200" height="52" rx="10" fill="url(#pg2)" stroke="rgba(124,92,252,.35)" stroke-width="1.5"/>
+                            <text x="200" y="32" text-anchor="middle" fill="var(--text)" font-family="'JetBrains Mono',monospace" font-size="14" font-weight="600" opacity=".9">OCI IMAGE</text>
+                        </g>
+
+                        <g class="anim-arrow">
+                            <line x1="200" y1="52" x2="200" y2="74" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".4"/>
+                            <polygon points="196,70 200,78 204,70" fill="var(--accent)" opacity=".6"/>
+                        </g>
+
+                        <g class="diagram-node anim-logo" data-tip="Content-addressed DAG store with zero-copy mmap reads">
+                            <image href="/logo.png" x="40" y="80" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
+                        </g>
+
+                        <g class="anim-branches">
+                            <line x1="160" y1="155" x2="80" y2="183" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
+                            <line x1="200" y1="155" x2="200" y2="183" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
+                            <line x1="240" y1="155" x2="320" y2="183" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
+                        </g>
+
+                        <g class="diagram-node anim-platform" data-tip="Linux containers via runc">
+                            <rect x="20" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="80" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">🐧 Linux</text>
+                        </g>
+                        <g class="diagram-node anim-platform" data-tip="Apple Silicon VM via Virtualization.framework">
+                            <rect x="140" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="200" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">🍎 macOS</text>
+                        </g>
+                        <g class="diagram-node anim-platform" data-tip="Windows WSL2 + Firecracker support">
+                            <rect x="260" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="320" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">⊞ Windows</text>
+                        </g>
+
+                        <g class="anim-arrows2">
+                            <line x1="80" y1="222" x2="80" y2="258" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
+                            <polygon points="76,255 80,263 84,255" fill="var(--accent)" opacity=".4"/>
+                            <line x1="200" y1="222" x2="200" y2="258" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
+                            <polygon points="196,255 200,263 204,255" fill="var(--accent)" opacity=".4"/>
+                            <line x1="320" y1="222" x2="320" y2="258" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
+                            <polygon points="316,255 320,263 324,255" fill="var(--accent)" opacity=".4"/>
+                        </g>
+
+                        <g class="diagram-node anim-backend" data-tip="Isolated runc containers">
+                            <rect x="10" y="266" width="140" height="42" rx="8" fill="rgba(96,165,250,.1)" stroke="rgba(96,165,250,.25)" stroke-width="1.2"/>
+                            <text x="80" y="292" text-anchor="middle" fill="var(--blue)" font-family="Inter,sans-serif" font-size="14" font-weight="600" opacity=".9">Container</text>
+                        </g>
+                        <g class="anim-backend">
+                            <rect x="170" y="266" width="60" height="42" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="200" y="292" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="12" opacity=".6">or</text>
+                        </g>
+                        <g class="diagram-node anim-backend" data-tip="Firecracker microVMs with per-VM kernel">
+                            <rect x="250" y="266" width="140" height="42" rx="8" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.25)" stroke-width="1.2"/>
+                            <text x="320" y="292" text-anchor="middle" fill="var(--orange)" font-family="Inter,sans-serif" font-size="14" font-weight="600" opacity=".9">VM</text>
+                        </g>
+
+                        <text x="200" y="348" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="11" letter-spacing="2" text-transform="uppercase" opacity=".5">Same image · Any backend</text>
+                        <line x1="40" y1="366" x2="360" y2="366" stroke="var(--accent)" stroke-width="1" opacity=".1"/>
+
+                        <text x="80" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">12 MB</text>
+                        <text x="80" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">BINARY</text>
+                        <text x="200" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">400 ms</text>
+                        <text x="200" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">CONTAINER BOOT</text>
+                        <text x="320" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">0</text>
+                        <text x="320" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">DAEMON TAX</text>
+
+                        <circle cx="200" cy="115" r="4" fill="#7c5cfc" opacity=".6">
+                            <animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values=".6;0;.6" dur="2s" repeatCount="indefinite"/>
+                        </circle>
+                    </svg>
+                    <div class="diagram-tooltip" id="diagram-tip"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- trust bar disabled for now -->
+
+
+    <section id="problem">
+        <div class="container">
+            <span class="section-label">The Problem</span>
+            <h2>Modern infrastructure runs on too many engines</h2>
+            <p>Docker for development. containerd for production. Firecracker for isolation. CRI for Kubernetes. Separate tooling for AI agents. Each one has its own image format, storage layer, and operational model — even though they all run the same OCI images.</p>
+            <div class="problem-grid">
+                <div class="problem-card">
+                    <div class="icon">🐳</div>
+                    <h3>Docker</h3>
+                    <p>Great developer UX, but requires a daemon, doesn't support VMs natively, and doesn't integrate with Kubernetes CRI without containerd.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="icon">☸️</div>
+                    <h3>Kubernetes (CRI-O / containerd)</h3>
+                    <p>Production-grade, but no local dev workflow, no VM execution, no AI agent interface — you need 4 different tools to cover dev + prod + VMs + agents.</p>
+                </div>
+                <div class="problem-card">
+                    <div class="icon">🖥️</div>
+                    <h3>Firecracker / Kata</h3>
+                    <p>Strong VM isolation, but require separate VM image tooling and don't speak OCI natively without containerd shims.</p>
+                </div>
+                <div class="problem-card highlighted">
+                    <div class="icon">⚡</div>
+                    <h3>Pullrun</h3>
+                    <p>One binary. One runtime. One image format. Containers, VMs, Kubernetes, and AI agents — all sharing the same OCI image, store, and execution model.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features">
+        <div class="container">
+            <span class="section-label">Features</span>
+            <h2>Everything you need, nothing you don't</h2>
+            <p>A platform, not just a runtime. Image management, storage, security policies, secrets, CRI, Compose, and MCP — all in one binary, not a stack of separate daemons.</p>
+            <div class="features-grid">
+                <div class="feature-card featured">
+                    <div class="icon">🧬</div>
+                    <h3>Content-Addressed DAG Store</h3>
+                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash — byte-identical across every node. No overlayfs, no layer duplication, no escape CVEs.</p>
+                </div>
+                <div class="feature-card featured">
+                    <div class="icon">🔄</div>
+                    <h3>Universal OCI Execution</h3>
+                    <p>Same image → runc container, Firecracker microVM, or Apple Silicon VM. No separate VM image build step. The OCI manifest <em>is</em> the rootfs.</p>
+                </div>
+                <div class="feature-card featured">
+                    <div class="icon">🌐</div>
+                    <h3>P2P Image Distribution</h3>
+                    <p>Nodes share image blocks peer-to-peer via gRPC and Bloom filters. One pull from registry; the rest delta-sync from each other at LAN speed.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">☸️</div>
+                    <h3>Kubernetes CRI</h3>
+                    <p>Drop-in CRI shim with RuntimeClass support (<code>pullrun-container</code> / <code>pullrun-vm</code>). Full exec, attach, port-forward, and events.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🐳</div>
+                    <h3>Docker Compose</h3>
+                    <p>Full Compose-compatible workflow: <code>up</code>, <code>down</code>, <code>logs</code>, <code>ps</code>, <code>build</code> — parse standard <code>docker-compose.yml</code>, zero changes.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🔐</div>
+                    <h3>Policy Engine</h3>
+                    <p>Cosign signature verification, SBOM evaluation, seccomp profiles, read-only rootfs — gate workloads before they run. Defense-in-depth as code.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🤖</div>
+                    <h3>MCP AI Integration</h3>
+                    <p>Native Model Context Protocol server — let AI agents run, stop, exec, and manage workloads through natural language. Agent → MCP → Pullrun → Container/VM.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">📦</div>
+                    <h3>Encrypted Secrets</h3>
+                    <p>AES-256-GCM at rest, decrypted into workload tmpfs at runtime. <code>pullrun secret create/get/ls</code> — data stays encrypted on disk.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🍎</div>
+                    <h3>Apple Silicon Native</h3>
+                    <p>Native macOS VM backend via Virtualization.framework — boots Linux VMs on Apple Silicon with full isolation. No Docker Desktop, no Linux VM needed.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="architecture">
+        <div class="container">
+            <span class="section-label">Architecture</span>
+            <h2>How it all fits together</h2>
+            <p>Not a collection of tools — a single runtime platform where OCI is the universal abstraction for every execution model.</p>
+            <div class="arch-layers">
+                <div class="arch-layer top">
+                    <div class="arch-label">Execution Targets</div>
+                    <div class="arch-grid">
+                        <span class="arch-pill">Container</span>
+                        <span class="arch-pill">Firecracker VM</span>
+                        <span class="arch-pill">Apple VM</span>
+                        <span class="arch-pill">Kubernetes</span>
+                        <span class="arch-pill">AI Agent</span>
+                    </div>
+                </div>
+                <div class="arch-arrow">▼</div>
+                <div class="arch-layer middle">
+                    <div class="arch-label">Pullrun Runtime</div>
+                    <div class="arch-subtext">Executor Router · gRPC API · Workload Manager · Event Bus</div>
+                </div>
+                <div class="arch-arrow">▼</div>
+                <div class="arch-layer bottom">
+                    <div class="arch-label">Shared Platform Services</div>
+                    <div class="arch-grid">
+                        <span class="arch-pill sm">DAG Store</span>
+                        <span class="arch-pill sm">P2P Sync</span>
+                        <span class="arch-pill sm">Policy Engine</span>
+                        <span class="arch-pill sm">Secrets</span>
+                        <span class="arch-pill sm">CRI Shim</span>
+                        <span class="arch-pill sm">MCP Server</span>
+                    </div>
+                </div>
+            </div>
+            <p class="arch-note">Every target uses the same OCI image. Pullrun handles storage, security, distribution, and orchestration — so you don't need a different runtime for each workload type.</p>
+        </div>
+    </section>
+
+    <section id="scroll-stats">
+        <div class="container">
+            <span class="section-label">By the Numbers</span>
+            <h2>Performance that speaks for itself</h2>
+            <p>Every millisecond matters. Pullrun is architected for speed from the ground up.</p>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="num" data-target="12" data-suffix=" MB">0</div>
+                    <div class="label">Binary Size</div>
+                    <div class="sub">Single static binary</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" data-target="400" data-suffix=" ms">0</div>
+                    <div class="label">Container Boot</div>
+                    <div class="sub">Cold start latency</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" data-target="160" data-suffix=" ms">0</div>
+                    <div class="label">Apple VM Boot</div>
+                    <div class="sub">Hypervisor.framework</div>
+                </div>
+                <div class="stat-item">
+                    <div class="num" data-target="0" data-suffix="">0</div>
+                    <div class="label">Daemon Tax</div>
+                    <div class="sub">No central daemon</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="demo">
+        <div class="container">
+            <div>
+                <span class="section-label">Quick Start</span>
+                <h2>One command.&nbsp;Any platform.&nbsp;Zero daemon.</h2>
+                <p>Install in 30 seconds and start running containers or VMs from the same OCI image.</p>
+                <p style="color:var(--text-muted);font-size:.875rem;margin-top:8px">Type <code style="color:var(--accent)">help</code> for available commands in the terminal.</p>
+            </div>
+            <div class="terminal" id="terminal">
+                <div class="terminal-bar">
+                    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+                    <span class="title">pullrun</span>
+                    <button class="terminal-copy-btn" onclick="copyTerminal()" style="margin-left:auto">📋 Copy</button>
+                </div>
+                <div class="terminal-body" id="terminal-body">
+                    <div class="terminal-line"><span class="cm"># Welcome to Pullrun! Type a command or press Enter to replay demo.</span></div>
+                    <div class="terminal-line"><span class="prompt">$ </span><span class="fn">pullrun</span> --help</div>
+                    <div class="terminal-line"><span class="output">One OCI image. Any execution target. A single 12 MB binary.</span></div>
+                    <div class="terminal-line" id="terminal-output"></div>
+                    <div class="terminal-input-line" id="terminal-input-line">
+                        <span class="prompt">$</span>
+                        <input type="text" class="terminal-input" id="terminal-input" autocomplete="off" spellcheck="false" placeholder="Type a command...">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="why">
+        <div class="container">
+            <span class="section-label">Why Pullrun?</span>
+            <h2>Built different from the ground up</h2>
+            <p>No overlayfs. No daemon tax. No separate VM images. A platform, not just a runtime.</p>
+            <div class="why-grid">
+                <div class="why-card"><div class="big">1</div><div class="label">Same image, any backend</div><div class="sub">OCI manifest IS the VM rootfs</div></div>
+                <div class="why-card"><div class="big">2</div><div class="label">Rootless by default</div><div class="sub">No sudo, no dockerd, no TCP socket</div></div>
+                <div class="why-card"><div class="big">3</div><div class="label">Content-addressed store</div><div class="sub">No overlayfs, no escape CVEs</div></div>
+                <div class="why-card"><div class="big">4</div><div class="label">P2P block sync</div><div class="sub">One registry pull for the whole cluster</div></div>
+                <div class="why-card"><div class="big">5</div><div class="label">Cross-platform</div><div class="sub">macOS, Linux, Windows — same binary</div></div>
+                <div class="why-card"><div class="big">6</div><div class="label">AI-native</div><div class="sub">MCP protocol for agentic workloads</div></div>
+            </div>
+        </div>
+    </section>
+
+    <section id="comparison">
+        <div class="container">
+            <span class="section-label">Benchmarks</span>
+            <h2>Pullrun vs Docker</h2>
+            <p>Same OCI images. Radically different architecture. <a href="#ecosystem" style="color:var(--text-muted)">See also: ecosystem positioning →</a></p>
+            <div class="benchmark-bar">
+                <button class="btn btn-ghost" id="bench-btn" onclick="runBenchmark()">▶ Run Benchmark</button>
+                <button class="btn btn-ghost" id="bench-toggle" onclick="toggleBenchMode()" style="display:none">Mode: First Pull</button>
+            </div>
+            <div class="table-wrap">
+                <table id="bench-table">
+                    <thead><tr><th>Metric</th><th class="center">Pullrun</th><th class="center">Docker</th></tr></thead>
+                    <tbody>
+                        <tr><td data-label="">First alpine:3.18 pull</td><td class="center" data-label="Pullrun"><strong id="b-pull">968 ms</strong></td><td class="center" data-label="Docker">~2 s</td></tr>
+                        <tr><td data-label="">Container run latency</td><td class="center" data-label="Pullrun"><strong id="b-run">~400 ms</strong></td><td class="center" data-label="Docker">~800 ms</td></tr>
+                        <tr><td data-label="">Apple Silicon VM boot</td><td class="center" data-label="Pullrun"><strong id="b-vm">~160 ms</strong></td><td class="center" data-label="Docker">N/A</td></tr>
+                        <tr><td data-label="">Idle daemon RSS</td><td class="center" data-label="Pullrun"><strong id="b-rss">24.6 MiB</strong></td><td class="center" data-label="Docker">~90 MiB</td></tr>
+                        <tr><td data-label="">Binary size</td><td class="center" data-label="Pullrun"><strong id="b-size">12 MB</strong></td><td class="center" data-label="Docker">~75 MB</td></tr>
+                        <tr><td data-label="">Rootless by default</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">Containers + VMs from same image</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">P2P image sync</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">MCP AI integration</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">Content-addressed store</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">Optional daemon</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="disclaimer">Apple M3 (macOS 14), cold cache, alpine:3.18. Pullrun vs Docker Desktop 4.27. Your results may vary. <a href="https://github.com/pullrun/pullrun#-why-pullrun" style="color:var(--accent);text-decoration:underline">Full methodology →</a></p>
+        </div>
+    </section>
+
+    <section id="faq">
+        <div class="container">
+            <span class="section-label">FAQ</span>
+            <h2>Common questions</h2>
+            <p>Everything you need to know before getting started.</p>
+            <div class="faq-list">
+                <details class="faq-item">
+                    <summary>How is this different from Podman?</summary>
+                    <div class="answer">Podman is daemonless but does not support running the same OCI image as a VM, lacks built-in P2P image distribution, and has no native MCP AI integration. Pullrun gives you containers <em>and</em> Firecracker/Apple VMs from the same image, P2P block sync for cluster-wide pulls, and a native MCP server for AI agent control — all in a single 12 MB binary.</div>
+                </details>
+                <details class="faq-item">
+                    <summary>Can I use my existing Docker Compose files?</summary>
+                    <div class="answer">Yes. Pullrun has full Docker Compose compatibility. Just run <code>pullrun compose up -f docker-compose.yml</code> and it works — dependency ordering, port mapping, environment variables, volumes, resource limits, and per-project bridge networks are all supported.</div>
+                </details>
+                <details class="faq-item">
+                    <summary>Is this production-ready?</summary>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable and used in production today. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. All core operations are covered by 135+ tests passing on CI.</div>
+                </details>
+                <details class="faq-item">
+                    <summary>Does it require root or a daemon?</summary>
+                    <div class="answer">No. Pullrun is rootless by default — no <code>sudo</code> needed, no central daemon. The optional runtime daemon (<code>pullrun-runtime</code>) is only required for background sync, policy enforcement, and Prometheus metrics. For basic use, the CLI runs standalone.</div>
+                </details>
+                <details class="faq-item">
+                    <summary>What platforms are supported?</summary>
+                    <div class="answer">Linux (x86_64, arm64), macOS (Apple Silicon via Virtualization.framework), and Windows (WSL2 with runc + Firecracker). The same binary works everywhere — download once, run anywhere.</div>
+                </details>
+            </div>
+        </div>
+    </section>
+
+    <section id="ecosystem">
+        <div class="container">
+            <span class="section-label">Ecosystem</span>
+            <h2>Where Pullrun fits in your stack</h2>
+            <p>Not a replacement for everything — a unification layer where OCI images become the universal primitive.</p>
+            <div class="ecosystem-table-wrap">
+                <table class="ecosystem-table">
+                    <thead><tr><th>If you use</th><th>Pullrun gives you</th></tr></thead>
+                    <tbody>
+                        <tr><td data-label="If you use">Docker</td><td data-label="Pullrun gives you">Daemonless runtime + native VM execution from the same image + P2P distribution + CRI shim</td></tr>
+                        <tr><td data-label="If you use">Podman</td><td data-label="Pullrun gives you">Kubernetes CRI support + Firecracker/Apple VM backends + MCP AI agent protocol + P2P block sync</td></tr>
+                        <tr><td data-label="If you use">containerd</td><td data-label="Pullrun gives you">Integrated content-addressed DAG store + P2P distribution + Compose + secrets in a single binary</td></tr>
+                        <tr><td data-label="If you use">CRI-O</td><td data-label="Pullrun gives you">Local development workflow + VM execution via RuntimeClass + AI agent integration via MCP</td></tr>
+                        <tr><td data-label="If you use">Firecracker / Kata</td><td data-label="Pullrun gives you">OCI-native VM workflows — no separate VM image builds, no containerd shim needed</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="install" class="cta">
+        <div class="container">
+            <h2>Ready to pullrun?</h2>
+            <p>Install in 30 seconds. macOS, Linux, or Windows.</p>
+            <div class="btn-group">
+                <a href="https://github.com/pullrun/pullrun#-install" class="btn btn-primary" onclick="track('install_cta_click')">⚡ Install Now</a>
+                <a href="https://github.com/pullrun/pullrun" class="btn btn-secondary">View on GitHub →</a>
+            </div>
+            <div class="code-block" id="install-code">
+<span class="prompt">$</span> curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash
+<span class="prompt">$</span> <span class="fn">pullrun</span> run alpine:3.18 --cmd hello
+<span class="output">hello</span>
+                <button class="terminal-copy-btn" onclick="copyInstallCmd()">📋 Copy</button>
+            </div>
+        </div>
+    </section>
+
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Built with <a href="https://www.rust-lang.org">Rust</a> 🦀 and <a href="https://go.dev">Go (Golang)</a> 🐹 &nbsp;·&nbsp; Apache 2.0 licensed &nbsp;·&nbsp; <a href="https://github.com/pullrun/pullrun">GitHub →</a></p>
+        </div>
+    </footer>
+
+    <script>
+    (function(){ // A/B test setup
+        var bucket = localStorage.getItem('__pullrun_ab');
+        if(!bucket){
+            bucket = Math.random() < 0.5 ? 'A' : 'B';
+            localStorage.setItem('__pullrun_ab', bucket);
+        }
+        window.__pullrun_ab = bucket;
+        if(bucket === 'B'){
+            var btn = document.querySelector('.hero .btn-primary');
+            if(btn) btn.textContent = '⚡ Run your first VM in 400ms';
+            var h1 = document.querySelector('.hero h1 .tagline');
+            if(h1) h1.textContent = 'Same OCI image. Container or VM. No daemon.';
+        }
+    })();
+
+    function track(event){
+        if(typeof gtag !== 'undefined') gtag('event', event);
+        console.log('[track]', event);
+    }
+
+    // Theme
+    function getSystemTheme(){return window.matchMedia('(prefers-color-scheme:light)').matches ? 'light' : 'dark'}
+    function setTheme(t){
+        document.documentElement.setAttribute('data-theme', t);
+        localStorage.setItem('theme', t);
+    }
+    function toggleTheme(){
+        var cur = document.documentElement.getAttribute('data-theme');
+        setTheme(cur === 'dark' ? 'light' : 'dark');
+        track('theme_toggle_' + (cur === 'dark' ? 'light' : 'dark'));
+    }
+    (function(){
+        var saved = localStorage.getItem('theme');
+        if(saved){setTheme(saved)}
+        else{setTheme(getSystemTheme())}
+    })();
+
+    // Toast
+    function showToast(msg){
+        var t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(function(){t.classList.remove('show')}, 2500);
+    }
+
+    // Copy
+    function copyText(text){
+        if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(text).then(function(){showToast('✓ Copied to clipboard')}).catch(fallbackCopy);
+        }else{fallbackCopy(text)}
+        function fallbackCopy(t){
+            var ta = document.createElement('textarea');
+            ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            document.execCommand('copy'); document.body.removeChild(ta);
+            showToast('✓ Copied to clipboard');
+        }
+        track('copy_command');
+    }
+    function copyInstallCmd(){
+        copyText('curl -fsSL https://github.com/pullrun/pullrun/raw/main/install.sh | bash\npullrun run alpine:3.18 --cmd hello');
+    }
+    function copyTerminal(){
+        var lines = Array.from(document.querySelectorAll('#terminal-body .terminal-line')).map(function(l){return l.textContent}).join('\n');
+        copyText(lines);
+    }
+
+    // Keyboard navigation
+    var sections = ['hero','features','scroll-stats','architecture','demo','why','comparison','ecosystem','install'];
+    var curSection = 0;
+    function goToSection(i){
+        if(i >= 0 && i < sections.length){
+            document.getElementById(sections[i])?.scrollIntoView({behavior:'smooth'});
+            curSection = i;
+        }
+    }
+    function showKbdModal(){document.getElementById('kbd-modal').classList.add('open')}
+    function hideKbdModal(){document.getElementById('kbd-modal').classList.remove('open')}
+    document.addEventListener('keydown', function(e){
+        if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if(e.key === 'j'){curSection = Math.min(curSection + 1, sections.length - 1); goToSection(curSection); e.preventDefault()}
+        if(e.key === 'k'){curSection = Math.max(curSection - 1, 0); goToSection(curSection); e.preventDefault()}
+        if(e.key === 'g'){window.scrollTo({top:0,behavior:'smooth'}); curSection = 0; e.preventDefault()}
+        if(e.key === 'G'){document.body.scrollIntoView({behavior:'smooth',block:'end'}); curSection = sections.length - 1; e.preventDefault()}
+        if(e.key === 't'){toggleTheme(); e.preventDefault()}
+        if(e.key === '?'){e.preventDefault(); var m = document.getElementById('kbd-modal'); m.classList.contains('open') ? hideKbdModal() : showKbdModal()}
+        if(e.key >= '1' && e.key <= '9'){
+            var i = parseInt(e.key) - 1;
+            if(i < sections.length){goToSection(i); e.preventDefault()}
+        }
+        if(e.key === 'Escape') hideKbdModal();
+    });
+
+    // Interactive terminal
+    var terminalResponses = {
+        'help': 'One OCI image. Any execution target. A single 12 MB binary.\n\nAvailable commands: pull, run, build, compose, stop, exec, logs, mcp, network, secret, stats, info, version\nType any command to see it in action.',
+        'pullrun pull alpine:3.18': 'Pulling alpine:3.18...\n✓ 968 ms — 7 layers, 7.05 MB\nContent-addressed and verified.',
+        'pullrun run alpine:3.18 --cmd echo hello': 'Starting alpine:3.18 (container)...\n✓ 401 ms\nhello',
+        'pullrun run alpine:3.18 --backend vm': 'Starting alpine:3.18 (Firecracker VM)...\n✓ 512 ms\nBooted with per-VM kernel isolation.',
+        'pullrun build -t myapp:latest .': 'Building myapp:latest...\nStep 1/5 : FROM alpine:3.18\nStep 2/5 : WORKDIR /app\nStep 3/5 : COPY . .\nStep 4/5 : RUN go build -o app\nStep 5/5 : CMD ["./app"]\n✓ Built in 3.2s — 2 new layers.',
+        'pullrun compose up': 'Creating network myapp_default\nCreating volume myapp_data\nCreating myapp_web_1  ... done\nCreating myapp_db_1   ... done\n✓ 2.1s — all services healthy.',
+        'pullrun ps': 'ID        IMAGE           STATUS   BACKEND    PORTS\nabc123    alpine:3.18     running  container  80/tcp\ndef456    myapp:latest    running  vm         8080/tcp\nghi789    nginx:latest    exited   container  443/tcp',
+        'pullrun mcp': 'MCP server started (stdio)\nServing 15 tools and 4 resource types\nConnected to AI agent — type commands in natural language.',
+        'pullrun stats': 'WORKLOAD   CPU    MEMORY    DISK\nalpine     0.01   2.1 MiB   7.1 MB\nmyapp      0.12   18.4 MiB  128 MB',
+        'pullrun network create my-net': 'Creating network my-net (10.43.1.0/24)...\n✓ Bridge pullrun-br-my-net created.',
+        'pullrun secret create db_password': 'Enter secret (stdin): ***\n✓ Encrypted with AES-256-GCM and stored.',
+    };
+    var terminalEl = document.getElementById('terminal-input');
+    var outputEl = document.getElementById('terminal-output');
+    var bodyEl = document.getElementById('terminal-body');
+
+    function addTerminalLine(html, isOutput){
+        var d = document.createElement('div');
+        d.className = 'terminal-line' + (isOutput ? ' output-line' : '');
+        d.innerHTML = html;
+        bodyEl.insertBefore(d, document.getElementById('terminal-input-line').previousSibling);
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
+
+    function processTerminalCommand(cmd){
+        var trimmed = cmd.trim();
+        if(!trimmed) return;
+        addTerminalLine('<span class="prompt">$ </span>' + cmd.replace(/</g,'&lt;'));
+        track('terminal_cmd_' + trimmed.split(' ')[0]);
+
+        // Check for exact match or prefix match
+        var resp = terminalResponses[trimmed];
+        if(!resp){
+            for(var key in terminalResponses){
+                if(trimmed.startsWith(key.split(' ')[0]) && key.length > trimmed.length){
+                    resp = terminalResponses[key];
+                    break;
+                }
+            }
+        }
+        if(!resp){
+            if(trimmed === 'clear'){bodyEl.querySelectorAll('.terminal-line').forEach(function(el,i,arr){if(i > 0) el.remove()}); outputEl.innerHTML = ''; return}
+            resp = 'Unknown command: ' + trimmed + '\nType "help" for available commands.';
+        }
+        // Type out response
+        outputEl.innerHTML = '';
+        var lines = resp.split('\n');
+        var li = 0;
+        function typeLine(){
+            if(li >= lines.length) return;
+            outputEl.innerHTML += '<span class="output">' + lines[li].replace(/</g,'&lt;') + '</span>\n';
+            li++;
+            setTimeout(typeLine, 60);
+        }
+        typeLine();
+    }
+
+    terminalEl.addEventListener('keydown', function(e){
+        if(e.key === 'Enter'){
+            var cmd = terminalEl.value;
+            terminalEl.value = '';
+            processTerminalCommand(cmd);
+            e.preventDefault();
+        }
+    });
+
+    // Auto-replay demo
+    var demoCommands = [
+        'pullrun pull alpine:3.18',
+        'pullrun run alpine:3.18 --cmd echo hello',
+        'pullrun run alpine:3.18 --backend vm',
+        'pullrun mcp',
+    ];
+    var demoIdx = 0;
+    var demoStarted = false;
+    function replayDemo(){
+        if(demoStarted) return;
+        demoStarted = true;
+        demoIdx = 0;
+        // Clear demo output lines (keep first 3 static lines)
+        var existing = bodyEl.querySelectorAll('.terminal-line:not(:first-child):not(:nth-child(2)):not(:nth-child(3))');
+        existing.forEach(function(el){el.remove()});
+        outputEl.innerHTML = '';
+        function nextCmd(){
+            if(demoIdx >= demoCommands.length){demoStarted = false; return}
+            var cmd = demoCommands[demoIdx];
+            addTerminalLine('<span class="prompt">$ </span><span class="fn">pullrun</span> ' + (cmd.split('pullrun')[1] ? cmd.split('pullrun')[1].trim() : cmd));
+            var resp = terminalResponses[cmd];
+            if(resp){
+                outputEl.innerHTML = '';
+                var lines = resp.split('\n');
+                var li = 0;
+                function typeLine(){
+                    if(li >= lines.length){demoIdx++; setTimeout(nextCmd, 1200); return}
+                    outputEl.innerHTML += '<span class="output">' + lines[li].replace(/</g,'&lt;') + '</span>\n';
+                    li++;
+                    setTimeout(typeLine, 50);
+                }
+                typeLine();
+            }else{demoIdx++; setTimeout(nextCmd, 800)}
+        }
+        nextCmd();
+    }
+    // Start replay on page load after a short delay
+    setTimeout(replayDemo, 1500);
+    // Also replay when terminal scrolls into view (handy if user skipped hero)
+    (function(){
+        var termSec = document.getElementById('demo');
+        if(!termSec) return;
+        var termIO = new IntersectionObserver(function(entries){
+            entries.forEach(function(entry){
+                if(entry.isIntersecting && !demoStarted){
+                    replayDemo();
+                    termIO.unobserve(termSec);
+                }
+            });
+        }, {threshold: 0.4});
+        termIO.observe(termSec);
+    })();
+
+    // Benchmark animation
+    var benchRunning = false;
+    var benchMode = 'first'; // or 'cached'
+    function runBenchmark(){
+        if(benchRunning) return;
+        benchRunning = true;
+        track('benchmark_run');
+
+        document.getElementById('bench-btn').textContent = '⏳ Running...';
+        document.getElementById('bench-toggle').style.display = 'inline-flex';
+
+        var targets;
+        if(benchMode === 'first'){
+            targets = {pull: 968, run: 400, vm: 160, rss: 24.6, size: 12};
+        }else{
+            targets = {pull: 112, run: 380, vm: 155, rss: 24.6, size: 12};
+        }
+
+        var keys = ['pull','run','vm','rss','size'];
+        var done = 0;
+
+        function animateOne(key, target){
+            var el = document.getElementById('b-' + key);
+            if(!el){done++; return}
+            var start = 0;
+            var duration = 1200;
+            var startTime = null;
+
+            function step(ts){
+                if(!startTime) startTime = ts;
+                var p = Math.min((ts - startTime) / duration, 1);
+                // ease-out
+                var e = 1 - Math.pow(1 - p, 3);
+                var val = start + (target - start) * e;
+                if(key === 'rss' || key === 'size'){
+                    el.textContent = val.toFixed(1) + (key === 'rss' ? ' MiB' : ' MB');
+                }else{
+                    el.textContent = (val < 10 ? '' : '~') + Math.round(val) + ' ms';
+                }
+                if(p < 1){
+                    requestAnimationFrame(step);
+                }else{
+                    done++;
+                    if(done >= keys.length){
+                        document.getElementById('bench-btn').textContent = '✓ Complete';
+                        setTimeout(function(){
+                            document.getElementById('bench-btn').textContent = '▶ Run Again';
+                            benchRunning = false;
+                        }, 2000);
+                    }
+                }
+            }
+            requestAnimationFrame(step);
+        }
+
+        keys.forEach(function(k){animateOne(k, targets[k])});
+    }
+
+    function toggleBenchMode(){
+        benchMode = benchMode === 'first' ? 'cached' : 'first';
+        document.getElementById('bench-toggle').textContent = 'Mode: ' + (benchMode === 'first' ? 'First Pull' : 'Cached Pull');
+        document.getElementById('bench-btn').textContent = '▶ Run Benchmark';
+        track('benchmark_mode_' + benchMode);
+    }
+
+    // Scroll-triggered stats animation
+    (function(){
+        var statsSec = document.getElementById('scroll-stats');
+        if(!statsSec) return;
+        function animateNums(){
+            track('stats_visible');
+            document.querySelectorAll('.stat-item .num').forEach(function(el){
+                var target = parseInt(el.getAttribute('data-target'));
+                var suffix = el.getAttribute('data-suffix') || '';
+                var start = 0;
+                var duration = 1500;
+                var startTime = null;
+                function step(ts){
+                    if(!startTime) startTime = ts;
+                    var p = Math.min((ts - startTime) / duration, 1);
+                    var e = 1 - Math.pow(1 - p, 3);
+                    var val = Math.round(start + (target - start) * e);
+                    el.textContent = val + suffix;
+                    if(p < 1) requestAnimationFrame(step);
+                }
+                requestAnimationFrame(step);
+            });
+        }
+        // Set fallback values immediately
+        document.querySelectorAll('.stat-item .num').forEach(function(el){
+            var target = parseInt(el.getAttribute('data-target'));
+            var suffix = el.getAttribute('data-suffix') || '';
+            el.textContent = target + suffix;
+        });
+        // Replay animation on scroll into view
+        var animated = false;
+        var io = new IntersectionObserver(function(entries){
+            entries.forEach(function(entry){
+                if(entry.isIntersecting && !animated){
+                    animated = true;
+                    animateNums();
+                }
+            });
+        }, {threshold: 0.15, rootMargin: '0px 0px -40px 0px'});
+        // Use IntersectionObserver to detect initial visibility (no forced reflow)
+        io.observe(statsSec);
+    })();
+
+    // Animated architecture SVG on scroll
+    (function(){
+        var animated = false;
+        var svg = document.getElementById('arch-diagram');
+        if(!svg) return;
+        var groups = svg.querySelectorAll('.anim-arrow, .anim-logo, .anim-branches, .anim-platform, .anim-arrows2, .anim-backend');
+        function animateGroups(){
+            if(animated) return;
+            animated = true;
+            groups.forEach(function(g, i){
+                setTimeout(function(){ g.classList.add('visible'); }, i * 150);
+            });
+        }
+        var hero = document.querySelector('.hero');
+        if(!hero) return;
+        var heroIo = new IntersectionObserver(function(entries){
+            entries.forEach(function(entry){
+                if(entry.isIntersecting){ animateGroups(); heroIo.unobserve(hero); }
+            });
+        }, {threshold: 0.15});
+        heroIo.observe(hero);
+    })();
+
+    // Diagram tooltips
+    (function(){
+        var tip = document.getElementById('diagram-tip');
+        var wrapper = document.querySelector('.diagram-wrapper');
+        if(!tip || !wrapper) return;
+        wrapper.addEventListener('mouseover', function(e){
+            var node = e.target.closest('.diagram-node');
+            if(!node || !node.dataset.tip) return;
+            tip.textContent = node.dataset.tip;
+            tip.classList.add('show');
+            requestAnimationFrame(function(){
+                var rect = node.getBoundingClientRect();
+                var wr = wrapper.getBoundingClientRect();
+                tip.style.left = (rect.left - wr.left + rect.width/2 - 100) + 'px';
+                tip.style.top = (rect.top - wr.top - 8) + 'px';
+            });
+        });
+        wrapper.addEventListener('mouseout', function(e){
+            if(e.target.closest('.diagram-node')) tip.classList.remove('show');
+        });
+    })();
+
+    // Focus rings
+    document.addEventListener('keydown', function(e){
+        if(e.key === 'Tab') document.body.classList.add('keyboard-nav');
+    });
+    document.addEventListener('mousedown', function(){
+        document.body.classList.remove('keyboard-nav');
+    });
+
+    // GitHub stars fetch
+    (function(){
+        var el = document.getElementById('gh-stars');
+        if(!el) return;
+        var cached = sessionStorage.getItem('gh_stars');
+        if(cached){el.textContent = cached; return}
+        // Show a placeholder immediately, then fetch
+        el.textContent = '…';
+        fetch('https://api.github.com/repos/pullrun/pullrun')
+            .then(function(r){return r.json()})
+            .then(function(d){
+                var stars = d.stargazers_count;
+                if(stars !== undefined){
+                    var formatted = stars >= 1000 ? (stars/1000).toFixed(1) + 'k' : String(stars);
+                    el.textContent = formatted;
+                    try{sessionStorage.setItem('gh_stars', formatted)}catch(e){}
+                }else{el.textContent = '—'}
+            })
+            .catch(function(){el.textContent = '—'});
+    })();
+
+    // Animated data blocks in SVG — inject traveling blocks
+    (function(){
+        var svg = document.getElementById('arch-diagram');
+        if(!svg) return;
+        var ns = 'http://www.w3.org/2000/svg';
+        var paths = [
+            {from:200,fromY:52,to:200,toY:74,color:'#7c5cfc'},
+            {from:160,fromY:155,to:80,toY:183,color:'#60a5fa'},
+            {from:200,fromY:155,to:200,toY:183,color:'#60a5fa'},
+            {from:240,fromY:155,to:320,toY:183,color:'#60a5fa'},
+        ];
+        paths.forEach(function(p, idx){
+            var block = document.createElementNS(ns, 'rect');
+            block.setAttribute('x', p.from - 5);
+            block.setAttribute('y', p.fromY);
+            block.setAttribute('width', '10');
+            block.setAttribute('height', '8');
+            block.setAttribute('rx', '2');
+            block.setAttribute('fill', p.color);
+            block.setAttribute('opacity', '0');
+            block.setAttribute('class', 'data-block');
+            var dur = 2.5 + idx * 0.4;
+            block.style.animation = 'dataflow ' + dur + 's ease-in-out ' + (idx * 0.8) + 's infinite';
+            svg.appendChild(block);
+        });
+    })();
+
+    // Scroll-reveal animations
+    (function(){
+        var els = document.querySelectorAll('.feature-card, .why-card, .faq-item, #scroll-stats .stat-item, .trust-bar');
+        els.forEach(function(el, i){
+            el.classList.add('reveal');
+            el.style.transitionDelay = (i % 6) * 80 + 'ms';
+        });
+        if('IntersectionObserver' in window){
+            var io = new IntersectionObserver(function(entries){
+                entries.forEach(function(entry){
+                    if(entry.isIntersecting){
+                        entry.target.classList.add('visible');
+                        io.unobserve(entry.target);
+                    }
+                });
+            }, {threshold: 0.15});
+            els.forEach(function(el){io.observe(el)});
+        }else{
+            els.forEach(function(el){el.classList.add('visible')});
+        }
+    })();
+    </script>
+</body>
+</html>
