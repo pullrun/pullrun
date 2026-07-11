@@ -460,12 +460,21 @@ mod tests {
 
     #[test]
     fn test_detect_backend_returns_on_ci() {
-        // On GitHub Actions (Ubuntu), at least one of nft/iptables
-        // should be available. On a developer machine this can fail
-        // gracefully.
         let backend = detect_backend();
         if cfg!(target_os = "linux") {
-            assert!(backend.is_some(), "expected a firewall backend on Linux");
+            let has_nft = command_exists("nft");
+            let has_iptables = command_exists("iptables");
+            if has_nft || has_iptables {
+                assert!(
+                    backend.is_some(),
+                    "expected a firewall backend when nft or iptables exists"
+                );
+            } else {
+                assert!(
+                    backend.is_none(),
+                    "no backend expected when neither nft nor iptables is installed"
+                );
+            }
         } else {
             assert!(backend.is_none(), "no firewall backend on non-Linux");
         }
