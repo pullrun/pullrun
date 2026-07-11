@@ -217,6 +217,31 @@ impl MmapStore {
         self.root.join(a).join(b).join(rest).join("node.refcount")
     }
 
+    /// Compute the total on-disk size of an image by BFS-walking from the
+    /// root digest and summing all blob file sizes. Node files (node.rkyv)
+    /// are excluded — they are metadata, not image data.
+    pub fn compute_image_size(&self, root: &Digest) -> u64 {
+        let mut total = 0u64;
+        let mut visited: HashSet<Digest> = HashSet::new();
+        let mut queue: VecDeque<Digest> = VecDeque::new();
+        queue.push_back(*root);
+        while let Some(d) = queue.pop_front() {
+            if !visited.insert(d) {
+                continue;
+            }
+            let blob_path = self.path_for_blob(&d);
+            if blob_path.exists() {
+                total += std::fs::metadata(&blob_path).map(|m| m.len()).unwrap_or(0);
+            }
+            if let Ok(archived) = self.get_archived(&d) {
+                for edge in archived.edges.iter() {
+                    queue.push_back(Digest(*edge));
+                }
+            }
+        }
+        total
+    }
+
     /// Read the reference count for a digest. Returns 0 if no refcount
     /// file exists (node was created before refcounting, or never referenced).
     pub fn get_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
@@ -257,20 +282,18 @@ impl MmapStore {
 
     /// Rebuild all refcounts from scratch by BFS-walking from the given roots.
     /// Called on startup for crash recovery. Idempotent.
+    ///
+    /// Accumulates counts in a HashMap before writing any file, so stale
+    /// `node.refcount` files from a partially-completed previous run are
+    /// completely overwritten.
     pub fn recompute_all_refcounts(&self, roots: &[Digest]) -> Result<(), StoreError> {
         use std::collections::HashMap;
-        // Count how many times each digest appears as a root.
-        let mut root_counts: HashMap<Digest, u64> = HashMap::new();
-        for root in roots {
-            *root_counts.entry(*root).or_default() += 1;
-        }
-
-        // BFS from all distinct roots.
+        let mut counts: HashMap<Digest, u64> = HashMap::new();
         let mut visited: HashSet<Digest> = HashSet::new();
         let mut queue: VecDeque<Digest> = VecDeque::new();
 
-        for (root, count) in &root_counts {
-            self.set_refcount(root, *count)?;
+        for root in roots {
+            *counts.entry(*root).or_default() += 1;
             queue.push_back(*root);
         }
 
@@ -288,12 +311,21 @@ impl MmapStore {
             };
             for edge in archived.edges.iter() {
                 let child = Digest(*edge);
-                self.increment_refcount(&child)?;
+                if !self.path_for(&child).exists() {
+                    continue;
+                }
+                *counts.entry(child).or_default() += 1;
                 queue.push_back(child);
             }
         }
 
-        info!("refcounts rebuilt from {} roots", roots.len());
+        // Write all final counts in one pass, completely overwriting any
+        // stale node.refcount files from a previously crashed run.
+        for (digest, count) in &counts {
+            self.set_refcount(digest, *count)?;
+        }
+
+        info!("refcounts rebuilt: {} nodes from {} roots", counts.len(), roots.len());
         Ok(())
     }
 
@@ -410,8 +442,12 @@ impl MmapStore {
             Ok(Ok(())) => {
                 trace!(%digest, path = %path.display(), "node stored");
                 // Increment refcounts for all child edges (new parent references).
+                // On failure the node is stored but refcount is wrong; the
+                // startup recompute_all_refcounts will correct it next boot.
                 for edge in &node.edges {
-                    let _ = self.increment_refcount(edge);
+                    if let Err(e) = self.increment_refcount(edge) {
+                        warn!(%digest, edge = %edge, error = %e, "failed to increment child refcount");
+                    }
                 }
                 Ok(digest)
             }
@@ -435,7 +471,9 @@ impl MmapStore {
         write_atomically(&path, &bytes)?;
         trace!(%digest, path = %path.display(), "node stored");
         for edge in &node.edges {
-            let _ = self.increment_refcount(edge);
+            if let Err(e) = self.increment_refcount(edge) {
+                warn!(%digest, edge = %edge, error = %e, "failed to increment child refcount");
+            }
         }
 
         Ok(digest)
@@ -1260,6 +1298,305 @@ mod tests {
         assert!(
             elapsed < std::time::Duration::from_millis(50),
             "timer was delayed by {elapsed:?} — tokio thread starvation detected"
+        );
+    }
+
+    // ─── Refcount tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_refcount_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+        let blob = DagNode::blob(b"hello".to_vec());
+        let d = store.put_blocking(&blob).unwrap();
+
+        // Fresh node has refcount 0 (no tags, no parents).
+        assert_eq!(store.get_refcount(&d).unwrap(), 0);
+
+        // Increment.
+        assert_eq!(store.increment_refcount(&d).unwrap(), 1);
+        assert_eq!(store.get_refcount(&d).unwrap(), 1);
+
+        // Increment again.
+        assert_eq!(store.increment_refcount(&d).unwrap(), 2);
+
+        // Decrement.
+        assert_eq!(store.decrement_refcount(&d).unwrap(), 1);
+        assert_eq!(store.get_refcount(&d).unwrap(), 1);
+
+        // Decrement to zero.
+        assert_eq!(store.decrement_refcount(&d).unwrap(), 0);
+        assert_eq!(store.get_refcount(&d).unwrap(), 0);
+
+        // Decrement below zero is saturated.
+        assert_eq!(store.decrement_refcount(&d).unwrap(), 0);
+
+        // set_refcount to specific value.
+        store.set_refcount(&d, 5).unwrap();
+        assert_eq!(store.get_refcount(&d).unwrap(), 5);
+
+        // set_refcount to 0 removes the file.
+        store.set_refcount(&d, 0).unwrap();
+        assert!(!store.refcount_path(&d).exists());
+        assert_eq!(store.get_refcount(&d).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_put_increments_child_refcounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Create two leaf blobs.
+        let b1 = store.put_blocking(&DagNode::blob(b"leaf1".to_vec())).unwrap();
+        let b2 = store.put_blocking(&DagNode::blob(b"leaf2".to_vec())).unwrap();
+        assert_eq!(store.get_refcount(&b1).unwrap(), 0);
+        assert_eq!(store.get_refcount(&b2).unwrap(), 0);
+
+        // Put a tree referencing both leaves.
+        let tree = DagNode::tree(vec![b1, b2], vec![]);
+        let t = store.put_blocking(&tree).unwrap();
+        assert_eq!(store.get_refcount(&t).unwrap(), 0);
+        // Each child got an increment when the tree was stored.
+        assert_eq!(store.get_refcount(&b1).unwrap(), 1);
+        assert_eq!(store.get_refcount(&b2).unwrap(), 1);
+
+        // Put the same tree again — dedup, refcounts stay unchanged.
+        let _dup = store.put_blocking(&tree).unwrap();
+        assert_eq!(store.get_refcount(&b1).unwrap(), 1);
+        assert_eq!(store.get_refcount(&b2).unwrap(), 1);
+
+        // Put a second tree referencing b1 again — only b1 increments.
+        let tree2 = DagNode::tree(vec![b1], b"other".to_vec());
+        let t2 = store.put_blocking(&tree2).unwrap();
+        assert_eq!(store.get_refcount(&t2).unwrap(), 0);
+        assert_eq!(store.get_refcount(&b1).unwrap(), 2);
+        assert_eq!(store.get_refcount(&b2).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_remove_tag_shared_layers() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Build: tag_a → manifest_a → layer_shared → blob_shared
+        //        tag_b → manifest_b → layer_shared → blob_shared
+        let blob_shared = store.put_blocking(&DagNode::blob(b"shared data".to_vec())).unwrap();
+        let layer_shared = store
+            .put_blocking(&DagNode::layer(vec![blob_shared], vec![]))
+            .unwrap();
+        let manifest_a = store
+            .put_blocking(&DagNode::manifest(vec![layer_shared], b"config_a".to_vec()))
+            .unwrap();
+        let manifest_b = store
+            .put_blocking(&DagNode::manifest(vec![layer_shared], b"config_b".to_vec()))
+            .unwrap();
+
+        // Simulate two tags pointing to the roots.
+        store.increment_refcount(&manifest_a).unwrap();
+        store.increment_refcount(&manifest_b).unwrap();
+
+        // layer_shared has refcount 2 (both manifests' edges point to it).
+        // blob_shared has refcount 1 (only layer_shared's edge points to it).
+        assert_eq!(store.get_refcount(&layer_shared).unwrap(), 2);
+        assert_eq!(store.get_refcount(&blob_shared).unwrap(), 1);
+
+        // Remove tag_a. layer_shared goes from 2→1 (still ref'd by b).
+        // blob_shared stays at 1 (still ref'd via layer_shared).
+        let freed = store.remove_tag(&manifest_a).unwrap();
+        assert!(freed > 0, "tag_a removal should free bytes");
+        assert!(!store.path_for(&manifest_a).exists());
+        assert!(store.path_for(&layer_shared).exists());
+        assert!(store.path_for(&blob_shared).exists());
+        assert_eq!(store.get_refcount(&layer_shared).unwrap(), 1);
+        assert_eq!(store.get_refcount(&blob_shared).unwrap(), 1);
+
+        // Remove tag_b. layer_shared goes from 1→0 → cascade to blob_shared.
+        let freed = store.remove_tag(&manifest_b).unwrap();
+        assert!(freed > 0, "tag_b removal should free bytes");
+        assert!(!store.path_for(&layer_shared).exists());
+        assert!(!store.path_for(&blob_shared).exists());
+        assert!(!store.refcount_path(&layer_shared).exists());
+        assert!(!store.refcount_path(&blob_shared).exists());
+    }
+
+    #[test]
+    fn test_remove_tag_mulitple_tags_same_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Single blob with two tags (simulated by refcount 2).
+        let blob = store.put_blocking(&DagNode::blob(b"data".to_vec())).unwrap();
+        store.set_refcount(&blob, 2).unwrap();
+
+        // First remove_tag decrements to 1 — no deletion.
+        let freed = store.remove_tag(&blob).unwrap();
+        assert_eq!(freed, 0);
+        assert!(store.path_for(&blob).exists());
+        assert_eq!(store.get_refcount(&blob).unwrap(), 1);
+
+        // Second remove_tag decrements to 0 — deletion happens.
+        let freed = store.remove_tag(&blob).unwrap();
+        assert!(freed > 0);
+        assert!(!store.path_for(&blob).exists());
+        assert_eq!(store.get_refcount(&blob).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_recompute_refcounts_after_stale_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Build: root → middle → leaf
+        let leaf = store.put_blocking(&DagNode::blob(b"leaf".to_vec())).unwrap();
+        let middle = store
+            .put_blocking(&DagNode::tree(vec![leaf], b"middle".to_vec()))
+            .unwrap();
+        let root = store
+            .put_blocking(&DagNode::manifest(vec![middle], b"root".to_vec()))
+            .unwrap();
+
+        // Manually corrupt refcounts: leaf has count 999, middle has count 42.
+        store.set_refcount(&leaf, 999).unwrap();
+        store.set_refcount(&middle, 42).unwrap();
+        // Root has no refcount file (count = 0).
+
+        // Recompute from the root.
+        store.recompute_all_refcounts(&[root]).unwrap();
+
+        // After recompute:
+        //   root = 1 (root reference)
+        //   middle = 1 (referenced by root's edge)
+        //   leaf = 1 (referenced by middle's edge)
+        assert_eq!(
+            store.get_refcount(&root).unwrap(),
+            1,
+            "root should have count 1"
+        );
+        assert_eq!(
+            store.get_refcount(&middle).unwrap(),
+            1,
+            "middle should have count 1"
+        );
+        assert_eq!(
+            store.get_refcount(&leaf).unwrap(),
+            1,
+            "leaf should have count 1"
+        );
+
+        // Recompute with two copies of the same root (simulating 2 tags).
+        store.recompute_all_refcounts(&[root, root]).unwrap();
+        assert_eq!(
+            store.get_refcount(&root).unwrap(),
+            2,
+            "root should have count 2 for two tags"
+        );
+        // middle and leaf each have one parent edge, so refcount is 1.
+        // The root's count of 2 acts as a gate: only the second remove_tag
+        // will trigger the cascade (refcount 1→0 on middle and leaf).
+        assert_eq!(
+            store.get_refcount(&middle).unwrap(),
+            1,
+            "middle should have count 1 (one parent edge)"
+        );
+        assert_eq!(
+            store.get_refcount(&leaf).unwrap(),
+            1,
+            "leaf should have count 1 (one parent edge)"
+        );
+    }
+
+    #[test]
+    fn test_recompute_refcounts_skips_missing_nodes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        let leaf = store.put_blocking(&DagNode::blob(b"leaf".to_vec())).unwrap();
+        let root = store
+            .put_blocking(&DagNode::manifest(vec![leaf], b"root".to_vec()))
+            .unwrap();
+
+        // Delete the leaf node to simulate a partial deletion.
+        std::fs::remove_file(&store.path_for(&leaf)).unwrap();
+
+        // Recompute from root should handle the missing leaf gracefully.
+        store.recompute_all_refcounts(&[root]).unwrap();
+        assert_eq!(store.get_refcount(&root).unwrap(), 1);
+        // Leaf was already deleted; its old refcount file stays on disk
+        // (harmless — the node itself is gone, so the stale count is never
+        // consulted in any meaningful path). recompute must not crash.
+        assert!(
+            !store.path_for(&leaf).exists(),
+            "leaf node file remains deleted"
+        );
+    }
+
+    #[test]
+    fn test_delete_empty_dirs_after_remove_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        let blob = store.put_blocking(&DagNode::blob(b"data".to_vec())).unwrap();
+        store.set_refcount(&blob, 1).unwrap();
+
+        let node_dir = store.path_for(&blob).parent().unwrap().to_path_buf();
+        assert!(node_dir.exists(), "shard directory should exist before rmi");
+
+        store.remove_tag(&blob).unwrap();
+
+        // The shard directory should be removed (empty after deletion).
+        assert!(
+            !node_dir.exists(),
+            "empty shard directory should be cleaned up"
+        );
+    }
+
+    #[test]
+    fn test_compute_image_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MmapStore::new(dir.path().to_path_buf());
+
+        // Two blobs with different sizes.
+        let small_data = b"12 bytes here!";
+        let big_data = b"this is exactly 32 bytes of data!!!";
+        let medium_data = b"twenty bytes";
+
+        let small = store.put_blocking(&DagNode::blob(small_data.to_vec())).unwrap();
+        let big = store.put_blocking(&DagNode::blob(big_data.to_vec())).unwrap();
+        let medium = store.put_blocking(&DagNode::blob(medium_data.to_vec())).unwrap();
+
+        let small_len = small_data.len() as u64;
+        let big_len = big_data.len() as u64;
+        let medium_len = medium_data.len() as u64;
+
+        // A blob with no edges — inline is not a separate blob file.
+        assert_eq!(store.compute_image_size(&small), 0, "inline blobs have no blob.raw");
+
+        // Manually set up blob.raw files by writing them.
+        std::fs::write(store.path_for_blob(&small), small_data).unwrap();
+        std::fs::write(store.path_for_blob(&big), big_data).unwrap();
+
+        // Root referencing small and big.
+        let root = store
+            .put_blocking(&DagNode::manifest(vec![small, big], b"config".to_vec()))
+            .unwrap();
+        assert_eq!(
+            store.compute_image_size(&root),
+            small_len + big_len,
+            "leaf blob sizes sum"
+        );
+
+        // Add medium as a blob.raw under a second level.
+        std::fs::write(store.path_for_blob(&medium), medium_data).unwrap();
+        let intermediate = store
+            .put_blocking(&DagNode::tree(vec![medium], b"".to_vec()))
+            .unwrap();
+        let root2 = store
+            .put_blocking(&DagNode::manifest(vec![big, intermediate], b"config2".to_vec()))
+            .unwrap();
+        assert_eq!(
+            store.compute_image_size(&root2),
+            big_len + medium_len,
+            "nested blob sizes sum"
         );
     }
 }

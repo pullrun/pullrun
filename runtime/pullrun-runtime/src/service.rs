@@ -3862,12 +3862,7 @@ impl Runtime for RuntimeService {
                 Ok(d) => d,
                 Err(_) => continue,
             };
-            let size_bytes = self
-                .store
-                .path_for(&digest)
-                .metadata()
-                .map(|m| m.len() as i64)
-                .unwrap_or(0);
+            let size_bytes = self.store.compute_image_size(&digest) as i64;
             images.push(crate::proto::ImageInfo {
                 image_ref: image_ref.clone(),
                 root_digest: root_digest.clone(),
@@ -3910,15 +3905,11 @@ impl Runtime for RuntimeService {
             }
         }
 
-        // Remove all tag entries for this root_digest.
-        {
-            let mut tags = self.image_tags.write().await;
-            tags.retain(|k, _| k != &root_digest);
-        }
-        self.save_image_tags().await;
-
-        // Cascade-delete: each removed tag decrements the refcount once;
-        // the last decrement triggers subtree deletion.
+        // Cascade-delete FIRST: decrement refcount for each tag before
+        // removing from image_tags. If we crash between the decrement and
+        // the tag removal, the tag still exists and recompute_all_refcounts
+        // will fix the count on next boot. The reverse ordering (remove tag
+        // first) would orphan the data with no root referencing it.
         let mut total_freed = 0u64;
         for _ in 0..entry_count {
             match self.store.remove_tag(&digest) {
@@ -3928,6 +3919,15 @@ impl Runtime for RuntimeService {
                 }
             }
         }
+
+        // Now remove the tag entries. If we crashed before this point,
+        // the tag still exists pointing to possibly deleted data — harmless,
+        // the next RPC for this tag will 404.
+        {
+            let mut tags = self.image_tags.write().await;
+            tags.retain(|k, _| k != &root_digest);
+        }
+        self.save_image_tags().await;
 
         info!(%root_digest, bytes_freed = total_freed, "image removed");
         Ok(tonic::Response::new(RemoveImageResponse {
