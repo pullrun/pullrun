@@ -140,6 +140,7 @@ pullrun exec <id> -t -- /bin/sh
 pullrun workload run <id>
 
 # ── Image management ──────────────────────────────────────────
+pullrun images                 # list pulled images in local DAG store
 pullrun rmi alpine:3.18       # remove an image, cascade-delete unreachable layers
 pullrun rmi sha256:abc...     # also works by digest
 

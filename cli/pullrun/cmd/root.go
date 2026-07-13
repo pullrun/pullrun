@@ -54,6 +54,7 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewSecretCommand(opts))
 	cmd.AddCommand(NewConfigCommand(opts))
 	cmd.AddCommand(NewPruneCommand(opts))
+	cmd.AddCommand(NewImagesCommand(opts))
 	cmd.AddCommand(NewRmiCommand(opts))
 	cmd.AddCommand(NewGCCommand(opts))
 	cmd.AddCommand(NewInfoCommand(opts))
