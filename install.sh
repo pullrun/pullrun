@@ -83,15 +83,16 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
   # Download Windows CLI
   TARBALL="pullrun-${TAG#v}-windows-${ARCH}.tar.gz"
   info "  downloading $TARBALL..."
-  if ! curl -fsSL "$BASE/$TARBALL" | tar -xzf - --strip-components=1 -C "$TMPDIR"; then
+  if ! curl -fsSL "$BASE/$TARBALL" | tar -xzf - -C "$TMPDIR"; then
     warn "  Failed to download $TARBALL"
     warn "  Check that version $TAG exists at:"
     warn "    $BASE/$TARBALL"
     error "Windows download failed."
   fi
 
-  if [ -f "$TMPDIR/bin/pullrun.exe" ]; then
-    cp "$TMPDIR/bin/pullrun.exe" "$INSTALL_DIR/pullrun.exe"
+  SRC=$(find "$TMPDIR" -maxdepth 3 -type f \( -name "pullrun.exe" -o -name "pullrun" \) 2>/dev/null | head -1)
+  if [ -n "$SRC" ]; then
+    cp "$SRC" "$INSTALL_DIR/pullrun.exe"
     chmod +x "$INSTALL_DIR/pullrun.exe"
     info "  CLI installed to $INSTALL_DIR/pullrun.exe"
   else
@@ -102,7 +103,7 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
   RUNTIME_TARBALL="pullrun-${TAG#v}-linux-${ARCH}.tar.gz"
   info "  downloading $RUNTIME_TARBALL..."
   RUNTIME_DIR=$(mktemp -d)
-  if ! curl -fsSL "$BASE/$RUNTIME_TARBALL" | tar -xzf - --strip-components=1 -C "$RUNTIME_DIR"; then
+  if ! curl -fsSL "$BASE/$RUNTIME_TARBALL" | tar -xzf - -C "$RUNTIME_DIR"; then
     warn "  Failed to download $RUNTIME_TARBALL"
     warn "  WSL2 runtime setup skipped. Run the installer again after the release is published."
   fi
@@ -136,11 +137,11 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
       info "  Using WSL distro: $UBUNTU_DISTRO"
 
       # Copy runtime binary into WSL2
-      if [ -f "$RUNTIME_DIR/bin/pullrun-runtime" ]; then
-        info "  Installing pullrun-runtime into WSL2..."
+      RUNTIME_SRC=$(find "$RUNTIME_DIR" -maxdepth 3 -type f -name "pullrun-runtime" 2>/dev/null | head -1)
+      if [ -n "$RUNTIME_SRC" ]; then
         info "  Installing pullrun-runtime into WSL2..."
         $WSL_EXE -d "$UBUNTU_DISTRO" -u root -- mkdir -p /usr/local/bin
-        $WSL_EXE -d "$UBUNTU_DISTRO" -u root -- sh -c "cat > /usr/local/bin/pullrun-runtime" < "$RUNTIME_DIR/bin/pullrun-runtime"
+        $WSL_EXE -d "$UBUNTU_DISTRO" -u root -- sh -c "cat > /usr/local/bin/pullrun-runtime" < "$RUNTIME_SRC"
         $WSL_EXE -d "$UBUNTU_DISTRO" -u root -- chmod +x /usr/local/bin/pullrun-runtime
 
         # Install Firecracker and kernel if KVM is available
@@ -246,19 +247,32 @@ trap cleanup EXIT
 TARBALL="pullrun-${TAG#v}-${OS}-${ARCH}.tar.gz"
 URL="$BASE/$TARBALL"
 info "  downloading $TARBALL..."
-curl -fsSL "$URL" | tar -xzf - --strip-components=1 -C "$TMPDIR"
+curl -fsSL "$URL" | tar -xzf - -C "$TMPDIR"
 
-# Install binaries
+# Install binaries (find them wherever they landed — the tarball may use
+# ./bin/<name> or <name-arch> layout depending on the release pipeline).
 installed=0
 for BIN in pullrun pullrun-runtime apple-virt-exec; do
-  for SRC in "$TMPDIR/bin/$BIN" "$TMPDIR/bin/$BIN.exe"; do
-    if [ -f "$SRC" ]; then
-      sudo mv "$SRC" "/usr/local/bin/$BIN"
-      sudo chmod "+x" "/usr/local/bin/$BIN"
-      installed=1
-      break
-    fi
+  SRC=""
+  # 1. Check directly under the extraction root
+  for f in "$TMPDIR/$BIN" "$TMPDIR/$BIN.exe"; do
+    [ -f "$f" ] && SRC="$f" && break
   done
+  # 2. Check under a bin/ subdirectory
+  if [ -z "$SRC" ]; then
+    for f in "$TMPDIR/bin/$BIN" "$TMPDIR/bin/$BIN.exe"; do
+      [ -f "$f" ] && SRC="$f" && break
+    done
+  fi
+  # 3. Find any file whose basename matches (handles arch suffixes)
+  if [ -z "$SRC" ]; then
+    SRC=$(find "$TMPDIR" -maxdepth 2 -type f \( -name "$BIN-*" -o -name "$BIN" \) 2>/dev/null | head -1)
+  fi
+  if [ -n "$SRC" ]; then
+    sudo mv "$SRC" "/usr/local/bin/$BIN"
+    sudo chmod "+x" "/usr/local/bin/$BIN"
+    installed=1
+  fi
 done
 
 if [ "$installed" = "0" ]; then
