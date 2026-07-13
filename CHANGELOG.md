@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.1 — 2026-07-13
+
+### Features
+- **`pullrun images`** — new CLI command to list pulled images in the local
+  DAG store, with table and `--json` output. Reuses the existing `ListImages`
+  gRPC RPC (which was previously only exposed via the MCP server).
+- **`pullrun compose` subcommand** — `pullrun compose` now delegates to the
+  `pullrun-compose` binary, making compose workflows discoverable from the main
+  CLI. Global flags (`--direct`, `--socket`, `--server`) are automatically
+  stripped before delegation.
+
+### Fixes
+- **`pullrun exec` returns proper NotFound for missing IDs.** Added a workload
+  existence pre-check in `exec_in_workload` before dispatching to the executor.
+  Previously, missing workload IDs caused a misleading `runc exec failed`
+  internal error; now they return `NotFound` consistently with other lifecycle
+  commands.
+- **`pullrun login` validates credentials before saving.** The login command
+  now pings the registry's `/v2/` endpoint with provided credentials and
+  rejects 401/403 responses before writing to `~/.pullrun/auth.json`. Also
+  added an interactive prompt when no flags are supplied.
+- **`pullrun build` resolves paths client-side.** Dockerfile and context
+  directory paths are now resolved to absolute paths before being sent to the
+  daemon, fixing `No such file or directory` errors when running from a
+  different working directory.
+- **All Dockerfile and flag errors fixed in docs.** `build`, `push`, `save`/`load`,
+  `attach`, `compose`, `config create`, `secret create`, and `prune` now
+  document the correct syntax in both `README.md` and `docs/PULLRUN_GUIDE.md`.
+
+### Housekeeping
+- Bumped version to 0.6.1 (Go CLI, Rust workspace, MCP server).
+
 ## 0.5.0 — 2026-07-11
 
 ### Features
