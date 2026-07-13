@@ -50,17 +50,17 @@ Pullrun is a **unified OCI runtime platform** — run the same OCI image as a co
 - **12 MB static binary** — no daemon required by default, optional runtime daemon for background services
 
 ```bash
-# Container — 400 ms
-pullrun run alpine:3.18 --cmd echo hello
+# Apple Silicon VM (macOS default) — 3 s
+pullrun run alpine:3.18 --cmd "echo" --cmd "hello pullrun" --attach -t
 
-# Firecracker microVM — same image, different backend
-pullrun run alpine:3.18 --backend vm --cmd echo hello
+# Firecracker microVM (Linux) — 400 ms
+pullrun run alpine:3.18 --backend vm --cmd "echo" --cmd "hello pullrun" --attach -t
 
-# Apple Silicon VM — same image, same command
-pullrun run alpine:3.18 --backend vm --cmd echo hello
+# Container (Linux) — 400 ms
+pullrun run alpine:3.18 --cmd "echo" --cmd "hello pullrun"
 
 # Windows WSL2 — same image, same command, same store
-pullrun.exe run alpine:3.18 --cmd echo hello
+pullrun.exe run alpine:3.18 --cmd "echo" --cmd "hello pullrun"
 ```
 
 ---
@@ -101,11 +101,11 @@ cd cli/pullrun && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o pullrun.ex
 # ── Pull any OCI image ──────────────────────────────────────────
 pullrun pull alpine:3.18     # 968 ms — ~2x faster than Docker
 
-# ── Run as a container ─────────────────────────────────────────
-pullrun run alpine:3.18 --cmd /bin/echo --cmd 'hello pullrun'
+# ── Run as a container (Linux) ─────────────────────────────────
+pullrun run alpine:3.18 --cmd "echo" --cmd "hello pullrun"
 
-# ── Run as a microVM (same image!) ─────────────────────────────
-pullrun run alpine:3.18 --backend vm --cmd /bin/echo --cmd 'hello'
+# ── Run as a microVM (macOS/Linux) ─────────────────────────────
+pullrun run alpine:3.18 --backend vm --cmd "echo" --cmd "hello" --attach -t
 
 # ── Interactive shell with detach ──────────────────────────────
 pullrun run alpine:3.18 --tty --attach --cmd /bin/sh
