@@ -5,6 +5,7 @@
 set -eu
 
 REPO="pullrun/pullrun"
+CURRENT_VERSION="v0.6.4"
 VERSION="${VERSION:-latest}"
 
 info()  { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -72,7 +73,7 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
     API_URL="https://api.github.com/repos/$REPO/releases/latest"
     TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
     if [ -z "$TAG" ]; then
-      error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION explicitly, e.g. VERSION=v0.6.2 $0"
+      error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION=$CURRENT_VERSION $0"
       exit 1
     fi
   else
@@ -239,7 +240,7 @@ if [ "$VERSION" = "latest" ]; then
   API_URL="https://api.github.com/repos/$REPO/releases/latest"
   TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
   if [ -z "$TAG" ]; then
-    error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION explicitly, e.g. VERSION=v0.6.2 $0"
+    error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION=$CURRENT_VERSION $0"
     exit 1
   fi
 else

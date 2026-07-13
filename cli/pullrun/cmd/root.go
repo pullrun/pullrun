@@ -17,13 +17,15 @@ func NewRootCommand() *cobra.Command {
 	opts := &RootOptions{}
 
 	cmd := &cobra.Command{
-		Use:     "pullrun",
-		Version: "0.6.2",
-		Short:   "Pullrun workload CLI",
+		Use:   "pullrun",
+		Short: "Pullrun workload CLI",
 		Long: `pullrun manages Pullrun workloads - pull images, run containers/VMs,
 and inspect network policies. All communication with the runtime uses gRPC
 over a Unix domain socket.`,
+		Version: "0.6.4",
 	}
+
+	cmd.Flags().BoolP("version", "V", false, "version for pullrun")
 
 	cmd.PersistentFlags().StringVar(&opts.SocketPath, "socket", DefaultSocketPath, "Runtime socket path (UDS on Unix, TCP host:port on Windows)")
 	cmd.PersistentFlags().StringVar(&opts.ServerAddr, "server", "", "Control plane address (disables direct mode)")
