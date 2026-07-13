@@ -17,19 +17,29 @@ import (
 )
 
 func setupRawTerminal() (func(), error) {
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	fd := int(os.Stdin.Fd())
+
+	oldState, err := unix.IoctlGetTermios(fd, termiosGetReq)
 	if err != nil {
 		return nil, err
 	}
 
-	if tios, err := unix.IoctlGetTermios(int(os.Stdin.Fd()), termiosGetReq); err == nil {
-		tios.Oflag |= unix.OPOST | unix.ONLCR
-		_ = unix.IoctlSetTermios(int(os.Stdin.Fd()), termiosSetReq, tios)
+	raw := *oldState
+	raw.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP | unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+	raw.Oflag |= unix.OPOST | unix.ONLCR
+	raw.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
+	raw.Cflag &^= unix.CSIZE | unix.PARENB
+	raw.Cflag |= unix.CS8
+	raw.Cc[unix.VMIN] = 1
+	raw.Cc[unix.VTIME] = 0
+
+	if err := unix.IoctlSetTermios(fd, termiosSetReq, &raw); err != nil {
+		return nil, err
 	}
 
 	return func() {
-		os.Stderr.WriteString("\r\n")
-		_ = term.Restore(int(os.Stdin.Fd()), oldState)
+		_ = unix.IoctlSetTermios(fd, termiosSetReq, oldState)
+		os.Stderr.WriteString("\r")
 	}, nil
 }
 
