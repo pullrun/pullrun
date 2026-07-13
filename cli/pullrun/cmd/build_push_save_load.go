@@ -150,6 +150,10 @@ func NewPushCommand(opts *RootOptions) *cobra.Command {
 
 			resp, err := client.PushImage(ctx, args[0], args[1], auth)
 			if err != nil {
+				errStr := err.Error()
+				if auth == nil && (strings.Contains(errStr, "401") || strings.Contains(errStr, "Unauthorized") || strings.Contains(errStr, "no Location header")) {
+					return fmt.Errorf("push: not authenticated — run 'pullrun login %s'", registry)
+				}
 				return fmt.Errorf("push: %w", err)
 			}
 

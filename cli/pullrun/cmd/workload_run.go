@@ -101,7 +101,7 @@ blocks until the workload exits or the user detaches with ^C.`,
 func NewWorkloadCommand(opts *RootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workload",
-		Short: "Workload operations (run, exec, list, ...)",
+		Short: "Workload operations (attach via `workload run`)",
 	}
 	cmd.AddCommand(NewWorkloadRunCommand(opts))
 	return cmd

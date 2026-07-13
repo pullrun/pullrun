@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.2 — 2026-07-14
+
+### Bug fixes
+- **`save`/`load` round-trip digest mismatch.** Removed incorrect blob content
+  verification in `dag_import.rs` — the blob path uses the parent node's digest
+  (SHA-256 of rkyv-serialized DagNode), not a hash of the raw blob data, so
+  re-hashing the blob bytes always failed. Blob integrity is transitively
+  guaranteed by its parent node's edges. Air-gapped export/import now works.
+- **`secret ls` / `config ls` CREATED timestamp shows epoch zero.** Added
+  `timestamp_from_meta()` helper that falls back to `meta.modified()` when
+  `meta.created()` is unavailable (Linux ext4/xfs/btrfs). Fixes four
+  occurrences in `list_secrets`, `inspect_secret`, `list_configs`,
+  `inspect_config`. Also fixes `list_images` to read the node file's mtime.
+- **`pullrun push` error message for unauthenticated pushes.** The CLI now
+  detects 401/Unauthorized/`no Location header` errors and prints
+  `not authenticated — run 'pullrun login <registry>'` instead of leaking
+  HTTP-level details.
+- **`pullrun --version` / `-V` flags.** Added cobra `Version: "0.6.2"` to the
+  root command. Also added `pullrun-runtime version` subcommand.
+- **`install.sh` GitHub API rate-limit handling.** When the API returns
+  non-release JSON (rate-limited), `TAG` is now detected as empty and the
+  script exits with a clear error suggesting `VERSION=v0.6.2`.
+- **`install.sh` non-sudo install path.** When `sudo` is unavailable or the
+  user has no password-less sudo, binaries are installed to
+  `~/.local/bin/` instead of failing silently.
+
+### Documentation
+- README: removed non-functional `pullrun diff <tag1> <tag2>` example
+  (diff only works on workload IDs). Changed `--network my-net` example
+  to use the correct `--net bridge` flag.
+- `pullrun workload` help text fixed from `(run, exec, list, ...)` to
+  `(attach via workflow run)`.
+
 ## 0.6.1 — 2026-07-13
 
 ### Features

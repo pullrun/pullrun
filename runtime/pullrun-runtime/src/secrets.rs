@@ -182,12 +182,7 @@ impl SecretStore {
                 if meta.is_file() {
                     out.push(SecretInfo {
                         name,
-                        created_at: meta
-                            .created()
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs() as i64)
-                            .unwrap_or(0),
+                        created_at: timestamp_from_meta(&meta),
                         size_bytes: meta.len() as i64,
                     });
                 }
@@ -206,12 +201,7 @@ impl SecretStore {
         }
         Ok(SecretInfo {
             name: name_clean,
-            created_at: meta
-                .created()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0),
+            created_at: timestamp_from_meta(&meta),
             size_bytes: meta.len() as i64,
         })
     }
@@ -276,12 +266,7 @@ impl SecretStore {
                 if meta.is_file() {
                     out.push(SecretInfo {
                         name,
-                        created_at: meta
-                            .created()
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs() as i64)
-                            .unwrap_or(0),
+                        created_at: timestamp_from_meta(&meta),
                         size_bytes: meta.len() as i64,
                     });
                 }
@@ -300,12 +285,7 @@ impl SecretStore {
         }
         Ok(SecretInfo {
             name: name_clean,
-            created_at: meta
-                .created()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0),
+            created_at: timestamp_from_meta(&meta),
             size_bytes: meta.len() as i64,
         })
     }
@@ -324,6 +304,16 @@ impl SecretStore {
 
 // ─── Helpers for container mount staging ─────────────────────
 //
+/// Try to extract a Unix-epoch timestamp from filesystem metadata.
+/// Falls back to `modified()` when `created()` is unavailable (Linux
+/// ext4/xfs/btrfs), then to `0` if neither is available.
+fn timestamp_from_meta(meta: &std::fs::Metadata) -> i64 {
+    let ts = meta.created().ok().or_else(|| meta.modified().ok());
+    ts.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 // When a container is run with --secret or --config, the runtime
 // resolves the content and writes it into the bundle's secret staging
 // directory.  These files are then bind-mounted into the container.

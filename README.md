@@ -155,7 +155,7 @@ pullrun stats <id>
 
 # ── Network ────────────────────────────────────────────────────
 pullrun network create my-net --subnet 10.43.1.0/24
-pullrun run alpine:3.18 --network my-net
+pullrun run alpine:3.18 --net bridge
 
 # ── Secrets ────────────────────────────────────────────────────
 pullrun secret create db_password -                     # from stdin
@@ -167,7 +167,7 @@ pullrun config create nginx.conf -                   # from stdin
 pullrun run nginx:latest --config nginx.conf
 
 # ── Diff & Inspect ─────────────────────────────────────────────
-pullrun diff alpine:3.18 alpine:3.19
+pullrun diff <id>
 pullrun inspect <id>
 pullrun commit <id> myapp:snapshot
 

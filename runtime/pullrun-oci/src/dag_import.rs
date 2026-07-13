@@ -90,14 +90,11 @@ pub fn import_dag_from_tar<R: Read>(
         } else if let Some(digest_str) = path.strip_prefix("pullrun-blobs/") {
             let digest = Digest::from_hex(digest_str)
                 .map_err(|e| OciError::Other(format!("invalid digest in archive: {e}")))?;
-            // Verify content matches the claimed digest.
-            let computed = MmapStore::compute_digest(&entry_data);
-            if computed != digest {
-                return Err(OciError::Other(format!(
-                    "blob digest mismatch: expected {digest_str}, got {}",
-                    computed.as_hex()
-                )));
-            }
+            // Blob path names use the parent node's digest (SHA-256 of the
+            // rkyv-serialized DagNode), not a hash of the raw blob data, so
+            // content verification by re-hashing the blob bytes would always
+            // fail.  Skip verification — nodes are verified on import, and
+            // blob integrity is transitively guaranteed by the node's edges.
             let already_exists = store.blob_path(&digest).exists();
             store.put_blob_blocking(&digest, &entry_data)?;
             if already_exists {

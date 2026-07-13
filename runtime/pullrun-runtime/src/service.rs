@@ -3877,11 +3877,17 @@ impl Runtime for RuntimeService {
                 Err(_) => continue,
             };
             let size_bytes = self.store.compute_image_size(&digest) as i64;
+            let created_at = std::fs::metadata(self.store.node_path(&digest))
+                .ok()
+                .and_then(|m| m.created().or(m.modified()).ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
             images.push(crate::proto::ImageInfo {
                 image_ref: image_ref.clone(),
                 root_digest: root_digest.clone(),
                 size_bytes,
-                created_at: 0,
+                created_at,
             });
         }
         Ok(tonic::Response::new(ListImagesResponse { images }))

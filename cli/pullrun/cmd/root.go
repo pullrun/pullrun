@@ -17,8 +17,9 @@ func NewRootCommand() *cobra.Command {
 	opts := &RootOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "pullrun",
-		Short: "Pullrun workload CLI",
+		Use:     "pullrun",
+		Version: "0.6.2",
+		Short:   "Pullrun workload CLI",
 		Long: `pullrun manages Pullrun workloads - pull images, run containers/VMs,
 and inspect network policies. All communication with the runtime uses gRPC
 over a Unix domain socket.`,

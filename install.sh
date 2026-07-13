@@ -71,6 +71,10 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
   if [ "$VERSION" = "latest" ]; then
     API_URL="https://api.github.com/repos/$REPO/releases/latest"
     TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
+    if [ -z "$TAG" ]; then
+      error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION=v0.6.1 explicitly."
+      exit 1
+    fi
   else
     TAG="$VERSION"
   fi
@@ -234,6 +238,10 @@ info "Downloading pre-built binary for $OS/$ARCH..."
 if [ "$VERSION" = "latest" ]; then
   API_URL="https://api.github.com/repos/$REPO/releases/latest"
   TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
+  if [ -z "$TAG" ]; then
+    error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION=v0.6.1 explicitly."
+    exit 1
+  fi
 else
   TAG="$VERSION"
 fi
@@ -269,8 +277,17 @@ for BIN in pullrun pullrun-runtime apple-virt-exec; do
     SRC=$(find "$TMPDIR" -maxdepth 2 -type f \( -name "$BIN-*" -o -name "$BIN" \) 2>/dev/null | head -1)
   fi
   if [ -n "$SRC" ]; then
-    sudo mv "$SRC" "/usr/local/bin/$BIN"
-    sudo chmod "+x" "/usr/local/bin/$BIN"
+    # Try /usr/local/bin with sudo; fall back to ~/.local/bin.
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      sudo mv "$SRC" "/usr/local/bin/$BIN"
+      sudo chmod "+x" "/usr/local/bin/$BIN"
+    else
+      LOCAL_BIN="${XDG_DATA_HOME:-$HOME/.local}/bin"
+      mkdir -p "$LOCAL_BIN"
+      mv "$SRC" "$LOCAL_BIN/$BIN"
+      chmod "+x" "$LOCAL_BIN/$BIN"
+      info "  installed to $LOCAL_BIN/$BIN (add $LOCAL_BIN to your PATH)"
+    fi
     installed=1
   fi
 done

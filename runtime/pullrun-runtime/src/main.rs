@@ -181,6 +181,8 @@ enum Commands {
         #[arg(long)]
         store_root: Option<PathBuf>,
     },
+    /// Print the daemon version
+    Version,
 }
 
 fn default_store_root() -> PathBuf {
@@ -420,6 +422,9 @@ async fn run_one_shot(cmd: Commands) -> Result<(), Box<dyn std::error::Error>> {
         Commands::List { store_root } => {
             let store_root = store_root.unwrap_or_else(default_store_root);
             run_list(&store_root).await?
+        }
+        Commands::Version => {
+            println!("pullrun-runtime {}", env!("CARGO_PKG_VERSION"));
         }
         Commands::Daemon { .. } => unreachable!("daemon commands are dispatched via daemon_main"),
     }
