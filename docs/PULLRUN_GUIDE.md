@@ -1074,8 +1074,8 @@ cd cli/pullrun && go test ./...
 | Apple VM with volume mount | macOS | `pullrun run alpine:3.18 --backend vm --volume /tmp/data:/mnt/data --cmd ls,-la,/mnt/data --attach` |
 | Apple VM read-only volume | macOS | `pullrun run alpine:3.18 --backend vm --volume /tmp/data:/mnt/data:ro --cmd sh,-c,'echo test > /mnt/data/foo 2>&1; echo exit=$?' --attach` |
 | Apple VM standalone | macOS | `apple-virt-exec --kernel ... --initramfs ... --rootfs /tmp/r -- /bin/echo hello` |
-| Build from Dockerfile | Both | `pullrun build -t myapp:latest .` |
-| Secret / Config lifecycle | Both | `pullrun secret create x y; pullrun secret rm x` |
+| Build from Dockerfile | Both | `pullrun build ./Dockerfile . -t myapp:latest` |
+| Secret / Config lifecycle | Both | `echo data | pullrun secret create x -; pullrun secret rm x` |
 | P2P block sync | Both | `pullrun-runtime daemon --sync-addr 0.0.0.0:9500` |
 
 ## Running on low-disk machines

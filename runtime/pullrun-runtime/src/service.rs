@@ -3123,6 +3123,17 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<ExecResponse>, tonic::Status> {
         let req = request.into_inner();
 
+        // Verify the workload exists before dispatching to the executor.
+        {
+            let workloads = self.workloads.read().await;
+            if !workloads.contains_key(&req.id) {
+                return Err(tonic::Status::not_found(format!(
+                    "workload {} not found",
+                    req.id
+                )));
+            }
+        }
+
         // Dispatch through ExecutorRouter for correct backend selection.
         let exit_code = self
             .executor
