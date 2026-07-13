@@ -255,13 +255,13 @@ pullrun pull alpine:3.18 --platform linux/arm64   # multi-arch
 pullrun pull localhost:5000/myimg:latest           # private registry
 
 # Push a DAG image to an OCI registry
-pullrun push <root-digest> --registry ghcr.io/myorg/myimg:latest
+pullrun push <root-digest> ghcr.io/myorg/myimg:latest
 
 # Native DAG-aware build (Dockerfile, no Docker needed)
-pullrun build -t myapp:latest .
-pullrun build -t myapp:latest --platform linux/arm64 .
+pullrun build ./Dockerfile . -t myapp:latest
+pullrun build ./Dockerfile . -t myapp:latest --platform linux/arm64
 
-# Export / import DAG images
+# Export / import DAG images (save/load, NOT export/import)
 pullrun save <digest> -o myimage.tar
 pullrun load -i myimage.tar
 
@@ -370,20 +370,21 @@ pullrun commit <id> myapp:snapshot-1
 pullrun diff <id>
 
 # Remove stopped workloads
-pullrun prune -f
+pullrun prune
 ```
 
 ### Secrets and configs
 
 ```bash
 # Secrets (AES-256-GCM encrypted)
-pullrun secret create db_password secret data
+pullrun secret create db_password ./secret_file    # from file
+pullrun secret create db_password -                 # from stdin
 pullrun secret ls
 pullrun secret inspect db_password
 pullrun secret rm db_password
 
 # Configs (plain text)
-pullrun config create app_config '{"debug": true}'
+pullrun config create app_config ./nginx.conf
 pullrun config ls
 pullrun config inspect app_config
 pullrun config rm app_config
@@ -417,12 +418,12 @@ pullrun version
 # Events stream
 pullrun events
 
-# Compose
-pullrun compose up -f docker-compose.yml          # containers (default on Linux)
-pullrun compose up -f docker-compose.yml --backend vm  # same compose, VM isolation
-pullrun compose down
-pullrun compose ps
-pullrun compose logs
+# Compose (separate binary)
+pullrun-compose up -f docker-compose.yml          # containers (default on Linux)
+pullrun-compose up -f docker-compose.yml --backend vm  # same compose, VM isolation
+pullrun-compose down
+pullrun-compose ps
+pullrun-compose logs
 ```
 
 ### Kernel management

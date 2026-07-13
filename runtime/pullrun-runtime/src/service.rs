@@ -3128,7 +3128,10 @@ impl Runtime for RuntimeService {
             .executor
             .exec(&req.id, &req.command, 30)
             .await
-            .map_err(|e| tonic::Status::internal(format!("exec failed: {e}")))?;
+            .map_err(|e| match &e {
+                ExecError::NotFound(_) => tonic::Status::not_found(format!("{e}")),
+                _ => tonic::Status::internal(format!("exec failed: {e}")),
+            })?;
 
         // Also capture stdout/stderr via runc exec (works for container backend;
         // VM/rootless backends return empty output, which is acceptable).

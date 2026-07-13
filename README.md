@@ -116,25 +116,28 @@ pullrun run alpine:3.18 --tty --attach --cmd /bin/sh
 pullrun run alpine:3.18 --cmd /bin/sleep --cmd 3600
 
 # ── Build & push (no Docker daemon needed) ─────────────────────
-pullrun build -t myapp:latest .
-pullrun build -t myapp:latest --platform linux/amd64,linux/arm64 .
-pullrun push myapp:latest
+pullrun build ./Dockerfile . -t myapp:latest
+pullrun build ./Dockerfile . -t myapp:latest --platform linux/amd64,linux/arm64
+pullrun push <root-digest> ghcr.io/myorg/myimg:latest
 
 # ── Export/import for air-gapped ───────────────────────────────
-pullrun export myapp:latest > myapp.tar
-pullrun import < myapp.tar
+pullrun save <digest> -o myimage.tar
+pullrun load -i myimage.tar
 
-# ── Compose ────────────────────────────────────────────────────
-pullrun compose up -f myapp/compose.yml             # containers (default on Linux)
-pullrun compose up -f myapp/compose.yml --backend vm # same compose, VM isolation
-pullrun compose logs -f
-pullrun compose down
+# ── Compose (separate binary) ────────────────────────────────
+pullrun-compose up -f myapp/compose.yml               # containers (default on Linux)
+pullrun-compose up -f myapp/compose.yml --backend vm   # same compose, VM isolation
+pullrun-compose logs -f
+pullrun-compose down
 
 # ── Lifecycle ──────────────────────────────────────────────────
 pullrun list                  # all workloads (pending/running/exited)
 pullrun stop <id>
 pullrun exec <id> /bin/echo hello
-pullrun attach <id>
+# Re-attach to a detached workload (allocates a fresh PTY)
+pullrun exec <id> -t -- /bin/sh
+# Or, for bidirectional I/O streaming without a new shell:
+pullrun workload run <id>
 
 # ── Image management ──────────────────────────────────────────
 pullrun rmi alpine:3.18       # remove an image, cascade-delete unreachable layers
@@ -158,7 +161,8 @@ pullrun secret create db_password -                     # from stdin
 pullrun run myapp:latest --secret db_password
 
 # ── Configs ────────────────────────────────────────────────────
-pullrun config create nginx.conf --file ./nginx.conf
+pullrun config create nginx.conf ./nginx.conf       # from file
+pullrun config create nginx.conf -                   # from stdin
 pullrun run nginx:latest --config nginx.conf
 
 # ── Diff & Inspect ─────────────────────────────────────────────

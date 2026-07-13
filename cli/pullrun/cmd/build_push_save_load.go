@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,6 +44,18 @@ Args:
 			}
 			if len(args) >= 2 {
 				contextDir = args[1]
+			}
+
+			// Resolve to absolute paths so the daemon can find them regardless
+			// of working directory.
+			var err error
+			dockerfile, err = filepath.Abs(dockerfile)
+			if err != nil {
+				return fmt.Errorf("resolve dockerfile path: %w", err)
+			}
+			contextDir, err = filepath.Abs(contextDir)
+			if err != nil {
+				return fmt.Errorf("resolve context dir: %w", err)
 			}
 
 			tag, _ := cmd.Flags().GetString("tag")

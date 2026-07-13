@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func NewLoginCommand(opts *RootOptions) *cobra.Command {
@@ -37,11 +41,53 @@ Use '--password-stdin' to read the password from stdin securely.`,
 				if err != nil {
 					return fmt.Errorf("read stdin: %w", err)
 				}
-				password = string(data)
+				password = strings.TrimRight(string(data), "\n\r")
+			}
+
+			// Interactive prompt if no credentials provided via flags.
+			if username == "" && password == "" && token == "" {
+				reader := bufio.NewReader(os.Stdin)
+				fmt.Printf("Username: ")
+				u, _ := reader.ReadString('\n')
+				username = strings.TrimRight(u, "\n\r")
+
+				fmt.Printf("Password: ")
+				bytePw, err := term.ReadPassword(int(os.Stdin.Fd()))
+				fmt.Println()
+				if err != nil {
+					return fmt.Errorf("read password: %w", err)
+				}
+				password = string(bytePw)
 			}
 
 			if username == "" && password == "" && token == "" {
 				return fmt.Errorf("credentials required: use --username/--password, --password-stdin, or --token")
+			}
+
+			// Validate credentials by pinging the registry's /v2/ endpoint.
+			pingURL := fmt.Sprintf("https://%s/v2/", registry)
+			req, err := http.NewRequest("GET", pingURL, nil)
+			if err != nil {
+				return fmt.Errorf("create ping request: %w", err)
+			}
+			req.Header.Set("User-Agent", "pullrun")
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			} else if username != "" || password != "" {
+				req.SetBasicAuth(username, password)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("ping registry %s: %w", registry, err)
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				return fmt.Errorf("authentication failed for %s (HTTP %d)", registry, resp.StatusCode)
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return fmt.Errorf("registry %s returned HTTP %d (expected 2xx)", registry, resp.StatusCode)
 			}
 
 			auth := RegistryAuth{
@@ -49,7 +95,6 @@ Use '--password-stdin' to read the password from stdin securely.`,
 				Password: password,
 				Token:    token,
 			}
-
 			if err := SetRegistryAuth(registry, auth); err != nil {
 				return fmt.Errorf("save credentials: %w", err)
 			}
