@@ -72,7 +72,7 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
     API_URL="https://api.github.com/repos/$REPO/releases/latest"
     TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
     if [ -z "$TAG" ]; then
-      error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION=v0.6.1 explicitly."
+      error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION explicitly, e.g. VERSION=v0.6.2 $0"
       exit 1
     fi
   else
@@ -239,7 +239,7 @@ if [ "$VERSION" = "latest" ]; then
   API_URL="https://api.github.com/repos/$REPO/releases/latest"
   TAG=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
   if [ -z "$TAG" ]; then
-    error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION=v0.6.1 explicitly."
+    error "Could not determine latest release tag (GitHub API rate-limited?). Set VERSION explicitly, e.g. VERSION=v0.6.2 $0"
     exit 1
   fi
 else
@@ -272,9 +272,16 @@ for BIN in pullrun pullrun-runtime apple-virt-exec; do
       [ -f "$f" ] && SRC="$f" && break
     done
   fi
-  # 3. Find any file whose basename matches (handles arch suffixes)
+  # 3. Try arch-suffixed name (the release tarball convention: $BIN-$OS-$ARCH)
   if [ -z "$SRC" ]; then
-    SRC=$(find "$TMPDIR" -maxdepth 2 -type f \( -name "$BIN-*" -o -name "$BIN" \) 2>/dev/null | head -1)
+    for f in "$TMPDIR/$BIN-${OS}-${ARCH}" "$TMPDIR/$BIN-${OS}-${ARCH}.exe"; do
+      [ -f "$f" ] && SRC="$f" && break
+    done
+  fi
+  # 4. Last resort: exact basename match (not $BIN-* glob, which would
+  #    match pullrun-runtime-* when searching for pullrun-*).
+  if [ -z "$SRC" ]; then
+    SRC=$(find "$TMPDIR" -maxdepth 2 -type f -name "$BIN" -o -name "$BIN.exe" 2>/dev/null | head -1)
   fi
   if [ -n "$SRC" ]; then
     # Try /usr/local/bin with sudo; fall back to ~/.local/bin.
