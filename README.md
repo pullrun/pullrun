@@ -10,7 +10,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20679669.svg)](https://doi.org/10.5281/zenodo.20679669)
-[![Version](https://img.shields.io/badge/version-0.6.0-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
+[![Version](https://img.shields.io/badge/version-0.6.5-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
 [![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
@@ -38,16 +38,17 @@
 
 ## ⚡ What is Pullrun?
 
-Pullrun is a **unified OCI runtime platform** — run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task, all backed by a single content-addressed DAG store and P2P distribution layer.
+Pullrun is a **single-binary OCI runtime** that runs the same image as a container or a VM. It stores layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and fits in 12 MB.
 
 **Why this matters:** Modern infrastructure uses too many execution engines — Docker for dev, containerd for production, Firecracker for isolation, CRI for Kubernetes, MCP agents for AI. Each has its own image format, storage, and operational model — even though they all run the same OCI images. Pullrun collapses these layers into one runtime.
 
 **Key differentiators:**
-- **Universal OCI execution** — same image, any backend (container, Firecracker VM, Apple VM, K8s, MCP)
+- **Containers and VMs from the same image** — no separate VM build step, no separate VM image format
 - **Content-addressed DAG store** — zero-copy mmap reads, deduplicated by content hash, byte-identical across every node
 - **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
-- **Pullrun is a platform, not just a runtime.** Image management, storage, security policies, secrets, CRI, Compose, and MCP — all in one binary, not a stack of separate daemons
 - **12 MB static binary** — no daemon required by default, optional runtime daemon for background services
+
+**Also included:** Kubernetes CRI shim (beta), Docker Compose support, MCP server for AI agents, policy engine (Cosign, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
 
 ```bash
 # Apple Silicon VM (macOS default) — 3 s
@@ -189,7 +190,9 @@ pullrun-runtime daemon --sync-addr 0.0.0.0:9500
 
 ### 🏗️ Architecture is Everything
 
-Docker's overlayfs store is a filesystem overlay — CVEs in overlayfs (CVE-2023-0386, CVE-2023-32629, CVE-2026-31431) can let a container escape to the host. Pullrun's content-addressed DAG store stores layers **as-is**, verified by content hash. No overlayfs, no escape.
+Docker's overlayfs store is a filesystem overlay — CVEs in overlayfs (CVE-2023-0386, CVE-2023-32629) can let a container escape to the host. Pullrun's content-addressed DAG store stores layers **as-is**, verified by content hash. No overlayfs, no escape.
+
+Pullrun also mitigates **shared-kernel cross-container risks** that aren't specific to any storage driver — for example, kernel page-cache bugs like CVE-2026-31431 ("Copy Fail") affect all containers sharing a host kernel, regardless of the storage backend. Per-VM kernel isolation (Firecracker, Apple Virtualization) fully contains these. The DAG store makes the VM path zero-cost: the same image, no separate VM build step.
 
 Pullrun is also **rootless by default** — no `sudo` needed, no daemon listening on a TCP socket, no attack surface from a central dockerd.
 
@@ -225,7 +228,9 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 | Rootless by default | ✅ | ❌ (`dockerd` as root) |
 | Central daemon | Optional | Required |
 
-<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 14) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Firecracker measurements on Linux x86_64 with KVM; warm pool configured with `--vm-warm-pool-size 4`. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.</sup>
+<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 14) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Firecracker measurements on Linux x86_64 with KVM; warm pool configured with `--vm-warm-pool-size 4`. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.
+
+Benchmarked with [`hyperfine`](https://github.com/sharkdp/hyperfine) (≥10 iterations, mean ± stddev reported). The benchmark script lives at [`hack/bench.sh`](hack/bench.sh) — run it yourself to reproduce the numbers.</sup>
 
 ---
 

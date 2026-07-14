@@ -220,3 +220,9 @@ fallback.
   subcommand. `pullrun-runtime --version`/`-V` now works natively.
 - install.sh: `CURRENT_VERSION` variable at top, referenced in rate-limit error
   messages instead of hardcoded strings.
+
+### v0.6.5: consistent suffixed naming across install paths
+`install.sh` — all three lookup paths (macOS/Linux, Windows CLI, WSL2 runtime) now
+try the suffixed name `$BIN-$OS-$ARCH` first before falling back to bare names.
+Previously the Windows path looked for bare `pullrun.exe` and the WSL2 path looked
+for bare `pullrun-runtime`, neither of which matched the actual tarball contents.

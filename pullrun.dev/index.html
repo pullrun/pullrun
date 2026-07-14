@@ -703,7 +703,7 @@
                         <span class="tag">🧬 DAG Store</span>
                         <span class="tag">🌐 P2P Sync</span>
                         <span class="tag">🤖 MCP Native</span>
-                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.5.0 — GC · nftables · Async I/O</span>
+                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.6.5 — Naming convention · install fixes</span>
                     </div>
                     <div class="buttons">
                         <a href="#install" class="btn btn-primary" onclick="track('hero_cta_click')">⚡ Install Now</a>
@@ -1051,7 +1051,7 @@
                 </details>
                 <details class="faq-item">
                     <summary>Is this production-ready?</summary>
-                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable and used in production today. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. All core operations are covered by 175+ tests passing on CI. v0.5.0 adds DAG garbage collection, crash-atomic writes, async I/O, and nftables firewall support — the store doesn't grow forever, and it works on modern distros out of the box.</div>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 175+ tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. v0.6.5 adds consistent binary naming across install paths, fixes the install.sh binary-selection bug, and adds `-V` shorthand flags for both the CLI and runtime.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Does it require root or a daemon?</summary>
