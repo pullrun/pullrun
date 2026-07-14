@@ -9,7 +9,7 @@
 **Run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. No daemon required. No overlayfs. No separate VM images.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20679669.svg)](https://doi.org/10.5281/zenodo.20679669)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20679669-007ec6?logo=doi)](https://doi.org/10.5281/zenodo.20679669)
 [![Version](https://img.shields.io/badge/version-0.6.5-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
