@@ -94,7 +94,7 @@ func NewServer(client GRPCClientProvider) *Server {
 
 	mcpSrv := server.NewMCPServer(
 		"pullrun",
-		"0.6.4",
+		"0.6.5",
 		server.WithResourceCapabilities(true, false),
 		server.WithLogging(),
 	)

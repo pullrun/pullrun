@@ -5,7 +5,7 @@
 set -eu
 
 REPO="pullrun/pullrun"
-CURRENT_VERSION="v0.6.4"
+CURRENT_VERSION="v0.6.5"
 VERSION="${VERSION:-latest}"
 
 info()  { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -95,7 +95,13 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
     error "Windows download failed."
   fi
 
-  SRC=$(find "$TMPDIR" -maxdepth 3 -type f \( -name "pullrun.exe" -o -name "pullrun" \) 2>/dev/null | head -1)
+  SRC=$(find "$TMPDIR" -maxdepth 3 -type f -name "pullrun-windows-${ARCH}" 2>/dev/null | head -1)
+  if [ -z "$SRC" ]; then
+    SRC=$(find "$TMPDIR" -maxdepth 3 -type f -name "pullrun.exe" 2>/dev/null | head -1)
+  fi
+  if [ -z "$SRC" ]; then
+    SRC=$(find "$TMPDIR" -maxdepth 3 -type f -name "pullrun" 2>/dev/null | head -1)
+  fi
   if [ -n "$SRC" ]; then
     cp "$SRC" "$INSTALL_DIR/pullrun.exe"
     chmod +x "$INSTALL_DIR/pullrun.exe"
@@ -142,7 +148,10 @@ if [ "${IS_WINDOWS:-0}" = "1" ]; then
       info "  Using WSL distro: $UBUNTU_DISTRO"
 
       # Copy runtime binary into WSL2
-      RUNTIME_SRC=$(find "$RUNTIME_DIR" -maxdepth 3 -type f -name "pullrun-runtime" 2>/dev/null | head -1)
+      RUNTIME_SRC=$(find "$RUNTIME_DIR" -maxdepth 3 -type f -name "pullrun-runtime-linux-${ARCH}" 2>/dev/null | head -1)
+      if [ -z "$RUNTIME_SRC" ]; then
+        RUNTIME_SRC=$(find "$RUNTIME_DIR" -maxdepth 3 -type f -name "pullrun-runtime" 2>/dev/null | head -1)
+      fi
       if [ -n "$RUNTIME_SRC" ]; then
         info "  Installing pullrun-runtime into WSL2..."
         $WSL_EXE -d "$UBUNTU_DISTRO" -u root -- mkdir -p /usr/local/bin
