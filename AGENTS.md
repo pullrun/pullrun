@@ -26,7 +26,7 @@ the bare name when placing it on PATH.
 
 Tool                        | Required for
 ----------------------------|------------------------
-Go 1.22+                    | CLI (`cli/pullrun`)
+Go 1.25+                    | CLI (`cli/pullrun`)
 Rust nightly + `aarch64-unknown-linux-musl` target | native + cross Rust
 `x86_64-linux-musl-gcc`    | cross-compile Rust → linux/amd64
 `aarch64-linux-musl-gcc`   | cross-compile Rust → linux/arm64

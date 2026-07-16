@@ -229,6 +229,12 @@ impl MmapStore {
             if !visited.insert(d) {
                 continue;
             }
+            // Count the DAG node file.
+            let node_path = self.node_path(&d);
+            if node_path.exists() {
+                total += std::fs::metadata(&node_path).map(|m| m.len()).unwrap_or(0);
+            }
+            // Count the blob file, if present (large files stored externally).
             let blob_path = self.path_for_blob(&d);
             if blob_path.exists() {
                 total += std::fs::metadata(&blob_path).map(|m| m.len()).unwrap_or(0);
@@ -1592,11 +1598,19 @@ mod tests {
         let big_len = big_data.len() as u64;
         let medium_len = medium_data.len() as u64;
 
-        // A blob with no edges — inline is not a separate blob file.
+        // Size of each node.rkyv file (present for every stored node).
+        // This accounts for the DAG structure overhead.
+        let node_size = |d: &Digest| -> u64 {
+            std::fs::metadata(store.node_path(d))
+                .map(|m| m.len())
+                .unwrap_or(0)
+        };
+
+        // Inline blob — no blob.raw file, only the node file.
         assert_eq!(
             store.compute_image_size(&small),
-            0,
-            "inline blobs have no blob.raw"
+            node_size(&small),
+            "inline blob: only node.rkyv on disk"
         );
 
         // Manually set up blob.raw files by writing them.
@@ -1609,8 +1623,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             store.compute_image_size(&root),
-            small_len + big_len,
-            "leaf blob sizes sum"
+            node_size(&root) + node_size(&small) + small_len + node_size(&big) + big_len,
+            "leaf blob sizes + node.rkyv files"
         );
 
         // Add medium as a blob.raw under a second level.
@@ -1626,8 +1640,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             store.compute_image_size(&root2),
-            big_len + medium_len,
-            "nested blob sizes sum"
+            node_size(&root2) + node_size(&big) + big_len + node_size(&intermediate)
+                + node_size(&medium) + medium_len,
+            "nested blob sizes + node.rkyv files sum"
         );
     }
 }

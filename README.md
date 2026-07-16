@@ -4,7 +4,7 @@
 
 # **Pullrun**
 
-### *One OCI image. Any execution target. A single 12 MB binary.*
+### *One OCI image. Any execution target. CLI + runtime under 45 MB.*
 
 **Run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. No daemon required. No overlayfs. No separate VM images.**
 
@@ -17,8 +17,8 @@
 [![Windows](https://img.shields.io/badge/Windows-WSL2_%7C_runc_%7C_Firecracker-0078D6?logo=windows&logoColor=white)](docs/WINDOWS.md)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-CRI_shim-326CE5?logo=kubernetes&logoColor=white)](cri/pullrun-cri/)
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
-[![Rust](https://img.shields.io/badge/Rust-1.77+-dca282?logo=rust)](https://www.rust-lang.org)
-[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.78+-dca282?logo=rust)](https://www.rust-lang.org)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org)
 [![Tests](https://img.shields.io/badge/tests-175%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
@@ -38,7 +38,7 @@
 
 ## ⚡ What is Pullrun?
 
-Pullrun is a **single-binary OCI runtime** that runs the same image as a container or a VM. It stores layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and fits in 12 MB.
+Pullrun runs the same OCI image as a container or a VM. It stores layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and ships as a ~20 MB CLI + ~20 MB runtime daemon.
 
 **Why this matters:** Modern infrastructure uses too many execution engines — Docker for dev, containerd for production, Firecracker for isolation, CRI for Kubernetes, MCP agents for AI. Each has its own image format, storage, and operational model — even though they all run the same OCI images. Pullrun collapses these layers into one runtime.
 
@@ -46,7 +46,7 @@ Pullrun is a **single-binary OCI runtime** that runs the same image as a contain
 - **Containers and VMs from the same image** — no separate VM build step, no separate VM image format
 - **Content-addressed DAG store** — zero-copy mmap reads, deduplicated by content hash, byte-identical across every node
 - **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
-- **12 MB static binary** — no daemon required by default, optional runtime daemon for background services
+- **~20 MB CLI + ~20 MB runtime daemon** — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
 
 **Also included:** Kubernetes CRI shim (beta), Docker Compose support, MCP server for AI agents, policy engine (Cosign, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
 
@@ -100,7 +100,7 @@ cd cli/pullrun && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o pullrun.ex
 
 ```bash
 # ── Pull any OCI image ──────────────────────────────────────────
-pullrun pull alpine:3.18     # 968 ms — ~2x faster than Docker
+pullrun pull alpine:3.18     # 968 ms — benchmark script at hack/bench.sh
 
 # ── Run as a container (Linux) ─────────────────────────────────
 pullrun run alpine:3.18 --cmd "echo" --cmd "hello pullrun"
@@ -224,7 +224,7 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 | Firecracker VM cold boot | **~500 ms** | N/A |
 | Firecracker VM warm pool | **~200 ms** | N/A |
 | Idle daemon RSS | **24.6 MiB** | ~90 MiB |
-| Binary size | **12 MB** | ~75 MB |
+| Binary size | **~40 MB** (CLI + runtime) | ~75 MB |
 | Rootless by default | ✅ | ❌ (`dockerd` as root) |
 | Central daemon | Optional | Required |
 

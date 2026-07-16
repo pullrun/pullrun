@@ -20,7 +20,7 @@ everyone. Be respectful, constructive, and assume good faith.
 ### Prerequisites
 
 - **Rust** 1.78+ — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Go** 1.22+ — `brew install go` or `apt install golang`
+- **Go** 1.25+ — `brew install go` or `apt install golang`
 - **protoc** (if regenerating protobuf) — `brew install protobuf`
 
 ### Building
