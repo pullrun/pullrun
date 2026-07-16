@@ -178,11 +178,9 @@ impl DagBuilder {
                 .unwrap_or_else(|| (effective_platform.as_deref().unwrap_or("amd64"), "linux"));
             let DagDirectory {
                 manifest_digest, ..
-            } = build_dag_from_directory_with_platform(
-                &self.store, &scratch_dir, arch, os,
-            )
-            .await
-            .map_err(|e| BuildError::Scan(e.to_string()))?;
+            } = build_dag_from_directory_with_platform(&self.store, &scratch_dir, arch, os)
+                .await
+                .map_err(|e| BuildError::Scan(e.to_string()))?;
             let md = ManifestData {
                 entrypoint: vec![],
                 cmd: vec![],
@@ -201,7 +199,8 @@ impl DagBuilder {
             (manifest_digest, md)
         } else {
             info!("pulling base image: {}", stage.from);
-            let puller = OciPuller::with_insecure_registries(None, self.insecure_registries.clone());
+            let puller =
+                OciPuller::with_insecure_registries(None, self.insecure_registries.clone());
             let registry = extract_registry(&stage.from);
             let image_ref = extract_image_ref(&stage.from);
             let pulled = puller

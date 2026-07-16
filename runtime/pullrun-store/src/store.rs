@@ -1640,8 +1640,12 @@ mod tests {
             .unwrap();
         assert_eq!(
             store.compute_image_size(&root2),
-            node_size(&root2) + node_size(&big) + big_len + node_size(&intermediate)
-                + node_size(&medium) + medium_len,
+            node_size(&root2)
+                + node_size(&big)
+                + big_len
+                + node_size(&intermediate)
+                + node_size(&medium)
+                + medium_len,
             "nested blob sizes + node.rkyv files sum"
         );
     }
