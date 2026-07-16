@@ -380,6 +380,7 @@ mod tests {
     ///   5. format_ext4_from_dir (dir → ext4, no root)
     ///   6. debugfs verification (no mount needed)
     #[cfg(target_os = "linux")]
+    #[ignore = "requires network access to pull alpine:latest from Docker Hub"]
     #[tokio::test]
     async fn integration_materialize_ext4_e2e() {
         use pullrun_oci::puller::OciPuller;

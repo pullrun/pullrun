@@ -610,7 +610,8 @@ fn extract_tar_entries_sync(
 fn decompress_layer(blob: &[u8], media_type: &str) -> Result<Vec<u8>, OciError> {
     use std::io::Read;
 
-    let is_zstd = media_type.contains("+zstd");
+    // Match both OCI suffixes (+zstd) and Docker legacy suffixes (.tar.zstd).
+    let is_zstd = media_type.contains("+zstd") || media_type.contains(".tar.zstd");
     if is_zstd {
         let mut decoder = zstd::Decoder::new(blob)
             .map_err(|e| OciError::Other(format!("zstd decode error: {e}")))?;
@@ -621,7 +622,8 @@ fn decompress_layer(blob: &[u8], media_type: &str) -> Result<Vec<u8>, OciError> 
         return Ok(decompressed);
     }
 
-    let is_gzip = media_type.contains("+gzip");
+    // Match both OCI suffixes (+gzip) and Docker legacy suffixes (.tar.gzip).
+    let is_gzip = media_type.contains("+gzip") || media_type.contains(".tar.gzip");
     if is_gzip {
         let mut decoder = GzDecoder::new(blob);
         let mut decompressed = Vec::new();

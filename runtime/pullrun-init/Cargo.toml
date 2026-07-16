@@ -37,9 +37,3 @@ libc = "0.2"
 tempfile = "3"
 serial_test = "3"
 
-[profile.release]
-# Static binary, so the size matters for the initramfs.
-opt-level = "z"
-lto = true
-strip = true
-panic = "abort"

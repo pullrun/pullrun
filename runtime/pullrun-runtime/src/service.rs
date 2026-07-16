@@ -4269,16 +4269,28 @@ impl Runtime for RuntimeService {
         let op_lock = OpLock::new(&self.config.store_root)
             .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
 
-        let (root_digest, bytes_stored, bytes_deduplicated) =
+        let (root_digest_str, bytes_stored, bytes_deduplicated) =
             tokio::task::spawn_blocking(move || import_dag_from_tar(&store, &buf[..]))
                 .await
                 .map_err(|e| tonic::Status::internal(format!("import task join: {e}")))?
                 .map_err(|e| tonic::Status::internal(format!("import failed: {e}")))?;
 
+        // Register the imported root as a tag so it is pinned from GC
+        // and survives restarts.
+        let root = pullrun_store::Digest::from_hex(&root_digest_str)
+            .map_err(|e| tonic::Status::internal(format!("invalid root digest: {e}")))?;
+        let tag = format!("load:{}", &root_digest_str[..12]);
+        {
+            let mut tags = self.image_tags.write().await;
+            tags.insert(root_digest_str.clone(), tag);
+        }
+        let _ = self.store.increment_refcount(&root);
+        self.save_image_tags().await;
+
         op_lock.complete();
 
         Ok(tonic::Response::new(ImportImageResponse {
-            root_digest,
+            root_digest: root_digest_str,
             bytes_stored,
             bytes_deduplicated,
         }))

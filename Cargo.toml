@@ -48,3 +48,9 @@ axum = "0.7"
 filetime = "0.2"
 xattr = "1.3"
 zstd = { version = "0.13", default-features = false }
+
+[profile.release]
+panic = "abort"
+lto = true
+strip = true
+opt-level = "z"

@@ -165,32 +165,67 @@ impl DagBuilder {
         let effective_platform: Option<String> =
             self.platform.clone().or_else(|| stage.platform.clone());
 
-        // 1. Pull the base image
-        info!("pulling base image: {}", stage.from);
-        let puller = OciPuller::with_insecure_registries(None, self.insecure_registries.clone());
-        let registry = extract_registry(&stage.from);
-        let image_ref = extract_image_ref(&stage.from);
-        let pulled = puller
-            .pull_with_platform(
-                &image_ref,
-                Some(registry.as_str()),
-                effective_platform.as_deref(),
+        // 1. Pull the base image (or create empty rootfs for FROM scratch)
+        let (base_manifest, manifest_data) = if stage.from.eq_ignore_ascii_case("scratch") {
+            info!("FROM scratch — creating empty rootfs");
+            let tdir = tempfile::tempdir().map_err(BuildError::Io)?;
+            let scratch_dir = tdir.path().join("scratch");
+            std::fs::create_dir_all(&scratch_dir).map_err(BuildError::Io)?;
+            let (arch, os) = effective_platform
+                .as_deref()
+                .and_then(|p| p.split_once('/'))
+                .map(|(o, a)| (a, o))
+                .unwrap_or_else(|| (effective_platform.as_deref().unwrap_or("amd64"), "linux"));
+            let DagDirectory {
+                manifest_digest, ..
+            } = build_dag_from_directory_with_platform(
+                &self.store, &scratch_dir, arch, os,
             )
             .await
-            .map_err(|e| BuildError::Pull(format!("{}: {e}", stage.from)))?;
+            .map_err(|e| BuildError::Scan(e.to_string()))?;
+            let md = ManifestData {
+                entrypoint: vec![],
+                cmd: vec![],
+                env: vec![],
+                working_dir: None,
+                architecture: arch.to_string(),
+                os: os.to_string(),
+                annotations: None,
+                subject: None,
+                user: None,
+                stop_signal: None,
+                exposed_ports: None,
+                volumes: None,
+                variant: None,
+            };
+            (manifest_digest, md)
+        } else {
+            info!("pulling base image: {}", stage.from);
+            let puller = OciPuller::with_insecure_registries(None, self.insecure_registries.clone());
+            let registry = extract_registry(&stage.from);
+            let image_ref = extract_image_ref(&stage.from);
+            let pulled = puller
+                .pull_with_platform(
+                    &image_ref,
+                    Some(registry.as_str()),
+                    effective_platform.as_deref(),
+                )
+                .await
+                .map_err(|e| BuildError::Pull(format!("{}: {e}", stage.from)))?;
 
-        // 2. Convert to DAG
-        let converter = pullrun_oci::OciToDagConverter::new(self.store.clone());
-        let base_manifest = converter
-            .convert(&pulled)
-            .await
-            .map_err(|e| BuildError::Pull(format!("convert {}: {e}", stage.from)))?;
+            let converter = pullrun_oci::OciToDagConverter::new(self.store.clone());
+            let base_manifest = converter
+                .convert(&pulled)
+                .await
+                .map_err(|e| BuildError::Pull(format!("convert {}: {e}", stage.from)))?;
 
-        // 3. Read the manifest to get layer info
-        let materializer = OciMaterializer::new(&self.store);
-        let manifest_data = materializer
-            .materialize_manifest(&base_manifest)
-            .map_err(|e| BuildError::Pull(format!("manifest {}: {e}", stage.from)))?;
+            let materializer = OciMaterializer::new(&self.store);
+            let manifest_data = materializer
+                .materialize_manifest(&base_manifest)
+                .map_err(|e| BuildError::Pull(format!("manifest {}: {e}", stage.from)))?;
+
+            (base_manifest, manifest_data)
+        };
 
         // Track build metadata
         let mut current_manifest = base_manifest;

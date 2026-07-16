@@ -88,18 +88,17 @@ impl ProxyNetwork {
                 rule.port
             };
 
-            match self
+            self
                 .start_inbound_proxy(workload_id, port, target_ip, target_port)
                 .await
-            {
-                Ok(handle) => {
+                .map(|handle| {
                     proxy_handles.push(handle);
                     host_port_mappings.push((port, target_port));
-                }
-                Err(e) => {
-                    warn!(%workload_id, "failed to start inbound proxy: {e}");
-                }
-            }
+                })
+                .map_err(|e| {
+                    warn!(%workload_id, port, target = target_port, error = %e, "inbound proxy bind failed, aborting registration");
+                    e
+                })?;
         }
 
         if let Ok(handle) = self.start_outbound_proxy(workload_id, rules.to_vec()).await {
