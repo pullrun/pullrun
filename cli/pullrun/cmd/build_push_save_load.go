@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,6 +45,13 @@ Args:
 			}
 			if len(args) >= 2 {
 				contextDir = args[1]
+			}
+
+			// Guard: if DOCKERFILE is a directory, the user likely meant it as
+			// CONTEXT. Docker syntax is `build [OPTIONS] CONTEXT [DOCKERFILE]`;
+			// ours is `build [DOCKERFILE] [CONTEXT]` (Dockerfile-first).
+			if info, err := os.Stat(dockerfile); err == nil && info.IsDir() {
+				return fmt.Errorf("%q is a directory (expected a Dockerfile) — pullrun's arg order is `build [DOCKERFILE] [CONTEXT]`; try `build ./Dockerfile %s` or `build .` if your Dockerfile is in the current directory", dockerfile, dockerfile)
 			}
 
 			// Resolve to absolute paths so the daemon can find them regardless
@@ -168,9 +176,13 @@ func NewPushCommand(opts *RootOptions) *cobra.Command {
 
 func NewSaveCommand(opts *RootOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "save [ROOT_DIGEST] -o OUTPUT.tar",
+		Use:   "save [ROOT_DIGEST|TAG] -o OUTPUT.tar",
 		Short: "Export a DAG image to a tar archive",
-		Args:  cobra.ExactArgs(1),
+		Long: `Export a DAG image to a tar archive for transfer or backup.
+
+Accepts either a root digest (64-char hex) or an image tag (e.g. alpine:latest).
+When given a tag, it is resolved to a digest before export.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output, _ := cmd.Flags().GetString("output")
 			if output == "" {
@@ -190,7 +202,37 @@ func NewSaveCommand(opts *RootOptions) *cobra.Command {
 			}
 			defer closeFn()
 
-			stream, err := client.ExportImage(ctx, args[0], format)
+			// Resolve tag to digest if the argument is not a raw hex digest.
+			rootDigest := args[0]
+			if !looksLikeDigest(rootDigest) {
+				listResp, err := client.ListImages(ctx)
+				if err != nil {
+					return fmt.Errorf("list images: %w", err)
+				}
+				var found bool
+				for _, img := range listResp.Images {
+					if img.ImageRef == rootDigest {
+						rootDigest = img.RootDigest
+						found = true
+						break
+					}
+				}
+				if !found {
+					// Also try suffix match for convenience: "latest" → "library/alpine:latest"
+					for _, img := range listResp.Images {
+						if strings.HasSuffix(img.ImageRef, ":"+rootDigest) || strings.HasSuffix(img.ImageRef, "/"+rootDigest) {
+							rootDigest = img.RootDigest
+							found = true
+							break
+						}
+					}
+				}
+				if !found {
+					return fmt.Errorf("image tag %q not found", args[0])
+				}
+			}
+
+			stream, err := client.ExportImage(ctx, rootDigest, format)
 			if err != nil {
 				return fmt.Errorf("save: %w", err)
 			}
@@ -224,6 +266,14 @@ func NewSaveCommand(opts *RootOptions) *cobra.Command {
 	cmd.Flags().StringP("output", "o", "", "Output file path (required)")
 	cmd.Flags().String("format", "dag", "Export format: dag or oci")
 	return cmd
+}
+
+// looksLikeDigest reports whether s is likely a raw hex digest
+// (64 hex chars, optionally sha256: prefixed) rather than a tag.
+func looksLikeDigest(s string) bool {
+	s = strings.TrimPrefix(s, "sha256:")
+	matched, _ := regexp.MatchString(`^[0-9a-f]{64}$`, s)
+	return matched
 }
 
 func NewLoadCommand(opts *RootOptions) *cobra.Command {

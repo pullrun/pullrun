@@ -25,10 +25,10 @@ import (
 // with a synthetic AttachStdout/AttachExit stream.
 type fakeRuntimeServer struct {
 	runtimepb.UnimplementedRuntimeServer
-	mu         sync.Mutex
-	got        *runtimepb.AttachMessage
-	reply      func() []*runtimepb.AttachMessage
-	gotCh      chan struct{}
+	mu    sync.Mutex
+	got   *runtimepb.AttachMessage
+	reply func() []*runtimepb.AttachMessage
+	gotCh chan struct{}
 }
 
 func (f *fakeRuntimeServer) AttachWorkload(stream runtimepb.Runtime_AttachWorkloadServer) error {
@@ -150,12 +150,12 @@ func TestAttachStdinEofWireFormat(t *testing.T) {
 // a properly-flagged AttachExit when a workload exits.
 func TestAttachExitHasFlags(t *testing.T) {
 	tests := []struct {
-		name      string
-		exit      *runtimepb.AttachExit
-		wantCode  int32
-		wantSig   int32
-		wantHasC  bool
-		wantHasS  bool
+		name     string
+		exit     *runtimepb.AttachExit
+		wantCode int32
+		wantSig  int32
+		wantHasC bool
+		wantHasS bool
 	}{
 		{"normal exit", &runtimepb.AttachExit{HasExitCode: true, ExitCode: 0}, 0, 0, true, false},
 		{"non-zero exit", &runtimepb.AttachExit{HasExitCode: true, ExitCode: 7}, 7, 0, true, false},

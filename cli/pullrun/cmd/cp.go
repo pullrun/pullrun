@@ -76,9 +76,9 @@ func copyOut(ctx context.Context, client *GRPCClient, workloadPath, localPath st
 	id, containerPath := splitWorkloadPath(workloadPath)
 
 	resp, err := client.CopyFile(ctx, &runtimepb.CopyFileRequest{
-		Id:             id,
-		ContainerPath:  containerPath,
-		Direction:      "out",
+		Id:            id,
+		ContainerPath: containerPath,
+		Direction:     "out",
 	})
 	if err != nil {
 		return fmt.Errorf("copy out: %w", err)
@@ -108,11 +108,11 @@ func copyIn(ctx context.Context, client *GRPCClient, localPath, workloadPath str
 	}
 
 	resp, err := client.CopyFile(ctx, &runtimepb.CopyFileRequest{
-		Id:             id,
-		ContainerPath:  containerPath,
-		Direction:      "in",
-		Content:        content,
-		Mode:           uint32(info.Mode().Perm()),
+		Id:            id,
+		ContainerPath: containerPath,
+		Direction:     "in",
+		Content:       content,
+		Mode:          uint32(info.Mode().Perm()),
 	})
 	if err != nil {
 		return fmt.Errorf("copy in: %w", err)

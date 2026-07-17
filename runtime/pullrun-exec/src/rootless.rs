@@ -49,22 +49,23 @@ impl RootlessConfig {
 }
 
 pub fn rootless_runc_command(config: &RootlessConfig, id: &str, bundle: &Path) -> Command {
+    // --root is a global runc flag and MUST come before the subcommand.
     let mut cmd = Command::new(&config.runc_path);
-    cmd.arg("run")
+    cmd.arg("--root")
+        .arg(&config.state_root)
+        .arg("run")
         .arg("-d")
         .arg("--bundle")
         .arg(bundle)
-        .arg("--root")
-        .arg(&config.state_root)
         .arg(id);
     cmd
 }
 
 pub fn rootless_delete_command(config: &RootlessConfig, id: &str) -> Command {
     let mut cmd = Command::new(&config.runc_path);
-    cmd.arg("delete")
-        .arg("--root")
+    cmd.arg("--root")
         .arg(&config.state_root)
+        .arg("delete")
         .arg("--force")
         .arg(id);
     cmd
@@ -190,23 +191,65 @@ pub fn apply_rootless_config(bundle_dir: &Path, uid: u32) -> Result<(), ExecErro
 
     let patch = rootless_oci_config(uid);
 
-    // Patch the user namespace
-    if let Some(linux) = config.get_mut("linux") {
-        if let Some(namespaces) = linux.get_mut("namespaces") {
-            if let Some(arr) = namespaces.as_array_mut() {
-                let has_user = arr
+    // Apply linux.* patches — uidMappings and gidMappings are required
+    // for rootless; without them runc rejects with "no uid mappings found".
+    if let Some(patch_linux) = patch.get("linux").and_then(|v| v.as_object()) {
+        if let Some(linux_obj) = config
+            .as_object_mut()
+            .and_then(|root| root.get_mut("linux"))
+            .and_then(|v| v.as_object_mut())
+        {
+            for key in &["uidMappings", "gidMappings", "maskPaths", "readonlyPaths"] {
+                if let Some(val) = patch_linux.get(*key) {
+                    linux_obj.insert(key.to_string(), val.clone());
+                }
+            }
+            // Ensure "user" namespace is present in the namespaces list.
+            if let Some(namespaces) = linux_obj
+                .get_mut("namespaces")
+                .and_then(|v| v.as_array_mut())
+            {
+                let has_user = namespaces
                     .iter()
                     .any(|n| n.get("type").and_then(|v| v.as_str()) == Some("user"));
                 if !has_user {
-                    arr.push(serde_json::json!({"type": "user"}));
+                    namespaces.push(serde_json::json!({"type": "user"}));
+                }
+            } else {
+                linux_obj.insert(
+                    "namespaces".to_string(),
+                    serde_json::json!([{"type": "user"}]),
+                );
+            }
+        }
+    }
+
+    // Apply process.* patches — capabilities and noNewPrivileges for
+    // rootless safety, plus user mapping so the process runs as UID/GID
+    // of the calling (non-root) user.
+    if let Some(patch_process) = patch.get("process").and_then(|v| v.as_object()) {
+        if let Some(process_obj) = config.get_mut("process").and_then(|v| v.as_object_mut()) {
+            for key in &["capabilities", "noNewPrivileges", "user"] {
+                if let Some(val) = patch_process.get(*key) {
+                    process_obj.insert(key.to_string(), val.clone());
                 }
             }
         }
     }
 
-    // Set noNewPrivileges
-    if let Some(process) = config.get_mut("process") {
-        process["noNewPrivileges"] = serde_json::json!(true);
+    // Replace /proc, /dev, /sys mounts with rootless-safe versions.
+    // These must use proc/tmpfs/bind mounts that don't require privileges.
+    if let Some(patch_mounts) = patch.get("mounts").and_then(|v| v.as_array()) {
+        if let Some(mounts) = config.get_mut("mounts").and_then(|v| v.as_array_mut()) {
+            let rootless_dests: std::collections::HashSet<&str> = ["/proc", "/dev", "/sys"].into();
+            mounts.retain(|m| {
+                m.get("destination")
+                    .and_then(|v| v.as_str())
+                    .map(|d| !rootless_dests.contains(d))
+                    .unwrap_or(true)
+            });
+            mounts.extend(patch_mounts.iter().cloned());
+        }
     }
 
     debug!(bundle = %bundle_dir.display(), %uid, "applied rootless config");

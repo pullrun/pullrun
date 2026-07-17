@@ -4820,6 +4820,21 @@ impl Runtime for RuntimeService {
         let mut bytes_freed: i64 = 0;
         let errors: Vec<String> = Vec::new();
 
+        // 0. Remove exited workloads from the workloads map so that
+        //    subsequent cleanup (bundles, rootfs, etc.) and rmi can proceed.
+        {
+            let mut workloads = self.workloads.write().await;
+            let exited: Vec<String> = workloads
+                .iter()
+                .filter(|(_, ws)| ws.status == "exited")
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in &exited {
+                workloads.remove(id);
+                info!(%id, "prune: removed exited workload");
+            }
+        }
+
         // 1. Remove stale bundle directories (exited/stopped workloads).
         let bundle_root = store_root.join("bundles");
         if bundle_root.exists() {

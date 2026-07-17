@@ -14,7 +14,8 @@ func NewRmiCommand(opts *RootOptions) *cobra.Command {
 		Use:   "rmi TAG [TAG...]",
 		Short: "Remove one or more images by tag or digest",
 		Long: `Remove one or more images from the local DAG store.
-Accepts OCI image tags (e.g. alpine:latest) or hex digest roots.
+Accepts OCI image tags (e.g. alpine:latest), hex digest roots,
+or digest prefixes (matching the truncated display in 'pullrun images').
 
 Shared layers are preserved: a layer referenced by another
 image is not deleted until the last referencing image is removed.`,
@@ -63,6 +64,20 @@ image is not deleted until the last referencing image is removed.`,
 				}
 				if _, ok := digestToTags[arg]; ok {
 					toRemove = append(toRemove, removal{arg: arg, digest: arg})
+					continue
+				}
+
+				// Digest prefix lookup: match when the argument is a prefix
+				// of a full digest (handles truncated display from 'images').
+				var prefixMatch bool
+				for fullDigest := range digestToTags {
+					if strings.HasPrefix(fullDigest, strings.TrimPrefix(arg, "sha256:")) {
+						toRemove = append(toRemove, removal{arg: arg, digest: fullDigest})
+						prefixMatch = true
+						break
+					}
+				}
+				if prefixMatch {
 					continue
 				}
 

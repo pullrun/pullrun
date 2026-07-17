@@ -10,17 +10,17 @@ import (
 	"time"
 	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"google.golang.org/grpc"
 	runtimepb "pullrun/protoapi/pullrun/runtime"
-	"golang.org/x/sys/windows"
 )
 
 var (
-	kernel32            = windows.NewLazySystemDLL("kernel32.dll")
-	procGetConsoleMode  = kernel32.NewProc("GetConsoleMode")
-	procSetConsoleMode  = kernel32.NewProc("SetConsoleMode")
-	procGetConsoleCP    = kernel32.NewProc("GetConsoleCP")
-	procSetConsoleCP    = kernel32.NewProc("SetConsoleCP")
+	kernel32               = windows.NewLazySystemDLL("kernel32.dll")
+	procGetConsoleMode     = kernel32.NewProc("GetConsoleMode")
+	procSetConsoleMode     = kernel32.NewProc("SetConsoleMode")
+	procGetConsoleCP       = kernel32.NewProc("GetConsoleCP")
+	procSetConsoleCP       = kernel32.NewProc("SetConsoleCP")
 	procGetConsoleOutputCP = kernel32.NewProc("GetConsoleOutputCP")
 	procSetConsoleOutputCP = kernel32.NewProc("SetConsoleOutputCP")
 )
@@ -69,8 +69,8 @@ func setupRawTerminal() (func(), error) {
 
 	oldCp, _, _ := procGetConsoleCP.Call()
 	oldOutputCp, _, _ := procGetConsoleOutputCP.Call()
-	procSetConsoleCP.Call(65001)           // UTF-8 input
-	procSetConsoleOutputCP.Call(65001)     // UTF-8 output
+	procSetConsoleCP.Call(65001)       // UTF-8 input
+	procSetConsoleOutputCP.Call(65001) // UTF-8 output
 
 	return func() {
 		setConsoleMode(inHandle, oldInMode)
@@ -121,9 +121,9 @@ func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, ru
 func getConsoleSize() (int, int, error) {
 	var info struct {
 		dwSize, dwCursorPosition struct{ X, Y int16 }
-		wAttributes             uint16
-		srWindow                struct{ Left, Top, Right, Bottom int16 }
-		dwMaximumWindowSize     struct{ X, Y int16 }
+		wAttributes              uint16
+		srWindow                 struct{ Left, Top, Right, Bottom int16 }
+		dwMaximumWindowSize      struct{ X, Y int16 }
 	}
 	handle := windows.Handle(os.Stdout.Fd())
 	r, _, err := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleScreenBufferInfo").Call(

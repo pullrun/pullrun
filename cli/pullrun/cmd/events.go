@@ -28,9 +28,9 @@ import (
 // stream, applying any client-side filter on `event_types`.
 func NewEventsCommand(opts *RootOptions) *cobra.Command {
 	var (
-		follow    bool
+		follow     bool
 		eventTypes []string
-		since     string
+		since      string
 	)
 
 	cmd := &cobra.Command{

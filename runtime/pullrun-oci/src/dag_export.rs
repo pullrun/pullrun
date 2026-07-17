@@ -97,6 +97,10 @@ fn walk_dag_collect(
     store: &MmapStore,
     root_digest: &str,
 ) -> Result<(Vec<Digest>, Vec<Digest>), pullrun_store::StoreError> {
-    let root = Digest::from_hex(root_digest).unwrap_or(Digest([0u8; 32]));
+    let root = Digest::from_hex(root_digest).map_err(|e| {
+        pullrun_store::StoreError::ArchiveValidation(format!(
+            "invalid root digest {root_digest:?}: {e}"
+        ))
+    })?;
     walk_reachable(store, &[root])
 }

@@ -236,31 +236,31 @@ func defaultBackend() string {
 
 func NewRunCommand(opts *RootOptions) *cobra.Command {
 	var (
-		backend         string
-		allowOutbound   []string
-		allowInbound    []string
-		publishPorts    []string
-		envVars         []string
-		envMap          = map[string]string{}
-		command         []string
-		cpuMillicores   uint64
-		memoryBytes     uint64
-		networkMode     string
-		name            string
-		kernelImage     string
-		registry        string
-		volumes         []string
-		healthCmd       string
-		healthInterval  uint32
-		healthTimeout   uint32
-		healthRetries   uint32
+		backend           string
+		allowOutbound     []string
+		allowInbound      []string
+		publishPorts      []string
+		envVars           []string
+		envMap            = map[string]string{}
+		command           []string
+		cpuMillicores     uint64
+		memoryBytes       uint64
+		networkMode       string
+		name              string
+		kernelImage       string
+		registry          string
+		volumes           []string
+		healthCmd         string
+		healthInterval    uint32
+		healthTimeout     uint32
+		healthRetries     uint32
 		healthStartPeriod uint32
-		restartPolicy   string
-		platform        string
-		secretNames     []string
-		configNames     []string
-		attach          bool
-		tty             bool
+		restartPolicy     string
+		platform          string
+		secretNames       []string
+		configNames       []string
+		attach            bool
+		tty               bool
 	)
 
 	cmd := &cobra.Command{
@@ -827,11 +827,11 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 	if err := stream.Send(&runtimepb.AttachMessage{
 		Body: &runtimepb.AttachMessage_Open{
 			Open: &runtimepb.AttachOpen{
-				WorkloadId:  workloadID,
-				Command:     command,
-				Env:         env,
-				WorkingDir:  workingDir,
-				Tty:         tty,
+				WorkloadId: workloadID,
+				Command:    command,
+				Env:        env,
+				WorkingDir: workingDir,
+				Tty:        tty,
 				InitialRows: func() uint32 {
 					if !tty {
 						return 0

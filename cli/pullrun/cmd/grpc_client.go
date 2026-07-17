@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	runtimepb "pullrun/protoapi/pullrun/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	runtimepb "pullrun/protoapi/pullrun/runtime"
 )
 
 // GRPCClient wraps a real gRPC connection to the pullrun-runtime service.

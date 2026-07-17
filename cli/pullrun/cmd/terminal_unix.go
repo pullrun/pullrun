@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"google.golang.org/grpc"
-	"golang.org/x/term"
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
+	"google.golang.org/grpc"
 	runtimepb "pullrun/protoapi/pullrun/runtime"
 )
 

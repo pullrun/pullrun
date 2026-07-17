@@ -883,8 +883,24 @@ impl Executor for RootlessContainerExecutor {
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
 
-        let child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(|e| {
+            ExecError::ExecutionFailed(format!("rootless runc spawn failed for {}: {e}", handle.id))
+        })?;
         let pid = child.id();
+
+        // Quick non-blocking check: did runc fail immediately?
+        // runc run -d succeeds or fails fast, so try_wait catches bad flags/config
+        // without blocking when runc is still starting the container.
+        if let Ok(Some(status)) = child.try_wait() {
+            if !status.success() {
+                return Err(ExecError::ExecutionFailed(format!(
+                    "rootless runc start failed for {} (exit: {:?})",
+                    handle.id,
+                    status.code()
+                )));
+            }
+            // runc exited successfully — container is running in background.
+        }
 
         // Run pasta/slirp4netns in the container's network namespace
         match crate::rootless::setup_rootless_network(&handle.id, pid, self.use_pasta).await {
