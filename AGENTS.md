@@ -62,12 +62,13 @@ Each binary is named `<binary>-<os>-<arch>`:
 
 ```shell
 cd cli/pullrun
+LDFLAGS="-s -w"  # strip debug info (~20 MB → ~14 MB)
 
-GOOS=darwin  GOARCH=arm64 go build -o /tmp/release/pullrun-darwin-arm64    .
-GOOS=darwin  GOARCH=amd64 go build -o /tmp/release/pullrun-darwin-amd64    .
-GOOS=linux   GOARCH=arm64 go build -o /tmp/release/pullrun-linux-arm64     .
-GOOS=linux   GOARCH=amd64 go build -o /tmp/release/pullrun-linux-amd64     .
-GOOS=windows GOARCH=amd64 go build -o /tmp/release/pullrun-windows-amd64   .
+GOOS=darwin  GOARCH=arm64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-darwin-arm64    .
+GOOS=darwin  GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-darwin-amd64    .
+GOOS=linux   GOARCH=arm64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-linux-arm64     .
+GOOS=linux   GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-linux-amd64     .
+GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-windows-amd64   .
 ```
 
 ## Build all Rust targets

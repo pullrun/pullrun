@@ -4,7 +4,7 @@
 
 # **Pullrun**
 
-### *One OCI image. Any execution target. CLI + runtime under 45 MB.*
+### *One OCI image. Any execution target. CLI + runtime under 25 MB.*
 
 **Run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. No daemon required. No overlayfs. No separate VM images.**
 
@@ -38,7 +38,7 @@
 
 ## ⚡ What is Pullrun?
 
-Pullrun runs the same OCI image as a container or a VM. It stores layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and ships as a ~20 MB CLI + ~20 MB runtime daemon.
+Pullrun runs the same OCI image as a container or a VM. It stores layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and ships as a ~14 MB CLI + ~6 MB runtime daemon.
 
 **Why this matters:** Modern infrastructure uses too many execution engines — Docker for dev, containerd for production, Firecracker for isolation, CRI for Kubernetes, MCP agents for AI. Each has its own image format, storage, and operational model — even though they all run the same OCI images. Pullrun collapses these layers into one runtime.
 
@@ -46,7 +46,7 @@ Pullrun runs the same OCI image as a container or a VM. It stores layers in a co
 - **Containers and VMs from the same image** — no separate VM build step, no separate VM image format
 - **Content-addressed DAG store** — zero-copy mmap reads, deduplicated by content hash, byte-identical across every node
 - **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
-- **~20 MB CLI + ~20 MB runtime daemon** — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
+- **~14 MB CLI + ~6 MB runtime daemon** (stripped) — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
 
 **Also included:** Kubernetes CRI shim (beta), Docker Compose support, MCP server for AI agents, policy engine (Cosign, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
 
@@ -224,7 +224,7 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 | Firecracker VM cold boot | **~500 ms** | N/A |
 | Firecracker VM warm pool | **~200 ms** | N/A |
 | Idle daemon RSS | **24.6 MiB** | ~90 MiB |
-| Binary size | **~40 MB** (CLI + runtime) | ~75 MB |
+| Binary size (stripped) | **~20 MB** (CLI + runtime) | ~75 MB |
 | Rootless by default | ✅ | ❌ (`dockerd` as root) |
 | Central daemon | Optional | Required |
 
