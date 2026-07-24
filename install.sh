@@ -270,7 +270,7 @@ curl -fsSL "$URL" | tar -xzf - -C "$TMPDIR"
 # Install binaries (find them wherever they landed — the tarball may use
 # ./bin/<name> or <name-arch> layout depending on the release pipeline).
 installed=0
-for BIN in pullrun pullrun-runtime apple-virt-exec; do
+for BIN in pullrun pullrun-runtime pullrun-compose apple-virt-exec; do
   SRC=""
   # 1. Check directly under the extraction root
   for f in "$TMPDIR/$BIN" "$TMPDIR/$BIN.exe"; do

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -79,6 +80,40 @@ func newUpCommand() *cobra.Command {
 				svc, ok := project.Services[name]
 				if !ok {
 					return fmt.Errorf("service %q not found in compose file", name)
+				}
+
+				// Auto-build if the service has a build section but no image.
+				if svc.Image == "" && svc.Build != nil {
+					tag := fmt.Sprintf("%s-%s:latest", project.Name, name)
+					workingDir := filepath.Dir(filePath)
+					contextDir := svc.Build.Context
+					if !filepath.IsAbs(contextDir) {
+						contextDir = filepath.Join(workingDir, contextDir)
+					}
+					dockerfile := svc.Build.Dockerfile
+					if dockerfile == "" {
+						dockerfile = filepath.Join(contextDir, "Dockerfile")
+					} else if !filepath.IsAbs(dockerfile) {
+						dockerfile = filepath.Join(contextDir, dockerfile)
+					}
+					fmt.Printf("  %s: building (context=%s)\n", name, contextDir)
+					buildArgs := make(map[string]string)
+					for k, v := range svc.Build.Args {
+						if v != nil {
+							buildArgs[k] = *v
+						}
+					}
+					buildResp, err := client.BuildImage(ctx, &runtimeapi.BuildImageRequest{
+						Dockerfile: dockerfile,
+						ContextDir: contextDir,
+						Tag:        tag,
+						BuildArgs:  buildArgs,
+					})
+					if err != nil {
+						return fmt.Errorf("build %s: %w", name, err)
+					}
+					fmt.Printf("  %s: built (digest=%s)\n", name, buildResp.RootDigest)
+					svc.Image = tag
 				}
 
 				id := fmt.Sprintf("%s-%s", project.Name, name)
