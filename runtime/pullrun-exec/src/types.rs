@@ -304,7 +304,7 @@ pub enum ExecError {
 #[async_trait]
 pub trait Executor: Send + Sync {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError>;
-    async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError>;
+    async fn start(&self, handle: &mut ProcessHandle) -> Result<(), ExecError>;
     async fn stop(&self, id: &str) -> Result<(), ExecError>;
     async fn wait(&self, id: &str) -> Result<ExitStatus, ExecError>;
     async fn status(&self, id: &str) -> Result<String, ExecError>;

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3 — 2026-07-24
+
+### Bug fixes
+- **exec returned success with pid:0 for container workloads.** `start()` now
+  takes `&mut ProcessHandle` so the trait impls can write PID back into the
+  handle. After `runc run -d` both rootless and non-rootless executors verify
+  the container state via `runc state` and only report success when PID > 0
+  and status is `"running"`.
+
 ## 0.7.2 — 2026-07-24
 
 ### Security

@@ -222,7 +222,7 @@ impl Executor for ExecutorRouter {
         }
     }
 
-    async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
+    async fn start(&self, handle: &mut ProcessHandle) -> Result<(), ExecError> {
         match handle.backend.as_str() {
             "container" => self.container.start(handle).await,
             "container-rootless" => match &self.rootless {
@@ -1371,8 +1371,8 @@ async fn attempt_restart(
     };
 
     match watcher_executor.create(spec).await {
-        Ok(handle) => {
-            if let Err(e) = watcher_executor.start(&handle).await {
+        Ok(mut handle) => {
+            if let Err(e) = watcher_executor.start(&mut handle).await {
                 warn!(%id, error = %e, "restart: start failed");
                 return;
             }
@@ -2347,7 +2347,7 @@ impl Runtime for RuntimeService {
                 .with_metadata("image_root", &req.root_digest),
         );
 
-        let handle = match self.executor.create(spec.clone()).await {
+        let mut handle = match self.executor.create(spec.clone()).await {
             Ok(h) => h,
             Err(e) => {
                 // Special case: on macOS, the VM backend
@@ -2447,7 +2447,7 @@ impl Runtime for RuntimeService {
             }
         };
 
-        if let Err(e) = self.executor.start(&handle).await {
+        if let Err(e) = self.executor.start(&mut handle).await {
             self.event_bus.emit(
                 Event::new(&req.id, EventKind::WorkloadStarted)
                     .with_metadata("backend", &handle.backend)

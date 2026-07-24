@@ -553,8 +553,8 @@ async fn run_workload(
         restart_policy: Default::default(),
     };
 
-    let handle = executor.create(spec).await?;
-    executor.start(&handle).await?;
+    let mut handle = executor.create(spec).await?;
+    executor.start(&mut handle).await?;
 
     println!(
         "Started {} (pid {:?}, backend: {}, network: loopback)",

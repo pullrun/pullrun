@@ -505,7 +505,7 @@ impl Executor for LinuxContainerExecutor {
         Ok(handle)
     }
 
-    async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
+    async fn start(&self, handle: &mut ProcessHandle) -> Result<(), ExecError> {
         use std::process::Command as SyncCommand;
 
         info!(id = %handle.id, "starting container");
@@ -873,7 +873,7 @@ impl Executor for RootlessContainerExecutor {
         Ok(handle)
     }
 
-    async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
+    async fn start(&self, handle: &mut ProcessHandle) -> Result<(), ExecError> {
         info!(id = %handle.id, uid = self.uid, "starting rootless container");
 
         let bundle_dir = self.bundle_dir(&handle.id);

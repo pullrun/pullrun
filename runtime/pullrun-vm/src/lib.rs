@@ -435,7 +435,7 @@ impl Executor for FirecrackerExecutor {
         Ok(handle)
     }
 
-    async fn start(&self, handle: &ProcessHandle) -> Result<(), ExecError> {
+    async fn start(&self, handle: &mut ProcessHandle) -> Result<(), ExecError> {
         // Pool-allocated VMs are already booted — no-op.
         {
             let pa = self
@@ -745,7 +745,7 @@ impl Executor for AppleVirtExecutor {
         ))
     }
 
-    async fn start(&self, _handle: &ProcessHandle) -> Result<(), ExecError> {
+    async fn start(&self, _handle: &mut ProcessHandle) -> Result<(), ExecError> {
         Err(ExecError::BackendNotAvailable(
             "AppleVirtExecutor stub".into(),
         ))
