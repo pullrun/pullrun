@@ -1879,7 +1879,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-exec"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "async-trait",
  "libc",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-gc"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "pullrun-store",
  "serde",
@@ -1908,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-init"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "bytes",
  "libc",
@@ -1923,7 +1923,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-net"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1941,7 +1941,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-oci"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-policy"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -1986,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-runtime"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -2029,7 +2029,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-store"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "dashmap",
  "hex",
@@ -2046,7 +2046,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-sync"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "bytes",
  "futures",
@@ -2071,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-vm"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "async-trait",
  "block2",
@@ -2103,7 +2103,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-vsock"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "bytes",
  "futures-lite",

@@ -82,9 +82,12 @@ func newUpCommand() *cobra.Command {
 					return fmt.Errorf("service %q not found in compose file", name)
 				}
 
-				// Auto-build if the service has a build section but no image.
-				if svc.Image == "" && svc.Build != nil {
-					tag := fmt.Sprintf("%s-%s:latest", project.Name, name)
+				// Auto-build if the service has a build section.
+				if svc.Build != nil {
+					tag := svc.Image
+					if tag == "" {
+						tag = fmt.Sprintf("%s-%s:latest", project.Name, name)
+					}
 					workingDir := filepath.Dir(filePath)
 					contextDir := svc.Build.Context
 					if !filepath.IsAbs(contextDir) {
