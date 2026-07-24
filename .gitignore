@@ -48,6 +48,7 @@ pullrun.dev/
 
 # Strategy / planning docs
 .planning/
+AGENTS.md
 
 # Rebuilt Linux CLI binary (cross-compiled for Firecracker/slirp tests)
 cli/pullrun/pullrun-linux-new
