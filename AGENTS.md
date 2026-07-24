@@ -58,17 +58,28 @@ git tag vX.Y.Z
 
 ## Build all Go targets
 
-Each binary is named `<binary>-<os>-<arch>`:
+Each binary is named `<binary>-<os>-<arch>`. Both the CLI and the compose
+binary are built for every target:
 
 ```shell
-cd cli/pullrun
-LDFLAGS="-s -w"  # strip debug info (~20 MB → ~14 MB)
+LDFLAGS="-s -w"  # strip debug info
 
+# CLI
+cd cli/pullrun
 GOOS=darwin  GOARCH=arm64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-darwin-arm64    .
 GOOS=darwin  GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-darwin-amd64    .
 GOOS=linux   GOARCH=arm64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-linux-arm64     .
 GOOS=linux   GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-linux-amd64     .
 GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-windows-amd64   .
+
+# Compose delegator
+cd ../../cmd/pullrun-compose
+GOOS=darwin  GOARCH=arm64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-compose-darwin-arm64    .
+GOOS=darwin  GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-compose-darwin-amd64    .
+GOOS=linux   GOARCH=arm64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-compose-linux-arm64     .
+GOOS=linux   GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-compose-linux-amd64     .
+GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o /tmp/release/pullrun-compose-windows-amd64   .
+cd ../../cli/pullrun
 ```
 
 ## Build all Rust targets
@@ -112,22 +123,22 @@ stripped). The tarball itself is `pullrun-<version>-<os>-<arch>.tar.gz`.
 cd /tmp/release
 
 tar czf /tmp/pullrun-X.Y.Z-darwin-arm64.tar.gz \
-  pullrun-darwin-arm64 pullrun-runtime-darwin-arm64
+  pullrun-darwin-arm64 pullrun-runtime-darwin-arm64 pullrun-compose-darwin-arm64
 
 tar czf /tmp/pullrun-X.Y.Z-darwin-amd64.tar.gz \
-  pullrun-darwin-amd64 pullrun-runtime-darwin-amd64
+  pullrun-darwin-amd64 pullrun-runtime-darwin-amd64 pullrun-compose-darwin-amd64
 
 tar czf /tmp/pullrun-X.Y.Z-linux-arm64.tar.gz \
-  pullrun-linux-arm64 pullrun-runtime-linux-arm64
+  pullrun-linux-arm64 pullrun-runtime-linux-arm64 pullrun-compose-linux-arm64
 
 tar czf /tmp/pullrun-X.Y.Z-linux-amd64.tar.gz \
-  pullrun-linux-amd64 pullrun-runtime-linux-amd64
+  pullrun-linux-amd64 pullrun-runtime-linux-amd64 pullrun-compose-linux-amd64
 
 tar czf /tmp/pullrun-X.Y.Z-windows-amd64.tar.gz \
-  pullrun-windows-amd64
+  pullrun-windows-amd64 pullrun-compose-windows-amd64
 ```
 
-**Note:** Windows tarball only contains `pullrun.exe` (no runtime — the
+**Note:** Windows tarball only contains CLI + compose (no runtime — the
 runtime is a Linux binary for WSL2 and lives in the Linux tarball).
 
 ## Verify the installed binaries
@@ -136,6 +147,7 @@ runtime is a Linux binary for WSL2 and lives in the Linux tarball).
 /tmp/release/pullrun-darwin-arm64 version   # → pullrun X.Y.Z
 /tmp/release/pullrun-runtime-darwin-arm64 --version  # → pullrun-runtime X.Y.Z
 /tmp/release/pullrun-darwin-arm64 -V        # → pullrun version X.Y.Z
+/tmp/release/pullrun-compose-darwin-arm64 --help  # → prints usage
 ```
 
 Also verify `-V` works on all Go binaries and `--version` on all Rust binaries.
@@ -161,17 +173,19 @@ gh release create vX.Y.Z \
 After release, update the Homebrew tap at `pullrun/homebrew-tap`.
 
 The formula must rename the suffixed binaries to bare names using
-`Hardware::CPU.arm?` blocks, because Homebrew expects the bare `pullrun`
-and `pullrun-runtime` on PATH:
+`Hardware::CPU.arm?` blocks, because Homebrew expects the bare `pullrun`,
+`pullrun-runtime`, and `pullrun-compose` on PATH:
 
 ```ruby
 def install
   if Hardware::CPU.arm?
     bin.install "pullrun-darwin-arm64" => "pullrun"
     bin.install "pullrun-runtime-darwin-arm64" => "pullrun-runtime"
+    bin.install "pullrun-compose-darwin-arm64" => "pullrun-compose"
   else
     bin.install "pullrun-darwin-amd64" => "pullrun"
     bin.install "pullrun-runtime-darwin-amd64" => "pullrun-runtime"
+    bin.install "pullrun-compose-darwin-amd64" => "pullrun-compose"
   end
 end
 ```
