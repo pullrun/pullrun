@@ -210,7 +210,7 @@ Pullrun is also **rootless by default** — no `sudo` needed, no daemon listenin
 
 ### 🧬 Content-Addressed DAG Store
 
-Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https://github.com/danburkert/memmap2). OCI layers are stored once, deduplicated by content hash, and `mmap()`'d directly — no tar extraction, no overlayfs, no `dockerd` process owning the data.
+Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https://github.com/RazrFalcon/memmap2-rs). OCI layers are stored once, deduplicated by content hash, and `mmap()`'d directly — no tar extraction, no overlayfs, no `dockerd` process owning the data.
 
 > A `sha256:` digest is globally consistent. Every node that has pulled `alpine:3.18` stores **byte-identical** files on disk. This makes P2P sync trivial: blocks are verified by content hash, transferred delta-only, and deduplicated across the entire cluster.
 
