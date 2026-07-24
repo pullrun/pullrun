@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 — 2026-07-24
+
+### Security
+- **grpc-go updated to v1.82.1.** Patches xDS RBAC and HTTP/2 vulnerabilities.
+  Applied across all 6 Go modules.
+- **quinn-proto updated to v0.11.16.** Patches remote memory exhaustion from
+  unbounded out-of-order stream reassembly.
+
 ## 0.7.0 — 2026-07-24
 
 ### Features
