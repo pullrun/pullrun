@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2 — 2026-07-24
+
+### Security
+- **quinn-proto updated to v0.11.16 in all Cargo.lock files.** The workspace and two tool crates (apple-virt-smoke, apple-virt-exec) now pin the patched version, closing all 3 Dependabot alerts.
+
 ## 0.7.1 — 2026-07-24
 
 ### Security
