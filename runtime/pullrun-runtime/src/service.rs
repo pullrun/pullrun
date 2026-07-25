@@ -597,25 +597,32 @@ impl RuntimeCommand {
         }
 
         // Rebuild refcounts from all roots (tags + workloads) for crash recovery.
+        // This is done in a background task to avoid blocking the gRPC socket bind.
+        // The rebuild can take ~55s on macOS with large stores (7000+ nodes).
         {
-            let tags = image_tags.read().await;
-            let wl = workloads.read().await;
-            let tag_roots: Vec<Digest> = tags
-                .keys()
-                .filter_map(|k| Digest::from_hex(k).ok())
-                .collect();
-            let wl_roots: Vec<Digest> = wl
-                .values()
-                .filter_map(|s| Digest::from_hex(&s.image_root).ok())
-                .collect();
+            let bg_store = store.clone();
+            let tag_roots: Vec<Digest> = {
+                let tags = image_tags.read().await;
+                tags.keys()
+                    .filter_map(|k| Digest::from_hex(k).ok())
+                    .collect()
+            };
+            let wl_roots: Vec<Digest> = {
+                let wl = workloads.read().await;
+                wl.values()
+                    .filter_map(|s| Digest::from_hex(&s.image_root).ok())
+                    .collect()
+            };
             let mut all_roots: Vec<Digest> = Vec::with_capacity(tag_roots.len() + wl_roots.len());
             all_roots.extend(tag_roots);
             all_roots.extend(wl_roots);
-            if !all_roots.is_empty() {
-                if let Err(e) = store.recompute_all_refcounts(&all_roots) {
-                    warn!("refcount rebuild failed at startup: {e}");
+            tokio::spawn(async move {
+                if !all_roots.is_empty() {
+                    if let Err(e) = bg_store.recompute_all_refcounts(&all_roots) {
+                        warn!("refcount rebuild failed at startup: {e}");
+                    }
                 }
-            }
+            });
         }
 
         // Spawn the workload-exit watcher. Every 5s it walks the

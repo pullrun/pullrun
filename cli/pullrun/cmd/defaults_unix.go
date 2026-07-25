@@ -59,18 +59,18 @@ func spawnRuntime(opts *RootOptions) error {
 		return fmt.Errorf("start runtime: %w", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(opts.SocketPath); err == nil {
 			signal.Stop(sigCh)
 			close(doneCh)
 			return nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	signal.Stop(sigCh)
 	close(doneCh)
-	return fmt.Errorf("runtime socket %s did not appear within 5s", opts.SocketPath)
+	return fmt.Errorf("runtime socket %s did not appear within 60s", opts.SocketPath)
 }
 
 func findRuntimeBinary() (string, error) {

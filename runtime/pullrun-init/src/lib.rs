@@ -398,7 +398,9 @@ impl Workload {
             let mut termios: libc::termios = std::mem::zeroed();
             libc::tcgetattr(slave, &mut termios);
             libc::cfmakeraw(&mut termios);
+            termios.c_iflag |= libc::ICRNL;
             termios.c_lflag |= libc::ISIG | libc::ECHO;
+            termios.c_lflag &= !libc::ECHOCTL;
             termios.c_oflag |= libc::OPOST | libc::ONLCR;
             libc::tcsetattr(slave, libc::TCSANOW, &termios);
 

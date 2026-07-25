@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.4 — 2026-07-25
+
+### Bug fixes
+- **Apple Virt PTY: `\r`→`\n` conversion missing in pullrun-init.** `cfmakeraw`
+  clears `ICRNL`, so Enter from the host stayed as `\r` and was not recognized
+  by Debian-based shells (dash, bash). Added `ICRNL=1` and cleared `ECHOCTL` in
+  the guest PTY termios setup. Alpine (BusyBox ash) was unaffected.
+- **Startup blocked by synchronous refcount rebuild.** The store refcount rebuild
+  (up to ~55s with 7000+ nodes) blocked the gRPC socket bind, causing the CLI
+  to time out after 5s. Moved into a background `tokio::spawn`; CLI timeout
+  increased to 60s.
+- **Homebrew `postinstall` auto-signs runtime binary.** The
+  `com.apple.security.virtualization` entitlement is now applied to
+  `pullrun-runtime` after every `brew install` / `brew reinstall`, so Apple
+  Virtualization VM backend works immediately with no manual codesign step.
+
 ## 0.7.3 — 2026-07-24
 
 ### Bug fixes
