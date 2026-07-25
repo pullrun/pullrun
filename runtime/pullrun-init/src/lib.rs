@@ -283,14 +283,81 @@ impl Workload {
         Ok(())
     }
 
+    /// Configure the VM's network interface before the workload starts.
+    ///
+    /// The Apple Virtualization framework creates a virtio NIC with a
+    /// `VZNATNetworkDeviceAttachment`, but the guest is responsible for
+    /// bringing it up.  Without this step, `eth0` exists but is `DOWN`
+    /// with no IP address, causing all network operations to fail with
+    /// `ENETUNREACH`.
+    ///
+    /// This uses `busybox` applets from the initramfs (`/bin/ifconfig`,
+    /// `/bin/route`).  These are NOT available after `mount_rootfs()`
+    /// chroots into the OCI rootfs, so this must be called *before* the
+    /// chroot.
+    #[cfg(target_os = "linux")]
+    fn configure_network() -> Result<(), InitError> {
+        use std::process::Command;
+
+        let run = |args: &[&str]| -> Result<(), InitError> {
+            let bin = args[0];
+            let output = Command::new(bin)
+                .args(&args[1..])
+                .output()
+                .map_err(|e| InitError::Exec(format!("spawn {bin}: {e}")))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(InitError::Exec(format!("{bin} failed: {stderr}")));
+            }
+            Ok(())
+        };
+
+        // 1. Bring up loopback (some programs need 127.0.0.1).
+        let _ = run(&["/bin/ifconfig", "lo", "127.0.0.1", "up"]);
+
+        // 2. Configure eth0 with a static IP.
+        //    The Apple Virt NAT uses 192.168.64.0/24 with the gateway at
+        //    .1.  We pick .2 as the guest address.
+        run(&[
+            "/bin/ifconfig",
+            "eth0",
+            "192.168.64.2",
+            "netmask",
+            "255.255.255.0",
+            "up",
+        ])?;
+
+        // 3. Default route via the NAT gateway.
+        run(&["/bin/route", "add", "default", "gw", "192.168.64.1"])?;
+
+        // 4. Write a minimal resolv.conf *inside the initramfs*.
+        //    This will be overwritten after chroot (in `run()`) to apply
+        //    to the OCI rootfs.
+        let _ = std::fs::write(
+            "/etc/resolv.conf",
+            "nameserver 192.168.64.1\nnameserver 8.8.8.8\n",
+        );
+
+        info!("network configured: eth0 192.168.64.2/24 via 192.168.64.1");
+        Ok(())
+    }
+
     /// Spawn the workload, wire stdio to vsock, and return when
     /// the workload exits.  Dispatches to the PTY or piped
     /// implementation based on `self.tty`.
     async fn run(self, client: &mut VsockClient) -> Result<WorkloadExit, InitError> {
         #[cfg(target_os = "linux")]
         {
+            Self::configure_network()?;
             self.mount_volumes()?;
             self.mount_rootfs()?;
+            // After chroot, overwrite /etc/resolv.conf so the OCI
+            // image's baked-in DNS (often 1.1.1.1) is replaced with
+            // the NAT gateway + a public fallback.
+            let _ = std::fs::write(
+                "/etc/resolv.conf",
+                "nameserver 192.168.64.1\nnameserver 8.8.8.8\n",
+            );
         }
         if self.tty {
             self.run_tty(client).await
