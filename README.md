@@ -228,7 +228,7 @@ Pullrun's store is built on [rkyv](https://github.com/rkyv/rkyv) + [mmap](https:
 | Rootless by default | ✅ | ❌ (`dockerd` as root) |
 | Central daemon | Optional | Required |
 
-<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 14) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Firecracker measurements on Linux x86_64 with KVM; warm pool configured with `--vm-warm-pool-size 4`. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.
+<sup>Benchmarks: single-node, cold cache, `alpine:3.18` on Apple M3 (macOS 16) for Pullrun vs Docker Desktop 4.27. Container run latency measured from `run` command exit to workload PID alive. Apple VM boot measured to interactive `exec` prompt. Firecracker measurements on Linux x86_64 with KVM; warm pool configured with `--vm-warm-pool-size 4`. Pullrun daemon RSS measured after `pullrun pull alpine:3.18` + `pullrun run alpine:3.18 --tty --attach --cmd /bin/sh` then detached. Docker RSS from `docker run -d --name idle alpine:3.18 sleep 3600`.
 
 Benchmarked with [`hyperfine`](https://github.com/sharkdp/hyperfine) (≥10 iterations, mean ± stddev reported). The benchmark script lives at [`hack/bench.sh`](hack/bench.sh) — run it yourself to reproduce the numbers.</sup>
 
