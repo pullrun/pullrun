@@ -16,25 +16,6 @@ import (
 	runtimeapi "pullrun/protoapi/pullrun/runtime"
 )
 
-// composeToProto converts a parsed docker-compose project into
-// RunComposeRequest proto messages, one per service.
-func composeToProto(project *types.Project, backend string) *runtimeapi.RunComposeRequest {
-	req := &runtimeapi.RunComposeRequest{
-		ProjectName: project.Name,
-	}
-
-	names := project.ServiceNames()
-	sortServices(names, project.Services)
-
-	for _, name := range names {
-		svc := project.Services[name]
-		protoSvc := toProtoService(name, svc, backend)
-		req.Services = append(req.Services, protoSvc)
-	}
-
-	return req
-}
-
 // toProtoService converts a single compose service to the proto type.
 func toProtoService(name string, svc types.ServiceConfig, backend string) *runtimeapi.ComposeService {
 	env := make(map[string]string)
@@ -131,7 +112,7 @@ func parsePublishedPort(s string) uint32 {
 		return 0
 	}
 	var port uint32
-	fmt.Sscanf(s, "%d", &port)
+	_, _ = fmt.Sscanf(s, "%d", &port)
 	return port
 }
 
