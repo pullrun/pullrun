@@ -5644,7 +5644,8 @@ fn materialize_rootfs(
 /// Looks in order:
 /// 1. `PULLRUN_KERNEL_PATH` env var (with optional `PULLRUN_INITRAMFS_PATH`)
 /// 2. `~/.pullrun/kernels/` — picks the latest `vmlinux-*` file,
-///    with initramfs from `~/.pullrun/initramfs/pullrun-initramfs.cpio.gz`.
+///    with initramfs from `~/.pullrun/initramfs/pullrun-initramfs.cpio.gz`
+///    (falls back to Homebrew `opt/pullrun/share/pullrun/`).
 #[cfg(target_os = "macos")]
 fn find_local_kernel() -> Option<(std::path::PathBuf, Option<std::path::PathBuf>)> {
     let home = std::path::PathBuf::from(std::env::var("HOME").ok()?);
@@ -5658,12 +5659,18 @@ fn find_local_kernel() -> Option<(std::path::PathBuf, Option<std::path::PathBuf>
                 .map(std::path::PathBuf::from)
                 .filter(|p| p.is_file())
                 .or_else(|| {
-                    let default = home.join(".pullrun/initramfs/pullrun-initramfs.cpio.gz");
-                    if default.is_file() {
-                        Some(default)
-                    } else {
-                        None
+                    let user = home.join(".pullrun/initramfs/pullrun-initramfs.cpio.gz");
+                    if user.is_file() {
+                        return Some(user);
                     }
+                    // Fallback: Homebrew-installed path.
+                    ["/opt/homebrew", "/usr/local"]
+                        .iter()
+                        .map(|prefix| {
+                            std::path::PathBuf::from(prefix)
+                                .join("opt/pullrun/share/pullrun/pullrun-initramfs.cpio.gz")
+                        })
+                        .find(|p| p.is_file())
                 });
             return Some((p, initramfs));
         }
@@ -5694,7 +5701,14 @@ fn find_local_kernel() -> Option<(std::path::PathBuf, Option<std::path::PathBuf>
         if p.is_file() {
             Some(p)
         } else {
-            None
+            // Fallback: Homebrew-installed path (Apple Silicon / Intel).
+            ["/opt/homebrew", "/usr/local"]
+                .iter()
+                .map(|prefix| {
+                    std::path::PathBuf::from(prefix)
+                        .join("opt/pullrun/share/pullrun/pullrun-initramfs.cpio.gz")
+                })
+                .find(|p| p.is_file())
         }
     };
 
