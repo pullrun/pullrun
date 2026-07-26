@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.5 — 2026-07-26
+
+### Apple Virt VM networking & initramfs delivery
+
+- **VM booted with `eth0` DOWN — `ENETUNREACH` on every network call.** The
+  Apple Virt NIC was created by `VZNATNetworkDeviceAttachment` but the Linux
+  guest had no DHCP client and no static IP configuration. Added
+  `configure_network()` in `pullrun-init` that runs `udhcpc -q -n -T 2 -t 3`
+  with a static `192.168.64.2/24` fallback, plus `/etc/resolv.conf` setup.
+- **Initramfs missing from release tarballs.** The 1.2 MB initramfs containing
+  the network fix was not included in darwin tarballs — fresh installs had no
+  initramfs and the VM would fail to boot. Darwin tarballs now include
+  `pullrun-initramfs.cpio.gz`.
+- **Runtime auto-discovers initramfs at Homebrew paths.** `find_local_kernel()`
+  now falls back to `/opt/homebrew/opt/pullrun/share/pullrun/` and
+  `/usr/local/opt/pullrun/share/pullrun/` when `~/.pullrun/initramfs/` doesn't
+  exist. Fresh `brew install pullrun` works with no manual copy step.
+- **install.sh copies initramfs on darwin.** The binary-download path now
+  extracts `pullrun-initramfs.cpio.gz` to `~/.pullrun/initramfs/` automatically.
+- **Homebrew formula installs initramfs to Cellar + codesigns runtime.**
+  `(share/"pullrun").install "pullrun-initramfs.cpio.gz"` places the initramfs
+  in the Cellar; `post_install` applies the virtualization entitlement.
+
 ## 0.7.4 — 2026-07-25
 
 ### Bug fixes

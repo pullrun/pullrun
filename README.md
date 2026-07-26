@@ -10,7 +10,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20679669-007ec6?logo=doi)](https://doi.org/10.5281/zenodo.20679669)
-[![Version](https://img.shields.io/badge/version-0.7.3-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
+[![Version](https://img.shields.io/badge/version-0.7.5-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
 [![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
