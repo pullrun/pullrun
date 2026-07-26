@@ -18,7 +18,7 @@
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-CRI_shim-326CE5?logo=kubernetes&logoColor=white)](cri/pullrun-cri/)
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![Rust](https://img.shields.io/badge/Rust-1.78+-dca282?logo=rust)](https://www.rust-lang.org)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org)
 [![Tests](https://img.shields.io/badge/tests-175%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
