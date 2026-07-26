@@ -58,13 +58,21 @@ jobs:
         run: cargo fmt --all --check
 
   go:
-    name: Go CLI build + test + vet
+    name: Go build + test + vet
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    strategy:
+      matrix:
+        module:
+          - cli/pullrun
+          - cri/pullrun-cri
+          - cmd/pullrun-compose
+          - control-plane/api/cmd
+
     defaults:
       run:
-        working-directory: cli/pullrun
+        working-directory: ${{ matrix.module }}
 
     steps:
       - uses: actions/checkout@v4
@@ -75,10 +83,10 @@ jobs:
           go-version: "1.22"
           cache: true
 
-      - name: Build CLI
-        run: go build -o pullrun .
+      - name: Build
+        run: go build -o /dev/null .
 
-      - name: Run tests
+      - name: Test
         run: go test ./...
 
       - name: Vet

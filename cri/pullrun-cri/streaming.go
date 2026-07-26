@@ -136,7 +136,7 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 		if portStr == "" {
 			portStr = fmt.Sprintf("%d", session.port)
 		}
-		targetAddr := fmt.Sprintf("%s:%s", session.targetIP, portStr)
+		targetAddr := net.JoinHostPort(session.targetIP, portStr)
 		tcpConn, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
 		if err != nil {
 			log.Printf("port-forward dial %s: %v", targetAddr, err)

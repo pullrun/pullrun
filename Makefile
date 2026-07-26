@@ -19,8 +19,11 @@ build-rust-release:
 	cargo build --workspace --release
 
 build-go:
-	@echo "=== Building Go CLI ==="
+	@echo "=== Building Go modules ==="
 	cd cli/pullrun && go build -o $(BIN_DIR)/pullrun .
+	cd cri/pullrun-cri && go build -o $(BIN_DIR)/pullrun-cri .
+	cd cmd/pullrun-compose && go build -o $(BIN_DIR)/pullrun-compose .
+	cd control-plane/api/cmd && go build -o $(BIN_DIR)/control-plane .
 
 # Test
 test: test-rust test-go
@@ -33,8 +36,11 @@ test-rust-include-integration:
 	cargo test --workspace -- --include-ignored
 
 test-go:
-	@echo "=== Testing Go CLI ==="
+	@echo "=== Testing Go modules ==="
 	cd cli/pullrun && go test ./...
+	cd cri/pullrun-cri && go test ./...
+	cd cmd/pullrun-compose && go test ./...
+	cd control-plane/api/cmd && go test ./...
 
 # Check
 check: fmt lint test
@@ -43,8 +49,17 @@ fmt:
 	cargo fmt --all -- --check
 	cd cli/pullrun && go fmt ./...
 
-lint:
+lint: lint-rust lint-go
+
+lint-rust:
 	cargo clippy --workspace -- -D warnings
+
+lint-go:
+	@echo "=== Running golangci-lint ==="
+	cd cli/pullrun && golangci-lint run ./...
+	cd cri/pullrun-cri && golangci-lint run ./...
+	cd cmd/pullrun-compose && golangci-lint run ./...
+	cd control-plane/api/cmd && golangci-lint run ./...
 
 # Proto generation
 proto:
@@ -207,9 +222,10 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all                  Build everything (default)"
-	@echo "  build                Build Rust workspace + Go CLI"
+	@echo "  build                Build Rust workspace + all Go modules"
 	@echo "  test                 Run all tests"
 	@echo "  check                Format + lint + test"
+	@echo "  lint-go              Run golangci-lint on all Go modules"
 	@echo "  proto                Generate protobuf code"
 	@echo "  clean                Remove build artifacts"
 	@echo "  run-runtime          Start pullrun-runtime daemon"

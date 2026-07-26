@@ -231,7 +231,7 @@ impl DagBuilder {
         let mut manifest_data = manifest_data;
         let mut layer_count = 0usize;
         let mut total_nodes = 0usize;
-        let total_bytes = 0u64;
+        let mut total_bytes = 0u64;
 
         // 4. Execute each instruction (with layer caching)
         for instruction in &stage.instructions {
@@ -248,7 +248,12 @@ impl DagBuilder {
                     }
                     info!("RUN {}", command.join(" "));
                     current_manifest = self
-                        .execute_run(&current_manifest, command, &mut manifest_data)
+                        .execute_run(
+                            &current_manifest,
+                            command,
+                            &mut manifest_data,
+                            &mut total_bytes,
+                        )
                         .await?;
                     // Store in cache
                     self.layer_cache
@@ -276,6 +281,7 @@ impl DagBuilder {
                             sources,
                             dest,
                             &mut manifest_data,
+                            &mut total_bytes,
                         )
                         .await?;
                     // Store in cache
@@ -303,6 +309,7 @@ impl DagBuilder {
                             sources,
                             dest,
                             &mut manifest_data,
+                            &mut total_bytes,
                         )
                         .await?;
                     self.layer_cache
@@ -379,6 +386,7 @@ impl DagBuilder {
         current_manifest: &Digest,
         command: &[String],
         manifest_data: &mut ManifestData,
+        total_bytes: &mut u64,
     ) -> Result<Digest, BuildError> {
         let temp_dir = tempfile::tempdir().map_err(BuildError::Io)?;
         let rootfs_dir = temp_dir.path().join("rootfs");
@@ -523,6 +531,7 @@ impl DagBuilder {
             .map_err(|e| BuildError::Scan(e.to_string()))?;
 
         debug!("RUN layer: {node_count} nodes, {blob_bytes} bytes");
+        *total_bytes += blob_bytes;
         Ok(manifest_digest)
     }
 
@@ -534,6 +543,7 @@ impl DagBuilder {
         sources: &[String],
         dest: &str,
         manifest_data: &mut ManifestData,
+        total_bytes: &mut u64,
     ) -> Result<Digest, BuildError> {
         let temp_dir = tempfile::tempdir().map_err(BuildError::Io)?;
         let rootfs_dir = temp_dir.path().join("rootfs");
@@ -594,6 +604,7 @@ impl DagBuilder {
         .map_err(|e| BuildError::Scan(e.to_string()))?;
 
         debug!("COPY layer: {node_count} nodes, {blob_bytes} bytes");
+        *total_bytes += blob_bytes;
         Ok(manifest_digest)
     }
 

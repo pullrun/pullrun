@@ -105,6 +105,9 @@ POLICY_ALLOWED. Filter with --types=KIND1,KIND2.`,
 					return fmt.Errorf("recv event: %w", err)
 				}
 				printEvent(ev)
+				if !follow {
+					return nil
+				}
 			}
 		},
 	}

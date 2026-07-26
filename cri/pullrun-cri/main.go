@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
@@ -56,15 +55,6 @@ type criServer struct {
 	networkMode   string
 }
 
-// sandboxStore is a small in-memory index of pod sandboxes -> pullrun workload IDs.
-// It is the bare minimum to make ListPodSandbox and ContainerStatus work in
-// single-node mode. A real implementation would query the control plane.
-type sandboxStore struct {
-	mu        sync.RWMutex
-	sandboxes map[string]*sandboxRecord
-	containers map[string]*containerRecord // containerID -> record
-}
-
 type sandboxRecord struct {
 	id           string
 	pullrunID     string
@@ -85,79 +75,6 @@ type containerRecord struct {
 	createdAt  time.Time
 }
 
-func newSandboxStore() *sandboxStore {
-	return &sandboxStore{
-		sandboxes:  make(map[string]*sandboxRecord),
-		containers: make(map[string]*containerRecord),
-	}
-}
-
-func (s *sandboxStore) putSandbox(rec *sandboxRecord) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sandboxes[rec.id] = rec
-}
-
-func (s *sandboxStore) getSandbox(id string) (*sandboxRecord, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	rec, ok := s.sandboxes[id]
-	return rec, ok
-}
-
-func (s *sandboxStore) listSandboxes(filter *runtimeapi.PodSandboxFilter) []*runtimeapi.PodSandbox {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	out := make([]*runtimeapi.PodSandbox, 0, len(s.sandboxes))
-	for _, rec := range s.sandboxes {
-		if !matchesSandboxFilter(rec, filter) {
-			continue
-		}
-		out = append(out, sandboxToAPI(rec))
-	}
-	return out
-}
-
-func (s *sandboxStore) removeSandbox(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sandboxes, id)
-	// Cascade-delete containers belonging to this sandbox
-	for cid, c := range s.containers {
-		if c.sandboxID == id {
-			delete(s.containers, cid)
-		}
-	}
-}
-
-func (s *sandboxStore) putContainer(rec *containerRecord) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.containers[rec.id] = rec
-}
-
-func (s *sandboxStore) getContainer(id string) (*containerRecord, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	rec, ok := s.containers[id]
-	return rec, ok
-}
-
-func (s *sandboxStore) listContainers(filter *runtimeapi.ContainerFilter) []*runtimeapi.Container {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	out := make([]*runtimeapi.Container, 0, len(s.containers))
-	for _, rec := range s.containers {
-		if filter != nil && filter.PodSandboxId != "" && rec.sandboxID != filter.PodSandboxId {
-			continue
-		}
-		out = append(out, containerToAPI(rec))
-	}
-	return out
-}
-
 func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilter) bool {
 	if filter == nil {
 		return true
@@ -169,7 +86,6 @@ func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilte
 		return false
 	}
 	if filter.LabelSelector != nil {
-		// PodSandbox doesn't carry arbitrary labels in v0, so accept all
 		_ = filter.LabelSelector
 	}
 	return true
@@ -182,7 +98,6 @@ func sandboxToAPI(rec *sandboxRecord) *runtimeapi.PodSandbox {
 		State:          rec.state,
 		CreatedAt:      rec.createdAt.UnixNano(),
 		RuntimeHandler: rec.runtimeClass,
-		// Network is in PodSandboxStatus, not PodSandbox, in CRI v1.
 	}
 }
 

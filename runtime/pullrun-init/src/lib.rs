@@ -295,6 +295,7 @@ impl Workload {
     /// `/bin/route`).  These are NOT available after `mount_rootfs()`
     /// chroots into the OCI rootfs, so this must be called *before* the
     /// chroot.
+    #[cfg(target_os = "linux")]
     /// Minimal script for `udhcpc` that applies the DHCP lease.
     const UDHCPC_SCRIPT: &str = r"#!/bin/sh
 case $1 in
