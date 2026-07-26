@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.7.6 — 2026-07-26
+
+### Critical fixes
+- **Path traversal via COPY/ADD directories** (builder.rs). `context_dir` is now
+  canonicalized; paths with `..` or absolute components are rejected; symlinks
+  are validated to not escape the build context.
+- **Blob digest mismatch on sync** (block_sync.rs, sync_puller.rs).
+  `Digest::compute(data)` is now performed before `put_blob_blocking`, and
+  blobs with mismatched digests are discarded immediately.
+- **PodSandboxId returned incorrect value** (runtime_service.go). The gRPC
+  `RunPodSandbox` response now returns `req.Config.Metadata.Uid` instead of
+  the internal `runResp.Id`.
+- **Missing ID validation at gRPC boundary** (store.go). `idRegexp.MatchString(id)`
+  is now applied at `RegisterNode` and `DeleteWorkload` to reject malformed IDs.
+
+### High-priority fixes
+- **Refcount race condition** (store.rs). `increment_refcount` / `decrement_refcount`
+  are now protected by a `refcount_lock` Mutex.
+- **`parse_platform()` returned arguments in wrong order** (puller.rs). OS is now
+  parsed first, ARCH second, and the function returns `(arch, os)` matching the
+  caller's expectation.
+- **Control plane API bound to all interfaces** (main.go). Now binds
+  `127.0.0.1:8080` and `127.0.0.1:8081` instead of `:8080` / `:8081`.
+- **`disable_nat` used hardcoded CIDR** (firewall.rs). Now uses the `bridge_cidr`
+  parameter passed by the caller instead of hardcoded `10.42.0.0/16`.
+
+### Medium-priority fixes
+- **`watchWindowSize` goroutine leak** (terminal_unix.go, terminal_windows.go).
+  The resize watcher now accepts a `stop` channel, selects on it, and the caller
+  defers `close(stopWinCh)`.
+- **Host `/etc/resolv.conf` leaked into layer tarballs** (builder.rs). The host
+  file is now copied into the VM, then removed before the layer scan.
+
+### Initramfs distribution
+- Darwin tarballs include `pullrun-initramfs.cpio.gz` (required for Apple
+  Virtualization.framework VM backend).
+- install.sh downloads initramfs to `~/.pullrun/initramfs/` on darwin.
+- Runtime falls back to Homebrew `opt/pullrun/share/pullrun/` paths when the
+  user-local path doesn't exist.
+
 ## 0.7.5 — 2026-07-26
 
 ### Apple Virt VM networking & initramfs delivery
