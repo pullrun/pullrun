@@ -313,4 +313,15 @@ if [ "$installed" = "0" ]; then
   error "No binaries found in tarball. Please report this at https://github.com/$REPO/issues"
 fi
 
+# ── Install initramfs (macOS VM backend) ──────────────────────────
+if [ "$OS" = "darwin" ]; then
+  INITRAMFS_SRC=$(find "$TMPDIR" -maxdepth 2 -type f -name "pullrun-initramfs.cpio.gz" 2>/dev/null | head -1)
+  if [ -n "$INITRAMFS_SRC" ]; then
+    INITRAMFS_DIR="${HOME}/.pullrun/initramfs"
+    mkdir -p "$INITRAMFS_DIR"
+    cp "$INITRAMFS_SRC" "$INITRAMFS_DIR/pullrun-initramfs.cpio.gz"
+    info "  initramfs installed to $INITRAMFS_DIR/pullrun-initramfs.cpio.gz"
+  fi
+fi
+
 info "Done! Run 'pullrun --help' to get started."
