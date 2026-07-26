@@ -146,6 +146,11 @@ impl SyncPuller {
             for (_node_id, sync_addr) in &candidates {
                 if let Some(data) = self.try_fetch_from_peer(sync_addr, digest).await {
                     debug!(%digest, addr = %sync_addr, size = data.len(), "blob fetched from peer");
+                    let actual = Digest::compute(&data);
+                    if actual != d {
+                        warn!(%digest, addr = %sync_addr, "peer returned blob with wrong digest, discarding");
+                        continue;
+                    }
                     let _ = self.store.put_blob_blocking(&d, &data);
                     return Ok(data);
                 }

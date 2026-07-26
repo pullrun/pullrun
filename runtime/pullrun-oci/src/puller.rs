@@ -1085,9 +1085,31 @@ pub fn current_arch() -> &'static str {
 
 /// Parse a platform string like `"linux/amd64"` or `"linux/arm64"` into
 /// `(architecture, os)`. Defaults to `("amd64", "linux")` on parse failure.
+///
+/// Input format: `$OS/$ARCH` (e.g. `linux/amd64`, `windows/amd64`).
 pub fn parse_platform(platform: &str) -> (&str, &str) {
     let mut parts = platform.splitn(2, '/');
-    let arch = parts.next().unwrap_or("amd64");
-    let os = parts.next().unwrap_or("linux");
+    let os = parts.next().filter(|s| !s.is_empty()).unwrap_or("linux");
+    let arch = parts.next().filter(|s| !s.is_empty()).unwrap_or("amd64");
     (arch, os)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_platform_linux_amd64() {
+        assert_eq!(parse_platform("linux/amd64"), ("amd64", "linux"));
+    }
+
+    #[test]
+    fn parse_platform_linux_arm64() {
+        assert_eq!(parse_platform("linux/arm64"), ("arm64", "linux"));
+    }
+
+    #[test]
+    fn parse_platform_defaults() {
+        assert_eq!(parse_platform(""), ("amd64", "linux"));
+    }
 }

@@ -43,10 +43,11 @@ func setupRawTerminal() (func(), error) {
 	}, nil
 }
 
-func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, runtimepb.AttachMessage]) {
+func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, runtimepb.AttachMessage], stop <-chan struct{}) {
 	winCh := make(chan os.Signal, 1)
 	signal.Notify(winCh, syscall.SIGWINCH)
 	go func() {
+		defer signal.Stop(winCh)
 		sendWinSize := func() {
 			w, h, err := term.GetSize(int(os.Stdin.Fd()))
 			if err != nil {
@@ -62,8 +63,13 @@ func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, ru
 			})
 		}
 		sendWinSize()
-		for range winCh {
-			sendWinSize()
+		for {
+			select {
+			case <-winCh:
+				sendWinSize()
+			case <-stop:
+				return
+			}
 		}
 	}()
 }

@@ -218,7 +218,7 @@ impl FirewallBackend for IptablesBackend {
     fn disable_nat(
         &self,
         bridge_name: &str,
-        _bridge_cidr: &str,
+        bridge_cidr: &str,
         outbound_iface: &str,
     ) -> Result<(), FirewallError> {
         let _ = self.run(&[
@@ -227,10 +227,10 @@ impl FirewallBackend for IptablesBackend {
             "-D",
             "POSTROUTING",
             "-s",
-            "10.42.0.0/16",
+            bridge_cidr,
             "!",
             "-d",
-            "10.42.0.0/16",
+            bridge_cidr,
             "-o",
             outbound_iface,
             "-j",

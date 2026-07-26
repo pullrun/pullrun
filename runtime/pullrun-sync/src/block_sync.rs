@@ -271,6 +271,11 @@ impl BlockSync for BlockSyncService {
                 let digest_str = msg.digest.clone();
                 if !msg.data.is_empty() {
                     if let Ok(digest) = Digest::from_hex(&digest_str) {
+                        let actual = Digest::compute(&msg.data);
+                        if actual != digest {
+                            warn!(digest = %digest_str, "received blob digest mismatch, discarding");
+                            continue;
+                        }
                         metrics.add_received(msg.data.len() as u64);
                         if let Err(e) = store.put_blob_blocking(&digest, &msg.data) {
                             warn!(digest = %digest_str, error = %e, "failed to store synced blob");

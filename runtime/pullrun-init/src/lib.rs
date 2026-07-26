@@ -295,11 +295,22 @@ impl Workload {
     /// `/bin/route`).  These are NOT available after `mount_rootfs()`
     /// chroots into the OCI rootfs, so this must be called *before* the
     /// chroot.
+    /// Minimal script for `udhcpc` that applies the DHCP lease.
+    const UDHCPC_SCRIPT: &str = r"#!/bin/sh
+case $1 in
+    bound|renew)
+        /bin/ifconfig $interface $ip netmask $subnet
+        /bin/route add default gw $router 2>/dev/null
+        for d in $dns; do echo nameserver $d; done > /etc/resolv.conf
+        ;;
+esac
+";
+
     #[cfg(target_os = "linux")]
     fn configure_network() -> Result<(), InitError> {
         use std::process::Command;
 
-        let run = |args: &[&str]| -> Result<(), InitError> {
+        fn run(args: &[&str]) -> Result<(), InitError> {
             let bin = args[0];
             let output = Command::new(bin)
                 .args(&args[1..])
@@ -310,35 +321,46 @@ impl Workload {
                 return Err(InitError::Exec(format!("{bin} failed: {stderr}")));
             }
             Ok(())
-        };
+        }
 
-        // 1. Bring up loopback (some programs need 127.0.0.1).
+        // 1. Loopback.
         let _ = run(&["/bin/ifconfig", "lo", "127.0.0.1", "up"]);
 
-        // 2. Configure eth0 with a static IP.
-        //    The Apple Virt NAT uses 192.168.64.0/24 with the gateway at
-        //    .1.  We pick .2 as the guest address.
-        run(&[
-            "/bin/ifconfig",
-            "eth0",
-            "192.168.64.2",
-            "netmask",
-            "255.255.255.0",
-            "up",
-        ])?;
+        // 2. Write the udhcpc script and make it executable.
+        std::fs::write("/etc/udhcpc.script", Self::UDHCPC_SCRIPT)
+            .map_err(|e| InitError::Exec(format!("write script: {e}")))?;
+        let _ = run(&["/bin/chmod", "+x", "/etc/udhcpc.script"]);
 
-        // 3. Default route via the NAT gateway.
-        run(&["/bin/route", "add", "default", "gw", "192.168.64.1"])?;
+        // 3. Bring eth0 up (needed for DHCP to send discovers).
+        run(&["/bin/ifconfig", "eth0", "up"])?;
 
-        // 4. Write a minimal resolv.conf *inside the initramfs*.
-        //    This will be overwritten after chroot (in `run()`) to apply
-        //    to the OCI rootfs.
-        let _ = std::fs::write(
-            "/etc/resolv.conf",
-            "nameserver 192.168.64.1\nnameserver 8.8.8.8\n",
-        );
-
-        info!("network configured: eth0 192.168.64.2/24 via 192.168.64.1");
+        // 4. Request a DHCP lease.  The Apple Virt NAT provides
+        //    DHCP (192.168.64.0/24, gateway .1).  If DHCP fails
+        //    (e.g. delayed Virtio init) we fall back to a static
+        //    IP so the workload always gets a working network.
+        //    -q:  quit after obtaining a lease
+        //    -n:  exit with non-zero if no lease is obtained
+        //    -T:  per-packet timeout (seconds)
+        //    -t:  max discover attempts
+        let dhcp_ok = run(&[
+            "/bin/udhcpc", "-i", "eth0", "-s", "/etc/udhcpc.script",
+            "-q", "-n", "-T", "2", "-t", "3",
+        ]);
+        if dhcp_ok.is_ok() {
+            info!("network configured via DHCP");
+        } else {
+            tracing::warn!("DHCP failed, using static IP");
+            run(&[
+                "/bin/ifconfig", "eth0",
+                "192.168.64.2", "netmask", "255.255.255.0",
+            ])?;
+            run(&["/bin/route", "add", "default", "gw", "192.168.64.1"])?;
+            std::fs::write(
+                "/etc/resolv.conf",
+                "nameserver 192.168.64.1\nnameserver 8.8.8.8\n",
+            )
+            .ok();
+        }
         Ok(())
     }
 

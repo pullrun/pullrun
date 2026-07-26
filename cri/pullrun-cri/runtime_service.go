@@ -127,8 +127,11 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 	}
 	c.sandboxStore.putSandbox(rec)
 
+	// Return the kubelet-supplied UID as PodSandboxId so every subsequent
+	// CRI call (StopPodSandbox, CreateContainer, etc.) can find the record.
+	// runResp.Id is the internal pullrun workload ID, stored in rec.pullrunID.
 	return &runtimeapi.RunPodSandboxResponse{
-		PodSandboxId: runResp.Id,
+		PodSandboxId: req.Config.Metadata.Uid,
 	}, nil
 }
 

@@ -446,8 +446,9 @@ impl DagBuilder {
             serde_json::to_string_pretty(&config).map_err(|e| BuildError::Config(e.to_string()))?;
         std::fs::write(&config_path, &config_json).map_err(BuildError::Io)?;
 
-        // Write /etc/hosts and /etc/resolv.conf so entrypoint scripts
-        // that expect these files don't fail.
+        // Write build-time /etc/hosts and /etc/resolv.conf so RUN
+        // commands can resolve hostnames. These are removed before the
+        // layer is committed so they don't leak into the final image.
         let etc_dir = rootfs_dir.join("etc");
         let _ = std::fs::create_dir_all(&etc_dir);
         let hosts_path = etc_dir.join("hosts");
@@ -460,7 +461,10 @@ impl DagBuilder {
         }
         let resolv_path = etc_dir.join("resolv.conf");
         if !resolv_path.exists() {
-            std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n").ok();
+            // Copy the host's DNS config for the build container.
+            let dns = std::fs::read_to_string("/etc/resolv.conf")
+                .unwrap_or_else(|_| "nameserver 8.8.8.8\nnameserver 1.1.1.1\n".to_string());
+            std::fs::write(&resolv_path, dns).ok();
         }
 
         // Symlink rootfs into bundle
@@ -491,6 +495,12 @@ impl DagBuilder {
 
         // Clean up bundle
         std::fs::remove_dir_all(&bundle_dir).ok();
+
+        // Remove build-time /etc/hosts and /etc/resolv.conf so they
+        // don't get baked into the image layer. The runtime will inject
+        // these at container start, matching the host's DNS configuration.
+        std::fs::remove_file(rootfs_dir.join("etc/resolv.conf")).ok();
+        std::fs::remove_file(rootfs_dir.join("etc/hosts")).ok();
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -543,11 +553,30 @@ impl DagBuilder {
         };
         std::fs::create_dir_all(&dest_path).map_err(BuildError::Io)?;
 
+        // Canonicalize the build context so we can reject path traversal.
+        let context_canonical = std::fs::canonicalize(context_dir)
+            .map_err(|e| BuildError::Execute(format!("canonicalize context: {e}")))?;
+
         // Copy each source into the rootfs
         for src in sources {
-            let src_path = context_dir.join(src);
+            // Reject absolute paths and lexical traversal early.
+            if src.starts_with('/') {
+                return Err(BuildError::Execute(format!(
+                    "COPY source must be a relative path: {src}"
+                )));
+            }
+            let src_path = context_canonical.join(src);
+            let canonical_src = std::fs::canonicalize(&src_path).map_err(|e| {
+                BuildError::Execute(format!("COPY source {src}: {e}"))
+            })?;
+            if !canonical_src.starts_with(&context_canonical) {
+                return Err(BuildError::Execute(format!(
+                    "COPY source {src} escapes the build context"
+                )));
+            }
             let dest_path = dest_path.join(src.rsplit('/').next().unwrap_or(src));
-            copy_recursive(&src_path, &dest_path).map_err(BuildError::Io)?;
+            copy_recursive(&canonical_src, &dest_path, &context_canonical)
+                .map_err(BuildError::Io)?;
         }
 
         // Re-scan the rootfs into DAG nodes
@@ -665,18 +694,36 @@ fn extract_image_ref(image_ref: &str) -> String {
     }
 }
 
-fn copy_recursive(src: &Path, dest: &Path) -> Result<(), std::io::Error> {
+fn copy_recursive(
+    src: &Path,
+    dest: &Path,
+    context_canonical: &Path,
+) -> Result<(), std::io::Error> {
     if src.is_dir() {
         std::fs::create_dir_all(dest)?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;
             let child_src = entry.path();
             let child_dest = dest.join(entry.file_name());
-            copy_recursive(&child_src, &child_dest)?;
+            copy_recursive(&child_src, &child_dest, context_canonical)?;
         }
         Ok(())
     } else if src.is_symlink() {
         let target = std::fs::read_link(src)?;
+        // Reject symlinks that escape the build context.
+        let resolved = if target.is_absolute() {
+            target.clone()
+        } else {
+            src.parent().unwrap_or(Path::new(".")).join(&target)
+        };
+        let canonical_target = std::fs::canonicalize(&resolved)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+        if !canonical_target.starts_with(context_canonical) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("symlink {:?} -> {:?} escapes build context", src, target),
+            ));
+        }
         std::os::unix::fs::symlink(&target, dest)?;
         Ok(())
     } else {

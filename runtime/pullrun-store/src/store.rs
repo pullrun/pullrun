@@ -49,6 +49,7 @@ pub struct MmapStore {
     blob_lru: Arc<Mutex<VecDeque<Digest>>>,
     total_node_bytes: Arc<AtomicU64>,
     total_blob_bytes: Arc<AtomicU64>,
+    refcount_lock: Arc<Mutex<()>>,
 }
 
 /// A guard that keeps the underlying `Mmap` alive and provides
@@ -157,6 +158,7 @@ impl MmapStore {
             blob_lru: Arc::new(Mutex::new(VecDeque::new())),
             total_node_bytes: Arc::new(AtomicU64::new(0)),
             total_blob_bytes: Arc::new(AtomicU64::new(0)),
+            refcount_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -174,6 +176,7 @@ impl MmapStore {
             blob_lru: Arc::new(Mutex::new(VecDeque::new())),
             total_node_bytes: Arc::new(AtomicU64::new(0)),
             total_blob_bytes: Arc::new(AtomicU64::new(0)),
+            refcount_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -273,6 +276,7 @@ impl MmapStore {
 
     /// Increment the reference count for a digest. Returns the new count.
     pub fn increment_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
+        let _guard = self.refcount_lock.lock().unwrap();
         let count = self.get_refcount(digest)? + 1;
         self.set_refcount(digest, count)?;
         Ok(count)
@@ -280,6 +284,7 @@ impl MmapStore {
 
     /// Decrement the reference count for a digest. Returns the new count.
     pub fn decrement_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
+        let _guard = self.refcount_lock.lock().unwrap();
         let count = self.get_refcount(digest)?;
         let new = count.saturating_sub(1);
         self.set_refcount(digest, new)?;

@@ -282,7 +282,7 @@ fn run(args: &Args) -> Result<(), BuildError> {
     for app in &[
         "cat", "sh", "mount", "umount", "ls", "echo", "env", "true", "false",
         "mkdir", "rm", "ln", "cp", "mv", "ps", "sleep", "test", "uname",
-        "ifconfig", "route", "ip", "udhcpc",
+        "ifconfig", "route", "ip", "udhcpc", "chmod",
     ] {
         write_newc_symlink(
             &mut writer,

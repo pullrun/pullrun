@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -194,6 +195,8 @@ func (s *fileStore) removeNode(id string) {
 	os.Remove(filepath.Join(s.root, "nodes", id+".json"))
 }
 
+var idRegexp = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+
 // --- APIServer methods migrated to use fileStore ---
 
 func (s *fileStore) SubmitWorkload(ctx context.Context, req *pb.WorkloadSpec) (*rpb.WorkloadStatus, error) {
@@ -334,6 +337,9 @@ func (s *fileStore) ListWorkloads(ctx context.Context, req *pb.ListRequest) (*pb
 }
 
 func (s *fileStore) DeleteWorkload(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
+	if !idRegexp.MatchString(req.Id) {
+		return nil, status.Error(codes.InvalidArgument, "invalid workload id")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.removeWorkload(req.Id)
@@ -341,6 +347,9 @@ func (s *fileStore) DeleteWorkload(ctx context.Context, req *pb.DeleteRequest) (
 }
 
 func (s *fileStore) RegisterNode(ctx context.Context, req *pb.NodeRegistration) (*pb.RegisterResponse, error) {
+	if !idRegexp.MatchString(req.NodeId) {
+		return nil, status.Error(codes.InvalidArgument, "invalid node id")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

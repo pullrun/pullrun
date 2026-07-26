@@ -42,7 +42,7 @@ type NodeRecord struct {
 }
 
 func main() {
-	listen := ":8080"
+	listen := "127.0.0.1:8080"
 	storeRoot := "/var/lib/pullrun/control-plane"
 
 	// Create file-backed store (survives restarts, no etcd needed for v0).
@@ -110,9 +110,9 @@ func main() {
 		fmt.Fprintf(w, "]")
 	})
 
-	log.Printf("control plane HTTP listening on :8081")
+	log.Printf("control plane HTTP listening on 127.0.0.1:8081")
 	srv := &http.Server{
-		Addr:    ":8081",
+		Addr:    "127.0.0.1:8081",
 		Handler: mux,
 	}
 

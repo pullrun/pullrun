@@ -92,13 +92,15 @@ func setupRawTerminal() (func(), error) {
 	}, nil
 }
 
-func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, runtimepb.AttachMessage]) {
+func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, runtimepb.AttachMessage], stop <-chan struct{}) {
 	// Windows console doesn't send SIGWINCH. Poll terminal size periodically.
 	go func() {
 		lastW, lastH := 0, 0
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-ticker.C:
 			w, h, err := getConsoleSize()
 			if err != nil {
 				continue
@@ -113,6 +115,9 @@ func watchWindowSize(stream grpc.BidiStreamingClient[runtimepb.AttachMessage, ru
 						},
 					},
 				})
+			}
+			case <-stop:
+				return
 			}
 		}
 	}()

@@ -868,7 +868,9 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 			}()
 		}
 
-		go watchWindowSize(stream)
+		stopWinCh := make(chan struct{})
+		defer close(stopWinCh)
+		go watchWindowSize(stream, stopWinCh)
 	}
 
 	go func() {
