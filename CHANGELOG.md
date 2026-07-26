@@ -2,6 +2,15 @@
 
 ## 0.7.6 — 2026-07-26
 
+### 0.7.6 follow-up (4ec2891)
+- **`streaming.go` IPv6 compatibility** — replaced `fmt.Sprintf("%s:%s")` with `net.JoinHostPort`.
+- **`runtime-daemon.yaml` image tag** — bumped from `v0.3.0` to `v0.7.6`.
+- **`events.go --follow` flag now functional** — exits after one event when `--follow=false`.
+- **`builder.rs` `bytes_stored` always 0** — `total_bytes` now accumulated from each `execute_run`/`execute_copy` call instead of stuck at `0u64`.
+- **Dead `sandboxStore` type removed** (`main.go`) — in-memory store was replaced by `fileStore` but never deleted.
+- **CI matrix expanded** — Go build/test/vet/lint now covers CRI, compose, and control-plane in addition to CLI.
+- **Makefile `lint-go` target added** — runs `golangci-lint` on all 4 Go modules; `build-go`/`test-go`/`fmt` also cover all modules.
+
 ### Critical fixes
 - **Path traversal via COPY/ADD directories** (builder.rs). `context_dir` is now
   canonicalized; paths with `..` or absolute components are rejected; symlinks
