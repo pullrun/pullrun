@@ -190,11 +190,6 @@ func (s *fileStore) removeWorkload(id string) {
 	os.Remove(filepath.Join(s.root, "workloads", id+".json"))
 }
 
-func (s *fileStore) removeNode(id string) {
-	delete(s.nodes, id)
-	os.Remove(filepath.Join(s.root, "nodes", id+".json"))
-}
-
 var idRegexp = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 
 // --- APIServer methods migrated to use fileStore ---
@@ -402,10 +397,4 @@ func (s *fileStore) StreamEvents(req *pb.Empty, stream pb.ControlPlane_StreamEve
 	return nil
 }
 
-func (s *fileStore) dispatchToNode(ctx context.Context, rec *WorkloadRecord) error {
-	if s.runtimeConn == nil {
-		return nil
-	}
-	_ = ctx
-	return nil
-}
+

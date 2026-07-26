@@ -30,14 +30,14 @@ func TestSubmitGetWorkload_Roundtrip(t *testing.T) {
 	s := newFileStore(t.TempDir())
 	ctx := context.Background()
 
-	s.RegisterNode(ctx, &pb.NodeRegistration{
+	_, _ = s.RegisterNode(ctx, &pb.NodeRegistration{
 		NodeId:            "node-1",
 		Address:           "10.0.0.1:8080",
 		CpuCores:          4,
 		MemoryBytes:       8192,
 		AvailableBackends: []string{"container"},
 	})
-	s.Heartbeat(ctx, &pb.HeartbeatRequest{
+	_, _ = s.Heartbeat(ctx, &pb.HeartbeatRequest{
 		NodeId:           "node-1",
 		RunningWorkloads: 0,
 	})
@@ -74,14 +74,14 @@ func TestDeleteWorkload(t *testing.T) {
 	s := newFileStore(t.TempDir())
 	ctx := context.Background()
 
-	s.RegisterNode(ctx, &pb.NodeRegistration{
+	_, _ = s.RegisterNode(ctx, &pb.NodeRegistration{
 		NodeId:            "node-1",
 		Address:           "10.0.0.1:8080",
 		CpuCores:          4,
 		MemoryBytes:       8192,
 		AvailableBackends: []string{"container"},
 	})
-	s.Heartbeat(ctx, &pb.HeartbeatRequest{
+	_, _ = s.Heartbeat(ctx, &pb.HeartbeatRequest{
 		NodeId:           "node-1",
 		RunningWorkloads: 0,
 	})
@@ -117,7 +117,7 @@ func TestListWorkloads_WithLabelFilter(t *testing.T) {
 	s := newFileStore(t.TempDir())
 	ctx := context.Background()
 
-	s.RegisterNode(ctx, &pb.NodeRegistration{
+	_, _ = s.RegisterNode(ctx, &pb.NodeRegistration{
 		NodeId:            "node-1",
 		Address:           "10.0.0.1:8080",
 		CpuCores:          4,
@@ -126,11 +126,11 @@ func TestListWorkloads_WithLabelFilter(t *testing.T) {
 	})
 
 	for i := 0; i < 3; i++ {
-		s.Heartbeat(ctx, &pb.HeartbeatRequest{
+		_, _ = s.Heartbeat(ctx, &pb.HeartbeatRequest{
 			NodeId:           "node-1",
 			RunningWorkloads: uint64(i),
 		})
-		s.SubmitWorkload(ctx, &pb.WorkloadSpec{
+		_, _ = s.SubmitWorkload(ctx, &pb.WorkloadSpec{
 			Name:     "wl",
 			ImageRef: "alpine:latest",
 			Backend:  "container",
@@ -194,18 +194,18 @@ func TestPersistence_AcrossReload(t *testing.T) {
 	ctx := context.Background()
 
 	s1 := newFileStore(dir)
-	s1.RegisterNode(ctx, &pb.NodeRegistration{
+	_, _ = s1.RegisterNode(ctx, &pb.NodeRegistration{
 		NodeId:            "node-p",
 		Address:           "10.0.0.3:8080",
 		CpuCores:          2,
 		MemoryBytes:       4096,
 		AvailableBackends: []string{"container"},
 	})
-	s1.Heartbeat(ctx, &pb.HeartbeatRequest{
+	_, _ = s1.Heartbeat(ctx, &pb.HeartbeatRequest{
 		NodeId:           "node-p",
 		RunningWorkloads: 1,
 	})
-	s1.SubmitWorkload(ctx, &pb.WorkloadSpec{
+	_, _ = s1.SubmitWorkload(ctx, &pb.WorkloadSpec{
 		Name:     "persist-wl",
 		ImageRef: "nginx:latest",
 		Backend:  "container",
