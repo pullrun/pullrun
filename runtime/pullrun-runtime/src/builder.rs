@@ -566,9 +566,8 @@ impl DagBuilder {
                 )));
             }
             let src_path = context_canonical.join(src);
-            let canonical_src = std::fs::canonicalize(&src_path).map_err(|e| {
-                BuildError::Execute(format!("COPY source {src}: {e}"))
-            })?;
+            let canonical_src = std::fs::canonicalize(&src_path)
+                .map_err(|e| BuildError::Execute(format!("COPY source {src}: {e}")))?;
             if !canonical_src.starts_with(&context_canonical) {
                 return Err(BuildError::Execute(format!(
                     "COPY source {src} escapes the build context"
@@ -694,11 +693,7 @@ fn extract_image_ref(image_ref: &str) -> String {
     }
 }
 
-fn copy_recursive(
-    src: &Path,
-    dest: &Path,
-    context_canonical: &Path,
-) -> Result<(), std::io::Error> {
+fn copy_recursive(src: &Path, dest: &Path, context_canonical: &Path) -> Result<(), std::io::Error> {
     if src.is_dir() {
         std::fs::create_dir_all(dest)?;
         for entry in std::fs::read_dir(src)? {

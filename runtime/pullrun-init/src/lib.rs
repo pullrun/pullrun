@@ -343,16 +343,28 @@ esac
         //    -T:  per-packet timeout (seconds)
         //    -t:  max discover attempts
         let dhcp_ok = run(&[
-            "/bin/udhcpc", "-i", "eth0", "-s", "/etc/udhcpc.script",
-            "-q", "-n", "-T", "2", "-t", "3",
+            "/bin/udhcpc",
+            "-i",
+            "eth0",
+            "-s",
+            "/etc/udhcpc.script",
+            "-q",
+            "-n",
+            "-T",
+            "2",
+            "-t",
+            "3",
         ]);
         if dhcp_ok.is_ok() {
             info!("network configured via DHCP");
         } else {
             tracing::warn!("DHCP failed, using static IP");
             run(&[
-                "/bin/ifconfig", "eth0",
-                "192.168.64.2", "netmask", "255.255.255.0",
+                "/bin/ifconfig",
+                "eth0",
+                "192.168.64.2",
+                "netmask",
+                "255.255.255.0",
             ])?;
             run(&["/bin/route", "add", "default", "gw", "192.168.64.1"])?;
             std::fs::write(
