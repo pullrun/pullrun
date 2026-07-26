@@ -29,7 +29,7 @@ func NewGRPCClient(socketPath string) (*GRPCClient, error) {
 		ctx,
 		"unix://"+socketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+		grpc.WithBlock(),                          //nolint:staticcheck // supported throughout 1.x
 		grpc.WithDefaultCallOptions(grpc.WaitForReady(false)),
 	)
 	if err != nil {

@@ -174,7 +174,6 @@ func (c *criServer) PodSandboxStatus(ctx context.Context, req *runtimeapi.PodSan
 	// Prefer the local cache for state, but query pullrun-runtime for live state.
 	rec, hasLocal := c.sandboxStore.getSandbox(req.PodSandboxId)
 
-	liveState := runtimeapi.PodSandboxState_SANDBOX_READY
 	internalIP := ""
 	if hasLocal {
 		internalIP = rec.internalIP
@@ -186,9 +185,9 @@ func (c *criServer) PodSandboxStatus(ctx context.Context, req *runtimeapi.PodSan
 	})
 	cancel()
 
+	liveState := runtimeapi.PodSandboxState_SANDBOX_NOTREADY
 	if err != nil {
 		// Workload not found in runtime — treat as notready.
-		liveState = runtimeapi.PodSandboxState_SANDBOX_NOTREADY
 	} else {
 		switch wl.State {
 		case "running", "created", "scheduled":

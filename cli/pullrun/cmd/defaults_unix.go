@@ -47,7 +47,7 @@ func spawnRuntime(opts *RootOptions) error {
 		select {
 		case <-sigCh:
 			if cmd.Process != nil {
-				cmd.Process.Signal(syscall.SIGTERM)
+				_ = cmd.Process.Signal(syscall.SIGTERM)
 			}
 		case <-doneCh:
 		}

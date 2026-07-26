@@ -992,7 +992,6 @@ loop:
 	// readers on macOS. The goroutine is collected on process exit.
 	if restore != nil {
 		restore()
-		restore = nil
 	}
 
 	if exitCode != 0 {
