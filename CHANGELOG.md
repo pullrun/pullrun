@@ -1,6 +1,44 @@
 # Changelog
 
-## 0.7.7 — 2026-07-31
+## 0.7.8 — 2026-07-31
+
+### CRI shim: real pod/container runtime
+- **Pod network namespace sharing** (exec/container.rs, exec/rootless.rs). The
+  shim now runs a pause sandbox workload (`registry.k8s.io/pause:3.9`) that
+  anchors the pod's network namespace; containers run their own image and join
+  it via `network_mode: container:<sandbox>`. Joining is implemented through
+  the OCI spec (`linux.namespaces[].path` resolved via `runc state`), not the
+  nonexistent `runc --network` flag. VM backends reject the mode (no netns
+  sharing possible) and use the per-pod bridge instead. Failed `runc run -d`
+  now cleans up leftover runc state so retries don't hit
+  "container already exists".
+- **Real container lifecycle** (cri/pullrun-cri). Containers get restart-safe
+  deterministic workload ids, run their own image via `RunWorkload`, and have
+  a real create/start/stop/remove flow instead of the previous 1:1 alias to
+  the sandbox. Sandbox = pause workload with a per-pod bridge and pod IP.
+- **Volume mounts** (cri/pullrun-cri). CRI `ContainerConfig.Mounts` are mapped
+  to runtime bind mounts (rbind+rprivate, `ro` for readonly) with the
+  daemon's existing `sanitize_mounts` validation.
+- **Pod DNS** (proto, exec/container.rs, cri/pullrun-cri). New
+  `RunRequest.dns` (nameservers/searches/options) is written into the
+  workload's `/etc/resolv.conf` by the container executors; the shim takes
+  `PodSandboxConfig.DnsConfig` and propagates it to every container in the
+  pod. Persisted in `WorkloadState` so restarts keep it.
+- **Security context mapping** (cri/pullrun-cri). `privileged`,
+  `readonlyRootfs`, `noNewPrivileges`, seccomp (runtime-default/unconfined),
+  and `hostNetwork` are mapped onto the workload spec.
+- **Stats** (cri/pullrun-cri). `ContainerStats`, `PodSandboxStats`, and
+  `ListPodSandboxStats` are backed by `GetWorkloadStats`.
+- **Version 1.0.0 + startup reconciliation** (cri/pullrun-cri). The shim
+  reports CRI version 1.0.0 with real runtime status probes, and on startup
+  reconciles its checkpoints against the runtime's `ListWorkloads` (pods and
+  containers without a live workload are marked exited; stale workloads are
+  recovered as exited).
+- **CRI pause image warm-up** (cri/pullrun-cri). The pause image is pulled
+  into the DAG store at shim startup, so sandbox creation never blocks on a
+  network fetch.
+
+### 0.7.7 — 2026-07-31
 
 ### Critical fixes
 - **Unauthenticated daemon socket** (main.rs). The gRPC socket is now chmod 0700
