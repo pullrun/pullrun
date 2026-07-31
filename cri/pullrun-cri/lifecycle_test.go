@@ -26,9 +26,9 @@ func TestContainerWorkloadID(t *testing.T) {
 			t.Errorf("workload id %q contains invalid char %q", got, c)
 		}
 	}
-	// Deterministic.
-	if containerWorkloadID(long) != containerWorkloadID(long) {
-		t.Error("workload id must be deterministic")
+	// Deterministic: stable tail is taken from the end of the id.
+	if got != "c-aaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("workload id = %q, want c-<last 20 chars>", got)
 	}
 }
 
@@ -41,11 +41,12 @@ func TestPodBridgeName(t *testing.T) {
 	if !strings.HasPrefix(got, "pr-") {
 		t.Errorf("bridge name %q must start with pr-", got)
 	}
-	// Deterministic + distinct for different pod ids.
-	if podBridgeName(id) != podBridgeName(id) {
-		t.Error("bridge name must be deterministic")
+	// Deterministic: bridge name is the pod id's stable tail, capped at
+	// 15 chars (IFNAMSIZ), distinct for different pod ids.
+	if got != "pr-1b2c3d4e5f6a" {
+		t.Errorf("bridge name = %q, want pr-<last 12 chars of pod id>", got)
 	}
-	if podBridgeName(id) == podBridgeName(strings.Repeat("b", 36)) {
+	if podBridgeName(strings.Repeat("b", 36)) == got {
 		t.Error("different pods must get different bridge names")
 	}
 }
