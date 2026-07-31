@@ -559,6 +559,7 @@ async fn run_workload(
         no_new_privileges: false,
         seccomp_profile: None,
         allowed_syscalls: vec![],
+        privileged: false,
     };
 
     let mut handle = executor.create(spec).await?;

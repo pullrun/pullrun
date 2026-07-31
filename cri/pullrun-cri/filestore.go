@@ -26,23 +26,29 @@ type fileStore struct {
 // sandboxCheckpoint is the disk-serializable form of sandboxRecord.
 type sandboxCheckpoint struct {
 	ID           string    `json:"id"`
-	PullrunID     string    `json:"pullrun_id"`
+	PullrunID    string    `json:"pullrun_id"`
 	Namespace    string    `json:"namespace"`
 	Name         string    `json:"name"`
 	CreatedAt    time.Time `json:"created_at"`
 	State        int32     `json:"state"`
 	InternalIP   string    `json:"internal_ip"`
 	RuntimeClass string    `json:"runtime_class"`
+	BridgeName   string    `json:"bridge_name,omitempty"`
+	HostNetwork  bool      `json:"host_network,omitempty"`
 }
 
 // containerCheckpoint is the disk-serializable form of containerRecord.
 type containerCheckpoint struct {
 	ID        string    `json:"id"`
 	SandboxID string    `json:"sandbox_id"`
-	PullrunID  string    `json:"pullrun_id"`
+	PullrunID string    `json:"pullrun_id"`
 	Name      string    `json:"name"`
 	Image     string    `json:"image"`
+	ImageRef  string    `json:"image_ref,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	State     int32     `json:"state,omitempty"`
+	ExitCode  int32     `json:"exit_code,omitempty"`
 }
 
 func newFileStore(root string) *fileStore {
@@ -80,13 +86,15 @@ func (s *fileStore) loadAll() {
 			}
 			s.sandboxes[cp.ID] = &sandboxRecord{
 				id:           cp.ID,
-				pullrunID:     cp.PullrunID,
+				pullrunID:    cp.PullrunID,
 				namespace:    cp.Namespace,
 				name:         cp.Name,
 				createdAt:    cp.CreatedAt,
 				state:        runtimeapi.PodSandboxState(cp.State),
 				internalIP:   cp.InternalIP,
 				runtimeClass: cp.RuntimeClass,
+				bridgeName:   cp.BridgeName,
+				hostNetwork:  cp.HostNetwork,
 			}
 		}
 	}
@@ -112,10 +120,14 @@ func (s *fileStore) loadAll() {
 			s.containers[cp.ID] = &containerRecord{
 				id:        cp.ID,
 				sandboxID: cp.SandboxID,
-				pullrunID:  cp.PullrunID,
+				pullrunID: cp.PullrunID,
 				name:      cp.Name,
 				image:     cp.Image,
+				imageRef:  cp.ImageRef,
 				createdAt: cp.CreatedAt,
+				startedAt: cp.StartedAt,
+				state:     runtimeapi.ContainerState(cp.State),
+				exitCode:  cp.ExitCode,
 			}
 		}
 	}
@@ -176,6 +188,41 @@ func (s *fileStore) getContainer(id string) (*containerRecord, bool) {
 	return rec, ok
 }
 
+// allContainers returns a snapshot of every container record.
+func (s *fileStore) allContainers() []*containerRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*containerRecord, 0, len(s.containers))
+	for _, rec := range s.containers {
+		out = append(out, rec)
+	}
+	return out
+}
+
+// allContainersForSandbox returns a snapshot of the containers in a pod.
+func (s *fileStore) allContainersForSandbox(sandboxID string) []*containerRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*containerRecord, 0, len(s.containers))
+	for _, rec := range s.containers {
+		if rec.sandboxID == sandboxID {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+// allSandboxes returns a snapshot of every sandbox record.
+func (s *fileStore) allSandboxes() []*sandboxRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*sandboxRecord, 0, len(s.sandboxes))
+	for _, rec := range s.sandboxes {
+		out = append(out, rec)
+	}
+	return out
+}
+
 func (s *fileStore) removeContainer(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,13 +246,15 @@ func (s *fileStore) listContainers(filter *runtimeapi.ContainerFilter) []*runtim
 func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 	cp := sandboxCheckpoint{
 		ID:           rec.id,
-		PullrunID:     rec.pullrunID,
+		PullrunID:    rec.pullrunID,
 		Namespace:    rec.namespace,
 		Name:         rec.name,
 		CreatedAt:    rec.createdAt,
 		State:        int32(rec.state),
 		InternalIP:   rec.internalIP,
 		RuntimeClass: rec.runtimeClass,
+		BridgeName:   rec.bridgeName,
+		HostNetwork:  rec.hostNetwork,
 	}
 	data, err := json.Marshal(cp)
 	if err != nil {
@@ -222,10 +271,14 @@ func (s *fileStore) writeContainer(rec *containerRecord) {
 	cp := containerCheckpoint{
 		ID:        rec.id,
 		SandboxID: rec.sandboxID,
-		PullrunID:  rec.pullrunID,
+		PullrunID: rec.pullrunID,
 		Name:      rec.name,
 		Image:     rec.image,
+		ImageRef:  rec.imageRef,
 		CreatedAt: rec.createdAt,
+		StartedAt: rec.startedAt,
+		State:     int32(rec.state),
+		ExitCode:  rec.exitCode,
 	}
 	data, err := json.Marshal(cp)
 	if err != nil {

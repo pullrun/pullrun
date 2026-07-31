@@ -279,6 +279,7 @@ impl FirecrackerExecutor {
             host_ports: vec![],
             backend: "vm".to_string(),
             bridge_name: None,
+            network_join: None,
         };
 
         Ok(handle)
@@ -295,6 +296,17 @@ impl FirecrackerExecutor {
 #[async_trait]
 impl Executor for FirecrackerExecutor {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError> {
+        // VMs cannot share a network namespace with another workload
+        // (no netns inside the guest); reject the pod model outright.
+        if matches!(
+            spec.network_mode,
+            pullrun_exec::types::NetworkMode::Container(_)
+        ) {
+            return Err(ExecError::ExecutionFailed(
+                "network mode 'container:<id>' is only valid for container backends, not VMs"
+                    .to_string(),
+            ));
+        }
         self.check_firecracker().await?;
 
         info!(id = %spec.id, "creating Firecracker VM");
@@ -430,6 +442,7 @@ impl Executor for FirecrackerExecutor {
             host_ports: endpoint.host_port_mappings.to_vec(),
             backend: "vm".to_string(),
             bridge_name: None,
+            network_join: None,
         };
 
         Ok(handle)

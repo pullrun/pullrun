@@ -5,8 +5,10 @@
 //
 // Maps the Kubernetes Container Runtime Interface (CRI) onto the pullrun-runtime
 // gRPC service. A "pod sandbox" becomes one Pullrun workload (container or VM
-// depending on the RuntimeHandler / RuntimeClass); containers are stubbed as
-// 1:1 with sandboxes (true pod-in-VM is a Phase 4+ enhancement).
+// depending on the RuntimeHandler / RuntimeClass) that anchors the pod's
+// network namespace; every CRI container is a real Pullrun workload that runs
+// its own image and joins the sandbox's network namespace (container backend)
+// or runs as an independent bridged workload (VM backend).
 package main
 
 import (
@@ -32,8 +34,8 @@ const (
 	PullrunContainerRuntimeClass = "pullrun-container"
 	// PullrunVMRuntimeClass is the RuntimeClass name for VM workloads.
 	PullrunVMRuntimeClass = "pullrun-vm"
-	// PullrunCRIVersion is the reported CRI version.
-	PullrunCRIVersion = "0.3.0"
+	// PullrunCRIVersion is the CRI implementation version reported to kubelet.
+	PullrunCRIVersion = "1.0.0"
 	// DefaultPauseImage is the standard K8s sandbox image (no-op container).
 	DefaultPauseImage = "registry.k8s.io/pause:3.9"
 	// AnnotationPullrunImage overrides the image to run in a pod sandbox.
@@ -57,22 +59,28 @@ type criServer struct {
 
 type sandboxRecord struct {
 	id           string
-	pullrunID     string
+	pullrunID    string
 	namespace    string
 	name         string
 	createdAt    time.Time
 	state        runtimeapi.PodSandboxState
 	internalIP   string
 	runtimeClass string
+	bridgeName   string
+	hostNetwork  bool
 }
 
 type containerRecord struct {
-	id         string
-	sandboxID  string
-	pullrunID   string
-	name       string
-	image      string
-	createdAt  time.Time
+	id        string
+	sandboxID string
+	pullrunID string
+	name      string
+	image     string
+	imageRef  string
+	createdAt time.Time
+	startedAt time.Time
+	state     runtimeapi.ContainerState
+	exitCode  int32
 }
 
 func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilter) bool {
@@ -107,16 +115,37 @@ func containerToAPI(rec *containerRecord) *runtimeapi.Container {
 		PodSandboxId: rec.sandboxID,
 		Metadata:     &runtimeapi.ContainerMetadata{Name: rec.name},
 		Image:        &runtimeapi.ImageSpec{Image: rec.image},
+		ImageRef:     rec.imageRef,
 		CreatedAt:    rec.createdAt.UnixNano(),
-		State:        runtimeapi.ContainerState_CONTAINER_CREATED,
+		State:        rec.state,
 	}
+}
+
+// warmUpPauseImage pre-pulls the pause image so the first RunPodSandbox
+// is a store hit instead of a network pull.
+func (c *criServer) warmUpPauseImage() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	hasCtx, hasCancel := context.WithTimeout(ctx, 5*time.Second)
+	resp, err := c.runtimeClient.HasImage(hasCtx, &pullrunruntime.HasImageRequest{ImageRef: DefaultPauseImage})
+	hasCancel()
+	if err == nil && resp.Exists {
+		log.Printf("pause image already cached (root %s)", resp.RootDigest)
+		return
+	}
+	start := time.Now()
+	if _, err := c.ensureImage(ctx, DefaultPauseImage, ""); err != nil {
+		log.Printf("warning: pause image warm-up failed: %v", err)
+		return
+	}
+	log.Printf("pause image warmed up in %s", time.Since(start).Round(time.Millisecond))
 }
 
 func main() {
 	var (
-		socketPath   = flag.String("socket", "/var/run/pullrun/pullrun-cri.sock", "CRI socket path")
-		runtimeSock  = flag.String("runtime-socket", "/var/run/pullrun/runtime.sock", "pullrun-runtime gRPC UDS")
-		networkMode  = flag.String("network-mode", "bridge", "Network mode: bridge|isolated|host|slirp")
+		socketPath  = flag.String("socket", "/var/run/pullrun/pullrun-cri.sock", "CRI socket path")
+		runtimeSock = flag.String("runtime-socket", "/var/run/pullrun/runtime.sock", "pullrun-runtime gRPC UDS")
+		networkMode = flag.String("network-mode", "bridge", "Network mode: bridge|isolated|host|slirp")
 	)
 	flag.Parse()
 
@@ -157,6 +186,14 @@ func main() {
 		networkMode:   *networkMode,
 	}
 
+	// Reconcile the local store against the runtime's live workloads so
+	// pods/containers that died while the shim was down are reported as
+	// exited instead of phantom-running.
+	server.reconcileStartup(ctx)
+
+	// Warm up the pause image in the background so the first pod
+	// creation is fast; failures are logged, not fatal.
+	go server.warmUpPauseImage()
 	// Listen on the CRI socket
 	lis, err := net.Listen("unix", *socketPath)
 	if err != nil {

@@ -253,6 +253,24 @@ message RunRequest {
     // Configs to mount inside the container (docker --config equivalent).
     // Mounted at `/<name>` by default, or at target_path if set.
     repeated ConfigRef configs = 17;
+    // Privileged container: no seccomp, no no_new_privileges, read-write
+    // rootfs, and full capability set (runc "ALL"). Off by default; when
+    // set it overrides the daemon policy's enforcement flags for this
+    // workload only.
+    bool privileged = 18;
+    // Read-only rootfs. When unset (false), the daemon policy default
+    // applies; the effective value is `privileged ? false : (readonly_rootfs
+    // || policy.readonly_rootfs)`.
+    bool readonly_rootfs = 19;
+    // no_new_privileges. Effective value is
+    // `privileged ? false : (no_new_privileges || policy.no_new_privileges)`.
+    bool no_new_privileges = 20;
+    // Inline JSON seccomp profile (OCI seccomp format). Empty means "use
+    // the daemon policy default"; privileged forces none.
+    string seccomp_profile = 21;
+    // Extra syscalls to allow on top of the daemon policy's default
+    // allowlist. Ignored when a full seccomp_profile is provided.
+    repeated string allowed_syscalls = 22;
 }
 
 enum RestartPolicy {

@@ -444,44 +444,57 @@ impl Executor for LinuxContainerExecutor {
                 "uid": 0,
                 "gid": 0
             },
-            "capabilities": {
-                "bounding": [
-                    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                    "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                    "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                    "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                ],
-                "effective": [
-                    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                    "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                    "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                    "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                ],
-                "permitted": [
-                    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                    "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                    "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                    "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                ]
+            "capabilities": if spec.privileged {
+                serde_json::json!({
+                    "bounding": ["ALL"],
+                    "effective": ["ALL"],
+                    "permitted": ["ALL"]
+                })
+            } else {
+                serde_json::json!({
+                    "bounding": [
+                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                    ],
+                    "effective": [
+                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                    ],
+                    "permitted": [
+                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                    ]
+                })
             },
             "args": args,
             "env": env_vars,
             "cwd": bundle.working_dir.unwrap_or_else(|| "/".to_string()),
         });
-        if spec.no_new_privileges {
+        if spec.no_new_privileges && !spec.privileged {
             if let Some(obj) = process.as_object_mut() {
                 obj.insert("noNewPrivileges".to_string(), serde_json::Value::Bool(true));
             }
         }
 
         // Seccomp: fail closed on an invalid profile instead of silently
-        // running the workload unconfined.
-        let seccomp =
-            crate::seccomp::build_seccomp(spec.seccomp_profile.as_deref(), &spec.allowed_syscalls)
-                .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
-        if let Some(seccomp) = seccomp {
-            if let Some(obj) = linux.as_object_mut() {
-                obj.insert("seccomp".to_string(), seccomp);
+        // running the workload unconfined. Privileged containers skip
+        // seccomp entirely.
+        if !spec.privileged {
+            let seccomp = crate::seccomp::build_seccomp(
+                spec.seccomp_profile.as_deref(),
+                &spec.allowed_syscalls,
+            )
+            .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
+            if let Some(seccomp) = seccomp {
+                if let Some(obj) = linux.as_object_mut() {
+                    obj.insert("seccomp".to_string(), seccomp);
+                }
             }
         }
 
@@ -490,7 +503,7 @@ impl Executor for LinuxContainerExecutor {
             "process": process,
             "root": {
                 "path": bundle.rootfs_path.to_string_lossy(),
-                "readonly": spec.readonly_rootfs
+                "readonly": spec.readonly_rootfs && !spec.privileged
             },
             "mounts": serde_json::Value::Array(mounts),
             "linux": linux
@@ -520,25 +533,36 @@ impl Executor for LinuxContainerExecutor {
         }
 
         let bridge_name = spec.bridge_name.clone();
+        let network_join = match &spec.network_mode {
+            crate::types::NetworkMode::Container(target) => Some(target.clone()),
+            _ => None,
+        };
         let handle = ProcessHandle {
             id: spec.id.clone(),
             pid: None,
             internal_ip: internal_ip.map(|ip| ip.to_string()),
-            host_ports: spec
-                .network_rules
-                .iter()
-                .filter(|r| matches!(r.direction, Direction::Inbound))
-                .map(|r| {
-                    let host_p = if r.host_port != 0 {
-                        r.host_port
-                    } else {
-                        r.port
-                    };
-                    (host_p, r.port)
-                })
-                .collect(),
+            host_ports: if network_join.is_some() {
+                // Port forwarding belongs to the sandbox's network
+                // namespace; a joined container shares it and must not
+                // register its own listeners.
+                Vec::new()
+            } else {
+                spec.network_rules
+                    .iter()
+                    .filter(|r| matches!(r.direction, Direction::Inbound))
+                    .map(|r| {
+                        let host_p = if r.host_port != 0 {
+                            r.host_port
+                        } else {
+                            r.port
+                        };
+                        (host_p, r.port)
+                    })
+                    .collect()
+            },
             backend: "container".to_string(),
             bridge_name,
+            network_join,
         };
 
         info!(id = %spec.id, "container created");
@@ -554,6 +578,7 @@ impl Executor for LinuxContainerExecutor {
         let runc_path = self.runc_path.clone();
         let id = handle.id.clone();
         let bdir = bundle_dir.clone();
+        let network_join = handle.network_join.clone();
 
         tracing::debug!(
             "start: runc_path={:?}, bundle_dir={:?}, id={}",
@@ -564,14 +589,18 @@ impl Executor for LinuxContainerExecutor {
 
         let status = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawn_blocking: spawning runc run -d -b {:?} {}", bdir, id);
-            match SyncCommand::new(&runc_path)
-                .args(["run", "-d", "-b"])
-                .arg(&bdir)
-                .arg(&id)
+            let mut cmd = SyncCommand::new(&runc_path);
+            cmd.arg("run").arg("-d");
+            if let Some(ref target) = network_join {
+                // Join the sandbox's network namespace (pod model).
+                cmd.args(["--network", &format!("container:{target}")]);
+            }
+            cmd.arg("-b").arg(&bdir).arg(&id);
+            let s = cmd
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .status()
-            {
+                .status();
+            match s {
                 Ok(s) => {
                     tracing::debug!("runc exited with status: {:?}", s);
                     Ok(s)
@@ -906,25 +935,33 @@ impl Executor for RootlessContainerExecutor {
         // Apply rootless patch (adds user namespace, sets noNewPrivileges, etc.)
         crate::rootless::apply_rootless_config(&bundle_dir, self.uid)?;
 
+        let network_join = match &spec.network_mode {
+            crate::types::NetworkMode::Container(target) => Some(target.clone()),
+            _ => None,
+        };
         let handle = ProcessHandle {
             id: spec.id.clone(),
             pid: None,
             internal_ip: None,
-            host_ports: spec
-                .network_rules
-                .iter()
-                .filter(|r| matches!(r.direction, pullrun_net::Direction::Inbound))
-                .map(|r| {
-                    let host_p = if r.host_port != 0 {
-                        r.host_port
-                    } else {
-                        r.port
-                    };
-                    (host_p, r.port)
-                })
-                .collect(),
+            host_ports: if network_join.is_some() {
+                Vec::new()
+            } else {
+                spec.network_rules
+                    .iter()
+                    .filter(|r| matches!(r.direction, pullrun_net::Direction::Inbound))
+                    .map(|r| {
+                        let host_p = if r.host_port != 0 {
+                            r.host_port
+                        } else {
+                            r.port
+                        };
+                        (host_p, r.port)
+                    })
+                    .collect()
+            },
             backend: "container-rootless".to_string(),
             bridge_name: None,
+            network_join,
         };
 
         info!(id = %spec.id, "rootless container bundle ready");
@@ -936,8 +973,14 @@ impl Executor for RootlessContainerExecutor {
         info!(id = %handle.id, uid = self.uid, "starting rootless container");
 
         let bundle_dir = self.bundle_dir(&handle.id);
+        let network_join = handle.network_join.clone();
 
-        let mut cmd = crate::rootless::rootless_runc_command(&self.config, &handle.id, &bundle_dir);
+        let mut cmd = crate::rootless::rootless_runc_command_with_network(
+            &self.config,
+            &handle.id,
+            &bundle_dir,
+            network_join.as_deref(),
+        );
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
@@ -961,17 +1004,20 @@ impl Executor for RootlessContainerExecutor {
             // runc exited successfully — container is running in background.
         }
 
-        // Run pasta/slirp4netns in the container's network namespace
-        match crate::rootless::setup_rootless_network(&handle.id, pid, self.use_pasta).await {
-            Ok(net) => {
-                info!(id = %handle.id, "rootless networking set up");
-                self.net_handles
-                    .lock()
-                    .expect("net_handles lock poisoned")
-                    .insert(handle.id.clone(), net);
-            }
-            Err(e) => {
-                warn!(id = %handle.id, "rootless networking failed: {e} - container may have no network");
+        // Run pasta/slirp4netns in the container's network namespace,
+        // unless the container joined the sandbox's network namespace.
+        if network_join.is_none() {
+            match crate::rootless::setup_rootless_network(&handle.id, pid, self.use_pasta).await {
+                Ok(net) => {
+                    info!(id = %handle.id, "rootless networking set up");
+                    self.net_handles
+                        .lock()
+                        .expect("net_handles lock poisoned")
+                        .insert(handle.id.clone(), net);
+                }
+                Err(e) => {
+                    warn!(id = %handle.id, "rootless networking failed: {e} - container may have no network");
+                }
             }
         }
 

@@ -685,9 +685,27 @@ type RunRequest struct {
 	Secrets []*SecretRef `protobuf:"bytes,16,rep,name=secrets,proto3" json:"secrets,omitempty"`
 	// Configs to mount inside the container (docker --config equivalent).
 	// Mounted at `/<name>` by default, or at target_path if set.
-	Configs       []*ConfigRef `protobuf:"bytes,17,rep,name=configs,proto3" json:"configs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Configs []*ConfigRef `protobuf:"bytes,17,rep,name=configs,proto3" json:"configs,omitempty"`
+	// Privileged container: no seccomp, no no_new_privileges, read-write
+	// rootfs, and full capability set (runc "ALL"). Off by default; when
+	// set it overrides the daemon policy's enforcement flags for this
+	// workload only.
+	Privileged bool `protobuf:"varint,18,opt,name=privileged,proto3" json:"privileged,omitempty"`
+	// Read-only rootfs. When unset (false), the daemon policy default
+	// applies; the effective value is `privileged ? false : (readonly_rootfs
+	// || policy.readonly_rootfs)`.
+	ReadonlyRootfs bool `protobuf:"varint,19,opt,name=readonly_rootfs,json=readonlyRootfs,proto3" json:"readonly_rootfs,omitempty"`
+	// no_new_privileges. Effective value is
+	// `privileged ? false : (no_new_privileges || policy.no_new_privileges)`.
+	NoNewPrivileges bool `protobuf:"varint,20,opt,name=no_new_privileges,json=noNewPrivileges,proto3" json:"no_new_privileges,omitempty"`
+	// Inline JSON seccomp profile (OCI seccomp format). Empty means "use
+	// the daemon policy default"; privileged forces none.
+	SeccompProfile string `protobuf:"bytes,21,opt,name=seccomp_profile,json=seccompProfile,proto3" json:"seccomp_profile,omitempty"`
+	// Extra syscalls to allow on top of the daemon policy's default
+	// allowlist. Ignored when a full seccomp_profile is provided.
+	AllowedSyscalls []string `protobuf:"bytes,22,rep,name=allowed_syscalls,json=allowedSyscalls,proto3" json:"allowed_syscalls,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RunRequest) Reset() {
@@ -835,6 +853,41 @@ func (x *RunRequest) GetSecrets() []*SecretRef {
 func (x *RunRequest) GetConfigs() []*ConfigRef {
 	if x != nil {
 		return x.Configs
+	}
+	return nil
+}
+
+func (x *RunRequest) GetPrivileged() bool {
+	if x != nil {
+		return x.Privileged
+	}
+	return false
+}
+
+func (x *RunRequest) GetReadonlyRootfs() bool {
+	if x != nil {
+		return x.ReadonlyRootfs
+	}
+	return false
+}
+
+func (x *RunRequest) GetNoNewPrivileges() bool {
+	if x != nil {
+		return x.NoNewPrivileges
+	}
+	return false
+}
+
+func (x *RunRequest) GetSeccompProfile() string {
+	if x != nil {
+		return x.SeccompProfile
+	}
+	return ""
+}
+
+func (x *RunRequest) GetAllowedSyscalls() []string {
+	if x != nil {
+		return x.AllowedSyscalls
 	}
 	return nil
 }
@@ -6055,7 +6108,7 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
 	"\fbytes_stored\x18\x02 \x01(\x03R\vbytesStored\x12-\n" +
-	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\x9a\x06\n" +
+	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xe3\a\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -6078,7 +6131,14 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\fhealth_check\x18\x0e \x01(\v2\x1c.pullrun.runtime.HealthCheckR\vhealthCheck\x12E\n" +
 	"\x0erestart_policy\x18\x0f \x01(\x0e2\x1e.pullrun.runtime.RestartPolicyR\rrestartPolicy\x124\n" +
 	"\asecrets\x18\x10 \x03(\v2\x1a.pullrun.runtime.SecretRefR\asecrets\x124\n" +
-	"\aconfigs\x18\x11 \x03(\v2\x1a.pullrun.runtime.ConfigRefR\aconfigs\x1a6\n" +
+	"\aconfigs\x18\x11 \x03(\v2\x1a.pullrun.runtime.ConfigRefR\aconfigs\x12\x1e\n" +
+	"\n" +
+	"privileged\x18\x12 \x01(\bR\n" +
+	"privileged\x12'\n" +
+	"\x0freadonly_rootfs\x18\x13 \x01(\bR\x0ereadonlyRootfs\x12*\n" +
+	"\x11no_new_privileges\x18\x14 \x01(\bR\x0fnoNewPrivileges\x12'\n" +
+	"\x0fseccomp_profile\x18\x15 \x01(\tR\x0eseccompProfile\x12)\n" +
+	"\x10allowed_syscalls\x18\x16 \x03(\tR\x0fallowedSyscalls\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x01\n" +

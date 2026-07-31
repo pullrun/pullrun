@@ -640,13 +640,6 @@ impl RuntimeCommand {
         let watcher_executor = executor.clone();
         let watcher_workloads = workloads.clone();
         let watcher_checkpoints_dir = self.config.checkpoints_dir.clone();
-        // Carry the daemon policy flags into restarts so recreated
-        // workloads enforce the same readonly/seccomp/no-new-privs
-        // profile as the original run.
-        let watcher_policy = policy_engine
-            .as_ref()
-            .map(|e| e.default_policy().clone())
-            .unwrap_or_default();
         tokio::spawn(async move {
             use std::collections::HashSet;
             use std::time::Duration;
@@ -745,7 +738,6 @@ impl RuntimeCommand {
                                     &watcher_workloads,
                                     &watcher_checkpoints_dir,
                                     &watcher_bus,
-                                    &watcher_policy,
                                     &id,
                                     &backend,
                                 )
@@ -815,7 +807,6 @@ impl RuntimeCommand {
                                     &watcher_workloads,
                                     &watcher_checkpoints_dir,
                                     &watcher_bus,
-                                    &watcher_policy,
                                     &id,
                                     &backend,
                                 )
@@ -1311,6 +1302,38 @@ fn validate_workload_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Parse the wire-format `network_mode` string into a `NetworkMode`.
+///
+/// `"container:<id>"` requests joining the network namespace of an
+/// existing workload (the pod model); the mode is only valid for the
+/// container backends and is rejected for VM backends by
+/// `validate_network_join` before execution.
+fn parse_network_mode(s: &str, has_inbound_ports: bool) -> NetworkMode {
+    if let Some(target) = s.strip_prefix("container:") {
+        return NetworkMode::Container(target.to_string());
+    }
+    match s {
+        "bridge" => NetworkMode::Bridge,
+        "host" => NetworkMode::Host,
+        "slirp" => NetworkMode::Slirp,
+        _ if has_inbound_ports => NetworkMode::Bridge,
+        _ => NetworkMode::Loopback,
+    }
+}
+
+/// Wire-format string for a parsed [`NetworkMode`] (inverse of
+/// [`parse_network_mode`]); stored in checkpoints so restarts
+/// reconstruct the exact mode.
+fn network_mode_str(mode: &NetworkMode) -> String {
+    match mode {
+        NetworkMode::Container(target) => format!("container:{target}"),
+        NetworkMode::Bridge => "bridge".to_string(),
+        NetworkMode::Host => "host".to_string(),
+        NetworkMode::Slirp => "slirp".to_string(),
+        NetworkMode::Loopback => "isolated".to_string(),
+    }
+}
+
 /// Validate user-supplied bind mounts.
 ///
 /// The daemon runs with elevated privileges and executes runc with the
@@ -1373,7 +1396,6 @@ async fn attempt_restart(
     watcher_workloads: &Arc<RwLock<HashMap<String, WorkloadState>>>,
     watcher_checkpoints_dir: &std::path::Path,
     watcher_bus: &Arc<EventBus>,
-    watcher_policy: &pullrun_policy::Policy,
     id: &str,
     backend: &str,
 ) {
@@ -1397,16 +1419,23 @@ async fn attempt_restart(
         health_check,
         network_mode_str,
         stopped_by_operator,
+        privileged,
+        readonly_rootfs,
+        no_new_privileges,
+        seccomp_profile,
+        allowed_syscalls,
     ) = {
         let map = watcher_workloads.read().await;
         match map.get(id) {
             Some(s) => {
                 // Don't restart if the operator stopped this workload.
                 let stopped = s.status != "exited";
-                let network_mode = if s.internal_ip.is_some() {
-                    "bridge"
+                let network_mode = if !s.network_mode.is_empty() {
+                    s.network_mode.clone()
+                } else if s.internal_ip.is_some() {
+                    "bridge".to_string()
                 } else {
-                    "isolated"
+                    "isolated".to_string()
                 };
                 (
                     s.restart_count,
@@ -1422,8 +1451,13 @@ async fn attempt_restart(
                     s.bridge_name.clone(),
                     s.mounts.clone(),
                     s.health_check.clone(),
-                    network_mode.to_string(),
+                    network_mode,
                     stopped,
+                    s.privileged,
+                    s.readonly_rootfs,
+                    s.no_new_privileges,
+                    s.seccomp_profile.clone(),
+                    s.allowed_syscalls.clone(),
                 )
             }
             None => return,
@@ -1443,12 +1477,7 @@ async fn attempt_restart(
         Ok(b) => b,
         Err(_) => return,
     };
-    let network_mode_enum = match network_mode_str.as_str() {
-        "bridge" => NetworkMode::Bridge,
-        "host" => NetworkMode::Host,
-        "slirp" => NetworkMode::Slirp,
-        _ => NetworkMode::Loopback,
-    };
+    let network_mode_enum = parse_network_mode(&network_mode_str, !network_rules.is_empty());
     let kernel_path = if kernel_image_ref.is_empty() {
         None
     } else {
@@ -1475,10 +1504,11 @@ async fn attempt_restart(
         mounts,
         health_check,
         restart_policy: RestartPolicy::Always, // Already decided to restart.
-        readonly_rootfs: watcher_policy.readonly_rootfs,
-        no_new_privileges: watcher_policy.no_new_privileges,
-        seccomp_profile: watcher_policy.seccomp_profile.clone(),
-        allowed_syscalls: watcher_policy.allowed_syscalls.clone(),
+        privileged,
+        readonly_rootfs,
+        no_new_privileges,
+        seccomp_profile,
+        allowed_syscalls,
     };
 
     match watcher_executor.create(spec).await {
@@ -1515,6 +1545,19 @@ async fn attempt_restart(
         Err(e) => {
             warn!(%id, error = %e, "restart: create failed");
         }
+    }
+}
+
+/// True when the workload has no network access at all (Loopback mode).
+/// Bridge/host/slirp and pod netns joins (`container:<id>`) all have a
+/// network; legacy checkpoints with no stored mode fall back to the
+/// presence of an internal IP.
+fn is_network_isolated(state: &WorkloadState) -> bool {
+    match state.network_mode.as_str() {
+        "bridge" | "host" | "slirp" => false,
+        m if m.starts_with("container:") => false,
+        "" => state.internal_ip.is_none(),
+        _ => true,
     }
 }
 
@@ -1582,8 +1625,25 @@ pub struct WorkloadState {
     pub memory_bytes: Option<u64>,
     /// Bridge name for network isolation (stored for restart reconstruction).
     pub bridge_name: Option<String>,
+    /// Network mode string as requested by the caller ("bridge", "host",
+    /// "slirp", "isolated", or "container:<id>" for pod netns joining).
+    /// Stored so `attempt_restart` can reconstruct the exact mode.
+    #[serde(default)]
+    pub network_mode: String,
     /// Volume/bind mount specs (stored for restart reconstruction).
     pub mounts: Vec<pullrun_exec::Mount>,
+    /// Effective security flags used for this workload (stored for restart
+    /// reconstruction). `privileged` overrides the others at OCI build time.
+    #[serde(default)]
+    pub privileged: bool,
+    #[serde(default)]
+    pub readonly_rootfs: bool,
+    #[serde(default)]
+    pub no_new_privileges: bool,
+    #[serde(default)]
+    pub seccomp_profile: Option<String>,
+    #[serde(default)]
+    pub allowed_syscalls: Vec<String>,
     /// Path to Firecracker VM serial console log (set for VM
     /// backends so AttachWorkload can stream guest output).
     #[serde(default)]
@@ -1656,6 +1716,47 @@ pub struct RuntimeService {
     #[cfg(target_os = "macos")]
     pub persistent_vms:
         Arc<tokio::sync::RwLock<HashMap<String, Arc<pullrun_vm::VmPersistentHandle>>>>,
+}
+
+/// Effective security flags for a run request: per-request values
+/// (from the CRI shim's security context) override the daemon policy
+/// defaults; `privileged` disables all three.
+fn effective_security_flags(
+    policy: &pullrun_policy::Policy,
+    req: &crate::proto::RunRequest,
+) -> (bool, bool, bool, Option<String>, Vec<String>) {
+    let privileged = req.privileged;
+    let readonly_rootfs = if privileged {
+        false
+    } else {
+        req.readonly_rootfs || policy.readonly_rootfs
+    };
+    let no_new_privileges = if privileged {
+        false
+    } else {
+        req.no_new_privileges || policy.no_new_privileges
+    };
+    let seccomp_profile = if privileged {
+        None
+    } else if !req.seccomp_profile.is_empty() {
+        Some(req.seccomp_profile.clone())
+    } else {
+        policy.seccomp_profile.clone()
+    };
+    let allowed_syscalls = if privileged {
+        vec![]
+    } else if !req.allowed_syscalls.is_empty() {
+        req.allowed_syscalls.clone()
+    } else {
+        policy.allowed_syscalls.clone()
+    };
+    (
+        privileged,
+        readonly_rootfs,
+        no_new_privileges,
+        seccomp_profile,
+        allowed_syscalls,
+    )
 }
 
 impl RuntimeService {
@@ -1780,6 +1881,13 @@ impl RuntimeService {
         };
         let _ = backend; // reserved for future exec dispatch
         let restart_policy = parse_restart_policy(req.restart_policy);
+        let policy = self
+            .policy_engine
+            .as_ref()
+            .map(|e| e.default_policy().clone())
+            .unwrap_or_default();
+        let (privileged, readonly_rootfs, no_new_privileges, seccomp_profile, allowed_syscalls) =
+            effective_security_flags(&policy, &req);
         let state = WorkloadState {
             status: "pending".to_string(),
             start_time: now,
@@ -1822,6 +1930,7 @@ impl RuntimeService {
             } else {
                 Some(req.bridge_name.clone())
             },
+            network_mode: req.network_mode.clone(),
             mounts: req
                 .mounts
                 .iter()
@@ -1832,6 +1941,11 @@ impl RuntimeService {
                     options: m.options.clone(),
                 })
                 .collect(),
+            privileged,
+            readonly_rootfs,
+            no_new_privileges,
+            seccomp_profile,
+            allowed_syscalls,
             console_log_path: if final_backend == "vm" {
                 self.config
                     .vm_backend
@@ -2125,6 +2239,55 @@ impl Runtime for RuntimeService {
         let mut req_for_state = req.clone();
         let backend = Backend::from_str(&req.backend).map_err(tonic::Status::invalid_argument)?;
 
+        // Parse the requested network mode up front so pod (netns join)
+        // requests fail fast, before any image/kernel staging. The mode
+        // string is re-validated at execution time by the executors.
+        // Effective security flags: per-request values (from the CRI
+        // shim's security context) override the daemon policy defaults;
+        // privileged disables all three. Computed up front so both the
+        // spec and the persisted WorkloadState agree.
+        let policy = self
+            .policy_engine
+            .as_ref()
+            .map(|e| e.default_policy().clone())
+            .unwrap_or_default();
+        let (privileged, readonly_rootfs, no_new_privileges, seccomp_profile, allowed_syscalls) =
+            effective_security_flags(&policy, &req);
+
+        let has_inbound_ports = req.network_rules.iter().any(|r| r.direction == "inbound");
+        let network_mode = parse_network_mode(&req.network_mode, has_inbound_ports);
+
+        // Validate the pod (netns join) model: the target must exist,
+        // must itself be a container, and neither the target nor the new
+        // workload may be a VM (VMs cannot share a network namespace).
+        if let NetworkMode::Container(target) = &network_mode {
+            if target == &req.id {
+                return Err(tonic::Status::invalid_argument(
+                    "a workload cannot join its own network namespace",
+                ));
+            }
+            if matches!(backend, Backend::Vm) {
+                return Err(tonic::Status::invalid_argument(
+                    "network mode 'container:<id>' is only valid for container backends",
+                ));
+            }
+            let target_state = self.workloads.read().await.get(target).cloned();
+            match target_state {
+                Some(ts) if ts.backend.starts_with("container") => {}
+                Some(ts) => {
+                    return Err(tonic::Status::invalid_argument(format!(
+                        "cannot join network namespace of '{target}': target is not a container backend ({})",
+                        ts.backend
+                    )));
+                }
+                None => {
+                    return Err(tonic::Status::not_found(format!(
+                        "cannot join network namespace of '{target}': no such workload"
+                    )));
+                }
+            }
+        }
+
         // RAII timer: records wall-clock duration of the whole RPC
         // (parse, policy, create, start) on drop, regardless of
         // success or failure.
@@ -2252,17 +2415,9 @@ impl Runtime for RuntimeService {
             }
         }
 
-        // Auto-promote to bridge mode when inbound ports are requested
-        // so the container gets a bridge IP and the proxy can forward.
-        let has_inbound_ports = req.network_rules.iter().any(|r| r.direction == "inbound");
-        let network_mode = match req.network_mode.as_str() {
-            "bridge" => NetworkMode::Bridge,
-            "host" => NetworkMode::Host,
-            "slirp" => NetworkMode::Slirp,
-            _ if has_inbound_ports => NetworkMode::Bridge,
-            _ => NetworkMode::Loopback,
-        };
-
+        // The network mode was parsed and validated above; `network_mode`
+        // (auto-promoted to Bridge when inbound ports were requested) is
+        // used when the spec is built below.
         let env: HashMap<String, String> = req.env;
 
         // Defense-in-depth: re-evaluate the policy before launching.
@@ -2424,16 +2579,6 @@ impl Runtime for RuntimeService {
 
         let restart_policy = parse_restart_policy(req.restart_policy);
 
-        // Carry the daemon's policy flags into the OCI spec so the
-        // executor can enforce them (readonly rootfs, no_new_privileges,
-        // seccomp). evaluate_for_run above already gated admission;
-        // this is the enforcement half.
-        let policy = self
-            .policy_engine
-            .as_ref()
-            .map(|e| e.default_policy().clone())
-            .unwrap_or_default();
-
         let image_root = Digest::from_hex(&req.root_digest)
             .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
         let spec = WorkloadSpec {
@@ -2472,10 +2617,11 @@ impl Runtime for RuntimeService {
                     start_period_seconds: hc.start_period_seconds,
                 }),
             restart_policy: restart_policy.clone(),
-            readonly_rootfs: policy.readonly_rootfs,
-            no_new_privileges: policy.no_new_privileges,
-            seccomp_profile: policy.seccomp_profile.clone(),
-            allowed_syscalls: policy.allowed_syscalls.clone(),
+            privileged,
+            readonly_rootfs,
+            no_new_privileges,
+            seccomp_profile,
+            allowed_syscalls,
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -2693,7 +2839,13 @@ impl Runtime for RuntimeService {
             cpu_millicores: spec.cpu_millicores,
             memory_bytes: spec.memory_bytes,
             bridge_name: spec.bridge_name.clone(),
+            network_mode: network_mode_str(&spec.network_mode),
             mounts: spec.mounts.clone(),
+            privileged: spec.privileged,
+            readonly_rootfs: spec.readonly_rootfs,
+            no_new_privileges: spec.no_new_privileges,
+            seccomp_profile: spec.seccomp_profile.clone(),
+            allowed_syscalls: spec.allowed_syscalls.clone(),
             console_log_path: if final_backend == "vm" {
                 self.config
                     .vm_backend
@@ -2805,6 +2957,11 @@ impl Runtime for RuntimeService {
                 restart_policy: 0, // default: no restart for compose
                 secrets: Vec::new(),
                 configs: Vec::new(),
+                privileged: false,
+                readonly_rootfs: false,
+                no_new_privileges: false,
+                seccomp_profile: String::new(),
+                allowed_syscalls: Vec::new(),
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -3002,7 +3159,7 @@ impl Runtime for RuntimeService {
             exit_code: state.exit_code.unwrap_or(0),
             start_time: state.start_time,
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
-            network_isolated: true,
+            network_isolated: is_network_isolated(state),
             health: state.health.clone(),
             restart_policy: restart_proto.into(),
             restart_count: state.restart_count,
@@ -3035,7 +3192,7 @@ impl Runtime for RuntimeService {
                     exit_code: state.exit_code.unwrap_or(0),
                     start_time: state.start_time,
                     internal_ip: state.internal_ip.clone().unwrap_or_default(),
-                    network_isolated: true,
+                    network_isolated: is_network_isolated(state),
                     health: state.health.clone(),
                     restart_policy: restart_proto.into(),
                     restart_count: state.restart_count,
@@ -6059,6 +6216,257 @@ mod tests {
     use super::*;
     use pullrun_store::Digest;
 
+    #[test]
+    fn parse_network_mode_handles_pod_join() {
+        assert!(matches!(
+            parse_network_mode("container:sbx-1", false),
+            NetworkMode::Container(t) if t == "sbx-1"
+        ));
+        assert!(matches!(
+            parse_network_mode("bridge", false),
+            NetworkMode::Bridge
+        ));
+        assert!(matches!(
+            parse_network_mode("host", false),
+            NetworkMode::Host
+        ));
+        assert!(matches!(
+            parse_network_mode("slirp", false),
+            NetworkMode::Slirp
+        ));
+        assert!(matches!(
+            parse_network_mode("", false),
+            NetworkMode::Loopback
+        ));
+        assert!(matches!(
+            parse_network_mode("weird", false),
+            NetworkMode::Loopback
+        ));
+        assert!(matches!(parse_network_mode("", true), NetworkMode::Bridge));
+    }
+
+    #[test]
+    fn network_mode_str_round_trips() {
+        for (s, is_join) in [
+            ("bridge", false),
+            ("host", false),
+            ("slirp", false),
+            ("isolated", false),
+            ("container:sbx-1", true),
+        ] {
+            let parsed = parse_network_mode(s, false);
+            assert_eq!(network_mode_str(&parsed), s, "round-trip for {s}");
+            if is_join {
+                assert!(matches!(parsed, NetworkMode::Container(_)));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn run_workload_rejects_join_to_missing_target() {
+        let dir = fresh_dir("join-missing");
+        let cfg = ServiceConfig::new(dir);
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        let req = tonic::Request::new(RunRequest {
+            id: "c1".to_string(),
+            root_digest: "2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c"
+                .to_string(),
+            backend: "container".to_string(),
+            command: vec!["/bin/sh".to_string()],
+            env: Default::default(),
+            cpu_millicores: 0,
+            memory_bytes: 0,
+            network_mode: "container:ghost".to_string(),
+            network_rules: vec![],
+            kernel_image: String::new(),
+            working_dir: String::new(),
+            bridge_name: String::new(),
+            mounts: vec![],
+            health_check: None,
+            restart_policy: 0,
+            secrets: vec![],
+            configs: vec![],
+            privileged: false,
+            readonly_rootfs: false,
+            no_new_privileges: false,
+            seccomp_profile: String::new(),
+            allowed_syscalls: vec![],
+        });
+        let err = svc.run_workload(req).await.expect_err("must reject");
+        assert_eq!(err.code(), tonic::Code::NotFound);
+        assert!(err.message().contains("ghost"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn run_workload_rejects_join_to_vm_target() {
+        let dir = fresh_dir("join-vm-target");
+        let cfg = ServiceConfig::new(dir);
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        {
+            let mut map = svc.workloads.write().await;
+            map.insert(
+                "vml".to_string(),
+                WorkloadState {
+                    status: "running".to_string(),
+                    start_time: 1000,
+                    exit_time: 0,
+                    exit_code: None,
+                    backend: "vm".to_string(),
+                    internal_ip: Some("10.42.0.2".to_string()),
+                    pid: 0,
+                    image_root: String::new(),
+                    command: vec![],
+                    network_rules: vec![],
+                    policy_decisions: HashMap::new(),
+                    kernel_image_ref: String::new(),
+                    kernel_image_digest: String::new(),
+                    working_dir: String::new(),
+                    rootfs_dir: None,
+                    health_check: None,
+                    health: String::new(),
+                    health_failures: 0,
+                    health_last_success: 0,
+                    restart_policy: pullrun_exec::types::RestartPolicy::No,
+                    restart_count: 0,
+                    env: HashMap::new(),
+                    cpu_millicores: None,
+                    memory_bytes: None,
+                    bridge_name: None,
+                    network_mode: "bridge".to_string(),
+                    mounts: vec![],
+                    privileged: false,
+                    readonly_rootfs: false,
+                    no_new_privileges: false,
+                    seccomp_profile: None,
+                    allowed_syscalls: vec![],
+                    console_log_path: None,
+                },
+            );
+        }
+
+        let req = tonic::Request::new(RunRequest {
+            id: "c1".to_string(),
+            root_digest: "2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c"
+                .to_string(),
+            backend: "container".to_string(),
+            command: vec!["/bin/sh".to_string()],
+            env: Default::default(),
+            cpu_millicores: 0,
+            memory_bytes: 0,
+            network_mode: "container:vml".to_string(),
+            network_rules: vec![],
+            kernel_image: String::new(),
+            working_dir: String::new(),
+            bridge_name: String::new(),
+            mounts: vec![],
+            health_check: None,
+            restart_policy: 0,
+            secrets: vec![],
+            configs: vec![],
+            privileged: false,
+            readonly_rootfs: false,
+            no_new_privileges: false,
+            seccomp_profile: String::new(),
+            allowed_syscalls: vec![],
+        });
+        let err = svc.run_workload(req).await.expect_err("must reject");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("not a container backend"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_workload_rejects_vm_backend_with_join() {
+        let dir = fresh_dir("join-vm-backend");
+        let cfg = ServiceConfig::new(dir);
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        let req = tonic::Request::new(RunRequest {
+            id: "v1".to_string(),
+            root_digest: "2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c"
+                .to_string(),
+            backend: "vm".to_string(),
+            command: vec!["/bin/sh".to_string()],
+            env: Default::default(),
+            cpu_millicores: 0,
+            memory_bytes: 0,
+            network_mode: "container:sbx".to_string(),
+            network_rules: vec![],
+            kernel_image: String::new(),
+            working_dir: String::new(),
+            bridge_name: String::new(),
+            mounts: vec![],
+            health_check: None,
+            restart_policy: 0,
+            secrets: vec![],
+            configs: vec![],
+            privileged: false,
+            readonly_rootfs: false,
+            no_new_privileges: false,
+            seccomp_profile: String::new(),
+            allowed_syscalls: vec![],
+        });
+        let err = svc.run_workload(req).await.expect_err("must reject");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("only valid for container backends"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn network_isolation_reflects_mode() {
+        let base = |mode: &str, ip: Option<String>| WorkloadState {
+            status: "running".to_string(),
+            start_time: 1000,
+            exit_time: 0,
+            exit_code: None,
+            backend: "container".to_string(),
+            internal_ip: ip,
+            pid: 0,
+            image_root: String::new(),
+            command: vec![],
+            network_rules: vec![],
+            policy_decisions: HashMap::new(),
+            kernel_image_ref: String::new(),
+            kernel_image_digest: String::new(),
+            working_dir: String::new(),
+            rootfs_dir: None,
+            health_check: None,
+            health: String::new(),
+            health_failures: 0,
+            health_last_success: 0,
+            restart_policy: pullrun_exec::types::RestartPolicy::No,
+            restart_count: 0,
+            env: HashMap::new(),
+            cpu_millicores: None,
+            memory_bytes: None,
+            bridge_name: None,
+            network_mode: mode.to_string(),
+            mounts: vec![],
+            privileged: false,
+            readonly_rootfs: false,
+            no_new_privileges: false,
+            seccomp_profile: None,
+            allowed_syscalls: vec![],
+            console_log_path: None,
+        };
+        assert!(is_network_isolated(&base("", None)));
+        assert!(!is_network_isolated(&base(
+            "",
+            Some("10.42.0.5".to_string())
+        )));
+        assert!(!is_network_isolated(&base("bridge", None)));
+        assert!(!is_network_isolated(&base("host", None)));
+        assert!(!is_network_isolated(&base("slirp", None)));
+        assert!(!is_network_isolated(&base("container:sbx-1", None)));
+        assert!(is_network_isolated(&base("isolated", None)));
+    }
+
     fn fresh_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("pullrun-gc-enum-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -6112,7 +6520,13 @@ mod tests {
                     cpu_millicores: None,
                     memory_bytes: None,
                     bridge_name: None,
+                    network_mode: String::new(),
                     mounts: vec![],
+                    privileged: false,
+                    readonly_rootfs: false,
+                    no_new_privileges: false,
+                    seccomp_profile: None,
+                    allowed_syscalls: vec![],
                     console_log_path: None,
                 },
             );
@@ -6187,7 +6601,13 @@ mod tests {
                     cpu_millicores: None,
                     memory_bytes: None,
                     bridge_name: None,
+                    network_mode: String::new(),
                     mounts: vec![],
+                    privileged: false,
+                    readonly_rootfs: false,
+                    no_new_privileges: false,
+                    seccomp_profile: None,
+                    allowed_syscalls: vec![],
                     console_log_path: None,
                 },
             );

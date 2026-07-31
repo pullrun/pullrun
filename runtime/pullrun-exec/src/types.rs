@@ -56,6 +56,10 @@ pub enum NetworkMode {
     Bridge,
     Host,
     Slirp,
+    /// Join the network namespace of another workload (pod model).
+    /// Only valid for the container backends; VM backends cannot
+    /// share a netns and must reject this mode.
+    Container(String),
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +134,10 @@ pub struct WorkloadSpec {
     pub seccomp_profile: Option<String>,
     /// Explicit syscall allowlist for the seccomp profile.
     pub allowed_syscalls: Vec<String>,
+    /// Privileged container: no seccomp, no no_new_privileges, read-write
+    /// rootfs, and the full capability set (runc "ALL"). Overrides the
+    /// three flags above. Only honored by the container backends.
+    pub privileged: bool,
 }
 
 impl WorkloadSpec {
@@ -153,6 +161,7 @@ impl WorkloadSpec {
             no_new_privileges: false,
             seccomp_profile: None,
             allowed_syscalls: vec![],
+            privileged: false,
         }
     }
 }
@@ -176,6 +185,7 @@ pub struct WorkloadSpecBuilder {
     no_new_privileges: bool,
     seccomp_profile: Option<String>,
     allowed_syscalls: Vec<String>,
+    privileged: bool,
 }
 
 impl WorkloadSpecBuilder {
@@ -254,6 +264,11 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn privileged(mut self, privileged: bool) -> Self {
+        self.privileged = privileged;
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -274,6 +289,7 @@ impl WorkloadSpecBuilder {
             no_new_privileges: self.no_new_privileges,
             seccomp_profile: self.seccomp_profile,
             allowed_syscalls: self.allowed_syscalls,
+            privileged: self.privileged,
         }
     }
 }
@@ -289,6 +305,9 @@ pub struct ProcessHandle {
     /// Populated in `create()` from the spec's `bridge_name`; used in
     /// `setup_container_network()` to attach the veth to the correct bridge.
     pub bridge_name: Option<String>,
+    /// When set, the container joins the network namespace of the
+    /// workload with this id (pod model, `runc --network container:<id>`).
+    pub network_join: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

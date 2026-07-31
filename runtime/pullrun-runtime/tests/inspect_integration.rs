@@ -103,7 +103,13 @@ mod tests {
                     cpu_millicores: None,
                     memory_bytes: None,
                     bridge_name: None,
+                    network_mode: String::new(),
                     mounts: vec![],
+                    privileged: false,
+                    readonly_rootfs: false,
+                    no_new_privileges: false,
+                    seccomp_profile: None,
+                    allowed_syscalls: vec![],
                     console_log_path: None,
                 },
             );

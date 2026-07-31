@@ -29,12 +29,12 @@ func TestNewFileStore_CreatesDirs(t *testing.T) {
 func TestPutGetSandbox_Roundtrip(t *testing.T) {
 	s := newFileStore(t.TempDir())
 	rec := &sandboxRecord{
-		id:        "sb-1",
+		id:         "sb-1",
 		pullrunID:  "wl-1",
-		namespace: "default",
-		name:      "test-sb",
-		createdAt: time.Unix(1000, 0),
-		state:     runtimeapi.PodSandboxState_SANDBOX_READY,
+		namespace:  "default",
+		name:       "test-sb",
+		createdAt:  time.Unix(1000, 0),
+		state:      runtimeapi.PodSandboxState_SANDBOX_READY,
 		internalIP: "10.0.0.2",
 	}
 	s.putSandbox(rec)
@@ -77,11 +77,11 @@ func TestRemoveSandbox_RemovesFile(t *testing.T) {
 func TestPutGetContainer_Roundtrip(t *testing.T) {
 	s := newFileStore(t.TempDir())
 	rec := &containerRecord{
-		id:       "c-1",
+		id:        "c-1",
 		sandboxID: "sb-1",
 		pullrunID: "wl-2",
-		name:     "test-ctr",
-		image:    "alpine:latest",
+		name:      "test-ctr",
+		image:     "alpine:latest",
 		createdAt: time.Unix(2000, 0),
 	}
 	s.putContainer(rec)
