@@ -255,10 +255,8 @@ mod tests {
     #[test]
     fn test_subnet_for_skips_host_live_subnets() {
         let ipam = Ipam::from_cidr("10.42.0.0/16").unwrap();
-        let subnets = Ipam::live_subnets_in_range(
-            u32::from(std::net::Ipv4Addr::new(10, 42, 0, 0)),
-            65536,
-        );
+        let subnets =
+            Ipam::live_subnets_in_range(u32::from(std::net::Ipv4Addr::new(10, 42, 0, 0)), 65536);
         let a = ipam.subnet_for("pr-new-a").unwrap();
         if subnets.contains(&a.base) {
             panic!(

@@ -69,7 +69,9 @@ func writeExitStatus(stream httpstream.Stream, exitCode int) {
 			exitCode,
 		)
 	}
-	io.WriteString(stream, status)
+	if _, err := io.WriteString(stream, status); err != nil {
+		log.Printf("writeExitStatus: %v", err)
+	}
 	stream.Close()
 }
 
@@ -78,7 +80,9 @@ func writeErrorStatus(stream httpstream.Stream, message string) {
 	if stream == nil {
 		return
 	}
-	io.WriteString(stream, fmt.Sprintf(`{"status":"Failure","reason":"RuntimeError","message":%q}`, message))
+	if _, err := io.WriteString(stream, fmt.Sprintf(`{"status":"Failure","reason":"RuntimeError","message":%q}`, message)); err != nil {
+		log.Printf("writeErrorStatus: %v", err)
+	}
 	stream.Close()
 }
 
