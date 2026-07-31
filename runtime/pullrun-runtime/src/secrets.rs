@@ -100,7 +100,9 @@ impl SecretStore {
             let mut opts = std::fs::OpenOptions::new();
             opts.write(true).create_new(true);
             opts.mode(0o600);
-            let mut f = opts.open(&key_path).map_err(|e| format!("write key: {e}"))?;
+            let mut f = opts
+                .open(&key_path)
+                .map_err(|e| format!("write key: {e}"))?;
             f.write_all(&key).map_err(|e| format!("write key: {e}"))?;
             f.sync_all().map_err(|e| format!("fsync key: {e}"))?;
             info!("generated new secret key at {}", key_path.display());
@@ -156,7 +158,8 @@ impl SecretStore {
         })?;
         std::io::Write::write_all(&mut file, &encrypted)
             .map_err(|e| format!("write secret '{name}': {e}"))?;
-        file.sync_all().map_err(|e| format!("sync secret '{name}': {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("sync secret '{name}': {e}"))?;
         debug!(%name, "secret created");
         Ok(())
     }

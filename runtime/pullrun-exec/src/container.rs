@@ -476,11 +476,9 @@ impl Executor for LinuxContainerExecutor {
 
         // Seccomp: fail closed on an invalid profile instead of silently
         // running the workload unconfined.
-        let seccomp = crate::seccomp::build_seccomp(
-            spec.seccomp_profile.as_deref(),
-            &spec.allowed_syscalls,
-        )
-        .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
+        let seccomp =
+            crate::seccomp::build_seccomp(spec.seccomp_profile.as_deref(), &spec.allowed_syscalls)
+                .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
         if let Some(seccomp) = seccomp {
             if let Some(obj) = linux.as_object_mut() {
                 obj.insert("seccomp".to_string(), seccomp);

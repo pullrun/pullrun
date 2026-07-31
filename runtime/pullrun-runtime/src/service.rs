@@ -1276,8 +1276,8 @@ fn parse_restart_policy(p: i32) -> pullrun_exec::types::RestartPolicy {
 /// files hold plaintext secrets and are bind-mounted into workloads;
 /// world-readable copies would leak them to any local user.
 fn write_stage_file(path: &std::path::Path, content: &[u8]) -> std::io::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
     use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     let mut opts = std::fs::OpenOptions::new();
     opts.write(true).create_new(true);
     opts.mode(0o600);
@@ -1306,9 +1306,7 @@ fn validate_workload_id(id: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
-        return Err(
-            "workload id may only contain alphanumerics, '-', '_', or '.'".to_string(),
-        );
+        return Err("workload id may only contain alphanumerics, '-', '_', or '.'".to_string());
     }
     Ok(())
 }
@@ -1357,10 +1355,7 @@ fn sanitize_mounts(
                 m.destination
             ));
         }
-        if dest
-            .components()
-            .any(|c| matches!(c, Component::ParentDir))
-        {
+        if dest.components().any(|c| matches!(c, Component::ParentDir)) {
             return Err(format!(
                 "mount destination must not contain '..': {}",
                 m.destination
@@ -2374,9 +2369,8 @@ impl Runtime for RuntimeService {
                 sr.target_path.clone()
             };
             let stage_path = staged_secret_dir.join(&sr.name);
-            write_stage_file(&stage_path, &content).map_err(|e| {
-                tonic::Status::internal(format!("stage secret '{}': {e}", sr.name))
-            })?;
+            write_stage_file(&stage_path, &content)
+                .map_err(|e| tonic::Status::internal(format!("stage secret '{}': {e}", sr.name)))?;
             extra_mounts.push(pullrun_exec::Mount {
                 type_: "bind".to_string(),
                 source: stage_path.to_string_lossy().to_string(),
@@ -2399,9 +2393,8 @@ impl Runtime for RuntimeService {
                 cr.target_path.clone()
             };
             let stage_path = staged_secret_dir.join(&cr.name);
-            write_stage_file(&stage_path, &content).map_err(|e| {
-                tonic::Status::internal(format!("stage config '{}': {e}", cr.name))
-            })?;
+            write_stage_file(&stage_path, &content)
+                .map_err(|e| tonic::Status::internal(format!("stage config '{}': {e}", cr.name)))?;
             extra_mounts.push(pullrun_exec::Mount {
                 type_: "bind".to_string(),
                 source: stage_path.to_string_lossy().to_string(),

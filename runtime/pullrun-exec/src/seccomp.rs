@@ -201,7 +201,10 @@ pub fn build_seccomp(
 
     if profile == "default" {
         let syscalls: Vec<String> = if allowed_syscalls.is_empty() {
-            DEFAULT_ALLOWED_SYSCALLS.iter().map(|s| s.to_string()).collect()
+            DEFAULT_ALLOWED_SYSCALLS
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
         } else {
             allowed_syscalls.to_vec()
         };

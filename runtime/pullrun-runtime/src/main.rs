@@ -931,10 +931,7 @@ impl tokio_stream::Stream for PeerCheckedUnixStream {
             match this.listener.poll_accept(cx) {
                 std::task::Poll::Pending => return std::task::Poll::Pending,
                 std::task::Poll::Ready(Ok((stream, _addr))) => {
-                    let uid = stream
-                        .peer_cred()
-                        .map(|c| c.uid())
-                        .unwrap_or(u32::MAX);
+                    let uid = stream.peer_cred().map(|c| c.uid()).unwrap_or(u32::MAX);
                     if uid == this.expected_uid {
                         return std::task::Poll::Ready(Some(Ok(stream)));
                     }
