@@ -704,8 +704,12 @@ type RunRequest struct {
 	// Extra syscalls to allow on top of the daemon policy's default
 	// allowlist. Ignored when a full seccomp_profile is provided.
 	AllowedSyscalls []string `protobuf:"bytes,22,rep,name=allowed_syscalls,json=allowedSyscalls,proto3" json:"allowed_syscalls,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// DNS configuration for the workload's /etc/resolv.conf. Container
+	// backends write this file into the rootfs; the VM backend configures
+	// DNS via DHCP and ignores this field.
+	Dns           *DnsConfig `protobuf:"bytes,23,opt,name=dns,proto3" json:"dns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RunRequest) Reset() {
@@ -892,6 +896,74 @@ func (x *RunRequest) GetAllowedSyscalls() []string {
 	return nil
 }
 
+func (x *RunRequest) GetDns() *DnsConfig {
+	if x != nil {
+		return x.Dns
+	}
+	return nil
+}
+
+// DNS configuration written to the workload's /etc/resolv.conf.
+type DnsConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nameservers   []string               `protobuf:"bytes,1,rep,name=nameservers,proto3" json:"nameservers,omitempty"`
+	Searches      []string               `protobuf:"bytes,2,rep,name=searches,proto3" json:"searches,omitempty"`
+	Options       []string               `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DnsConfig) Reset() {
+	*x = DnsConfig{}
+	mi := &file_pullrun_runtime_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DnsConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DnsConfig) ProtoMessage() {}
+
+func (x *DnsConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DnsConfig.ProtoReflect.Descriptor instead.
+func (*DnsConfig) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DnsConfig) GetNameservers() []string {
+	if x != nil {
+		return x.Nameservers
+	}
+	return nil
+}
+
+func (x *DnsConfig) GetSearches() []string {
+	if x != nil {
+		return x.Searches
+	}
+	return nil
+}
+
+func (x *DnsConfig) GetOptions() []string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
 type NetworkRule struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Direction     string                 `protobuf:"bytes,1,opt,name=direction,proto3" json:"direction,omitempty"`
@@ -906,7 +978,7 @@ type NetworkRule struct {
 
 func (x *NetworkRule) Reset() {
 	*x = NetworkRule{}
-	mi := &file_pullrun_runtime_proto_msgTypes[8]
+	mi := &file_pullrun_runtime_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -918,7 +990,7 @@ func (x *NetworkRule) String() string {
 func (*NetworkRule) ProtoMessage() {}
 
 func (x *NetworkRule) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[8]
+	mi := &file_pullrun_runtime_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -931,7 +1003,7 @@ func (x *NetworkRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkRule.ProtoReflect.Descriptor instead.
 func (*NetworkRule) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{8}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *NetworkRule) GetDirection() string {
@@ -988,7 +1060,7 @@ type RunResponse struct {
 
 func (x *RunResponse) Reset() {
 	*x = RunResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[9]
+	mi := &file_pullrun_runtime_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1000,7 +1072,7 @@ func (x *RunResponse) String() string {
 func (*RunResponse) ProtoMessage() {}
 
 func (x *RunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[9]
+	mi := &file_pullrun_runtime_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1013,7 +1085,7 @@ func (x *RunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunResponse.ProtoReflect.Descriptor instead.
 func (*RunResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{9}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RunResponse) GetId() string {
@@ -1053,7 +1125,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[10]
+	mi := &file_pullrun_runtime_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1065,7 +1137,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[10]
+	mi := &file_pullrun_runtime_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1078,7 +1150,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{10}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StopRequest) GetId() string {
@@ -1097,7 +1169,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[11]
+	mi := &file_pullrun_runtime_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1109,7 +1181,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[11]
+	mi := &file_pullrun_runtime_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1122,7 +1194,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{11}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StopResponse) GetSuccess() bool {
@@ -1141,7 +1213,7 @@ type GetWorkloadRequest struct {
 
 func (x *GetWorkloadRequest) Reset() {
 	*x = GetWorkloadRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[12]
+	mi := &file_pullrun_runtime_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1153,7 +1225,7 @@ func (x *GetWorkloadRequest) String() string {
 func (*GetWorkloadRequest) ProtoMessage() {}
 
 func (x *GetWorkloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[12]
+	mi := &file_pullrun_runtime_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1166,7 +1238,7 @@ func (x *GetWorkloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkloadRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkloadRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{12}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetWorkloadRequest) GetId() string {
@@ -1197,7 +1269,7 @@ type WorkloadStatus struct {
 
 func (x *WorkloadStatus) Reset() {
 	*x = WorkloadStatus{}
-	mi := &file_pullrun_runtime_proto_msgTypes[13]
+	mi := &file_pullrun_runtime_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1209,7 +1281,7 @@ func (x *WorkloadStatus) String() string {
 func (*WorkloadStatus) ProtoMessage() {}
 
 func (x *WorkloadStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[13]
+	mi := &file_pullrun_runtime_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1222,7 +1294,7 @@ func (x *WorkloadStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadStatus.ProtoReflect.Descriptor instead.
 func (*WorkloadStatus) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{13}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WorkloadStatus) GetId() string {
@@ -1303,7 +1375,7 @@ type ListWorkloadsRequest struct {
 
 func (x *ListWorkloadsRequest) Reset() {
 	*x = ListWorkloadsRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[14]
+	mi := &file_pullrun_runtime_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1315,7 +1387,7 @@ func (x *ListWorkloadsRequest) String() string {
 func (*ListWorkloadsRequest) ProtoMessage() {}
 
 func (x *ListWorkloadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[14]
+	mi := &file_pullrun_runtime_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1328,7 +1400,7 @@ func (x *ListWorkloadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkloadsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkloadsRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{14}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{15}
 }
 
 type ListWorkloadsResponse struct {
@@ -1340,7 +1412,7 @@ type ListWorkloadsResponse struct {
 
 func (x *ListWorkloadsResponse) Reset() {
 	*x = ListWorkloadsResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[15]
+	mi := &file_pullrun_runtime_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1352,7 +1424,7 @@ func (x *ListWorkloadsResponse) String() string {
 func (*ListWorkloadsResponse) ProtoMessage() {}
 
 func (x *ListWorkloadsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[15]
+	mi := &file_pullrun_runtime_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1365,7 +1437,7 @@ func (x *ListWorkloadsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkloadsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkloadsResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{15}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListWorkloadsResponse) GetWorkloads() []*WorkloadStatus {
@@ -1387,7 +1459,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[16]
+	mi := &file_pullrun_runtime_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1399,7 +1471,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[16]
+	mi := &file_pullrun_runtime_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1412,7 +1484,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{16}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StreamLogsRequest) GetId() string {
@@ -1454,7 +1526,7 @@ type LogChunk struct {
 
 func (x *LogChunk) Reset() {
 	*x = LogChunk{}
-	mi := &file_pullrun_runtime_proto_msgTypes[17]
+	mi := &file_pullrun_runtime_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1466,7 +1538,7 @@ func (x *LogChunk) String() string {
 func (*LogChunk) ProtoMessage() {}
 
 func (x *LogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[17]
+	mi := &file_pullrun_runtime_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1479,7 +1551,7 @@ func (x *LogChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
 func (*LogChunk) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{17}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LogChunk) GetData() []byte {
@@ -1512,7 +1584,7 @@ type StreamEventsRequest struct {
 
 func (x *StreamEventsRequest) Reset() {
 	*x = StreamEventsRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[18]
+	mi := &file_pullrun_runtime_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1524,7 +1596,7 @@ func (x *StreamEventsRequest) String() string {
 func (*StreamEventsRequest) ProtoMessage() {}
 
 func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[18]
+	mi := &file_pullrun_runtime_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1537,7 +1609,7 @@ func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{18}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *StreamEventsRequest) GetEventTypes() []string {
@@ -1559,7 +1631,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_pullrun_runtime_proto_msgTypes[19]
+	mi := &file_pullrun_runtime_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1571,7 +1643,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[19]
+	mi := &file_pullrun_runtime_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1584,7 +1656,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{19}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Event) GetId() string {
@@ -1625,7 +1697,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[20]
+	mi := &file_pullrun_runtime_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1637,7 +1709,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[20]
+	mi := &file_pullrun_runtime_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1650,7 +1722,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{20}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ExecRequest) GetId() string {
@@ -1678,7 +1750,7 @@ type ExecResponse struct {
 
 func (x *ExecResponse) Reset() {
 	*x = ExecResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[21]
+	mi := &file_pullrun_runtime_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1690,7 +1762,7 @@ func (x *ExecResponse) String() string {
 func (*ExecResponse) ProtoMessage() {}
 
 func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[21]
+	mi := &file_pullrun_runtime_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1703,7 +1775,7 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
 func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{21}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ExecResponse) GetExitCode() int32 {
@@ -1757,7 +1829,7 @@ type AttachMessage struct {
 
 func (x *AttachMessage) Reset() {
 	*x = AttachMessage{}
-	mi := &file_pullrun_runtime_proto_msgTypes[22]
+	mi := &file_pullrun_runtime_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1769,7 +1841,7 @@ func (x *AttachMessage) String() string {
 func (*AttachMessage) ProtoMessage() {}
 
 func (x *AttachMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[22]
+	mi := &file_pullrun_runtime_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1782,7 +1854,7 @@ func (x *AttachMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachMessage.ProtoReflect.Descriptor instead.
 func (*AttachMessage) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{22}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AttachMessage) GetBody() isAttachMessage_Body {
@@ -1934,7 +2006,7 @@ type AttachOpen struct {
 
 func (x *AttachOpen) Reset() {
 	*x = AttachOpen{}
-	mi := &file_pullrun_runtime_proto_msgTypes[23]
+	mi := &file_pullrun_runtime_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1946,7 +2018,7 @@ func (x *AttachOpen) String() string {
 func (*AttachOpen) ProtoMessage() {}
 
 func (x *AttachOpen) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[23]
+	mi := &file_pullrun_runtime_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1959,7 +2031,7 @@ func (x *AttachOpen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachOpen.ProtoReflect.Descriptor instead.
 func (*AttachOpen) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{23}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AttachOpen) GetWorkloadId() string {
@@ -2021,7 +2093,7 @@ type AttachStdin struct {
 
 func (x *AttachStdin) Reset() {
 	*x = AttachStdin{}
-	mi := &file_pullrun_runtime_proto_msgTypes[24]
+	mi := &file_pullrun_runtime_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2033,7 +2105,7 @@ func (x *AttachStdin) String() string {
 func (*AttachStdin) ProtoMessage() {}
 
 func (x *AttachStdin) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[24]
+	mi := &file_pullrun_runtime_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2046,7 +2118,7 @@ func (x *AttachStdin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStdin.ProtoReflect.Descriptor instead.
 func (*AttachStdin) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{24}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AttachStdin) GetData() []byte {
@@ -2066,7 +2138,7 @@ type AttachStdinEof struct {
 
 func (x *AttachStdinEof) Reset() {
 	*x = AttachStdinEof{}
-	mi := &file_pullrun_runtime_proto_msgTypes[25]
+	mi := &file_pullrun_runtime_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2078,7 +2150,7 @@ func (x *AttachStdinEof) String() string {
 func (*AttachStdinEof) ProtoMessage() {}
 
 func (x *AttachStdinEof) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[25]
+	mi := &file_pullrun_runtime_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2091,7 +2163,7 @@ func (x *AttachStdinEof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStdinEof.ProtoReflect.Descriptor instead.
 func (*AttachStdinEof) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{25}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{26}
 }
 
 // Bytes from the workload's stdout.
@@ -2104,7 +2176,7 @@ type AttachStdout struct {
 
 func (x *AttachStdout) Reset() {
 	*x = AttachStdout{}
-	mi := &file_pullrun_runtime_proto_msgTypes[26]
+	mi := &file_pullrun_runtime_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2116,7 +2188,7 @@ func (x *AttachStdout) String() string {
 func (*AttachStdout) ProtoMessage() {}
 
 func (x *AttachStdout) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[26]
+	mi := &file_pullrun_runtime_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2129,7 +2201,7 @@ func (x *AttachStdout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStdout.ProtoReflect.Descriptor instead.
 func (*AttachStdout) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{26}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AttachStdout) GetData() []byte {
@@ -2149,7 +2221,7 @@ type AttachStderr struct {
 
 func (x *AttachStderr) Reset() {
 	*x = AttachStderr{}
-	mi := &file_pullrun_runtime_proto_msgTypes[27]
+	mi := &file_pullrun_runtime_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2161,7 +2233,7 @@ func (x *AttachStderr) String() string {
 func (*AttachStderr) ProtoMessage() {}
 
 func (x *AttachStderr) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[27]
+	mi := &file_pullrun_runtime_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2174,7 +2246,7 @@ func (x *AttachStderr) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachStderr.ProtoReflect.Descriptor instead.
 func (*AttachStderr) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{27}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AttachStderr) GetData() []byte {
@@ -2197,7 +2269,7 @@ type AttachExit struct {
 
 func (x *AttachExit) Reset() {
 	*x = AttachExit{}
-	mi := &file_pullrun_runtime_proto_msgTypes[28]
+	mi := &file_pullrun_runtime_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2209,7 +2281,7 @@ func (x *AttachExit) String() string {
 func (*AttachExit) ProtoMessage() {}
 
 func (x *AttachExit) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[28]
+	mi := &file_pullrun_runtime_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2222,7 +2294,7 @@ func (x *AttachExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachExit.ProtoReflect.Descriptor instead.
 func (*AttachExit) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{28}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AttachExit) GetExitCode() int32 {
@@ -2264,7 +2336,7 @@ type AttachError struct {
 
 func (x *AttachError) Reset() {
 	*x = AttachError{}
-	mi := &file_pullrun_runtime_proto_msgTypes[29]
+	mi := &file_pullrun_runtime_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2276,7 +2348,7 @@ func (x *AttachError) String() string {
 func (*AttachError) ProtoMessage() {}
 
 func (x *AttachError) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[29]
+	mi := &file_pullrun_runtime_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2289,7 +2361,7 @@ func (x *AttachError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachError.ProtoReflect.Descriptor instead.
 func (*AttachError) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{29}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AttachError) GetMessage() string {
@@ -2312,7 +2384,7 @@ type AttachWindowSize struct {
 
 func (x *AttachWindowSize) Reset() {
 	*x = AttachWindowSize{}
-	mi := &file_pullrun_runtime_proto_msgTypes[30]
+	mi := &file_pullrun_runtime_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2324,7 +2396,7 @@ func (x *AttachWindowSize) String() string {
 func (*AttachWindowSize) ProtoMessage() {}
 
 func (x *AttachWindowSize) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[30]
+	mi := &file_pullrun_runtime_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2337,7 +2409,7 @@ func (x *AttachWindowSize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachWindowSize.ProtoReflect.Descriptor instead.
 func (*AttachWindowSize) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{30}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AttachWindowSize) GetRows() uint32 {
@@ -2363,7 +2435,7 @@ type HasImageRequest struct {
 
 func (x *HasImageRequest) Reset() {
 	*x = HasImageRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[31]
+	mi := &file_pullrun_runtime_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2375,7 +2447,7 @@ func (x *HasImageRequest) String() string {
 func (*HasImageRequest) ProtoMessage() {}
 
 func (x *HasImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[31]
+	mi := &file_pullrun_runtime_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2388,7 +2460,7 @@ func (x *HasImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HasImageRequest.ProtoReflect.Descriptor instead.
 func (*HasImageRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{31}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *HasImageRequest) GetImageRef() string {
@@ -2408,7 +2480,7 @@ type HasImageResponse struct {
 
 func (x *HasImageResponse) Reset() {
 	*x = HasImageResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[32]
+	mi := &file_pullrun_runtime_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2420,7 +2492,7 @@ func (x *HasImageResponse) String() string {
 func (*HasImageResponse) ProtoMessage() {}
 
 func (x *HasImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[32]
+	mi := &file_pullrun_runtime_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2433,7 +2505,7 @@ func (x *HasImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HasImageResponse.ProtoReflect.Descriptor instead.
 func (*HasImageResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{32}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *HasImageResponse) GetExists() bool {
@@ -2458,7 +2530,7 @@ type ListImagesRequest struct {
 
 func (x *ListImagesRequest) Reset() {
 	*x = ListImagesRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[33]
+	mi := &file_pullrun_runtime_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2470,7 +2542,7 @@ func (x *ListImagesRequest) String() string {
 func (*ListImagesRequest) ProtoMessage() {}
 
 func (x *ListImagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[33]
+	mi := &file_pullrun_runtime_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2483,7 +2555,7 @@ func (x *ListImagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListImagesRequest.ProtoReflect.Descriptor instead.
 func (*ListImagesRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{33}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{34}
 }
 
 type ListImagesResponse struct {
@@ -2495,7 +2567,7 @@ type ListImagesResponse struct {
 
 func (x *ListImagesResponse) Reset() {
 	*x = ListImagesResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[34]
+	mi := &file_pullrun_runtime_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2507,7 +2579,7 @@ func (x *ListImagesResponse) String() string {
 func (*ListImagesResponse) ProtoMessage() {}
 
 func (x *ListImagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[34]
+	mi := &file_pullrun_runtime_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2520,7 +2592,7 @@ func (x *ListImagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListImagesResponse.ProtoReflect.Descriptor instead.
 func (*ListImagesResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{34}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListImagesResponse) GetImages() []*ImageInfo {
@@ -2542,7 +2614,7 @@ type ImageInfo struct {
 
 func (x *ImageInfo) Reset() {
 	*x = ImageInfo{}
-	mi := &file_pullrun_runtime_proto_msgTypes[35]
+	mi := &file_pullrun_runtime_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2554,7 +2626,7 @@ func (x *ImageInfo) String() string {
 func (*ImageInfo) ProtoMessage() {}
 
 func (x *ImageInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[35]
+	mi := &file_pullrun_runtime_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2567,7 +2639,7 @@ func (x *ImageInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageInfo.ProtoReflect.Descriptor instead.
 func (*ImageInfo) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{35}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ImageInfo) GetImageRef() string {
@@ -2607,7 +2679,7 @@ type RemoveImageRequest struct {
 
 func (x *RemoveImageRequest) Reset() {
 	*x = RemoveImageRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[36]
+	mi := &file_pullrun_runtime_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2619,7 +2691,7 @@ func (x *RemoveImageRequest) String() string {
 func (*RemoveImageRequest) ProtoMessage() {}
 
 func (x *RemoveImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[36]
+	mi := &file_pullrun_runtime_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2632,7 +2704,7 @@ func (x *RemoveImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveImageRequest.ProtoReflect.Descriptor instead.
 func (*RemoveImageRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{36}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *RemoveImageRequest) GetRootDigest() string {
@@ -2652,7 +2724,7 @@ type RemoveImageResponse struct {
 
 func (x *RemoveImageResponse) Reset() {
 	*x = RemoveImageResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[37]
+	mi := &file_pullrun_runtime_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2664,7 +2736,7 @@ func (x *RemoveImageResponse) String() string {
 func (*RemoveImageResponse) ProtoMessage() {}
 
 func (x *RemoveImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[37]
+	mi := &file_pullrun_runtime_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2677,7 +2749,7 @@ func (x *RemoveImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveImageResponse.ProtoReflect.Descriptor instead.
 func (*RemoveImageResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{37}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *RemoveImageResponse) GetSuccess() bool {
@@ -2702,7 +2774,7 @@ type DagStoreInfoRequest struct {
 
 func (x *DagStoreInfoRequest) Reset() {
 	*x = DagStoreInfoRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[38]
+	mi := &file_pullrun_runtime_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2714,7 +2786,7 @@ func (x *DagStoreInfoRequest) String() string {
 func (*DagStoreInfoRequest) ProtoMessage() {}
 
 func (x *DagStoreInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[38]
+	mi := &file_pullrun_runtime_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2727,7 +2799,7 @@ func (x *DagStoreInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DagStoreInfoRequest.ProtoReflect.Descriptor instead.
 func (*DagStoreInfoRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{38}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{39}
 }
 
 type DagStoreInfoResponse struct {
@@ -2743,7 +2815,7 @@ type DagStoreInfoResponse struct {
 
 func (x *DagStoreInfoResponse) Reset() {
 	*x = DagStoreInfoResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[39]
+	mi := &file_pullrun_runtime_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2755,7 +2827,7 @@ func (x *DagStoreInfoResponse) String() string {
 func (*DagStoreInfoResponse) ProtoMessage() {}
 
 func (x *DagStoreInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[39]
+	mi := &file_pullrun_runtime_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2768,7 +2840,7 @@ func (x *DagStoreInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DagStoreInfoResponse.ProtoReflect.Descriptor instead.
 func (*DagStoreInfoResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{39}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *DagStoreInfoResponse) GetMountpoint() string {
@@ -2817,7 +2889,7 @@ type PortForwardRequest struct {
 
 func (x *PortForwardRequest) Reset() {
 	*x = PortForwardRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[40]
+	mi := &file_pullrun_runtime_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2829,7 +2901,7 @@ func (x *PortForwardRequest) String() string {
 func (*PortForwardRequest) ProtoMessage() {}
 
 func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[40]
+	mi := &file_pullrun_runtime_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2842,7 +2914,7 @@ func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortForwardRequest.ProtoReflect.Descriptor instead.
 func (*PortForwardRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{40}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PortForwardRequest) GetWorkloadId() string {
@@ -2875,7 +2947,7 @@ type PortForwardData struct {
 
 func (x *PortForwardData) Reset() {
 	*x = PortForwardData{}
-	mi := &file_pullrun_runtime_proto_msgTypes[41]
+	mi := &file_pullrun_runtime_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2887,7 +2959,7 @@ func (x *PortForwardData) String() string {
 func (*PortForwardData) ProtoMessage() {}
 
 func (x *PortForwardData) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[41]
+	mi := &file_pullrun_runtime_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2900,7 +2972,7 @@ func (x *PortForwardData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortForwardData.ProtoReflect.Descriptor instead.
 func (*PortForwardData) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{41}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *PortForwardData) GetData() []byte {
@@ -2930,7 +3002,7 @@ type HealthCheck struct {
 
 func (x *HealthCheck) Reset() {
 	*x = HealthCheck{}
-	mi := &file_pullrun_runtime_proto_msgTypes[42]
+	mi := &file_pullrun_runtime_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2942,7 +3014,7 @@ func (x *HealthCheck) String() string {
 func (*HealthCheck) ProtoMessage() {}
 
 func (x *HealthCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[42]
+	mi := &file_pullrun_runtime_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2955,7 +3027,7 @@ func (x *HealthCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheck.ProtoReflect.Descriptor instead.
 func (*HealthCheck) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{42}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *HealthCheck) GetTest() []string {
@@ -3004,7 +3076,7 @@ type UpdateWorkloadRequest struct {
 
 func (x *UpdateWorkloadRequest) Reset() {
 	*x = UpdateWorkloadRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[43]
+	mi := &file_pullrun_runtime_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3016,7 +3088,7 @@ func (x *UpdateWorkloadRequest) String() string {
 func (*UpdateWorkloadRequest) ProtoMessage() {}
 
 func (x *UpdateWorkloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[43]
+	mi := &file_pullrun_runtime_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3029,7 +3101,7 @@ func (x *UpdateWorkloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkloadRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWorkloadRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{43}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *UpdateWorkloadRequest) GetId() string {
@@ -3062,7 +3134,7 @@ type UpdateWorkloadResponse struct {
 
 func (x *UpdateWorkloadResponse) Reset() {
 	*x = UpdateWorkloadResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[44]
+	mi := &file_pullrun_runtime_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3074,7 +3146,7 @@ func (x *UpdateWorkloadResponse) String() string {
 func (*UpdateWorkloadResponse) ProtoMessage() {}
 
 func (x *UpdateWorkloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[44]
+	mi := &file_pullrun_runtime_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3087,7 +3159,7 @@ func (x *UpdateWorkloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkloadResponse.ProtoReflect.Descriptor instead.
 func (*UpdateWorkloadResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{44}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *UpdateWorkloadResponse) GetSuccess() bool {
@@ -3106,7 +3178,7 @@ type GetWorkloadStatsRequest struct {
 
 func (x *GetWorkloadStatsRequest) Reset() {
 	*x = GetWorkloadStatsRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[45]
+	mi := &file_pullrun_runtime_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3118,7 +3190,7 @@ func (x *GetWorkloadStatsRequest) String() string {
 func (*GetWorkloadStatsRequest) ProtoMessage() {}
 
 func (x *GetWorkloadStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[45]
+	mi := &file_pullrun_runtime_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3131,7 +3203,7 @@ func (x *GetWorkloadStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkloadStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkloadStatsRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{45}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *GetWorkloadStatsRequest) GetId() string {
@@ -3155,7 +3227,7 @@ type WorkloadStats struct {
 
 func (x *WorkloadStats) Reset() {
 	*x = WorkloadStats{}
-	mi := &file_pullrun_runtime_proto_msgTypes[46]
+	mi := &file_pullrun_runtime_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3167,7 +3239,7 @@ func (x *WorkloadStats) String() string {
 func (*WorkloadStats) ProtoMessage() {}
 
 func (x *WorkloadStats) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[46]
+	mi := &file_pullrun_runtime_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3180,7 +3252,7 @@ func (x *WorkloadStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadStats.ProtoReflect.Descriptor instead.
 func (*WorkloadStats) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{46}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *WorkloadStats) GetId() string {
@@ -3250,7 +3322,7 @@ type BuildImageRequest struct {
 
 func (x *BuildImageRequest) Reset() {
 	*x = BuildImageRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[47]
+	mi := &file_pullrun_runtime_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3262,7 +3334,7 @@ func (x *BuildImageRequest) String() string {
 func (*BuildImageRequest) ProtoMessage() {}
 
 func (x *BuildImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[47]
+	mi := &file_pullrun_runtime_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3275,7 +3347,7 @@ func (x *BuildImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildImageRequest.ProtoReflect.Descriptor instead.
 func (*BuildImageRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{47}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *BuildImageRequest) GetDockerfile() string {
@@ -3337,7 +3409,7 @@ type BuildImageResponse struct {
 
 func (x *BuildImageResponse) Reset() {
 	*x = BuildImageResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[48]
+	mi := &file_pullrun_runtime_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3349,7 +3421,7 @@ func (x *BuildImageResponse) String() string {
 func (*BuildImageResponse) ProtoMessage() {}
 
 func (x *BuildImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[48]
+	mi := &file_pullrun_runtime_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3362,7 +3434,7 @@ func (x *BuildImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildImageResponse.ProtoReflect.Descriptor instead.
 func (*BuildImageResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{48}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *BuildImageResponse) GetRootDigest() string {
@@ -3392,7 +3464,7 @@ type PushImageRequest struct {
 
 func (x *PushImageRequest) Reset() {
 	*x = PushImageRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[49]
+	mi := &file_pullrun_runtime_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3404,7 +3476,7 @@ func (x *PushImageRequest) String() string {
 func (*PushImageRequest) ProtoMessage() {}
 
 func (x *PushImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[49]
+	mi := &file_pullrun_runtime_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3417,7 +3489,7 @@ func (x *PushImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushImageRequest.ProtoReflect.Descriptor instead.
 func (*PushImageRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{49}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *PushImageRequest) GetRootDigest() string {
@@ -3465,7 +3537,7 @@ type PushImageResponse struct {
 
 func (x *PushImageResponse) Reset() {
 	*x = PushImageResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[50]
+	mi := &file_pullrun_runtime_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3477,7 +3549,7 @@ func (x *PushImageResponse) String() string {
 func (*PushImageResponse) ProtoMessage() {}
 
 func (x *PushImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[50]
+	mi := &file_pullrun_runtime_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3490,7 +3562,7 @@ func (x *PushImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushImageResponse.ProtoReflect.Descriptor instead.
 func (*PushImageResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{50}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *PushImageResponse) GetManifestDigest() string {
@@ -3520,7 +3592,7 @@ type ExportImageRequest struct {
 
 func (x *ExportImageRequest) Reset() {
 	*x = ExportImageRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[51]
+	mi := &file_pullrun_runtime_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3532,7 +3604,7 @@ func (x *ExportImageRequest) String() string {
 func (*ExportImageRequest) ProtoMessage() {}
 
 func (x *ExportImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[51]
+	mi := &file_pullrun_runtime_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3545,7 +3617,7 @@ func (x *ExportImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportImageRequest.ProtoReflect.Descriptor instead.
 func (*ExportImageRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{51}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ExportImageRequest) GetRootDigest() string {
@@ -3571,7 +3643,7 @@ type ExportImageChunk struct {
 
 func (x *ExportImageChunk) Reset() {
 	*x = ExportImageChunk{}
-	mi := &file_pullrun_runtime_proto_msgTypes[52]
+	mi := &file_pullrun_runtime_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3583,7 +3655,7 @@ func (x *ExportImageChunk) String() string {
 func (*ExportImageChunk) ProtoMessage() {}
 
 func (x *ExportImageChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[52]
+	mi := &file_pullrun_runtime_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3596,7 +3668,7 @@ func (x *ExportImageChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportImageChunk.ProtoReflect.Descriptor instead.
 func (*ExportImageChunk) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{52}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ExportImageChunk) GetData() []byte {
@@ -3615,7 +3687,7 @@ type ImportImageChunk struct {
 
 func (x *ImportImageChunk) Reset() {
 	*x = ImportImageChunk{}
-	mi := &file_pullrun_runtime_proto_msgTypes[53]
+	mi := &file_pullrun_runtime_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3627,7 +3699,7 @@ func (x *ImportImageChunk) String() string {
 func (*ImportImageChunk) ProtoMessage() {}
 
 func (x *ImportImageChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[53]
+	mi := &file_pullrun_runtime_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3640,7 +3712,7 @@ func (x *ImportImageChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportImageChunk.ProtoReflect.Descriptor instead.
 func (*ImportImageChunk) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{53}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ImportImageChunk) GetData() []byte {
@@ -3661,7 +3733,7 @@ type ImportImageResponse struct {
 
 func (x *ImportImageResponse) Reset() {
 	*x = ImportImageResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[54]
+	mi := &file_pullrun_runtime_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3673,7 +3745,7 @@ func (x *ImportImageResponse) String() string {
 func (*ImportImageResponse) ProtoMessage() {}
 
 func (x *ImportImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[54]
+	mi := &file_pullrun_runtime_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3686,7 +3758,7 @@ func (x *ImportImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportImageResponse.ProtoReflect.Descriptor instead.
 func (*ImportImageResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{54}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ImportImageResponse) GetRootDigest() string {
@@ -3722,7 +3794,7 @@ type InspectRequest struct {
 
 func (x *InspectRequest) Reset() {
 	*x = InspectRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[55]
+	mi := &file_pullrun_runtime_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3734,7 +3806,7 @@ func (x *InspectRequest) String() string {
 func (*InspectRequest) ProtoMessage() {}
 
 func (x *InspectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[55]
+	mi := &file_pullrun_runtime_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3747,7 +3819,7 @@ func (x *InspectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRequest.ProtoReflect.Descriptor instead.
 func (*InspectRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{55}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *InspectRequest) GetId() string {
@@ -3768,7 +3840,7 @@ type DagNode struct {
 
 func (x *DagNode) Reset() {
 	*x = DagNode{}
-	mi := &file_pullrun_runtime_proto_msgTypes[56]
+	mi := &file_pullrun_runtime_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3780,7 +3852,7 @@ func (x *DagNode) String() string {
 func (*DagNode) ProtoMessage() {}
 
 func (x *DagNode) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[56]
+	mi := &file_pullrun_runtime_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3793,7 +3865,7 @@ func (x *DagNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DagNode.ProtoReflect.Descriptor instead.
 func (*DagNode) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{56}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *DagNode) GetDigest() string {
@@ -3850,7 +3922,7 @@ type InspectResponse struct {
 
 func (x *InspectResponse) Reset() {
 	*x = InspectResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[57]
+	mi := &file_pullrun_runtime_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3862,7 +3934,7 @@ func (x *InspectResponse) String() string {
 func (*InspectResponse) ProtoMessage() {}
 
 func (x *InspectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[57]
+	mi := &file_pullrun_runtime_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3875,7 +3947,7 @@ func (x *InspectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectResponse.ProtoReflect.Descriptor instead.
 func (*InspectResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{57}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *InspectResponse) GetId() string {
@@ -4005,7 +4077,7 @@ type CopyFileRequest struct {
 
 func (x *CopyFileRequest) Reset() {
 	*x = CopyFileRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[58]
+	mi := &file_pullrun_runtime_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4017,7 +4089,7 @@ func (x *CopyFileRequest) String() string {
 func (*CopyFileRequest) ProtoMessage() {}
 
 func (x *CopyFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[58]
+	mi := &file_pullrun_runtime_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4030,7 +4102,7 @@ func (x *CopyFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CopyFileRequest.ProtoReflect.Descriptor instead.
 func (*CopyFileRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{58}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *CopyFileRequest) GetId() string {
@@ -4081,7 +4153,7 @@ type CopyFileResponse struct {
 
 func (x *CopyFileResponse) Reset() {
 	*x = CopyFileResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[59]
+	mi := &file_pullrun_runtime_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4093,7 +4165,7 @@ func (x *CopyFileResponse) String() string {
 func (*CopyFileResponse) ProtoMessage() {}
 
 func (x *CopyFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[59]
+	mi := &file_pullrun_runtime_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4106,7 +4178,7 @@ func (x *CopyFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CopyFileResponse.ProtoReflect.Descriptor instead.
 func (*CopyFileResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{59}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *CopyFileResponse) GetId() string {
@@ -4161,7 +4233,7 @@ type CommitImageRequest struct {
 
 func (x *CommitImageRequest) Reset() {
 	*x = CommitImageRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[60]
+	mi := &file_pullrun_runtime_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4173,7 +4245,7 @@ func (x *CommitImageRequest) String() string {
 func (*CommitImageRequest) ProtoMessage() {}
 
 func (x *CommitImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[60]
+	mi := &file_pullrun_runtime_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4186,7 +4258,7 @@ func (x *CommitImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitImageRequest.ProtoReflect.Descriptor instead.
 func (*CommitImageRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{60}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *CommitImageRequest) GetId() string {
@@ -4232,7 +4304,7 @@ type CommitImageResponse struct {
 
 func (x *CommitImageResponse) Reset() {
 	*x = CommitImageResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[61]
+	mi := &file_pullrun_runtime_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4244,7 +4316,7 @@ func (x *CommitImageResponse) String() string {
 func (*CommitImageResponse) ProtoMessage() {}
 
 func (x *CommitImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[61]
+	mi := &file_pullrun_runtime_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4257,7 +4329,7 @@ func (x *CommitImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitImageResponse.ProtoReflect.Descriptor instead.
 func (*CommitImageResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{61}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *CommitImageResponse) GetRootDigest() string {
@@ -4294,7 +4366,7 @@ type CreateNetworkRequest struct {
 
 func (x *CreateNetworkRequest) Reset() {
 	*x = CreateNetworkRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[62]
+	mi := &file_pullrun_runtime_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4306,7 +4378,7 @@ func (x *CreateNetworkRequest) String() string {
 func (*CreateNetworkRequest) ProtoMessage() {}
 
 func (x *CreateNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[62]
+	mi := &file_pullrun_runtime_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4319,7 +4391,7 @@ func (x *CreateNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNetworkRequest.ProtoReflect.Descriptor instead.
 func (*CreateNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{62}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *CreateNetworkRequest) GetName() string {
@@ -4347,7 +4419,7 @@ type CreateNetworkResponse struct {
 
 func (x *CreateNetworkResponse) Reset() {
 	*x = CreateNetworkResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[63]
+	mi := &file_pullrun_runtime_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4359,7 +4431,7 @@ func (x *CreateNetworkResponse) String() string {
 func (*CreateNetworkResponse) ProtoMessage() {}
 
 func (x *CreateNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[63]
+	mi := &file_pullrun_runtime_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4372,7 +4444,7 @@ func (x *CreateNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNetworkResponse.ProtoReflect.Descriptor instead.
 func (*CreateNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{63}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *CreateNetworkResponse) GetSuccess() bool {
@@ -4405,7 +4477,7 @@ type RemoveNetworkRequest struct {
 
 func (x *RemoveNetworkRequest) Reset() {
 	*x = RemoveNetworkRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[64]
+	mi := &file_pullrun_runtime_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4417,7 +4489,7 @@ func (x *RemoveNetworkRequest) String() string {
 func (*RemoveNetworkRequest) ProtoMessage() {}
 
 func (x *RemoveNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[64]
+	mi := &file_pullrun_runtime_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4430,7 +4502,7 @@ func (x *RemoveNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNetworkRequest.ProtoReflect.Descriptor instead.
 func (*RemoveNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{64}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *RemoveNetworkRequest) GetName() string {
@@ -4449,7 +4521,7 @@ type RemoveNetworkResponse struct {
 
 func (x *RemoveNetworkResponse) Reset() {
 	*x = RemoveNetworkResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[65]
+	mi := &file_pullrun_runtime_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4461,7 +4533,7 @@ func (x *RemoveNetworkResponse) String() string {
 func (*RemoveNetworkResponse) ProtoMessage() {}
 
 func (x *RemoveNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[65]
+	mi := &file_pullrun_runtime_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4474,7 +4546,7 @@ func (x *RemoveNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveNetworkResponse.ProtoReflect.Descriptor instead.
 func (*RemoveNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{65}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *RemoveNetworkResponse) GetSuccess() bool {
@@ -4492,7 +4564,7 @@ type ListNetworksRequest struct {
 
 func (x *ListNetworksRequest) Reset() {
 	*x = ListNetworksRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[66]
+	mi := &file_pullrun_runtime_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4504,7 +4576,7 @@ func (x *ListNetworksRequest) String() string {
 func (*ListNetworksRequest) ProtoMessage() {}
 
 func (x *ListNetworksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[66]
+	mi := &file_pullrun_runtime_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4517,7 +4589,7 @@ func (x *ListNetworksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworksRequest.ProtoReflect.Descriptor instead.
 func (*ListNetworksRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{66}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{67}
 }
 
 type NetworkInfo struct {
@@ -4533,7 +4605,7 @@ type NetworkInfo struct {
 
 func (x *NetworkInfo) Reset() {
 	*x = NetworkInfo{}
-	mi := &file_pullrun_runtime_proto_msgTypes[67]
+	mi := &file_pullrun_runtime_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4545,7 +4617,7 @@ func (x *NetworkInfo) String() string {
 func (*NetworkInfo) ProtoMessage() {}
 
 func (x *NetworkInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[67]
+	mi := &file_pullrun_runtime_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4558,7 +4630,7 @@ func (x *NetworkInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkInfo.ProtoReflect.Descriptor instead.
 func (*NetworkInfo) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{67}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *NetworkInfo) GetName() string {
@@ -4598,7 +4670,7 @@ type ListNetworksResponse struct {
 
 func (x *ListNetworksResponse) Reset() {
 	*x = ListNetworksResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[68]
+	mi := &file_pullrun_runtime_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4610,7 +4682,7 @@ func (x *ListNetworksResponse) String() string {
 func (*ListNetworksResponse) ProtoMessage() {}
 
 func (x *ListNetworksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[68]
+	mi := &file_pullrun_runtime_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4623,7 +4695,7 @@ func (x *ListNetworksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNetworksResponse.ProtoReflect.Descriptor instead.
 func (*ListNetworksResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{68}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ListNetworksResponse) GetNetworks() []*NetworkInfo {
@@ -4641,7 +4713,7 @@ type InfoRequest struct {
 
 func (x *InfoRequest) Reset() {
 	*x = InfoRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[69]
+	mi := &file_pullrun_runtime_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4653,7 +4725,7 @@ func (x *InfoRequest) String() string {
 func (*InfoRequest) ProtoMessage() {}
 
 func (x *InfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[69]
+	mi := &file_pullrun_runtime_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4666,7 +4738,7 @@ func (x *InfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InfoRequest.ProtoReflect.Descriptor instead.
 func (*InfoRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{69}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{70}
 }
 
 type InfoResponse struct {
@@ -4693,7 +4765,7 @@ type InfoResponse struct {
 
 func (x *InfoResponse) Reset() {
 	*x = InfoResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[70]
+	mi := &file_pullrun_runtime_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4705,7 +4777,7 @@ func (x *InfoResponse) String() string {
 func (*InfoResponse) ProtoMessage() {}
 
 func (x *InfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[70]
+	mi := &file_pullrun_runtime_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4718,7 +4790,7 @@ func (x *InfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InfoResponse.ProtoReflect.Descriptor instead.
 func (*InfoResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{70}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *InfoResponse) GetVersion() string {
@@ -4785,7 +4857,7 @@ type PruneRequest struct {
 
 func (x *PruneRequest) Reset() {
 	*x = PruneRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[71]
+	mi := &file_pullrun_runtime_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4797,7 +4869,7 @@ func (x *PruneRequest) String() string {
 func (*PruneRequest) ProtoMessage() {}
 
 func (x *PruneRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[71]
+	mi := &file_pullrun_runtime_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4810,7 +4882,7 @@ func (x *PruneRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneRequest.ProtoReflect.Descriptor instead.
 func (*PruneRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{71}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{72}
 }
 
 type PruneResponse struct {
@@ -4824,7 +4896,7 @@ type PruneResponse struct {
 
 func (x *PruneResponse) Reset() {
 	*x = PruneResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[72]
+	mi := &file_pullrun_runtime_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4836,7 +4908,7 @@ func (x *PruneResponse) String() string {
 func (*PruneResponse) ProtoMessage() {}
 
 func (x *PruneResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[72]
+	mi := &file_pullrun_runtime_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4849,7 +4921,7 @@ func (x *PruneResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneResponse.ProtoReflect.Descriptor instead.
 func (*PruneResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{72}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *PruneResponse) GetBundlesRemoved() int64 {
@@ -4883,7 +4955,7 @@ type DiffRequest struct {
 
 func (x *DiffRequest) Reset() {
 	*x = DiffRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[73]
+	mi := &file_pullrun_runtime_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4895,7 +4967,7 @@ func (x *DiffRequest) String() string {
 func (*DiffRequest) ProtoMessage() {}
 
 func (x *DiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[73]
+	mi := &file_pullrun_runtime_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4908,7 +4980,7 @@ func (x *DiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffRequest.ProtoReflect.Descriptor instead.
 func (*DiffRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{73}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *DiffRequest) GetId() string {
@@ -4932,7 +5004,7 @@ type DiffResponse struct {
 
 func (x *DiffResponse) Reset() {
 	*x = DiffResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[74]
+	mi := &file_pullrun_runtime_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4944,7 +5016,7 @@ func (x *DiffResponse) String() string {
 func (*DiffResponse) ProtoMessage() {}
 
 func (x *DiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[74]
+	mi := &file_pullrun_runtime_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4957,7 +5029,7 @@ func (x *DiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffResponse.ProtoReflect.Descriptor instead.
 func (*DiffResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{74}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *DiffResponse) GetAdded() []string {
@@ -4991,7 +5063,7 @@ type SecretRef struct {
 
 func (x *SecretRef) Reset() {
 	*x = SecretRef{}
-	mi := &file_pullrun_runtime_proto_msgTypes[75]
+	mi := &file_pullrun_runtime_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5003,7 +5075,7 @@ func (x *SecretRef) String() string {
 func (*SecretRef) ProtoMessage() {}
 
 func (x *SecretRef) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[75]
+	mi := &file_pullrun_runtime_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5016,7 +5088,7 @@ func (x *SecretRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecretRef.ProtoReflect.Descriptor instead.
 func (*SecretRef) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{75}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *SecretRef) GetName() string {
@@ -5043,7 +5115,7 @@ type ConfigRef struct {
 
 func (x *ConfigRef) Reset() {
 	*x = ConfigRef{}
-	mi := &file_pullrun_runtime_proto_msgTypes[76]
+	mi := &file_pullrun_runtime_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5055,7 +5127,7 @@ func (x *ConfigRef) String() string {
 func (*ConfigRef) ProtoMessage() {}
 
 func (x *ConfigRef) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[76]
+	mi := &file_pullrun_runtime_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5068,7 +5140,7 @@ func (x *ConfigRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigRef.ProtoReflect.Descriptor instead.
 func (*ConfigRef) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{76}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *ConfigRef) GetName() string {
@@ -5096,7 +5168,7 @@ type SecretInfo struct {
 
 func (x *SecretInfo) Reset() {
 	*x = SecretInfo{}
-	mi := &file_pullrun_runtime_proto_msgTypes[77]
+	mi := &file_pullrun_runtime_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5108,7 +5180,7 @@ func (x *SecretInfo) String() string {
 func (*SecretInfo) ProtoMessage() {}
 
 func (x *SecretInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[77]
+	mi := &file_pullrun_runtime_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5121,7 +5193,7 @@ func (x *SecretInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecretInfo.ProtoReflect.Descriptor instead.
 func (*SecretInfo) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{77}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *SecretInfo) GetName() string {
@@ -5155,7 +5227,7 @@ type CreateSecretRequest struct {
 
 func (x *CreateSecretRequest) Reset() {
 	*x = CreateSecretRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[78]
+	mi := &file_pullrun_runtime_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5167,7 +5239,7 @@ func (x *CreateSecretRequest) String() string {
 func (*CreateSecretRequest) ProtoMessage() {}
 
 func (x *CreateSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[78]
+	mi := &file_pullrun_runtime_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5180,7 +5252,7 @@ func (x *CreateSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSecretRequest.ProtoReflect.Descriptor instead.
 func (*CreateSecretRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{78}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *CreateSecretRequest) GetName() string {
@@ -5205,7 +5277,7 @@ type CreateSecretResponse struct {
 
 func (x *CreateSecretResponse) Reset() {
 	*x = CreateSecretResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[79]
+	mi := &file_pullrun_runtime_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5217,7 +5289,7 @@ func (x *CreateSecretResponse) String() string {
 func (*CreateSecretResponse) ProtoMessage() {}
 
 func (x *CreateSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[79]
+	mi := &file_pullrun_runtime_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5230,7 +5302,7 @@ func (x *CreateSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSecretResponse.ProtoReflect.Descriptor instead.
 func (*CreateSecretResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{79}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{80}
 }
 
 type ListSecretsRequest struct {
@@ -5241,7 +5313,7 @@ type ListSecretsRequest struct {
 
 func (x *ListSecretsRequest) Reset() {
 	*x = ListSecretsRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[80]
+	mi := &file_pullrun_runtime_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5253,7 +5325,7 @@ func (x *ListSecretsRequest) String() string {
 func (*ListSecretsRequest) ProtoMessage() {}
 
 func (x *ListSecretsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[80]
+	mi := &file_pullrun_runtime_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5266,7 +5338,7 @@ func (x *ListSecretsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSecretsRequest.ProtoReflect.Descriptor instead.
 func (*ListSecretsRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{80}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{81}
 }
 
 type ListSecretsResponse struct {
@@ -5278,7 +5350,7 @@ type ListSecretsResponse struct {
 
 func (x *ListSecretsResponse) Reset() {
 	*x = ListSecretsResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[81]
+	mi := &file_pullrun_runtime_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5290,7 +5362,7 @@ func (x *ListSecretsResponse) String() string {
 func (*ListSecretsResponse) ProtoMessage() {}
 
 func (x *ListSecretsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[81]
+	mi := &file_pullrun_runtime_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5303,7 +5375,7 @@ func (x *ListSecretsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSecretsResponse.ProtoReflect.Descriptor instead.
 func (*ListSecretsResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{81}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ListSecretsResponse) GetSecrets() []*SecretInfo {
@@ -5322,7 +5394,7 @@ type InspectSecretRequest struct {
 
 func (x *InspectSecretRequest) Reset() {
 	*x = InspectSecretRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[82]
+	mi := &file_pullrun_runtime_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5334,7 +5406,7 @@ func (x *InspectSecretRequest) String() string {
 func (*InspectSecretRequest) ProtoMessage() {}
 
 func (x *InspectSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[82]
+	mi := &file_pullrun_runtime_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5347,7 +5419,7 @@ func (x *InspectSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectSecretRequest.ProtoReflect.Descriptor instead.
 func (*InspectSecretRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{82}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *InspectSecretRequest) GetName() string {
@@ -5366,7 +5438,7 @@ type InspectSecretResponse struct {
 
 func (x *InspectSecretResponse) Reset() {
 	*x = InspectSecretResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[83]
+	mi := &file_pullrun_runtime_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5378,7 +5450,7 @@ func (x *InspectSecretResponse) String() string {
 func (*InspectSecretResponse) ProtoMessage() {}
 
 func (x *InspectSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[83]
+	mi := &file_pullrun_runtime_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5391,7 +5463,7 @@ func (x *InspectSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectSecretResponse.ProtoReflect.Descriptor instead.
 func (*InspectSecretResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{83}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *InspectSecretResponse) GetSecret() *SecretInfo {
@@ -5410,7 +5482,7 @@ type RemoveSecretRequest struct {
 
 func (x *RemoveSecretRequest) Reset() {
 	*x = RemoveSecretRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[84]
+	mi := &file_pullrun_runtime_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5422,7 +5494,7 @@ func (x *RemoveSecretRequest) String() string {
 func (*RemoveSecretRequest) ProtoMessage() {}
 
 func (x *RemoveSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[84]
+	mi := &file_pullrun_runtime_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5435,7 +5507,7 @@ func (x *RemoveSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveSecretRequest.ProtoReflect.Descriptor instead.
 func (*RemoveSecretRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{84}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *RemoveSecretRequest) GetName() string {
@@ -5453,7 +5525,7 @@ type RemoveSecretResponse struct {
 
 func (x *RemoveSecretResponse) Reset() {
 	*x = RemoveSecretResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[85]
+	mi := &file_pullrun_runtime_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5465,7 +5537,7 @@ func (x *RemoveSecretResponse) String() string {
 func (*RemoveSecretResponse) ProtoMessage() {}
 
 func (x *RemoveSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[85]
+	mi := &file_pullrun_runtime_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5478,7 +5550,7 @@ func (x *RemoveSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveSecretResponse.ProtoReflect.Descriptor instead.
 func (*RemoveSecretResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{85}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{86}
 }
 
 // Config messages (same shape, distinct type names for wire clarity).
@@ -5493,7 +5565,7 @@ type ConfigInfo struct {
 
 func (x *ConfigInfo) Reset() {
 	*x = ConfigInfo{}
-	mi := &file_pullrun_runtime_proto_msgTypes[86]
+	mi := &file_pullrun_runtime_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5505,7 +5577,7 @@ func (x *ConfigInfo) String() string {
 func (*ConfigInfo) ProtoMessage() {}
 
 func (x *ConfigInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[86]
+	mi := &file_pullrun_runtime_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5518,7 +5590,7 @@ func (x *ConfigInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigInfo.ProtoReflect.Descriptor instead.
 func (*ConfigInfo) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{86}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ConfigInfo) GetName() string {
@@ -5552,7 +5624,7 @@ type CreateConfigRequest struct {
 
 func (x *CreateConfigRequest) Reset() {
 	*x = CreateConfigRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[87]
+	mi := &file_pullrun_runtime_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5564,7 +5636,7 @@ func (x *CreateConfigRequest) String() string {
 func (*CreateConfigRequest) ProtoMessage() {}
 
 func (x *CreateConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[87]
+	mi := &file_pullrun_runtime_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5577,7 +5649,7 @@ func (x *CreateConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateConfigRequest.ProtoReflect.Descriptor instead.
 func (*CreateConfigRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{87}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *CreateConfigRequest) GetName() string {
@@ -5602,7 +5674,7 @@ type CreateConfigResponse struct {
 
 func (x *CreateConfigResponse) Reset() {
 	*x = CreateConfigResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[88]
+	mi := &file_pullrun_runtime_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5614,7 +5686,7 @@ func (x *CreateConfigResponse) String() string {
 func (*CreateConfigResponse) ProtoMessage() {}
 
 func (x *CreateConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[88]
+	mi := &file_pullrun_runtime_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5627,7 +5699,7 @@ func (x *CreateConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateConfigResponse.ProtoReflect.Descriptor instead.
 func (*CreateConfigResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{88}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{89}
 }
 
 type ListConfigsRequest struct {
@@ -5638,7 +5710,7 @@ type ListConfigsRequest struct {
 
 func (x *ListConfigsRequest) Reset() {
 	*x = ListConfigsRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[89]
+	mi := &file_pullrun_runtime_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5650,7 +5722,7 @@ func (x *ListConfigsRequest) String() string {
 func (*ListConfigsRequest) ProtoMessage() {}
 
 func (x *ListConfigsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[89]
+	mi := &file_pullrun_runtime_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5663,7 +5735,7 @@ func (x *ListConfigsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConfigsRequest.ProtoReflect.Descriptor instead.
 func (*ListConfigsRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{89}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{90}
 }
 
 type ListConfigsResponse struct {
@@ -5675,7 +5747,7 @@ type ListConfigsResponse struct {
 
 func (x *ListConfigsResponse) Reset() {
 	*x = ListConfigsResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[90]
+	mi := &file_pullrun_runtime_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5687,7 +5759,7 @@ func (x *ListConfigsResponse) String() string {
 func (*ListConfigsResponse) ProtoMessage() {}
 
 func (x *ListConfigsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[90]
+	mi := &file_pullrun_runtime_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5700,7 +5772,7 @@ func (x *ListConfigsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConfigsResponse.ProtoReflect.Descriptor instead.
 func (*ListConfigsResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{90}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *ListConfigsResponse) GetConfigs() []*ConfigInfo {
@@ -5719,7 +5791,7 @@ type InspectConfigRequest struct {
 
 func (x *InspectConfigRequest) Reset() {
 	*x = InspectConfigRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[91]
+	mi := &file_pullrun_runtime_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5731,7 +5803,7 @@ func (x *InspectConfigRequest) String() string {
 func (*InspectConfigRequest) ProtoMessage() {}
 
 func (x *InspectConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[91]
+	mi := &file_pullrun_runtime_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5744,7 +5816,7 @@ func (x *InspectConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectConfigRequest.ProtoReflect.Descriptor instead.
 func (*InspectConfigRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{91}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *InspectConfigRequest) GetName() string {
@@ -5763,7 +5835,7 @@ type InspectConfigResponse struct {
 
 func (x *InspectConfigResponse) Reset() {
 	*x = InspectConfigResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[92]
+	mi := &file_pullrun_runtime_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5775,7 +5847,7 @@ func (x *InspectConfigResponse) String() string {
 func (*InspectConfigResponse) ProtoMessage() {}
 
 func (x *InspectConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[92]
+	mi := &file_pullrun_runtime_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5788,7 +5860,7 @@ func (x *InspectConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectConfigResponse.ProtoReflect.Descriptor instead.
 func (*InspectConfigResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{92}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *InspectConfigResponse) GetConfig() *ConfigInfo {
@@ -5807,7 +5879,7 @@ type RemoveConfigRequest struct {
 
 func (x *RemoveConfigRequest) Reset() {
 	*x = RemoveConfigRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[93]
+	mi := &file_pullrun_runtime_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5819,7 +5891,7 @@ func (x *RemoveConfigRequest) String() string {
 func (*RemoveConfigRequest) ProtoMessage() {}
 
 func (x *RemoveConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[93]
+	mi := &file_pullrun_runtime_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5832,7 +5904,7 @@ func (x *RemoveConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveConfigRequest.ProtoReflect.Descriptor instead.
 func (*RemoveConfigRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{93}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *RemoveConfigRequest) GetName() string {
@@ -5850,7 +5922,7 @@ type RemoveConfigResponse struct {
 
 func (x *RemoveConfigResponse) Reset() {
 	*x = RemoveConfigResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[94]
+	mi := &file_pullrun_runtime_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5862,7 +5934,7 @@ func (x *RemoveConfigResponse) String() string {
 func (*RemoveConfigResponse) ProtoMessage() {}
 
 func (x *RemoveConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[94]
+	mi := &file_pullrun_runtime_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5875,7 +5947,7 @@ func (x *RemoveConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveConfigResponse.ProtoReflect.Descriptor instead.
 func (*RemoveConfigResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{94}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{95}
 }
 
 type GcRequest struct {
@@ -5889,7 +5961,7 @@ type GcRequest struct {
 
 func (x *GcRequest) Reset() {
 	*x = GcRequest{}
-	mi := &file_pullrun_runtime_proto_msgTypes[95]
+	mi := &file_pullrun_runtime_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5901,7 +5973,7 @@ func (x *GcRequest) String() string {
 func (*GcRequest) ProtoMessage() {}
 
 func (x *GcRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[95]
+	mi := &file_pullrun_runtime_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5914,7 +5986,7 @@ func (x *GcRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GcRequest.ProtoReflect.Descriptor instead.
 func (*GcRequest) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{95}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *GcRequest) GetDryRun() bool {
@@ -5955,7 +6027,7 @@ type GcResponse struct {
 
 func (x *GcResponse) Reset() {
 	*x = GcResponse{}
-	mi := &file_pullrun_runtime_proto_msgTypes[96]
+	mi := &file_pullrun_runtime_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5967,7 +6039,7 @@ func (x *GcResponse) String() string {
 func (*GcResponse) ProtoMessage() {}
 
 func (x *GcResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pullrun_runtime_proto_msgTypes[96]
+	mi := &file_pullrun_runtime_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5980,7 +6052,7 @@ func (x *GcResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GcResponse.ProtoReflect.Descriptor instead.
 func (*GcResponse) Descriptor() ([]byte, []int) {
-	return file_pullrun_runtime_proto_rawDescGZIP(), []int{96}
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *GcResponse) GetTotalNodes() uint64 {
@@ -6108,7 +6180,7 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
 	"\fbytes_stored\x18\x02 \x01(\x03R\vbytesStored\x12-\n" +
-	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xe3\a\n" +
+	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\x91\b\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -6138,10 +6210,15 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x0freadonly_rootfs\x18\x13 \x01(\bR\x0ereadonlyRootfs\x12*\n" +
 	"\x11no_new_privileges\x18\x14 \x01(\bR\x0fnoNewPrivileges\x12'\n" +
 	"\x0fseccomp_profile\x18\x15 \x01(\tR\x0eseccompProfile\x12)\n" +
-	"\x10allowed_syscalls\x18\x16 \x03(\tR\x0fallowedSyscalls\x1a6\n" +
+	"\x10allowed_syscalls\x18\x16 \x03(\tR\x0fallowedSyscalls\x12,\n" +
+	"\x03dns\x18\x17 \x01(\v2\x1a.pullrun.runtime.DnsConfigR\x03dns\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"c\n" +
+	"\tDnsConfig\x12 \n" +
+	"\vnameservers\x18\x01 \x03(\tR\vnameservers\x12\x1a\n" +
+	"\bsearches\x18\x02 \x03(\tR\bsearches\x12\x18\n" +
+	"\aoptions\x18\x03 \x03(\tR\aoptions\"\xb0\x01\n" +
 	"\vNetworkRule\x12\x1c\n" +
 	"\tdirection\x18\x01 \x01(\tR\tdirection\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x12\n" +
@@ -6588,7 +6665,7 @@ func file_pullrun_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_pullrun_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 105)
+var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 106)
 var file_pullrun_runtime_proto_goTypes = []any{
 	(RestartPolicy)(0),              // 0: pullrun.runtime.RestartPolicy
 	(*Mount)(nil),                   // 1: pullrun.runtime.Mount
@@ -6599,225 +6676,227 @@ var file_pullrun_runtime_proto_goTypes = []any{
 	(*PullImageRequest)(nil),        // 6: pullrun.runtime.PullImageRequest
 	(*PullImageResponse)(nil),       // 7: pullrun.runtime.PullImageResponse
 	(*RunRequest)(nil),              // 8: pullrun.runtime.RunRequest
-	(*NetworkRule)(nil),             // 9: pullrun.runtime.NetworkRule
-	(*RunResponse)(nil),             // 10: pullrun.runtime.RunResponse
-	(*StopRequest)(nil),             // 11: pullrun.runtime.StopRequest
-	(*StopResponse)(nil),            // 12: pullrun.runtime.StopResponse
-	(*GetWorkloadRequest)(nil),      // 13: pullrun.runtime.GetWorkloadRequest
-	(*WorkloadStatus)(nil),          // 14: pullrun.runtime.WorkloadStatus
-	(*ListWorkloadsRequest)(nil),    // 15: pullrun.runtime.ListWorkloadsRequest
-	(*ListWorkloadsResponse)(nil),   // 16: pullrun.runtime.ListWorkloadsResponse
-	(*StreamLogsRequest)(nil),       // 17: pullrun.runtime.StreamLogsRequest
-	(*LogChunk)(nil),                // 18: pullrun.runtime.LogChunk
-	(*StreamEventsRequest)(nil),     // 19: pullrun.runtime.StreamEventsRequest
-	(*Event)(nil),                   // 20: pullrun.runtime.Event
-	(*ExecRequest)(nil),             // 21: pullrun.runtime.ExecRequest
-	(*ExecResponse)(nil),            // 22: pullrun.runtime.ExecResponse
-	(*AttachMessage)(nil),           // 23: pullrun.runtime.AttachMessage
-	(*AttachOpen)(nil),              // 24: pullrun.runtime.AttachOpen
-	(*AttachStdin)(nil),             // 25: pullrun.runtime.AttachStdin
-	(*AttachStdinEof)(nil),          // 26: pullrun.runtime.AttachStdinEof
-	(*AttachStdout)(nil),            // 27: pullrun.runtime.AttachStdout
-	(*AttachStderr)(nil),            // 28: pullrun.runtime.AttachStderr
-	(*AttachExit)(nil),              // 29: pullrun.runtime.AttachExit
-	(*AttachError)(nil),             // 30: pullrun.runtime.AttachError
-	(*AttachWindowSize)(nil),        // 31: pullrun.runtime.AttachWindowSize
-	(*HasImageRequest)(nil),         // 32: pullrun.runtime.HasImageRequest
-	(*HasImageResponse)(nil),        // 33: pullrun.runtime.HasImageResponse
-	(*ListImagesRequest)(nil),       // 34: pullrun.runtime.ListImagesRequest
-	(*ListImagesResponse)(nil),      // 35: pullrun.runtime.ListImagesResponse
-	(*ImageInfo)(nil),               // 36: pullrun.runtime.ImageInfo
-	(*RemoveImageRequest)(nil),      // 37: pullrun.runtime.RemoveImageRequest
-	(*RemoveImageResponse)(nil),     // 38: pullrun.runtime.RemoveImageResponse
-	(*DagStoreInfoRequest)(nil),     // 39: pullrun.runtime.DagStoreInfoRequest
-	(*DagStoreInfoResponse)(nil),    // 40: pullrun.runtime.DagStoreInfoResponse
-	(*PortForwardRequest)(nil),      // 41: pullrun.runtime.PortForwardRequest
-	(*PortForwardData)(nil),         // 42: pullrun.runtime.PortForwardData
-	(*HealthCheck)(nil),             // 43: pullrun.runtime.HealthCheck
-	(*UpdateWorkloadRequest)(nil),   // 44: pullrun.runtime.UpdateWorkloadRequest
-	(*UpdateWorkloadResponse)(nil),  // 45: pullrun.runtime.UpdateWorkloadResponse
-	(*GetWorkloadStatsRequest)(nil), // 46: pullrun.runtime.GetWorkloadStatsRequest
-	(*WorkloadStats)(nil),           // 47: pullrun.runtime.WorkloadStats
-	(*BuildImageRequest)(nil),       // 48: pullrun.runtime.BuildImageRequest
-	(*BuildImageResponse)(nil),      // 49: pullrun.runtime.BuildImageResponse
-	(*PushImageRequest)(nil),        // 50: pullrun.runtime.PushImageRequest
-	(*PushImageResponse)(nil),       // 51: pullrun.runtime.PushImageResponse
-	(*ExportImageRequest)(nil),      // 52: pullrun.runtime.ExportImageRequest
-	(*ExportImageChunk)(nil),        // 53: pullrun.runtime.ExportImageChunk
-	(*ImportImageChunk)(nil),        // 54: pullrun.runtime.ImportImageChunk
-	(*ImportImageResponse)(nil),     // 55: pullrun.runtime.ImportImageResponse
-	(*InspectRequest)(nil),          // 56: pullrun.runtime.InspectRequest
-	(*DagNode)(nil),                 // 57: pullrun.runtime.DagNode
-	(*InspectResponse)(nil),         // 58: pullrun.runtime.InspectResponse
-	(*CopyFileRequest)(nil),         // 59: pullrun.runtime.CopyFileRequest
-	(*CopyFileResponse)(nil),        // 60: pullrun.runtime.CopyFileResponse
-	(*CommitImageRequest)(nil),      // 61: pullrun.runtime.CommitImageRequest
-	(*CommitImageResponse)(nil),     // 62: pullrun.runtime.CommitImageResponse
-	(*CreateNetworkRequest)(nil),    // 63: pullrun.runtime.CreateNetworkRequest
-	(*CreateNetworkResponse)(nil),   // 64: pullrun.runtime.CreateNetworkResponse
-	(*RemoveNetworkRequest)(nil),    // 65: pullrun.runtime.RemoveNetworkRequest
-	(*RemoveNetworkResponse)(nil),   // 66: pullrun.runtime.RemoveNetworkResponse
-	(*ListNetworksRequest)(nil),     // 67: pullrun.runtime.ListNetworksRequest
-	(*NetworkInfo)(nil),             // 68: pullrun.runtime.NetworkInfo
-	(*ListNetworksResponse)(nil),    // 69: pullrun.runtime.ListNetworksResponse
-	(*InfoRequest)(nil),             // 70: pullrun.runtime.InfoRequest
-	(*InfoResponse)(nil),            // 71: pullrun.runtime.InfoResponse
-	(*PruneRequest)(nil),            // 72: pullrun.runtime.PruneRequest
-	(*PruneResponse)(nil),           // 73: pullrun.runtime.PruneResponse
-	(*DiffRequest)(nil),             // 74: pullrun.runtime.DiffRequest
-	(*DiffResponse)(nil),            // 75: pullrun.runtime.DiffResponse
-	(*SecretRef)(nil),               // 76: pullrun.runtime.SecretRef
-	(*ConfigRef)(nil),               // 77: pullrun.runtime.ConfigRef
-	(*SecretInfo)(nil),              // 78: pullrun.runtime.SecretInfo
-	(*CreateSecretRequest)(nil),     // 79: pullrun.runtime.CreateSecretRequest
-	(*CreateSecretResponse)(nil),    // 80: pullrun.runtime.CreateSecretResponse
-	(*ListSecretsRequest)(nil),      // 81: pullrun.runtime.ListSecretsRequest
-	(*ListSecretsResponse)(nil),     // 82: pullrun.runtime.ListSecretsResponse
-	(*InspectSecretRequest)(nil),    // 83: pullrun.runtime.InspectSecretRequest
-	(*InspectSecretResponse)(nil),   // 84: pullrun.runtime.InspectSecretResponse
-	(*RemoveSecretRequest)(nil),     // 85: pullrun.runtime.RemoveSecretRequest
-	(*RemoveSecretResponse)(nil),    // 86: pullrun.runtime.RemoveSecretResponse
-	(*ConfigInfo)(nil),              // 87: pullrun.runtime.ConfigInfo
-	(*CreateConfigRequest)(nil),     // 88: pullrun.runtime.CreateConfigRequest
-	(*CreateConfigResponse)(nil),    // 89: pullrun.runtime.CreateConfigResponse
-	(*ListConfigsRequest)(nil),      // 90: pullrun.runtime.ListConfigsRequest
-	(*ListConfigsResponse)(nil),     // 91: pullrun.runtime.ListConfigsResponse
-	(*InspectConfigRequest)(nil),    // 92: pullrun.runtime.InspectConfigRequest
-	(*InspectConfigResponse)(nil),   // 93: pullrun.runtime.InspectConfigResponse
-	(*RemoveConfigRequest)(nil),     // 94: pullrun.runtime.RemoveConfigRequest
-	(*RemoveConfigResponse)(nil),    // 95: pullrun.runtime.RemoveConfigResponse
-	(*GcRequest)(nil),               // 96: pullrun.runtime.GcRequest
-	(*GcResponse)(nil),              // 97: pullrun.runtime.GcResponse
-	nil,                             // 98: pullrun.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 99: pullrun.runtime.ComposeService.LabelsEntry
-	nil,                             // 100: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 101: pullrun.runtime.RunRequest.EnvEntry
-	nil,                             // 102: pullrun.runtime.Event.MetadataEntry
-	nil,                             // 103: pullrun.runtime.AttachOpen.EnvEntry
-	nil,                             // 104: pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 105: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	(*DnsConfig)(nil),               // 9: pullrun.runtime.DnsConfig
+	(*NetworkRule)(nil),             // 10: pullrun.runtime.NetworkRule
+	(*RunResponse)(nil),             // 11: pullrun.runtime.RunResponse
+	(*StopRequest)(nil),             // 12: pullrun.runtime.StopRequest
+	(*StopResponse)(nil),            // 13: pullrun.runtime.StopResponse
+	(*GetWorkloadRequest)(nil),      // 14: pullrun.runtime.GetWorkloadRequest
+	(*WorkloadStatus)(nil),          // 15: pullrun.runtime.WorkloadStatus
+	(*ListWorkloadsRequest)(nil),    // 16: pullrun.runtime.ListWorkloadsRequest
+	(*ListWorkloadsResponse)(nil),   // 17: pullrun.runtime.ListWorkloadsResponse
+	(*StreamLogsRequest)(nil),       // 18: pullrun.runtime.StreamLogsRequest
+	(*LogChunk)(nil),                // 19: pullrun.runtime.LogChunk
+	(*StreamEventsRequest)(nil),     // 20: pullrun.runtime.StreamEventsRequest
+	(*Event)(nil),                   // 21: pullrun.runtime.Event
+	(*ExecRequest)(nil),             // 22: pullrun.runtime.ExecRequest
+	(*ExecResponse)(nil),            // 23: pullrun.runtime.ExecResponse
+	(*AttachMessage)(nil),           // 24: pullrun.runtime.AttachMessage
+	(*AttachOpen)(nil),              // 25: pullrun.runtime.AttachOpen
+	(*AttachStdin)(nil),             // 26: pullrun.runtime.AttachStdin
+	(*AttachStdinEof)(nil),          // 27: pullrun.runtime.AttachStdinEof
+	(*AttachStdout)(nil),            // 28: pullrun.runtime.AttachStdout
+	(*AttachStderr)(nil),            // 29: pullrun.runtime.AttachStderr
+	(*AttachExit)(nil),              // 30: pullrun.runtime.AttachExit
+	(*AttachError)(nil),             // 31: pullrun.runtime.AttachError
+	(*AttachWindowSize)(nil),        // 32: pullrun.runtime.AttachWindowSize
+	(*HasImageRequest)(nil),         // 33: pullrun.runtime.HasImageRequest
+	(*HasImageResponse)(nil),        // 34: pullrun.runtime.HasImageResponse
+	(*ListImagesRequest)(nil),       // 35: pullrun.runtime.ListImagesRequest
+	(*ListImagesResponse)(nil),      // 36: pullrun.runtime.ListImagesResponse
+	(*ImageInfo)(nil),               // 37: pullrun.runtime.ImageInfo
+	(*RemoveImageRequest)(nil),      // 38: pullrun.runtime.RemoveImageRequest
+	(*RemoveImageResponse)(nil),     // 39: pullrun.runtime.RemoveImageResponse
+	(*DagStoreInfoRequest)(nil),     // 40: pullrun.runtime.DagStoreInfoRequest
+	(*DagStoreInfoResponse)(nil),    // 41: pullrun.runtime.DagStoreInfoResponse
+	(*PortForwardRequest)(nil),      // 42: pullrun.runtime.PortForwardRequest
+	(*PortForwardData)(nil),         // 43: pullrun.runtime.PortForwardData
+	(*HealthCheck)(nil),             // 44: pullrun.runtime.HealthCheck
+	(*UpdateWorkloadRequest)(nil),   // 45: pullrun.runtime.UpdateWorkloadRequest
+	(*UpdateWorkloadResponse)(nil),  // 46: pullrun.runtime.UpdateWorkloadResponse
+	(*GetWorkloadStatsRequest)(nil), // 47: pullrun.runtime.GetWorkloadStatsRequest
+	(*WorkloadStats)(nil),           // 48: pullrun.runtime.WorkloadStats
+	(*BuildImageRequest)(nil),       // 49: pullrun.runtime.BuildImageRequest
+	(*BuildImageResponse)(nil),      // 50: pullrun.runtime.BuildImageResponse
+	(*PushImageRequest)(nil),        // 51: pullrun.runtime.PushImageRequest
+	(*PushImageResponse)(nil),       // 52: pullrun.runtime.PushImageResponse
+	(*ExportImageRequest)(nil),      // 53: pullrun.runtime.ExportImageRequest
+	(*ExportImageChunk)(nil),        // 54: pullrun.runtime.ExportImageChunk
+	(*ImportImageChunk)(nil),        // 55: pullrun.runtime.ImportImageChunk
+	(*ImportImageResponse)(nil),     // 56: pullrun.runtime.ImportImageResponse
+	(*InspectRequest)(nil),          // 57: pullrun.runtime.InspectRequest
+	(*DagNode)(nil),                 // 58: pullrun.runtime.DagNode
+	(*InspectResponse)(nil),         // 59: pullrun.runtime.InspectResponse
+	(*CopyFileRequest)(nil),         // 60: pullrun.runtime.CopyFileRequest
+	(*CopyFileResponse)(nil),        // 61: pullrun.runtime.CopyFileResponse
+	(*CommitImageRequest)(nil),      // 62: pullrun.runtime.CommitImageRequest
+	(*CommitImageResponse)(nil),     // 63: pullrun.runtime.CommitImageResponse
+	(*CreateNetworkRequest)(nil),    // 64: pullrun.runtime.CreateNetworkRequest
+	(*CreateNetworkResponse)(nil),   // 65: pullrun.runtime.CreateNetworkResponse
+	(*RemoveNetworkRequest)(nil),    // 66: pullrun.runtime.RemoveNetworkRequest
+	(*RemoveNetworkResponse)(nil),   // 67: pullrun.runtime.RemoveNetworkResponse
+	(*ListNetworksRequest)(nil),     // 68: pullrun.runtime.ListNetworksRequest
+	(*NetworkInfo)(nil),             // 69: pullrun.runtime.NetworkInfo
+	(*ListNetworksResponse)(nil),    // 70: pullrun.runtime.ListNetworksResponse
+	(*InfoRequest)(nil),             // 71: pullrun.runtime.InfoRequest
+	(*InfoResponse)(nil),            // 72: pullrun.runtime.InfoResponse
+	(*PruneRequest)(nil),            // 73: pullrun.runtime.PruneRequest
+	(*PruneResponse)(nil),           // 74: pullrun.runtime.PruneResponse
+	(*DiffRequest)(nil),             // 75: pullrun.runtime.DiffRequest
+	(*DiffResponse)(nil),            // 76: pullrun.runtime.DiffResponse
+	(*SecretRef)(nil),               // 77: pullrun.runtime.SecretRef
+	(*ConfigRef)(nil),               // 78: pullrun.runtime.ConfigRef
+	(*SecretInfo)(nil),              // 79: pullrun.runtime.SecretInfo
+	(*CreateSecretRequest)(nil),     // 80: pullrun.runtime.CreateSecretRequest
+	(*CreateSecretResponse)(nil),    // 81: pullrun.runtime.CreateSecretResponse
+	(*ListSecretsRequest)(nil),      // 82: pullrun.runtime.ListSecretsRequest
+	(*ListSecretsResponse)(nil),     // 83: pullrun.runtime.ListSecretsResponse
+	(*InspectSecretRequest)(nil),    // 84: pullrun.runtime.InspectSecretRequest
+	(*InspectSecretResponse)(nil),   // 85: pullrun.runtime.InspectSecretResponse
+	(*RemoveSecretRequest)(nil),     // 86: pullrun.runtime.RemoveSecretRequest
+	(*RemoveSecretResponse)(nil),    // 87: pullrun.runtime.RemoveSecretResponse
+	(*ConfigInfo)(nil),              // 88: pullrun.runtime.ConfigInfo
+	(*CreateConfigRequest)(nil),     // 89: pullrun.runtime.CreateConfigRequest
+	(*CreateConfigResponse)(nil),    // 90: pullrun.runtime.CreateConfigResponse
+	(*ListConfigsRequest)(nil),      // 91: pullrun.runtime.ListConfigsRequest
+	(*ListConfigsResponse)(nil),     // 92: pullrun.runtime.ListConfigsResponse
+	(*InspectConfigRequest)(nil),    // 93: pullrun.runtime.InspectConfigRequest
+	(*InspectConfigResponse)(nil),   // 94: pullrun.runtime.InspectConfigResponse
+	(*RemoveConfigRequest)(nil),     // 95: pullrun.runtime.RemoveConfigRequest
+	(*RemoveConfigResponse)(nil),    // 96: pullrun.runtime.RemoveConfigResponse
+	(*GcRequest)(nil),               // 97: pullrun.runtime.GcRequest
+	(*GcResponse)(nil),              // 98: pullrun.runtime.GcResponse
+	nil,                             // 99: pullrun.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 100: pullrun.runtime.ComposeService.LabelsEntry
+	nil,                             // 101: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 102: pullrun.runtime.RunRequest.EnvEntry
+	nil,                             // 103: pullrun.runtime.Event.MetadataEntry
+	nil,                             // 104: pullrun.runtime.AttachOpen.EnvEntry
+	nil,                             // 105: pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 106: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_pullrun_runtime_proto_depIdxs = []int32{
-	98,  // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
+	99,  // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
 	3,   // 1: pullrun.runtime.ComposeService.ports:type_name -> pullrun.runtime.ComposePort
-	99,  // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
+	100, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
 	1,   // 3: pullrun.runtime.ComposeService.mounts:type_name -> pullrun.runtime.Mount
-	43,  // 4: pullrun.runtime.ComposeService.health_check:type_name -> pullrun.runtime.HealthCheck
+	44,  // 4: pullrun.runtime.ComposeService.health_check:type_name -> pullrun.runtime.HealthCheck
 	2,   // 5: pullrun.runtime.RunComposeRequest.services:type_name -> pullrun.runtime.ComposeService
-	100, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	101, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
-	9,   // 8: pullrun.runtime.RunRequest.network_rules:type_name -> pullrun.runtime.NetworkRule
+	101, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	102, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
+	10,  // 8: pullrun.runtime.RunRequest.network_rules:type_name -> pullrun.runtime.NetworkRule
 	1,   // 9: pullrun.runtime.RunRequest.mounts:type_name -> pullrun.runtime.Mount
-	43,  // 10: pullrun.runtime.RunRequest.health_check:type_name -> pullrun.runtime.HealthCheck
+	44,  // 10: pullrun.runtime.RunRequest.health_check:type_name -> pullrun.runtime.HealthCheck
 	0,   // 11: pullrun.runtime.RunRequest.restart_policy:type_name -> pullrun.runtime.RestartPolicy
-	76,  // 12: pullrun.runtime.RunRequest.secrets:type_name -> pullrun.runtime.SecretRef
-	77,  // 13: pullrun.runtime.RunRequest.configs:type_name -> pullrun.runtime.ConfigRef
-	0,   // 14: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
-	14,  // 15: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
-	102, // 16: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
-	24,  // 17: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
-	25,  // 18: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
-	26,  // 19: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
-	27,  // 20: pullrun.runtime.AttachMessage.stdout:type_name -> pullrun.runtime.AttachStdout
-	28,  // 21: pullrun.runtime.AttachMessage.stderr:type_name -> pullrun.runtime.AttachStderr
-	29,  // 22: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
-	30,  // 23: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
-	31,  // 24: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
-	103, // 25: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
-	36,  // 26: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
-	104, // 27: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	9,   // 28: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
-	57,  // 29: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
-	105, // 30: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
-	0,   // 31: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
-	68,  // 32: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
-	78,  // 33: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
-	78,  // 34: pullrun.runtime.InspectSecretResponse.secret:type_name -> pullrun.runtime.SecretInfo
-	87,  // 35: pullrun.runtime.ListConfigsResponse.configs:type_name -> pullrun.runtime.ConfigInfo
-	87,  // 36: pullrun.runtime.InspectConfigResponse.config:type_name -> pullrun.runtime.ConfigInfo
-	6,   // 37: pullrun.runtime.Runtime.PullImage:input_type -> pullrun.runtime.PullImageRequest
-	8,   // 38: pullrun.runtime.Runtime.RunWorkload:input_type -> pullrun.runtime.RunRequest
-	11,  // 39: pullrun.runtime.Runtime.StopWorkload:input_type -> pullrun.runtime.StopRequest
-	13,  // 40: pullrun.runtime.Runtime.GetWorkload:input_type -> pullrun.runtime.GetWorkloadRequest
-	15,  // 41: pullrun.runtime.Runtime.ListWorkloads:input_type -> pullrun.runtime.ListWorkloadsRequest
-	17,  // 42: pullrun.runtime.Runtime.StreamLogs:input_type -> pullrun.runtime.StreamLogsRequest
-	19,  // 43: pullrun.runtime.Runtime.StreamEvents:input_type -> pullrun.runtime.StreamEventsRequest
-	21,  // 44: pullrun.runtime.Runtime.ExecInWorkload:input_type -> pullrun.runtime.ExecRequest
-	56,  // 45: pullrun.runtime.Runtime.InspectWorkload:input_type -> pullrun.runtime.InspectRequest
-	23,  // 46: pullrun.runtime.Runtime.AttachWorkload:input_type -> pullrun.runtime.AttachMessage
-	32,  // 47: pullrun.runtime.Runtime.HasImage:input_type -> pullrun.runtime.HasImageRequest
-	34,  // 48: pullrun.runtime.Runtime.ListImages:input_type -> pullrun.runtime.ListImagesRequest
-	37,  // 49: pullrun.runtime.Runtime.RemoveImage:input_type -> pullrun.runtime.RemoveImageRequest
-	39,  // 50: pullrun.runtime.Runtime.DagStoreInfo:input_type -> pullrun.runtime.DagStoreInfoRequest
-	41,  // 51: pullrun.runtime.Runtime.PortForward:input_type -> pullrun.runtime.PortForwardRequest
-	44,  // 52: pullrun.runtime.Runtime.UpdateWorkload:input_type -> pullrun.runtime.UpdateWorkloadRequest
-	46,  // 53: pullrun.runtime.Runtime.GetWorkloadStats:input_type -> pullrun.runtime.GetWorkloadStatsRequest
-	48,  // 54: pullrun.runtime.Runtime.BuildImage:input_type -> pullrun.runtime.BuildImageRequest
-	50,  // 55: pullrun.runtime.Runtime.PushImage:input_type -> pullrun.runtime.PushImageRequest
-	52,  // 56: pullrun.runtime.Runtime.ExportImage:input_type -> pullrun.runtime.ExportImageRequest
-	54,  // 57: pullrun.runtime.Runtime.ImportImage:input_type -> pullrun.runtime.ImportImageChunk
-	4,   // 58: pullrun.runtime.Runtime.RunCompose:input_type -> pullrun.runtime.RunComposeRequest
-	59,  // 59: pullrun.runtime.Runtime.CopyFile:input_type -> pullrun.runtime.CopyFileRequest
-	61,  // 60: pullrun.runtime.Runtime.CommitImage:input_type -> pullrun.runtime.CommitImageRequest
-	74,  // 61: pullrun.runtime.Runtime.DiffWorkload:input_type -> pullrun.runtime.DiffRequest
-	70,  // 62: pullrun.runtime.Runtime.RuntimeInfo:input_type -> pullrun.runtime.InfoRequest
-	63,  // 63: pullrun.runtime.Runtime.CreateNetwork:input_type -> pullrun.runtime.CreateNetworkRequest
-	65,  // 64: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
-	67,  // 65: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
-	72,  // 66: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
-	96,  // 67: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
-	79,  // 68: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
-	81,  // 69: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
-	83,  // 70: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
-	85,  // 71: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
-	88,  // 72: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
-	90,  // 73: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
-	92,  // 74: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
-	94,  // 75: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
-	7,   // 76: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
-	10,  // 77: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
-	12,  // 78: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
-	14,  // 79: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
-	16,  // 80: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
-	18,  // 81: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
-	20,  // 82: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
-	22,  // 83: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
-	58,  // 84: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
-	23,  // 85: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
-	33,  // 86: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
-	35,  // 87: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
-	38,  // 88: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
-	40,  // 89: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
-	42,  // 90: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
-	45,  // 91: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
-	47,  // 92: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
-	49,  // 93: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
-	51,  // 94: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
-	53,  // 95: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
-	55,  // 96: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
-	5,   // 97: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
-	60,  // 98: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
-	62,  // 99: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
-	75,  // 100: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
-	71,  // 101: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
-	64,  // 102: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
-	66,  // 103: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
-	69,  // 104: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
-	73,  // 105: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
-	97,  // 106: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
-	80,  // 107: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
-	82,  // 108: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
-	84,  // 109: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
-	86,  // 110: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
-	89,  // 111: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
-	91,  // 112: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
-	93,  // 113: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
-	95,  // 114: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
-	76,  // [76:115] is the sub-list for method output_type
-	37,  // [37:76] is the sub-list for method input_type
-	37,  // [37:37] is the sub-list for extension type_name
-	37,  // [37:37] is the sub-list for extension extendee
-	0,   // [0:37] is the sub-list for field type_name
+	77,  // 12: pullrun.runtime.RunRequest.secrets:type_name -> pullrun.runtime.SecretRef
+	78,  // 13: pullrun.runtime.RunRequest.configs:type_name -> pullrun.runtime.ConfigRef
+	9,   // 14: pullrun.runtime.RunRequest.dns:type_name -> pullrun.runtime.DnsConfig
+	0,   // 15: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
+	15,  // 16: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
+	103, // 17: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
+	25,  // 18: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
+	26,  // 19: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
+	27,  // 20: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
+	28,  // 21: pullrun.runtime.AttachMessage.stdout:type_name -> pullrun.runtime.AttachStdout
+	29,  // 22: pullrun.runtime.AttachMessage.stderr:type_name -> pullrun.runtime.AttachStderr
+	30,  // 23: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
+	31,  // 24: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
+	32,  // 25: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
+	104, // 26: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
+	37,  // 27: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
+	105, // 28: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	10,  // 29: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
+	58,  // 30: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
+	106, // 31: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	0,   // 32: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
+	69,  // 33: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
+	79,  // 34: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
+	79,  // 35: pullrun.runtime.InspectSecretResponse.secret:type_name -> pullrun.runtime.SecretInfo
+	88,  // 36: pullrun.runtime.ListConfigsResponse.configs:type_name -> pullrun.runtime.ConfigInfo
+	88,  // 37: pullrun.runtime.InspectConfigResponse.config:type_name -> pullrun.runtime.ConfigInfo
+	6,   // 38: pullrun.runtime.Runtime.PullImage:input_type -> pullrun.runtime.PullImageRequest
+	8,   // 39: pullrun.runtime.Runtime.RunWorkload:input_type -> pullrun.runtime.RunRequest
+	12,  // 40: pullrun.runtime.Runtime.StopWorkload:input_type -> pullrun.runtime.StopRequest
+	14,  // 41: pullrun.runtime.Runtime.GetWorkload:input_type -> pullrun.runtime.GetWorkloadRequest
+	16,  // 42: pullrun.runtime.Runtime.ListWorkloads:input_type -> pullrun.runtime.ListWorkloadsRequest
+	18,  // 43: pullrun.runtime.Runtime.StreamLogs:input_type -> pullrun.runtime.StreamLogsRequest
+	20,  // 44: pullrun.runtime.Runtime.StreamEvents:input_type -> pullrun.runtime.StreamEventsRequest
+	22,  // 45: pullrun.runtime.Runtime.ExecInWorkload:input_type -> pullrun.runtime.ExecRequest
+	57,  // 46: pullrun.runtime.Runtime.InspectWorkload:input_type -> pullrun.runtime.InspectRequest
+	24,  // 47: pullrun.runtime.Runtime.AttachWorkload:input_type -> pullrun.runtime.AttachMessage
+	33,  // 48: pullrun.runtime.Runtime.HasImage:input_type -> pullrun.runtime.HasImageRequest
+	35,  // 49: pullrun.runtime.Runtime.ListImages:input_type -> pullrun.runtime.ListImagesRequest
+	38,  // 50: pullrun.runtime.Runtime.RemoveImage:input_type -> pullrun.runtime.RemoveImageRequest
+	40,  // 51: pullrun.runtime.Runtime.DagStoreInfo:input_type -> pullrun.runtime.DagStoreInfoRequest
+	42,  // 52: pullrun.runtime.Runtime.PortForward:input_type -> pullrun.runtime.PortForwardRequest
+	45,  // 53: pullrun.runtime.Runtime.UpdateWorkload:input_type -> pullrun.runtime.UpdateWorkloadRequest
+	47,  // 54: pullrun.runtime.Runtime.GetWorkloadStats:input_type -> pullrun.runtime.GetWorkloadStatsRequest
+	49,  // 55: pullrun.runtime.Runtime.BuildImage:input_type -> pullrun.runtime.BuildImageRequest
+	51,  // 56: pullrun.runtime.Runtime.PushImage:input_type -> pullrun.runtime.PushImageRequest
+	53,  // 57: pullrun.runtime.Runtime.ExportImage:input_type -> pullrun.runtime.ExportImageRequest
+	55,  // 58: pullrun.runtime.Runtime.ImportImage:input_type -> pullrun.runtime.ImportImageChunk
+	4,   // 59: pullrun.runtime.Runtime.RunCompose:input_type -> pullrun.runtime.RunComposeRequest
+	60,  // 60: pullrun.runtime.Runtime.CopyFile:input_type -> pullrun.runtime.CopyFileRequest
+	62,  // 61: pullrun.runtime.Runtime.CommitImage:input_type -> pullrun.runtime.CommitImageRequest
+	75,  // 62: pullrun.runtime.Runtime.DiffWorkload:input_type -> pullrun.runtime.DiffRequest
+	71,  // 63: pullrun.runtime.Runtime.RuntimeInfo:input_type -> pullrun.runtime.InfoRequest
+	64,  // 64: pullrun.runtime.Runtime.CreateNetwork:input_type -> pullrun.runtime.CreateNetworkRequest
+	66,  // 65: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
+	68,  // 66: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
+	73,  // 67: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
+	97,  // 68: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
+	80,  // 69: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
+	82,  // 70: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
+	84,  // 71: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
+	86,  // 72: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
+	89,  // 73: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
+	91,  // 74: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
+	93,  // 75: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
+	95,  // 76: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
+	7,   // 77: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
+	11,  // 78: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
+	13,  // 79: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
+	15,  // 80: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
+	17,  // 81: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
+	19,  // 82: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
+	21,  // 83: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
+	23,  // 84: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
+	59,  // 85: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
+	24,  // 86: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
+	34,  // 87: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
+	36,  // 88: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
+	39,  // 89: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
+	41,  // 90: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
+	43,  // 91: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
+	46,  // 92: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
+	48,  // 93: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
+	50,  // 94: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
+	52,  // 95: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
+	54,  // 96: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
+	56,  // 97: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
+	5,   // 98: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
+	61,  // 99: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
+	63,  // 100: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
+	76,  // 101: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
+	72,  // 102: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
+	65,  // 103: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
+	67,  // 104: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
+	70,  // 105: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
+	74,  // 106: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
+	98,  // 107: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
+	81,  // 108: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
+	83,  // 109: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
+	85,  // 110: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
+	87,  // 111: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
+	90,  // 112: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
+	92,  // 113: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
+	94,  // 114: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
+	96,  // 115: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
+	77,  // [77:116] is the sub-list for method output_type
+	38,  // [38:77] is the sub-list for method input_type
+	38,  // [38:38] is the sub-list for extension type_name
+	38,  // [38:38] is the sub-list for extension extendee
+	0,   // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_pullrun_runtime_proto_init() }
@@ -6825,7 +6904,7 @@ func file_pullrun_runtime_proto_init() {
 	if File_pullrun_runtime_proto != nil {
 		return
 	}
-	file_pullrun_runtime_proto_msgTypes[22].OneofWrappers = []any{
+	file_pullrun_runtime_proto_msgTypes[23].OneofWrappers = []any{
 		(*AttachMessage_Open)(nil),
 		(*AttachMessage_Stdin)(nil),
 		(*AttachMessage_StdinEof)(nil),
@@ -6841,7 +6920,7 @@ func file_pullrun_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pullrun_runtime_proto_rawDesc), len(file_pullrun_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   105,
+			NumMessages:   106,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

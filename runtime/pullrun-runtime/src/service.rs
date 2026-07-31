@@ -1334,6 +1334,15 @@ fn network_mode_str(mode: &NetworkMode) -> String {
     }
 }
 
+/// Map a proto DnsConfig into the exec type (empty when unset).
+fn dns_from_req(dns: Option<&crate::proto::DnsConfig>) -> pullrun_exec::types::DnsConfig {
+    pullrun_exec::types::DnsConfig {
+        nameservers: dns.map(|d| d.nameservers.clone()).unwrap_or_default(),
+        searches: dns.map(|d| d.searches.clone()).unwrap_or_default(),
+        options: dns.map(|d| d.options.clone()).unwrap_or_default(),
+    }
+}
+
 /// Validate user-supplied bind mounts.
 ///
 /// The daemon runs with elevated privileges and executes runc with the
@@ -1424,6 +1433,7 @@ async fn attempt_restart(
         no_new_privileges,
         seccomp_profile,
         allowed_syscalls,
+        dns,
     ) = {
         let map = watcher_workloads.read().await;
         match map.get(id) {
@@ -1458,6 +1468,7 @@ async fn attempt_restart(
                     s.no_new_privileges,
                     s.seccomp_profile.clone(),
                     s.allowed_syscalls.clone(),
+                    s.dns.clone(),
                 )
             }
             None => return,
@@ -1509,6 +1520,7 @@ async fn attempt_restart(
         no_new_privileges,
         seccomp_profile,
         allowed_syscalls,
+        dns,
     };
 
     match watcher_executor.create(spec).await {
@@ -1644,6 +1656,9 @@ pub struct WorkloadState {
     pub seccomp_profile: Option<String>,
     #[serde(default)]
     pub allowed_syscalls: Vec<String>,
+    /// DNS config (stored for restart reconstruction).
+    #[serde(default)]
+    pub dns: pullrun_exec::types::DnsConfig,
     /// Path to Firecracker VM serial console log (set for VM
     /// backends so AttachWorkload can stream guest output).
     #[serde(default)]
@@ -1946,6 +1961,7 @@ impl RuntimeService {
             no_new_privileges,
             seccomp_profile,
             allowed_syscalls,
+            dns: dns_from_req(req.dns.as_ref()),
             console_log_path: if final_backend == "vm" {
                 self.config
                     .vm_backend
@@ -2622,6 +2638,7 @@ impl Runtime for RuntimeService {
             no_new_privileges,
             seccomp_profile,
             allowed_syscalls,
+            dns: dns_from_req(req.dns.as_ref()),
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -2846,6 +2863,7 @@ impl Runtime for RuntimeService {
             no_new_privileges: spec.no_new_privileges,
             seccomp_profile: spec.seccomp_profile.clone(),
             allowed_syscalls: spec.allowed_syscalls.clone(),
+            dns: spec.dns.clone(),
             console_log_path: if final_backend == "vm" {
                 self.config
                     .vm_backend
@@ -2962,6 +2980,7 @@ impl Runtime for RuntimeService {
                 no_new_privileges: false,
                 seccomp_profile: String::new(),
                 allowed_syscalls: Vec::new(),
+                dns: None,
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -6292,6 +6311,7 @@ mod tests {
             no_new_privileges: false,
             seccomp_profile: String::new(),
             allowed_syscalls: vec![],
+            dns: Default::default(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::NotFound);
@@ -6341,6 +6361,7 @@ mod tests {
                     no_new_privileges: false,
                     seccomp_profile: None,
                     allowed_syscalls: vec![],
+                    dns: Default::default(),
                     console_log_path: None,
                 },
             );
@@ -6370,6 +6391,7 @@ mod tests {
             no_new_privileges: false,
             seccomp_profile: String::new(),
             allowed_syscalls: vec![],
+            dns: Default::default(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -6409,6 +6431,7 @@ mod tests {
             no_new_privileges: false,
             seccomp_profile: String::new(),
             allowed_syscalls: vec![],
+            dns: Default::default(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -6453,6 +6476,7 @@ mod tests {
             no_new_privileges: false,
             seccomp_profile: None,
             allowed_syscalls: vec![],
+            dns: Default::default(),
             console_log_path: None,
         };
         assert!(is_network_isolated(&base("", None)));
@@ -6527,6 +6551,7 @@ mod tests {
                     no_new_privileges: false,
                     seccomp_profile: None,
                     allowed_syscalls: vec![],
+                    dns: Default::default(),
                     console_log_path: None,
                 },
             );
@@ -6608,6 +6633,7 @@ mod tests {
                     no_new_privileges: false,
                     seccomp_profile: None,
                     allowed_syscalls: vec![],
+                    dns: Default::default(),
                     console_log_path: None,
                 },
             );

@@ -271,6 +271,17 @@ message RunRequest {
     // Extra syscalls to allow on top of the daemon policy's default
     // allowlist. Ignored when a full seccomp_profile is provided.
     repeated string allowed_syscalls = 22;
+    // DNS configuration for the workload's /etc/resolv.conf. Container
+    // backends write this file into the rootfs; the VM backend configures
+    // DNS via DHCP and ignores this field.
+    DnsConfig dns = 23;
+}
+
+// DNS configuration written to the workload's /etc/resolv.conf.
+message DnsConfig {
+    repeated string nameservers = 1;
+    repeated string searches = 2;
+    repeated string options = 3;
 }
 
 enum RestartPolicy {

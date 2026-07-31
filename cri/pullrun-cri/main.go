@@ -68,6 +68,7 @@ type sandboxRecord struct {
 	runtimeClass string
 	bridgeName   string
 	hostNetwork  bool
+	dns          *pullrunruntime.DnsConfig
 }
 
 type containerRecord struct {

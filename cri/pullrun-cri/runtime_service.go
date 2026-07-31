@@ -115,6 +115,16 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		bridgeName = podBridgeName(req.Config.Metadata.Uid)
 	}
 
+	// Pod DNS config is applied to the sandbox's /etc/resolv.conf and
+	// propagated to every container in the pod.
+	dnsCfg := req.Config.GetDnsConfig()
+	dns := &pullrunruntime.DnsConfig{}
+	if dnsCfg != nil {
+		dns.Nameservers = dnsCfg.Servers
+		dns.Searches = dnsCfg.Searches
+		dns.Options = dnsCfg.Options
+	}
+
 	// 3. Run the pause workload. It anchors the pod's network namespace;
 	// containers created later join it via network_mode "container:<id>".
 	runCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -126,6 +136,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		CpuMillicores: cpu,
 		MemoryBytes:   mem,
 		BridgeName:    bridgeName,
+		Dns:           dns,
 	})
 	cancel()
 	if err != nil {
@@ -144,6 +155,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		runtimeClass: req.RuntimeHandler,
 		bridgeName:   bridgeName,
 		hostNetwork:  hostNetwork,
+		dns:          dns,
 	}
 	c.sandboxStore.putSandbox(rec)
 

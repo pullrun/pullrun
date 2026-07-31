@@ -560,6 +560,7 @@ async fn run_workload(
         seccomp_profile: None,
         allowed_syscalls: vec![],
         privileged: false,
+        dns: Default::default(),
     };
 
     let mut handle = executor.create(spec).await?;

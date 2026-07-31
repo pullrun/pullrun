@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
+	pullrunruntime "pullrun/protoapi/pullrun/runtime"
 )
 
 func TestContainerWorkloadID(t *testing.T) {
@@ -213,4 +214,80 @@ func TestRunRequestForContainer_CommandEnvResources(t *testing.T) {
 	if runReq.WorkingDir != "/app" {
 		t.Errorf("WorkingDir = %q, want /app", runReq.WorkingDir)
 	}
+}
+
+func TestRunRequestForContainer_Mounts(t *testing.T) {
+	c := &criServer{}
+	sandbox := &sandboxRecord{id: "pod-m", pullrunID: "wl-pod-m", runtimeClass: PullrunContainerRuntimeClass}
+	req := &runtimeapi.CreateContainerRequest{
+		Config: &runtimeapi.ContainerConfig{
+			Metadata: &runtimeapi.ContainerMetadata{Name: "ctr-m"},
+			Mounts: []*runtimeapi.Mount{
+				{ContainerPath: "/data", HostPath: "/host/data", Readonly: false},
+				{ContainerPath: "/etc/config", HostPath: "/host/config", Readonly: true},
+			},
+		},
+	}
+	runReq, err := c.runRequestForContainer("dddddddddddddddddddddddd", req, sandbox, "digest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runReq.Mounts) != 2 {
+		t.Fatalf("Mounts = %d, want 2", len(runReq.Mounts))
+	}
+	m0 := runReq.Mounts[0]
+	if m0.Type != "bind" || m0.Source != "/host/data" || m0.Destination != "/data" {
+		t.Errorf("mount[0] = %v, want bind /host/data -> /data", m0)
+	}
+	if !hasOption(m0.Options, "rbind") || !hasOption(m0.Options, "rprivate") {
+		t.Errorf("mount[0] options = %v, want rbind+rprivate", m0.Options)
+	}
+	if hasOption(m0.Options, "ro") {
+		t.Errorf("mount[0] options = %v, must not be read-only", m0.Options)
+	}
+	if !hasOption(runReq.Mounts[1].Options, "ro") {
+		t.Errorf("mount[1] options = %v, want ro for readonly mount", runReq.Mounts[1].Options)
+	}
+}
+
+func TestRunRequestForContainer_PropagatesPodDNS(t *testing.T) {
+	c := &criServer{}
+	sandbox := &sandboxRecord{
+		id:           "pod-d",
+		pullrunID:    "wl-pod-d",
+		runtimeClass: PullrunContainerRuntimeClass,
+		dns: &pullrunruntime.DnsConfig{
+			Nameservers: []string{"10.96.0.10"},
+			Searches:    []string{"svc.cluster.local", "cluster.local"},
+			Options:     []string{"ndots:5"},
+		},
+	}
+	req := &runtimeapi.CreateContainerRequest{
+		Config: &runtimeapi.ContainerConfig{Metadata: &runtimeapi.ContainerMetadata{Name: "ctr-d"}},
+	}
+	runReq, err := c.runRequestForContainer("eeeeeeeeeeeeeeeeeeeeeeee", req, sandbox, "digest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runReq.Dns == nil {
+		t.Fatal("Dns = nil, want pod DNS propagated")
+	}
+	if len(runReq.Dns.Nameservers) != 1 || runReq.Dns.Nameservers[0] != "10.96.0.10" {
+		t.Errorf("Nameservers = %v, want [10.96.0.10]", runReq.Dns.Nameservers)
+	}
+	if len(runReq.Dns.Searches) != 2 {
+		t.Errorf("Searches = %v, want 2 entries", runReq.Dns.Searches)
+	}
+	if len(runReq.Dns.Options) != 1 || runReq.Dns.Options[0] != "ndots:5" {
+		t.Errorf("Options = %v, want [ndots:5]", runReq.Dns.Options)
+	}
+}
+
+func hasOption(opts []string, want string) bool {
+	for _, o := range opts {
+		if o == want {
+			return true
+		}
+	}
+	return false
 }

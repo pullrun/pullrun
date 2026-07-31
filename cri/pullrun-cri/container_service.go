@@ -114,6 +114,22 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 		}
 	}
 
+	// Mounts: CRI volumes arrive as host paths (kubelet prepares
+	// hostPath/EmptyDir dirs itself), so every mount is a bind mount.
+	mounts := make([]*pullrunruntime.Mount, 0, len(cfg.Mounts))
+	for _, m := range cfg.Mounts {
+		opts := []string{"rbind", "rprivate"}
+		if m.Readonly {
+			opts = append(opts, "ro")
+		}
+		mounts = append(mounts, &pullrunruntime.Mount{
+			Type:        "bind",
+			Source:      m.HostPath,
+			Destination: m.ContainerPath,
+			Options:     opts,
+		})
+	}
+
 	return &pullrunruntime.RunRequest{
 		Id:              containerWorkloadID(cid),
 		RootDigest:      rootDigest,
@@ -125,10 +141,12 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 		NetworkMode:     netMode,
 		WorkingDir:      cfg.WorkingDir,
 		BridgeName:      sandbox.bridgeName,
+		Mounts:          mounts,
 		Privileged:      privileged,
 		ReadonlyRootfs:  readonly,
 		NoNewPrivileges: noNewPrivs,
 		SeccompProfile:  seccomp,
+		Dns:             sandbox.dns,
 	}, nil
 }
 

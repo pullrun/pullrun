@@ -531,6 +531,23 @@ impl Executor for LinuxContainerExecutor {
         if !resolv_path.exists() {
             std::fs::write(&resolv_path, "nameserver 8.8.8.8\nnameserver 1.1.1.1\n").ok();
         }
+        if !spec.dns.nameservers.is_empty() || !spec.dns.searches.is_empty() {
+            // Explicit DNS config: (re)write resolv.conf with the
+            // requested servers/search domains/options. The pod model
+            // relies on this so containers and their sandbox resolve
+            // the cluster DNS service.
+            let mut content = String::new();
+            for ns in &spec.dns.nameservers {
+                content.push_str(&format!("nameserver {ns}\n"));
+            }
+            if !spec.dns.searches.is_empty() {
+                content.push_str(&format!("search {}\n", spec.dns.searches.join(" ")));
+            }
+            for o in &spec.dns.options {
+                content.push_str(&format!("options {o}\n"));
+            }
+            std::fs::write(&resolv_path, content).ok();
+        }
 
         let bridge_name = spec.bridge_name.clone();
         let network_join = match &spec.network_mode {

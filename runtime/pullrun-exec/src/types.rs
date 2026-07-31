@@ -49,6 +49,13 @@ impl Mount {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DnsConfig {
+    pub nameservers: Vec<String>,
+    pub searches: Vec<String>,
+    pub options: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub enum NetworkMode {
     #[default]
@@ -138,6 +145,8 @@ pub struct WorkloadSpec {
     /// rootfs, and the full capability set (runc "ALL"). Overrides the
     /// three flags above. Only honored by the container backends.
     pub privileged: bool,
+    /// DNS configuration written to the workload's /etc/resolv.conf.
+    pub dns: DnsConfig,
 }
 
 impl WorkloadSpec {
@@ -162,6 +171,7 @@ impl WorkloadSpec {
             seccomp_profile: None,
             allowed_syscalls: vec![],
             privileged: false,
+            dns: DnsConfig::default(),
         }
     }
 }
@@ -186,6 +196,7 @@ pub struct WorkloadSpecBuilder {
     seccomp_profile: Option<String>,
     allowed_syscalls: Vec<String>,
     privileged: bool,
+    dns: DnsConfig,
 }
 
 impl WorkloadSpecBuilder {
@@ -269,6 +280,11 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn dns(mut self, dns: DnsConfig) -> Self {
+        self.dns = dns;
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -290,6 +306,7 @@ impl WorkloadSpecBuilder {
             seccomp_profile: self.seccomp_profile,
             allowed_syscalls: self.allowed_syscalls,
             privileged: self.privileged,
+            dns: self.dns,
         }
     }
 }

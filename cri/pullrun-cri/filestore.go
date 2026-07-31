@@ -12,6 +12,7 @@ import (
 	"time"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
+	pullrunruntime "pullrun/protoapi/pullrun/runtime"
 )
 
 // fileStore is a persistent sandbox/container store backed by JSON files
@@ -35,6 +36,9 @@ type sandboxCheckpoint struct {
 	RuntimeClass string    `json:"runtime_class"`
 	BridgeName   string    `json:"bridge_name,omitempty"`
 	HostNetwork  bool      `json:"host_network,omitempty"`
+	DNSServers   []string  `json:"dns_servers,omitempty"`
+	DNSSearches  []string  `json:"dns_searches,omitempty"`
+	DNSOptions   []string  `json:"dns_options,omitempty"`
 }
 
 // containerCheckpoint is the disk-serializable form of containerRecord.
@@ -95,6 +99,11 @@ func (s *fileStore) loadAll() {
 				runtimeClass: cp.RuntimeClass,
 				bridgeName:   cp.BridgeName,
 				hostNetwork:  cp.HostNetwork,
+				dns: &pullrunruntime.DnsConfig{
+					Nameservers: cp.DNSServers,
+					Searches:    cp.DNSSearches,
+					Options:     cp.DNSOptions,
+				},
 			}
 		}
 	}
@@ -255,6 +264,11 @@ func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 		RuntimeClass: rec.runtimeClass,
 		BridgeName:   rec.bridgeName,
 		HostNetwork:  rec.hostNetwork,
+	}
+	if rec.dns != nil {
+		cp.DNSServers = rec.dns.Nameservers
+		cp.DNSSearches = rec.dns.Searches
+		cp.DNSOptions = rec.dns.Options
 	}
 	data, err := json.Marshal(cp)
 	if err != nil {

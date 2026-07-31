@@ -110,6 +110,7 @@ mod tests {
                     no_new_privileges: false,
                     seccomp_profile: None,
                     allowed_syscalls: vec![],
+                    dns: Default::default(),
                     console_log_path: None,
                 },
             );
