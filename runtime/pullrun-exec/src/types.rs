@@ -121,6 +121,15 @@ pub struct WorkloadSpec {
     pub health_check: Option<HealthCheck>,
     /// Restart policy for this workload.
     pub restart_policy: RestartPolicy,
+    /// Mount the rootfs read-only (no runtime tampering).
+    pub readonly_rootfs: bool,
+    /// Set `noNewPrivileges` in the OCI spec (blocks setuid/capset escalation).
+    pub no_new_privileges: bool,
+    /// Seccomp profile: "default" (built-in allowlist), "unconfined",
+    /// or "pullrun:<json>" (inline runc seccomp spec).
+    pub seccomp_profile: Option<String>,
+    /// Explicit syscall allowlist for the seccomp profile.
+    pub allowed_syscalls: Vec<String>,
 }
 
 impl WorkloadSpec {
@@ -140,6 +149,10 @@ impl WorkloadSpec {
             mounts: vec![],
             health_check: None,
             restart_policy: RestartPolicy::No,
+            readonly_rootfs: false,
+            no_new_privileges: false,
+            seccomp_profile: None,
+            allowed_syscalls: vec![],
         }
     }
 }
@@ -159,6 +172,10 @@ pub struct WorkloadSpecBuilder {
     mounts: Vec<Mount>,
     health_check: Option<HealthCheck>,
     restart_policy: RestartPolicy,
+    readonly_rootfs: bool,
+    no_new_privileges: bool,
+    seccomp_profile: Option<String>,
+    allowed_syscalls: Vec<String>,
 }
 
 impl WorkloadSpecBuilder {
@@ -217,6 +234,26 @@ impl WorkloadSpecBuilder {
         self
     }
 
+    pub fn readonly_rootfs(mut self, ro: bool) -> Self {
+        self.readonly_rootfs = ro;
+        self
+    }
+
+    pub fn no_new_privileges(mut self, nnp: bool) -> Self {
+        self.no_new_privileges = nnp;
+        self
+    }
+
+    pub fn seccomp_profile(mut self, profile: Option<String>) -> Self {
+        self.seccomp_profile = profile;
+        self
+    }
+
+    pub fn allowed_syscalls(mut self, syscalls: Vec<String>) -> Self {
+        self.allowed_syscalls = syscalls;
+        self
+    }
+
     pub fn build(self) -> WorkloadSpec {
         WorkloadSpec {
             id: self.id,
@@ -233,6 +270,10 @@ impl WorkloadSpecBuilder {
             mounts: self.mounts,
             health_check: self.health_check,
             restart_policy: self.restart_policy,
+            readonly_rootfs: self.readonly_rootfs,
+            no_new_privileges: self.no_new_privileges,
+            seccomp_profile: self.seccomp_profile,
+            allowed_syscalls: self.allowed_syscalls,
         }
     }
 }
@@ -285,6 +326,13 @@ pub struct ExitStatus {
     pub signal: Option<i32>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ExecOutput {
+    pub exit_code: i32,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ExecError {
     #[error("workload not found: {0}")]
@@ -315,6 +363,10 @@ pub trait Executor: Send + Sync {
         memory_bytes: Option<u64>,
     ) -> Result<(), ExecError>;
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError>;
-    async fn exec(&self, id: &str, command: &[String], timeout_secs: u64)
-        -> Result<i32, ExecError>;
+    async fn exec(
+        &self,
+        id: &str,
+        command: &[String],
+        timeout_secs: u64,
+    ) -> Result<ExecOutput, ExecError>;
 }

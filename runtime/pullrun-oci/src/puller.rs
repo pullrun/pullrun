@@ -436,15 +436,21 @@ impl OciPuller {
     }
 
     fn registry_for(&self, image_ref: &str, explicit_registry: Option<&str>) -> String {
-        if let Some(reg) = explicit_registry {
-            return reg.to_string();
-        }
+        // An image ref that names its own registry wins over any
+        // --registry flag. The CLI sends "docker.io" by default even
+        // when the user wrote `pullrun pull ghcr.io/user/app`; using
+        // the flag unconditionally would silently redirect that pull
+        // to docker.io/user/app. The flag only applies to bare refs
+        // (e.g. `--registry localhost:5000 alpine`).
         if image_ref.contains('/') {
             let parts: Vec<&str> = image_ref.split('/').collect();
             let first = parts[0];
             if first.contains('.') || first.contains(':') || first == "localhost" {
                 return first.to_string();
             }
+        }
+        if let Some(reg) = explicit_registry {
+            return reg.to_string();
         }
         "registry-1.docker.io".to_string()
     }

@@ -12,11 +12,13 @@ use async_trait::async_trait;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
-use pullrun_net::{Direction, Ipam, NetworkRule, ProxyNetwork};
+use pullrun_net::{Direction, Ipam, NetworkManager, NetworkRule, ProxyNetwork};
 use pullrun_oci::OciMaterializer;
 use pullrun_store::MmapStore;
 
-use crate::types::{ExecError, Executor, ExitStatus, ProcessHandle, WorkloadSpec, WorkloadStats};
+use crate::types::{
+    ExecError, ExecOutput, Executor, ExitStatus, ProcessHandle, WorkloadSpec, WorkloadStats,
+};
 
 const DEFAULT_BRIDGE_NAME: &str = "pullrun-br0";
 const DEFAULT_GATEWAY: Ipv4Addr = Ipv4Addr::new(10, 42, 0, 1);
@@ -337,6 +339,26 @@ impl Executor for LinuxContainerExecutor {
                 {"type": "ipc"},
                 {"type": "uts"},
                 {"type": "mount"}
+            ],
+            "maskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware"
+            ],
+            "readonlyPaths": [
+                "/proc/asound",
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
             ]
         });
 
@@ -374,7 +396,7 @@ impl Executor for LinuxContainerExecutor {
             serde_json::json!({"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]}),
             serde_json::json!({"destination": "/dev/pts", "type": "devpts", "source": "devpts"}),
             serde_json::json!({"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"}),
-            serde_json::json!({"destination": "/sys", "type": "sysfs", "source": "sysfs"}),
+            serde_json::json!({"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["nosuid", "nodev", "noexec", "ro"]}),
             serde_json::json!({"destination": "/tmp", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}),
             serde_json::json!({"destination": "/dev/shm", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}),
         ];
@@ -416,41 +438,61 @@ impl Executor for LinuxContainerExecutor {
             mounts.push(serde_json::Value::Object(mount));
         }
 
+        let mut process = serde_json::json!({
+            "terminal": false,
+            "user": {
+                "uid": 0,
+                "gid": 0
+            },
+            "capabilities": {
+                "bounding": [
+                    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                    "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                    "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                    "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                ],
+                "effective": [
+                    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                    "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                    "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                    "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                ],
+                "permitted": [
+                    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
+                    "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
+                    "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
+                    "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
+                ]
+            },
+            "args": args,
+            "env": env_vars,
+            "cwd": bundle.working_dir.unwrap_or_else(|| "/".to_string()),
+        });
+        if spec.no_new_privileges {
+            if let Some(obj) = process.as_object_mut() {
+                obj.insert("noNewPrivileges".to_string(), serde_json::Value::Bool(true));
+            }
+        }
+
+        // Seccomp: fail closed on an invalid profile instead of silently
+        // running the workload unconfined.
+        let seccomp = crate::seccomp::build_seccomp(
+            spec.seccomp_profile.as_deref(),
+            &spec.allowed_syscalls,
+        )
+        .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
+        if let Some(seccomp) = seccomp {
+            if let Some(obj) = linux.as_object_mut() {
+                obj.insert("seccomp".to_string(), seccomp);
+            }
+        }
+
         let oci_spec = serde_json::json!({
             "ociVersion": "1.1.0",
-            "process": {
-                "terminal": false,
-                "user": {
-                    "uid": 0,
-                    "gid": 0
-                },
-                "capabilities": {
-                    "bounding": [
-                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                    ],
-                    "effective": [
-                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                    ],
-                    "permitted": [
-                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                    ]
-                },
-                "args": args,
-                "env": env_vars,
-                "cwd": bundle.working_dir.unwrap_or_else(|| "/".to_string()),
-            },
+            "process": process,
             "root": {
                 "path": bundle.rootfs_path.to_string_lossy(),
-                "readonly": false
+                "readonly": spec.readonly_rootfs
             },
             "mounts": serde_json::Value::Array(mounts),
             "linux": linux
@@ -569,6 +611,21 @@ impl Executor for LinuxContainerExecutor {
 
     async fn stop(&self, id: &str) -> Result<(), ExecError> {
         info!(%id, "stopping container");
+
+        // Release proxy listeners (inbound port forwards) for this
+        // workload. Container stop is the only place these are torn
+        // down; without this, 0.0.0.0:<port> listeners leak and keep
+        // forwarding to a dead IP after the workload is gone.
+        if let Some(ref proxy) = self.proxy {
+            let endpoint = pullrun_net::NetworkEndpoint {
+                internal_ip: String::new(),
+                host_port_mappings: vec![],
+                namespace_path: None,
+            };
+            if let Err(e) = proxy.teardown(id, &endpoint).await {
+                warn!(%id, "proxy teardown warning: {e}");
+            }
+        }
 
         // Send SIGTERM first, give the process 10s to shut down gracefully.
         let _ = Command::new(&self.runc_path)
@@ -699,7 +756,7 @@ impl Executor for LinuxContainerExecutor {
         id: &str,
         command: &[String],
         timeout_secs: u64,
-    ) -> Result<i32, ExecError> {
+    ) -> Result<ExecOutput, ExecError> {
         let mut args = vec!["exec".to_string(), id.to_string()];
         args.extend(command.iter().cloned());
         let output = tokio::time::timeout(
@@ -711,7 +768,11 @@ impl Executor for LinuxContainerExecutor {
             ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s"))
         })?
         .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
-        Ok(output.status.code().unwrap_or(-1))
+        Ok(ExecOutput {
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
     }
 
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {
@@ -1063,7 +1124,7 @@ impl Executor for RootlessContainerExecutor {
         id: &str,
         command: &[String],
         timeout_secs: u64,
-    ) -> Result<i32, ExecError> {
+    ) -> Result<ExecOutput, ExecError> {
         let mut args = vec![
             "exec".to_string(),
             "--root".to_string(),
@@ -1080,7 +1141,11 @@ impl Executor for RootlessContainerExecutor {
             ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s"))
         })?
         .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
-        Ok(output.status.code().unwrap_or(-1))
+        Ok(ExecOutput {
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
     }
 
     async fn stats(&self, id: &str) -> Result<WorkloadStats, ExecError> {

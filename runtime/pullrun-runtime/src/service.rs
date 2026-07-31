@@ -13,6 +13,7 @@
 //!   the case where the policy was tightened after the image was pulled.
 
 use std::collections::HashMap;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
@@ -23,7 +24,7 @@ use tokio::sync::RwLock;
 use tonic::Status;
 use tracing::{debug, info, warn};
 
-use pullrun_exec::types::{Backend, ExitStatus, NetworkMode, WorkloadSpec};
+use pullrun_exec::types::{Backend, ExecOutput, ExitStatus, NetworkMode, WorkloadSpec};
 use pullrun_exec::{current_euid, is_running_as_root, RootlessContainerExecutor};
 use pullrun_exec::{ExecError, Executor, LinuxContainerExecutor, NetworkRule, ProcessHandle};
 use pullrun_gc::{GarbageCollector, GcError};
@@ -346,7 +347,7 @@ impl Executor for ExecutorRouter {
         id: &str,
         command: &[String],
         timeout_secs: u64,
-    ) -> Result<i32, ExecError> {
+    ) -> Result<ExecOutput, ExecError> {
         if let Some(ref rootless) = self.rootless {
             if rootless.bundle_dir_for(id).exists() {
                 return rootless.exec(id, command, timeout_secs).await;
@@ -640,6 +641,13 @@ impl RuntimeCommand {
         let watcher_workloads = workloads.clone();
         let watcher_store = store.clone();
         let watcher_checkpoints_dir = self.config.checkpoints_dir.clone();
+        // Carry the daemon policy flags into restarts so recreated
+        // workloads enforce the same readonly/seccomp/no-new-privs
+        // profile as the original run.
+        let watcher_policy = policy_engine
+            .as_ref()
+            .map(|e| e.default_policy().clone())
+            .unwrap_or_default();
         tokio::spawn(async move {
             use std::collections::HashSet;
             use std::time::Duration;
@@ -739,6 +747,7 @@ impl RuntimeCommand {
                                     &watcher_store,
                                     &watcher_checkpoints_dir,
                                     &watcher_bus,
+                                    &watcher_policy,
                                     &id,
                                     &backend,
                                 )
@@ -809,6 +818,7 @@ impl RuntimeCommand {
                                     &watcher_store,
                                     &watcher_checkpoints_dir,
                                     &watcher_bus,
+                                    &watcher_policy,
                                     &id,
                                     &backend,
                                 )
@@ -894,7 +904,7 @@ impl RuntimeCommand {
                     let healthy = hc_executor
                         .exec(&id, &test, timeout as u64)
                         .await
-                        .map(|r| r == 0)
+                        .map(|r| r.exit_code == 0)
                         .unwrap_or(false);
                     let mut map = hc_workloads.write().await;
                     if let Some(state) = map.get_mut(&id) {
@@ -1265,6 +1275,113 @@ fn parse_restart_policy(p: i32) -> pullrun_exec::types::RestartPolicy {
     }
 }
 
+/// Write a staged secret/config file with 0600 permissions. Staged
+/// files hold plaintext secrets and are bind-mounted into workloads;
+/// world-readable copies would leak them to any local user.
+fn write_stage_file(path: &std::path::Path, content: &[u8]) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    opts.mode(0o600);
+    let mut f = opts.open(path)?;
+    f.write_all(content)?;
+    f.sync_all()?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+}
+
+/// Validate a workload id before it is used to build filesystem paths/// (bundle dirs, checkpoints, staged secrets) or vsock connections.
+///
+/// Ids flow unvalidated into `bundle_root.join(id)`, so `../..` would
+/// escape the bundle directory and give the daemon (possibly root) an
+/// arbitrary-write primitive. Reject path traversal and any character
+/// outside a safe charset. This keeps CLI-generated ids (`wl-<hex>`),
+/// compose ids (`<project>-<service>`), and CRI sandbox uuids valid.
+fn validate_workload_id(id: &str) -> Result<(), tonic::Status> {
+    if id.is_empty() {
+        return Err(tonic::Status::invalid_argument("workload id must not be empty"));
+    }
+    if id.len() > 128 {
+        return Err(tonic::Status::invalid_argument(
+            "workload id too long (max 128 characters)",
+        ));
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(tonic::Status::invalid_argument(
+            "workload id may only contain alphanumerics, '-', '_', or '.'",
+        ));
+    }
+    Ok(())
+}
+
+/// Validate user-supplied bind mounts.
+///
+/// The daemon runs with elevated privileges and executes runc with the
+/// caller's spec, so a bind mount of the host root or of the store
+/// itself would hand a workload the entire host. This rejects:
+///   - empty sources and unknown mount types
+///   - sources that canonicalize to `/` or to the store root (or below)
+///   - destinations that are not absolute paths or that contain `..`
+///
+/// Secret/config staging mounts are generated internally after this
+/// check and are exempt.
+fn sanitize_mounts(
+    mounts: &[crate::proto::Mount],
+    store_root: &std::path::Path,
+) -> Result<(), tonic::Status> {
+    use std::path::Component;
+
+    for m in mounts {
+        match m.r#type.as_str() {
+            "bind" => {
+                if m.source.is_empty() {
+                    return Err(tonic::Status::invalid_argument(
+                        "bind mount source must not be empty",
+                    ));
+                }
+                let canonical = std::fs::canonicalize(&m.source)
+                    .unwrap_or_else(|_| std::path::PathBuf::from(&m.source));
+                if canonical == std::path::Path::new("/") {
+                    return Err(tonic::Status::invalid_argument(
+                        "refusing to bind-mount the host root filesystem",
+                    ));
+                }
+                if canonical == store_root || canonical.starts_with(store_root) {
+                    return Err(tonic::Status::invalid_argument(
+                        "refusing to bind-mount the pullrun store",
+                    ));
+                }
+            }
+            "tmpfs" | "volume" => {}
+            other => {
+                return Err(tonic::Status::invalid_argument(format!(
+                    "unsupported mount type '{other}'"
+                )));
+            }
+        }
+        let dest = std::path::Path::new(&m.destination);
+        if !dest.is_absolute() {
+            return Err(tonic::Status::invalid_argument(format!(
+                "mount destination must be an absolute path: {}",
+                m.destination
+            )));
+        }
+        if dest
+            .components()
+            .any(|c| matches!(c, Component::ParentDir))
+        {
+            return Err(tonic::Status::invalid_argument(format!(
+                "mount destination must not contain '..': {}",
+                m.destination
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Attempt to restart an exited workload according to its restart policy.
 /// Re-creates the workload from the persisted spec fields, applies
 /// exponential backoff, and emits a WorkloadStarted event on success.
@@ -1274,6 +1391,7 @@ async fn attempt_restart(
     _watcher_store: &Arc<MmapStore>,
     watcher_checkpoints_dir: &std::path::Path,
     watcher_bus: &Arc<EventBus>,
+    watcher_policy: &pullrun_policy::Policy,
     id: &str,
     backend: &str,
 ) {
@@ -1375,6 +1493,10 @@ async fn attempt_restart(
         mounts,
         health_check,
         restart_policy: RestartPolicy::Always, // Already decided to restart.
+        readonly_rootfs: watcher_policy.readonly_rootfs,
+        no_new_privileges: watcher_policy.no_new_privileges,
+        seccomp_profile: watcher_policy.seccomp_profile.clone(),
+        allowed_syscalls: watcher_policy.allowed_syscalls.clone(),
     };
 
     match watcher_executor.create(spec).await {
@@ -2000,6 +2122,9 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<RunResponse>, tonic::Status> {
         tracing::debug!("run_workload called");
         let mut req = request.into_inner();
+        // Reject path traversal and unsafe ids before they reach
+        // bundle/checkpoint/staged-secret paths.
+        validate_workload_id(&req.id)?;
         // Strip optional "sha256:" prefix from root digest so
         // the store can look up the path correctly. The CLI
         // prepends this prefix for disambiguation, but the
@@ -2237,7 +2362,15 @@ impl Runtime for RuntimeService {
         let mut extra_mounts: Vec<pullrun_exec::Mount> = Vec::new();
 
         if !req.secrets.is_empty() || !req.configs.is_empty() {
-            let _ = std::fs::create_dir_all(&staged_secret_dir);
+            std::fs::create_dir_all(&staged_secret_dir)
+                .map_err(|e| tonic::Status::internal(format!("create secret stage dir: {e}")))?;
+            // The staging dir holds plaintext secrets; lock it down to
+            // the daemon user immediately. Without this, any local user
+            // can read a running workload's mounted secrets.
+            let _ = std::fs::set_permissions(
+                &staged_secret_dir,
+                std::fs::Permissions::from_mode(0o700),
+            );
         }
 
         for sr in &req.secrets {
@@ -2254,8 +2387,9 @@ impl Runtime for RuntimeService {
                 sr.target_path.clone()
             };
             let stage_path = staged_secret_dir.join(&sr.name);
-            std::fs::write(&stage_path, &content)
-                .map_err(|e| tonic::Status::internal(format!("stage secret '{}': {e}", sr.name)))?;
+            write_stage_file(&stage_path, &content).map_err(|e| {
+                tonic::Status::internal(format!("stage secret '{}': {e}", sr.name))
+            })?;
             extra_mounts.push(pullrun_exec::Mount {
                 type_: "bind".to_string(),
                 source: stage_path.to_string_lossy().to_string(),
@@ -2278,8 +2412,9 @@ impl Runtime for RuntimeService {
                 cr.target_path.clone()
             };
             let stage_path = staged_secret_dir.join(&cr.name);
-            std::fs::write(&stage_path, &content)
-                .map_err(|e| tonic::Status::internal(format!("stage config '{}': {e}", cr.name)))?;
+            write_stage_file(&stage_path, &content).map_err(|e| {
+                tonic::Status::internal(format!("stage config '{}': {e}", cr.name))
+            })?;
             extra_mounts.push(pullrun_exec::Mount {
                 type_: "bind".to_string(),
                 source: stage_path.to_string_lossy().to_string(),
@@ -2287,6 +2422,12 @@ impl Runtime for RuntimeService {
                 options: vec!["ro".to_string(), "rbind".to_string()],
             });
         }
+
+        // Validate user-supplied mounts before they reach runc's
+        // config.json. Blocks host-root and store bind mounts, and
+        // malformed destinations. Internal secret/config staging
+        // mounts are exempt (added after this check).
+        sanitize_mounts(&req.mounts, &self.config.store_root)?;
 
         let mounts: Vec<pullrun_exec::Mount> = req
             .mounts
@@ -2301,6 +2442,16 @@ impl Runtime for RuntimeService {
             .collect();
 
         let restart_policy = parse_restart_policy(req.restart_policy);
+
+        // Carry the daemon's policy flags into the OCI spec so the
+        // executor can enforce them (readonly rootfs, no_new_privileges,
+        // seccomp). evaluate_for_run above already gated admission;
+        // this is the enforcement half.
+        let policy = self
+            .policy_engine
+            .as_ref()
+            .map(|e| e.default_policy().clone())
+            .unwrap_or_default();
 
         let image_root = Digest::from_hex(&req.root_digest)
             .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
@@ -2340,6 +2491,10 @@ impl Runtime for RuntimeService {
                     start_period_seconds: hc.start_period_seconds,
                 }),
             restart_policy: restart_policy.clone(),
+            readonly_rootfs: policy.readonly_rootfs,
+            no_new_privileges: policy.no_new_privileges,
+            seccomp_profile: policy.seccomp_profile.clone(),
+            allowed_syscalls: policy.allowed_syscalls.clone(),
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -2690,6 +2845,7 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<StopResponse>, tonic::Status> {
         let req = request.into_inner();
         let id = req.id.clone();
+        validate_workload_id(&id)?;
 
         // Verify the workload exists before proceeding.
         {
@@ -3129,6 +3285,7 @@ impl Runtime for RuntimeService {
         request: tonic::Request<ExecRequest>,
     ) -> Result<tonic::Response<ExecResponse>, tonic::Status> {
         let req = request.into_inner();
+        validate_workload_id(&req.id)?;
 
         // Verify the workload exists before dispatching to the executor.
         {
@@ -3142,7 +3299,10 @@ impl Runtime for RuntimeService {
         }
 
         // Dispatch through ExecutorRouter for correct backend selection.
-        let exit_code = self
+        // This is the single execution — the executor returns both the
+        // exit code and captured stdout/stderr, so the command is never
+        // run twice.
+        let output = self
             .executor
             .exec(&req.id, &req.command, 30)
             .await
@@ -3151,24 +3311,10 @@ impl Runtime for RuntimeService {
                 _ => tonic::Status::internal(format!("exec failed: {e}")),
             })?;
 
-        // Also capture stdout/stderr via runc exec (works for container backend;
-        // VM/rootless backends return empty output, which is acceptable).
-        let (stdout, stderr) = {
-            let mut cmd = tokio::process::Command::new("runc");
-            cmd.args(["exec", &req.id]);
-            for arg in &req.command {
-                cmd.arg(arg);
-            }
-            match cmd.output().await {
-                Ok(out) => (out.stdout, out.stderr),
-                Err(_) => (Vec::new(), Vec::new()),
-            }
-        };
-
         Ok(tonic::Response::new(ExecResponse {
-            exit_code,
-            stdout,
-            stderr,
+            exit_code: output.exit_code,
+            stdout: output.stdout,
+            stderr: output.stderr,
         }))
     }
 
@@ -3212,6 +3358,7 @@ impl Runtime for RuntimeService {
         //    the lock across the .await points, so we
         //    clone what we need.
         let workload_id = open.workload_id.clone();
+        validate_workload_id(&workload_id)?;
         let open_command = open.command.clone();
         let open_env: Vec<String> = open.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         let open_working_dir = open.working_dir.clone();

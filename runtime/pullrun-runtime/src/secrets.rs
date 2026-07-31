@@ -1,7 +1,8 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::os::unix::fs::PermissionsExt;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -93,8 +94,15 @@ impl SecretStore {
             if let Some(parent) = key_path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| format!("create key dir: {e}"))?;
             }
-            std::fs::write(&key_path, key).map_err(|e| format!("write key: {e}"))?;
-            let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+            // Write with 0600 from the start (mode on the file as it is
+            // created), then fsync so a crash cannot leave a truncated
+            // key that permanently locks every secret.
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            opts.mode(0o600);
+            let mut f = opts.open(&key_path).map_err(|e| format!("write key: {e}"))?;
+            f.write_all(&key).map_err(|e| format!("write key: {e}"))?;
+            f.sync_all().map_err(|e| format!("fsync key: {e}"))?;
             info!("generated new secret key at {}", key_path.display());
             key
         };
@@ -136,20 +144,19 @@ impl SecretStore {
         std::fs::create_dir_all(self.secrets_dir())
             .map_err(|e| format!("create secrets dir: {e}"))?;
         let encrypted = self.encrypt(data)?;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    format!("secret '{name}' already exists")
-                } else {
-                    format!("create secret '{name}': {e}")
-                }
-            })?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        opts.mode(0o600);
+        let mut file = opts.open(&path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("secret '{name}' already exists")
+            } else {
+                format!("create secret '{name}': {e}")
+            }
+        })?;
         std::io::Write::write_all(&mut file, &encrypted)
             .map_err(|e| format!("write secret '{name}': {e}"))?;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        file.sync_all().map_err(|e| format!("sync secret '{name}': {e}"))?;
         debug!(%name, "secret created");
         Ok(())
     }
@@ -321,6 +328,9 @@ fn timestamp_from_meta(meta: &std::fs::Metadata) -> i64 {
 /// Write a resolved secret into the bundle's staging directory.
 /// Returns (source_path, target_path) for the bind mount.
 /// target defaults to `/run/secrets/<name>`.
+///
+/// The staging directory and files are created 0700/0600 — they hold
+/// plaintext secrets and are bind-mounted into running workloads.
 pub fn stage_secret(
     store_root: &Path,
     bundle_id: &str,
@@ -337,9 +347,10 @@ pub fn stage_secret(
         .join(bundle_id)
         .join("run")
         .join("secrets");
-    std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create secret dir: {e}"))?;
+    create_stage_dir(&dest_dir).map_err(|e| format!("create secret dir: {e}"))?;
     let file_path = dest_dir.join(secret_name);
-    std::fs::write(&file_path, secret_content).map_err(|e| format!("write staged secret: {e}"))?;
+    write_stage_file(&file_path, secret_content)
+        .map_err(|e| format!("write staged secret: {e}"))?;
     Ok((file_path, target))
 }
 
@@ -362,8 +373,28 @@ pub fn stage_config(
         .join(bundle_id)
         .join("run")
         .join("secrets");
-    std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create config dir: {e}"))?;
+    create_stage_dir(&dest_dir).map_err(|e| format!("create config dir: {e}"))?;
     let file_path = dest_dir.join(config_name);
-    std::fs::write(&file_path, config_content).map_err(|e| format!("write staged config: {e}"))?;
+    write_stage_file(&file_path, config_content)
+        .map_err(|e| format!("write staged config: {e}"))?;
     Ok((file_path, target))
+}
+
+fn create_stage_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
+fn write_stage_file(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    opts.mode(0o600);
+    let mut f = opts.open(path)?;
+    std::io::Write::write_all(&mut f, content)?;
+    f.sync_all()?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
 }

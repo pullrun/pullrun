@@ -106,7 +106,7 @@ impl PolicyEngine {
         debug!(%image_ref, %manifest_digest, "evaluating policy");
 
         if policy.required_signature {
-            match self.check_signature(store, image_ref)? {
+            match self.check_signature(store, image_ref, manifest_digest)? {
                 SignatureCheck::Valid => {}
                 SignatureCheck::Missing => {
                     return Ok(PolicyDecision::Deny(format!(
@@ -187,6 +187,7 @@ impl PolicyEngine {
         &self,
         store: &Arc<MmapStore>,
         image_ref: &str,
+        manifest_digest: &str,
     ) -> Result<SignatureCheck, PolicyError> {
         let sig_digest = cosign::signature_digest_for(image_ref);
         let sig_mmap = match store.get_blob(&sig_digest) {
@@ -197,14 +198,39 @@ impl PolicyEngine {
 
         let blob = rkyv::check_archived_root::<SignatureBlob>(&sig_mmap[..])
             .map_err(|e| PolicyError::InvalidSignature(format!("corrupt signature blob: {e}")))?;
-        let payload = blob.payload.as_str().as_bytes().to_vec();
+
+        // The signed payload is `pullrun-image-v1\n<image_ref>\n<manifest_digest>\n`.
+        // A cryptographically valid signature is only proof for the exact
+        // (ref, digest) pair it was made over: an attacker must not be able
+        // to swap a valid signature for image X in front of image Y.
+        let payload = blob.payload.as_str();
+        let mut lines = payload.split('\n');
+        let version = lines.next().unwrap_or("");
+        let signed_ref = lines.next().unwrap_or("");
+        let signed_digest = lines.next().unwrap_or("");
+        if version != "pullrun-image-v1" {
+            return Ok(SignatureCheck::Invalid(
+                "signature payload has unknown format".into(),
+            ));
+        }
+        if signed_ref != image_ref {
+            return Ok(SignatureCheck::Invalid(format!(
+                "signature payload references {signed_ref}, not {image_ref}"
+            )));
+        }
+        if signed_digest != manifest_digest {
+            return Ok(SignatureCheck::Invalid(
+                "signature payload manifest digest does not match the image being run".into(),
+            ));
+        }
+
         let signature = blob.signature.to_vec();
 
         for key in &self.trusted_keys {
             if key.id != blob.key_id {
                 continue;
             }
-            match verify_cosign_signature(key, &payload, &signature) {
+            match verify_cosign_signature(key, payload.as_bytes(), &signature) {
                 Ok(true) => return Ok(SignatureCheck::Valid),
                 Ok(false) => continue,
                 Err(e) => return Ok(SignatureCheck::Invalid(e.to_string())),
@@ -293,6 +319,47 @@ mod tests {
             .evaluate_for_image(&policy, &store, image_ref, manifest)
             .unwrap();
         assert_eq!(d, PolicyDecision::Allow);
+    }
+
+    #[test]
+    fn test_signature_digest_mismatch_denies() {
+        // A valid signature for digest X must not authorize image Y.
+        use crate::cosign::{self, SignatureBlob};
+        use ed25519_dalek::{Signer, SigningKey};
+        use rand::rngs::OsRng;
+
+        let dir = std::env::temp_dir().join("pullrun-test-policy-sig-mismatch");
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = Arc::new(MmapStore::new(dir));
+
+        let sk = SigningKey::generate(&mut OsRng);
+        let vk = sk.verifying_key();
+        let key = CosignKey {
+            id: "test-1".into(),
+            verifying_key: vk,
+        };
+
+        let image_ref = "alpine:latest";
+        let payload = cosign::canonical_payload(image_ref, "digest-good");
+        let sig = sk.sign(payload.as_bytes());
+        let blob = SignatureBlob {
+            key_id: key.id.clone(),
+            payload: payload.clone(),
+            signature: sig.to_bytes().to_vec(),
+        };
+        let bytes = rkyv::to_bytes::<_, 256>(&blob).unwrap();
+        let digest = cosign::signature_digest_for(image_ref);
+        store.put_blob_blocking(&digest, &bytes).unwrap();
+
+        let engine = PolicyEngine::new(Policy::default()).with_trusted_keys(vec![key]);
+        let policy = Policy {
+            required_signature: true,
+            ..Default::default()
+        };
+        let d = engine
+            .evaluate_for_image(&policy, &store, image_ref, "digest-evil")
+            .unwrap();
+        assert!(matches!(d, PolicyDecision::Deny(_)));
     }
 
     #[test]

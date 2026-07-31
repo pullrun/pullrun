@@ -467,17 +467,15 @@ fn create_pool_rootfs(path: &Path, size_mb: u64) -> Result<(), String> {
 }
 
 fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let nanos = now.as_nanos();
+    use rand::Rng;
+    let mut b = [0u8; 16];
+    rand::thread_rng().fill(&mut b);
+    // RFC 4122 v4 bits.
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
     format!(
-        "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
-        (nanos >> 32) as u32,
-        (nanos >> 16) as u16,
-        (nanos & 0xfff) as u16,
-        (nanos >> 48) as u16,
-        (nanos >> 64) as u64,
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13],
+        b[14], b[15],
     )
 }

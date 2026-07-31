@@ -22,6 +22,7 @@ sha2 = "0.10"
 hex = "0.4"
 rkyv = { version = "0.7", features = ["validation"] }
 libc = "0.2"
+rand.workspace = true
 bytes.workspace = true
 
 # macOS-only: Apple Virtualization framework bindings via the

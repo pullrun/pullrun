@@ -39,6 +39,19 @@ pub enum StoreError {
 const DEFAULT_MAX_NODE_CACHE_BYTES: u64 = 256 * 1024 * 1024; // 256 MB
 const DEFAULT_MAX_BLOB_CACHE_BYTES: u64 = 256 * 1024 * 1024; // 256 MB
 
+/// Create the store root with 0700 permissions. The store contains
+/// encrypted secrets and (during runs) staged plaintext ones, so it
+/// must not be world-readable. On rootless setups the store is
+/// user-owned and this is a no-op semantically.
+fn create_store_root(root: &std::path::Path) {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(root)
+        .ok();
+}
+
 pub struct MmapStore {
     root: PathBuf,
     cache: DashMap<Digest, Arc<Mmap>>,
@@ -147,7 +160,7 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
 
 impl MmapStore {
     pub fn new(root: PathBuf) -> Self {
-        std::fs::create_dir_all(&root).ok();
+        create_store_root(&root);
         Self {
             root,
             cache: DashMap::new(),
@@ -165,7 +178,7 @@ impl MmapStore {
     /// Create a store without cache size limit (in-memory cache
     /// grows unbounded). Use for small test workloads.
     pub fn new_unbounded(root: PathBuf) -> Self {
-        std::fs::create_dir_all(&root).ok();
+        create_store_root(&root);
         Self {
             root,
             cache: DashMap::new(),

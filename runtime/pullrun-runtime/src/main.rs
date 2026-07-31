@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use tokio::process::Command;
-use tokio_stream::wrappers::UnixListenerStream;
 use tonic::transport::Server;
 use tracing::{info, warn};
 
@@ -263,7 +262,12 @@ fn parse_trusted_keys(values: &[String]) -> Vec<CosignKey> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    // Log to stderr, never stdout: the CLI spawns the daemon with
+    // inherited stdio, and stdout carries protocol data for
+    // `pullrun mcp` (stdio JSON-RPC) and `pullrun list --json`.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
     let cli = Cli::parse();
 
     // On macOS, the Apple Virtualization framework dispatches its
@@ -551,6 +555,10 @@ async fn run_workload(
         mounts: vec![],
         health_check: None,
         restart_policy: Default::default(),
+        readonly_rootfs: false,
+        no_new_privileges: false,
+        seccomp_profile: None,
+        allowed_syscalls: vec![],
     };
 
     let mut handle = executor.create(spec).await?;
@@ -832,9 +840,21 @@ async fn run_daemon(
     }
 
     let uds = tokio::net::UnixListener::bind(socket)?;
+
+    // The socket lives in a world-writable directory (/tmp by default).
+    // Restrict it to the daemon user: without this, any local user can
+    // reach the gRPC surface (which executes runc, binds arbitrary
+    // mounts, and copies files) — a local privilege-escalation
+    // primitive on multi-user hosts.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o700))?;
+    }
     info!(%socket, "listening on Unix Domain Socket");
 
-    let uds_stream = UnixListenerStream::new(uds);
+    // Defense in depth: also verify each accepted connection's
+    // SO_PEERCRED against the daemon's own euid before tonic sees it.
+    let uds_stream = PeerCheckedUnixStream::new(uds);
     let svc = RuntimeServer::new(service);
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -874,4 +894,57 @@ async fn run_daemon(
     }
 
     Ok(())
+}
+
+/// Stream adapter that yields only connections whose SO_PEERCRED
+/// effective UID matches the daemon's own. The gRPC surface executes
+/// runc, binds arbitrary mounts, and copies files; it must not be
+/// reachable by other local users even if the socket file itself is
+/// misplaced or inherited by a child process.
+///
+/// Runs under rootful, rootless, macOS and WSL2: in every deployment
+/// the CLI and daemon share the same euid.
+struct PeerCheckedUnixStream {
+    listener: tokio::net::UnixListener,
+    expected_uid: u32,
+}
+
+impl PeerCheckedUnixStream {
+    fn new(listener: tokio::net::UnixListener) -> Self {
+        let expected_uid = unsafe { libc::geteuid() };
+        Self {
+            listener,
+            expected_uid,
+        }
+    }
+}
+
+impl tokio_stream::Stream for PeerCheckedUnixStream {
+    type Item = Result<tokio::net::UnixStream, std::io::Error>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        loop {
+            match this.listener.poll_accept(cx) {
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+                std::task::Poll::Ready(Ok((stream, _addr))) => {
+                    let uid = stream
+                        .peer_cred()
+                        .map(|c| c.uid())
+                        .unwrap_or(u32::MAX);
+                    if uid == this.expected_uid {
+                        return std::task::Poll::Ready(Some(Ok(stream)));
+                    }
+                    // Unauthorized peer — drop and keep accepting.
+                    drop(stream);
+                }
+                std::task::Poll::Ready(Err(e)) => {
+                    return std::task::Poll::Ready(Some(Err(e)));
+                }
+            }
+        }
+    }
 }

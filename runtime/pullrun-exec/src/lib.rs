@@ -3,6 +3,7 @@
 
 pub mod container;
 pub mod rootless;
+pub mod seccomp;
 pub mod types;
 
 pub use container::{LinuxContainerExecutor, RootlessContainerExecutor};
@@ -12,6 +13,6 @@ pub use rootless::{
     RootlessConfig,
 };
 pub use types::{
-    ExecError, Executor, HealthCheck, Mount, NetworkRule, ProcessHandle, WorkloadSpec,
+    ExecError, ExecOutput, Executor, HealthCheck, Mount, NetworkRule, ProcessHandle, WorkloadSpec,
     WorkloadStats,
 };

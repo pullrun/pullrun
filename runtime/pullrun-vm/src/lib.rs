@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use pullrun_exec::types::{Backend, ExitStatus, WorkloadSpec, WorkloadStats};
+use pullrun_exec::types::{Backend, ExecOutput, ExitStatus, WorkloadSpec, WorkloadStats};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -713,7 +713,7 @@ impl Executor for FirecrackerExecutor {
         _id: &str,
         _command: &[String],
         _timeout_secs: u64,
-    ) -> Result<i32, ExecError> {
+    ) -> Result<ExecOutput, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "Firecracker VM exec: use 'pullrun run --backend vm --cmd <cmd>' to run a one-shot command, \
              or 'pullrun exec --tty <id> -- <cmd>' for interactive container exec".into(),
@@ -789,7 +789,7 @@ impl Executor for AppleVirtExecutor {
         _id: &str,
         _command: &[String],
         _timeout_secs: u64,
-    ) -> Result<i32, ExecError> {
+    ) -> Result<ExecOutput, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "Apple Virt VM exec: use 'pullrun workload run <id> --tty' for interactive shell, \
              or 'pullrun exec --tty <id> -- <cmd>' for interactive container exec"
