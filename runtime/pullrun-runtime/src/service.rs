@@ -639,7 +639,6 @@ impl RuntimeCommand {
         let watcher_bus = event_bus.clone();
         let watcher_executor = executor.clone();
         let watcher_workloads = workloads.clone();
-        let watcher_store = store.clone();
         let watcher_checkpoints_dir = self.config.checkpoints_dir.clone();
         // Carry the daemon policy flags into restarts so recreated
         // workloads enforce the same readonly/seccomp/no-new-privs
@@ -744,7 +743,6 @@ impl RuntimeCommand {
                                 attempt_restart(
                                     &watcher_executor,
                                     &watcher_workloads,
-                                    &watcher_store,
                                     &watcher_checkpoints_dir,
                                     &watcher_bus,
                                     &watcher_policy,
@@ -815,7 +813,6 @@ impl RuntimeCommand {
                                 attempt_restart(
                                     &watcher_executor,
                                     &watcher_workloads,
-                                    &watcher_store,
                                     &watcher_checkpoints_dir,
                                     &watcher_bus,
                                     &watcher_policy,
@@ -1290,29 +1287,28 @@ fn write_stage_file(path: &std::path::Path, content: &[u8]) -> std::io::Result<(
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
 }
 
-/// Validate a workload id before it is used to build filesystem paths/// (bundle dirs, checkpoints, staged secrets) or vsock connections.
+/// Validate a workload id before it is used to build filesystem paths
+/// (bundle dirs, checkpoints, staged secrets) or vsock connections.
 ///
 /// Ids flow unvalidated into `bundle_root.join(id)`, so `../..` would
 /// escape the bundle directory and give the daemon (possibly root) an
 /// arbitrary-write primitive. Reject path traversal and any character
 /// outside a safe charset. This keeps CLI-generated ids (`wl-<hex>`),
 /// compose ids (`<project>-<service>`), and CRI sandbox uuids valid.
-fn validate_workload_id(id: &str) -> Result<(), tonic::Status> {
+fn validate_workload_id(id: &str) -> Result<(), String> {
     if id.is_empty() {
-        return Err(tonic::Status::invalid_argument("workload id must not be empty"));
+        return Err("workload id must not be empty".to_string());
     }
     if id.len() > 128 {
-        return Err(tonic::Status::invalid_argument(
-            "workload id too long (max 128 characters)",
-        ));
+        return Err("workload id too long (max 128 characters)".to_string());
     }
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
-        return Err(tonic::Status::invalid_argument(
-            "workload id may only contain alphanumerics, '-', '_', or '.'",
-        ));
+        return Err(
+            "workload id may only contain alphanumerics, '-', '_', or '.'".to_string(),
+        );
     }
     Ok(())
 }
@@ -1331,52 +1327,44 @@ fn validate_workload_id(id: &str) -> Result<(), tonic::Status> {
 fn sanitize_mounts(
     mounts: &[crate::proto::Mount],
     store_root: &std::path::Path,
-) -> Result<(), tonic::Status> {
+) -> Result<(), String> {
     use std::path::Component;
 
     for m in mounts {
         match m.r#type.as_str() {
             "bind" => {
                 if m.source.is_empty() {
-                    return Err(tonic::Status::invalid_argument(
-                        "bind mount source must not be empty",
-                    ));
+                    return Err("bind mount source must not be empty".to_string());
                 }
                 let canonical = std::fs::canonicalize(&m.source)
                     .unwrap_or_else(|_| std::path::PathBuf::from(&m.source));
                 if canonical == std::path::Path::new("/") {
-                    return Err(tonic::Status::invalid_argument(
-                        "refusing to bind-mount the host root filesystem",
-                    ));
+                    return Err("refusing to bind-mount the host root filesystem".to_string());
                 }
                 if canonical == store_root || canonical.starts_with(store_root) {
-                    return Err(tonic::Status::invalid_argument(
-                        "refusing to bind-mount the pullrun store",
-                    ));
+                    return Err("refusing to bind-mount the pullrun store".to_string());
                 }
             }
             "tmpfs" | "volume" => {}
             other => {
-                return Err(tonic::Status::invalid_argument(format!(
-                    "unsupported mount type '{other}'"
-                )));
+                return Err(format!("unsupported mount type '{other}'"));
             }
         }
         let dest = std::path::Path::new(&m.destination);
         if !dest.is_absolute() {
-            return Err(tonic::Status::invalid_argument(format!(
+            return Err(format!(
                 "mount destination must be an absolute path: {}",
                 m.destination
-            )));
+            ));
         }
         if dest
             .components()
             .any(|c| matches!(c, Component::ParentDir))
         {
-            return Err(tonic::Status::invalid_argument(format!(
+            return Err(format!(
                 "mount destination must not contain '..': {}",
                 m.destination
-            )));
+            ));
         }
     }
     Ok(())
@@ -1388,7 +1376,6 @@ fn sanitize_mounts(
 async fn attempt_restart(
     watcher_executor: &Arc<ExecutorRouter>,
     watcher_workloads: &Arc<RwLock<HashMap<String, WorkloadState>>>,
-    _watcher_store: &Arc<MmapStore>,
     watcher_checkpoints_dir: &std::path::Path,
     watcher_bus: &Arc<EventBus>,
     watcher_policy: &pullrun_policy::Policy,
@@ -2124,7 +2111,7 @@ impl Runtime for RuntimeService {
         let mut req = request.into_inner();
         // Reject path traversal and unsafe ids before they reach
         // bundle/checkpoint/staged-secret paths.
-        validate_workload_id(&req.id)?;
+        validate_workload_id(&req.id).map_err(tonic::Status::invalid_argument)?;
         // Strip optional "sha256:" prefix from root digest so
         // the store can look up the path correctly. The CLI
         // prepends this prefix for disambiguation, but the
@@ -2427,7 +2414,8 @@ impl Runtime for RuntimeService {
         // config.json. Blocks host-root and store bind mounts, and
         // malformed destinations. Internal secret/config staging
         // mounts are exempt (added after this check).
-        sanitize_mounts(&req.mounts, &self.config.store_root)?;
+        sanitize_mounts(&req.mounts, &self.config.store_root)
+            .map_err(tonic::Status::invalid_argument)?;
 
         let mounts: Vec<pullrun_exec::Mount> = req
             .mounts
@@ -2845,7 +2833,7 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<StopResponse>, tonic::Status> {
         let req = request.into_inner();
         let id = req.id.clone();
-        validate_workload_id(&id)?;
+        validate_workload_id(&id).map_err(tonic::Status::invalid_argument)?;
 
         // Verify the workload exists before proceeding.
         {
@@ -3285,7 +3273,7 @@ impl Runtime for RuntimeService {
         request: tonic::Request<ExecRequest>,
     ) -> Result<tonic::Response<ExecResponse>, tonic::Status> {
         let req = request.into_inner();
-        validate_workload_id(&req.id)?;
+        validate_workload_id(&req.id).map_err(tonic::Status::invalid_argument)?;
 
         // Verify the workload exists before dispatching to the executor.
         {
@@ -3358,7 +3346,7 @@ impl Runtime for RuntimeService {
         //    the lock across the .await points, so we
         //    clone what we need.
         let workload_id = open.workload_id.clone();
-        validate_workload_id(&workload_id)?;
+        validate_workload_id(&workload_id).map_err(tonic::Status::invalid_argument)?;
         let open_command = open.command.clone();
         let open_env: Vec<String> = open.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         let open_working_dir = open.working_dir.clone();
