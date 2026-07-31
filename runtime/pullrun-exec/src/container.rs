@@ -597,6 +597,14 @@ impl Executor for LinuxContainerExecutor {
         let bdir = bundle_dir.clone();
         let network_join = handle.network_join.clone();
 
+        // Pod model: resolve the sandbox's netns and patch the OCI spec
+        // so runc joins it instead of creating a fresh namespace.
+        if let Some(ref target) = network_join {
+            let netns = netns_path_of(&runc_path, None, target)?;
+            join_netns_in_config(&bdir, &netns)?;
+            tracing::debug!(id = %id, target = %target, netns = %netns, "joined network namespace");
+        }
+
         tracing::debug!(
             "start: runc_path={:?}, bundle_dir={:?}, id={}",
             runc_path,
@@ -604,14 +612,15 @@ impl Executor for LinuxContainerExecutor {
             id
         );
 
+        // Clone for the failure-cleanup path below (the runc spawn
+        // closure moves the originals).
+        let runc_path_for_cleanup = runc_path.clone();
+        let id_for_cleanup = id.clone();
+
         let status = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawn_blocking: spawning runc run -d -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
             cmd.arg("run").arg("-d");
-            if let Some(ref target) = network_join {
-                // Join the sandbox's network namespace (pod model).
-                cmd.args(["--network", &format!("container:{target}")]);
-            }
             cmd.arg("-b").arg(&bdir).arg(&id);
             let s = cmd
                 .stdout(std::process::Stdio::null())
@@ -633,6 +642,17 @@ impl Executor for LinuxContainerExecutor {
         .map_err(|e| ExecError::ExecutionFailed(format!("runc spawn failed: {e}")))?;
 
         if !status.success() {
+            // A failed `runc run -d` can leave container state behind;
+            // clean it up so the next attempt isn't blocked by a
+            // "container already exists" error. (Cloned before the
+            // spawn_blocking above moved the originals.)
+            let cleanup_runc = runc_path_for_cleanup.clone();
+            let cleanup_id = id_for_cleanup.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut del = SyncCommand::new(&cleanup_runc);
+                del.args(["delete", "--force"]).arg(&cleanup_id);
+                let _ = del.output();
+            });
             return Err(ExecError::ExecutionFailed(format!(
                 "runc run failed for {} (check runc logs)",
                 handle.id
@@ -893,6 +913,72 @@ impl Executor for LinuxContainerExecutor {
     }
 }
 
+/// Resolve the network namespace path of a running workload so another
+/// workload can join it (pod model). The pid is only known to runc at
+/// runtime, so this queries `runc state` and maps the container init
+/// pid to `/proc/<pid>/ns/net`.
+fn netns_path_of(
+    runc_path: &std::path::Path,
+    state_root: Option<&std::path::Path>,
+    target: &str,
+) -> Result<String, ExecError> {
+    use std::process::Command as SyncCommand;
+
+    let mut cmd = SyncCommand::new(runc_path);
+    if let Some(root) = state_root {
+        cmd.arg("--root").arg(root);
+    }
+    let out = cmd
+        .arg("state")
+        .arg(target)
+        .output()
+        .map_err(|e| ExecError::ExecutionFailed(format!("runc state {target}: {e}")))?;
+    if !out.status.success() {
+        return Err(ExecError::ExecutionFailed(format!(
+            "runc state {target}: target workload is not running (exit {:?})",
+            out.status.code()
+        )));
+    }
+    let state: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| {
+        ExecError::ExecutionFailed(format!("runc state {target}: invalid output: {e}"))
+    })?;
+    let pid = state.get("pid").and_then(|p| p.as_i64()).unwrap_or(0);
+    if pid <= 0 {
+        return Err(ExecError::ExecutionFailed(format!(
+            "runc state {target}: workload is not running (pid {pid})"
+        )));
+    }
+    Ok(format!("/proc/{pid}/ns/net"))
+}
+
+/// Patch the bundle's config.json so the container joins `netns_path`
+/// instead of creating a fresh network namespace. `runc` has no
+/// CLI flag for this; the join is expressed through the OCI spec.
+fn join_netns_in_config(bundle_dir: &std::path::Path, netns_path: &str) -> Result<(), ExecError> {
+    let config_path = bundle_dir.join("config.json");
+    let data = std::fs::read(&config_path)
+        .map_err(|e| ExecError::ExecutionFailed(format!("read {config_path:?}: {e}")))?;
+    let mut cfg: serde_json::Value = serde_json::from_slice(&data)
+        .map_err(|e| ExecError::ExecutionFailed(format!("parse {config_path:?}: {e}")))?;
+    if let Some(namespaces) = cfg
+        .get_mut("linux")
+        .and_then(|l| l.get_mut("namespaces"))
+        .and_then(|n| n.as_array_mut())
+    {
+        for entry in namespaces.iter_mut() {
+            if entry.get("type").and_then(|t| t.as_str()) == Some("network") {
+                entry["path"] = serde_json::Value::String(netns_path.to_string());
+            }
+        }
+    }
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&cfg)
+            .map_err(|e| ExecError::ExecutionFailed(format!("serialize {config_path:?}: {e}")))?,
+    )
+    .map_err(|e| ExecError::ExecutionFailed(format!("write {config_path:?}: {e}")))
+}
+
 /// Rootless container executor: uses user namespaces, no veth, no bridge.
 /// Networking is provided by pasta or slirp4netns at start().
 pub struct RootlessContainerExecutor {
@@ -992,12 +1078,19 @@ impl Executor for RootlessContainerExecutor {
         let bundle_dir = self.bundle_dir(&handle.id);
         let network_join = handle.network_join.clone();
 
-        let mut cmd = crate::rootless::rootless_runc_command_with_network(
-            &self.config,
-            &handle.id,
-            &bundle_dir,
-            network_join.as_deref(),
-        );
+        // Pod model: resolve the sandbox's netns and patch the OCI spec
+        // so runc joins it instead of creating a fresh namespace.
+        if let Some(ref target) = network_join {
+            let netns = netns_path_of(
+                &self.config.runc_path,
+                Some(&self.config.state_root),
+                target,
+            )?;
+            join_netns_in_config(&bundle_dir, &netns)?;
+            info!(id = %handle.id, target = %target, netns = %netns, "rootless container joining network namespace");
+        }
+
+        let mut cmd = crate::rootless::rootless_runc_command(&self.config, &handle.id, &bundle_dir);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
@@ -1012,6 +1105,14 @@ impl Executor for RootlessContainerExecutor {
         // without blocking when runc is still starting the container.
         if let Ok(Some(status)) = child.try_wait() {
             if !status.success() {
+                // A failed `runc run -d` can leave container state
+                // behind; clean it up so the next attempt isn't blocked.
+                let mut del = std::process::Command::new(&self.config.runc_path);
+                del.arg("--root")
+                    .arg(&self.config.state_root)
+                    .args(["delete", "--force"])
+                    .arg(&handle.id);
+                let _ = del.output();
                 return Err(ExecError::ExecutionFailed(format!(
                     "rootless runc start failed for {} (exit: {:?})",
                     handle.id,

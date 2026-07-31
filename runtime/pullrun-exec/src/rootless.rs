@@ -49,28 +49,15 @@ impl RootlessConfig {
 }
 
 pub fn rootless_runc_command(config: &RootlessConfig, id: &str, bundle: &Path) -> Command {
-    rootless_runc_command_with_network(config, id, bundle, None)
-}
-
-/// Same as [`rootless_runc_command`], but with an optional network namespace
-/// to join (`Some(target)` produces `--network container:<target>`).
-pub fn rootless_runc_command_with_network(
-    config: &RootlessConfig,
-    id: &str,
-    bundle: &Path,
-    network_join: Option<&str>,
-) -> Command {
     // --root is a global runc flag and MUST come before the subcommand.
     let mut cmd = Command::new(&config.runc_path);
     cmd.arg("--root")
         .arg(&config.state_root)
         .arg("run")
-        .arg("-d");
-    if let Some(target) = network_join {
-        // Join the sandbox's network namespace (pod model).
-        cmd.arg("--network").arg(format!("container:{target}"));
-    }
-    cmd.arg("--bundle").arg(bundle).arg(id);
+        .arg("-d")
+        .arg("--bundle")
+        .arg(bundle)
+        .arg(id);
     cmd
 }
 
@@ -387,17 +374,7 @@ mod tests {
         assert!(dbg.contains("test"));
         assert!(dbg.contains("/tmp/bundle"));
         assert!(dbg.contains("/tmp/pullrun-test"));
-        assert!(!dbg.contains("--network"));
-        let _ = cmd;
-
-        let cmd = rootless_runc_command_with_network(
-            &cfg,
-            "test",
-            Path::new("/tmp/bundle"),
-            Some("sandbox-1"),
-        );
-        let dbg = format!("{:?}", cmd);
-        assert!(dbg.contains("container:sandbox-1"), "got: {dbg}");
+        assert!(!dbg.contains("--network"), "got: {dbg}");
         let _ = cmd;
     }
 }
