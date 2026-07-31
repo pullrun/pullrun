@@ -455,7 +455,7 @@ impl OciPuller {
         "registry-1.docker.io".to_string()
     }
 
-    fn image_parts(&self, image_ref: &str) -> (String, String) {
+    fn image_parts(&self, image_ref: &str, registry: &str) -> (String, String) {
         let parts: Vec<&str> = image_ref.split('/').collect();
         let after_registry = if parts.len() > 1
             && (parts[0].contains('.') || parts[0].contains(':') || parts[0] == "localhost")
@@ -466,10 +466,17 @@ impl OciPuller {
         };
 
         let segments: Vec<&str> = after_registry.splitn(2, ':').collect();
+        // The `library/` prefix is a docker.io convention (e.g. `alpine`
+        // is `docker.io/library/alpine`). Other registries (registry.k8s.io,
+        // ghcr.io, quay.io, ...) serve single-segment names as-is, and
+        // adding `library/` there makes manifest lookups fail.
+        let is_docker_hub = registry == "registry-1.docker.io" || registry == "docker.io";
         let name = if segments[0].contains('/') {
             segments[0].to_string()
-        } else {
+        } else if is_docker_hub {
             format!("library/{}", segments[0])
+        } else {
+            segments[0].to_string()
         };
         let tag = segments.get(1).unwrap_or(&"latest").to_string();
         (name, tag)
@@ -539,7 +546,7 @@ impl OciPuller {
         platform: Option<&str>,
     ) -> Result<PulledImage, OciError> {
         let registry = self.registry_for(image_ref, explicit_registry);
-        let (repository, tag) = self.image_parts(image_ref);
+        let (repository, tag) = self.image_parts(image_ref, &registry);
         let token = self.get_token(&registry, &repository).await?;
 
         info!(image_ref, %registry, %repository, %tag, platform = ?platform, "pulling OCI image");
@@ -593,7 +600,7 @@ impl OciPuller {
         explicit_registry: Option<&str>,
     ) -> Result<PulledImageList, OciError> {
         let registry = self.registry_for(image_ref, explicit_registry);
-        let (repository, tag) = self.image_parts(image_ref);
+        let (repository, tag) = self.image_parts(image_ref, &registry);
         let token = self.get_token(&registry, &repository).await?;
 
         info!(image_ref, %registry, %repository, %tag, "pulling all platforms");
@@ -966,7 +973,7 @@ impl OciPuller {
         OciError,
     > {
         let registry = self.registry_for(image_ref, explicit_registry);
-        let (repository, tag) = self.image_parts(image_ref);
+        let (repository, tag) = self.image_parts(image_ref, &registry);
         let token = self.get_token(&registry, &repository).await?;
 
         let manifest = self
@@ -1117,5 +1124,30 @@ mod tests {
     #[test]
     fn parse_platform_defaults() {
         assert_eq!(parse_platform(""), ("amd64", "linux"));
+    }
+
+    fn parts(image_ref: &str) -> (String, String) {
+        let puller = OciPuller::new(None);
+        puller.image_parts(image_ref, &puller.registry_for(image_ref, None))
+    }
+
+    #[test]
+    fn image_parts_docker_hub_gets_library_prefix() {
+        assert_eq!(
+            parts("alpine:3.18"),
+            ("library/alpine".to_string(), "3.18".to_string())
+        );
+    }
+
+    #[test]
+    fn image_parts_non_docker_registry_keeps_name() {
+        assert_eq!(
+            parts("registry.k8s.io/pause:3.9"),
+            ("pause".to_string(), "3.9".to_string())
+        );
+        assert_eq!(
+            parts("ghcr.io/acme/tool:1.0"),
+            ("acme/tool".to_string(), "1.0".to_string())
+        );
     }
 }

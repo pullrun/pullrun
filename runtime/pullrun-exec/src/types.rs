@@ -316,6 +316,9 @@ pub struct ProcessHandle {
     pub id: String,
     pub pid: Option<u32>,
     pub internal_ip: Option<String>,
+    /// Default gateway of the subnet this workload's bridge serves
+    /// (10.42.0.1 for the default bridge, <subnet>.1 for per-pod /24s).
+    pub gateway: Option<String>,
     pub host_ports: Vec<(u16, u16)>,
     pub backend: String,
     /// Name of the Linux bridge this workload's veth is attached to.

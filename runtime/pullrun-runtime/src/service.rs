@@ -3044,112 +3044,143 @@ impl Runtime for RuntimeService {
             let vm_stopped = false;
 
             if !vm_stopped {
-                // If the executor stop fails on a VM workload (e.g.
-                // stale state from an older daemon), just warn and
-                // continue so the state gets cleaned up.
-                if let Err(e) = self.executor.stop(&id).await {
-                    let is_vm = self
-                        .workloads
-                        .read()
-                        .await
-                        .get(&id)
-                        .map(|s| s.backend == "vm")
-                        .unwrap_or(false);
-                    if is_vm {
-                        warn!(%id, error = %e, "executor stop failed for VM workload; cleaning up state anyway");
+                // Run the stop detached from the RPC handler. Stops take
+                // ~10-20s (SIGTERM grace + SIGKILL); if the caller's
+                // context is cancelled mid-stop (e.g. crictl's 2s default
+                // RPC timeout, or the shim's 30s cap), tonic drops this
+                // handler future at the next await and the container
+                // would be left SIGTERM'd but never deleted, with stale
+                // "running" state. A spawned task keeps running to
+                // completion even after the handler is dropped.
+                let executor = self.executor.clone();
+                let workloads = self.workloads.clone();
+                let rootfs_cache = self.rootfs_cache.clone();
+                let config = self.config.clone();
+                let event_bus = self.event_bus.clone();
+
+                let stop_task = tokio::spawn(async move {
+                    // If the executor stop fails on a VM workload (e.g.
+                    // stale state from an older daemon), just warn and
+                    // continue so the state gets cleaned up.
+                    if let Err(e) = executor.stop(&id).await {
+                        let is_vm = workloads
+                            .read()
+                            .await
+                            .get(&id)
+                            .map(|s| s.backend == "vm")
+                            .unwrap_or(false);
+                        if is_vm {
+                            warn!(%id, error = %e, "executor stop failed for VM workload; cleaning up state anyway");
+                        } else {
+                            return Err(tonic::Status::internal(format!("stop failed: {e}")));
+                        }
+                    }
+
+                    // Do NOT clean up materialized rootfs — `exec` on an
+                    // exited VM boots a fresh VM on the same rootfs
+                    // (persistent storage).
+                    rootfs_cache.write().await.remove(&id);
+
+                    // Clean up staged secrets/configs for this workload.
+                    let staged_secret_dir = config
+                        .store_root
+                        .join("run")
+                        .join("secrets-stage")
+                        .join(&id);
+                    tokio::fs::remove_dir_all(&staged_secret_dir).await.ok();
+
+                    // Look up the backend label *before* mutating state,
+                    // so the metrics call sees the same label as the one
+                    // that was incremented in `run_workload`. `exit_code`
+                    // is set to 0 because the operator-initiated stop is
+                    // a clean exit from the runtime's point of view; the
+                    // actual process exit status (if the workload was a
+                    // runc container) is opaque to us at this layer in
+                    // v0.
+                    let backend_label = {
+                        let workloads = workloads.read().await;
+                        workloads
+                            .get(&id)
+                            .map(|s| s.backend.clone())
+                            .unwrap_or_else(|| "unknown".to_string())
+                    };
+
+                    // Only emit `WorkloadStopped` and mark as
+                    // stopped/exited if the workload is still alive. If
+                    // the background watcher has already flipped it to
+                    // "exited", we leave it alone and don't double-emit.
+                    // (The watcher uses its own `announced` HashSet to
+                    // ensure it only fires `WorkloadExited` once per id.)
+                    let mut was_running = false;
+                    let mut state_copy: Option<WorkloadState> = None;
+                    {
+                        let mut workloads = workloads.write().await;
+                        if let Some(state) = workloads.get_mut(&id) {
+                            match state.status.as_str() {
+                                "running" => {
+                                    state.status = "stopped".to_string();
+                                    state.exit_code = Some(0);
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs() as i64)
+                                        .unwrap_or(0);
+                                    state.exit_time = now;
+                                    was_running = true;
+                                    state_copy = Some(state.clone());
+                                }
+                                "pending" => {
+                                    state.status = "exited".to_string();
+                                    state.exit_code = Some(0);
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs() as i64)
+                                        .unwrap_or(0);
+                                    state.exit_time = now;
+                                    was_running = true;
+                                    state_copy = Some(state.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Persist checkpoint after stopping.
+                    if let Some(s) = &state_copy {
+                        write_workload_checkpoint(&config.checkpoints_dir, &id, s);
+                    }
+
+                    if was_running {
+                        record_workload_exit(&backend_label, Some(0));
+                        event_bus.emit(
+                            Event::new(&id, EventKind::WorkloadStopped)
+                                .with_metadata("backend", &backend_label)
+                                .with_metadata("exit_code", "0")
+                                .with_metadata("source", "operator"),
+                        );
                     } else {
-                        return Err(tonic::Status::internal(format!("stop failed: {e}")));
+                        // The watcher may not have ticked yet; record the
+                        // exit anyway so the gauge stays accurate even on
+                        // the operator-stop-after-natural-exit race.
+                        record_workload_exit(&backend_label, Some(0));
                     }
+
+                    Ok(tonic::Response::new(StopResponse { success: true }))
+                });
+
+                match stop_task.await {
+                    Ok(result) => result,
+                    Err(join_err) => Err(tonic::Status::internal(format!(
+                        "stop task panicked: {join_err}"
+                    ))),
                 }
+            } else {
+                // The VM handle was already stopped above; nothing
+                // left to do for the executor path.
+                Ok(tonic::Response::new(StopResponse { success: true }))
             }
-        }
-
-        // Do NOT clean up materialized rootfs — `exec` on an exited
-        // VM boots a fresh VM on the same rootfs (persistent storage).
-        self.rootfs_cache.write().await.remove(&id);
-
-        // Clean up staged secrets/configs for this workload.
-        let staged_secret_dir = self
-            .config
-            .store_root
-            .join("run")
-            .join("secrets-stage")
-            .join(&id);
-        tokio::fs::remove_dir_all(&staged_secret_dir).await.ok();
-
-        // Look up the backend label *before* mutating state, so the
-        // metrics call sees the same label as the one that was
-        // incremented in `run_workload`. `exit_code` is set to 0
-        // because the operator-initiated stop is a clean exit from
-        // the runtime's point of view; the actual process exit
-        // status (if the workload was a runc container) is opaque
-        // to us at this layer in v0.
-        let backend_label = {
-            let workloads = self.workloads.read().await;
-            workloads
-                .get(&id)
-                .map(|s| s.backend.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
-
-        // Only emit `WorkloadStopped` and mark as stopped/exited if
-        // the workload is still alive. If the background watcher has
-        // already flipped it to "exited", we leave it alone and don't
-        // double-emit. (The watcher uses its own `announced` HashSet
-        // to ensure it only fires `WorkloadExited` once per id.)
-        let mut was_running = false;
-        let mut state_copy: Option<WorkloadState> = None;
-        {
-            let mut workloads = self.workloads.write().await;
-            if let Some(state) = workloads.get_mut(&id) {
-                match state.status.as_str() {
-                    "running" => {
-                        state.status = "stopped".to_string();
-                        state.exit_code = Some(0);
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs() as i64)
-                            .unwrap_or(0);
-                        state.exit_time = now;
-                        was_running = true;
-                        state_copy = Some(state.clone());
-                    }
-                    "pending" => {
-                        state.status = "exited".to_string();
-                        state.exit_code = Some(0);
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs() as i64)
-                            .unwrap_or(0);
-                        state.exit_time = now;
-                        was_running = true;
-                        state_copy = Some(state.clone());
-                    }
-                    _ => {}
-                }
-            }
-        }
-        // Persist checkpoint after stopping.
-        if let Some(s) = &state_copy {
-            write_workload_checkpoint(&self.config.checkpoints_dir, &id, s);
-        }
-
-        if was_running {
-            record_workload_exit(&backend_label, Some(0));
-            self.event_bus.emit(
-                Event::new(&id, EventKind::WorkloadStopped)
-                    .with_metadata("backend", &backend_label)
-                    .with_metadata("exit_code", "0")
-                    .with_metadata("source", "operator"),
-            );
         } else {
-            // The watcher may not have ticked yet; record the exit
-            // anyway so the gauge stays accurate even on the
-            // operator-stop-after-natural-exit race.
-            record_workload_exit(&backend_label, Some(0));
+            // Workload already exited; nothing to stop.
+            Ok(tonic::Response::new(StopResponse { success: true }))
         }
-
-        Ok(tonic::Response::new(StopResponse { success: true }))
     }
 
     async fn get_workload(
@@ -3743,6 +3774,11 @@ impl Runtime for RuntimeService {
                     Ok(Some(msg)) => {
                         let frame_opt = match msg.body {
                             Some(crate::proto::attach_message::Body::Stdin(s)) => {
+                                tracing::debug!(
+                                    workload_id = %workload_id_fwd,
+                                    bytes = s.data.len(),
+                                    "forwarder: Stdin frame from client"
+                                );
                                 Some(Frame::WorkloadStdin(bytes::Bytes::from(s.data)))
                             }
                             Some(crate::proto::attach_message::Body::StdinEof(_)) => {
@@ -5658,12 +5694,16 @@ fn run_runc_attach_session(
 
             let exit_status = child.wait().map_err(|e| format!("wait runc child: {e}"))?;
             let exit_code = exit_status.code().unwrap_or(-1);
-            let _ = stdin_handle.join();
-            let _ = stdout_handle.join();
+            // Send the exit frame before joining the stdin thread: the
+            // stdin thread only unblocks when the client closes its gRPC
+            // stream, and the shim only closes it after receiving Exit.
+            // Joining first deadlocks every non-interactive attach.
             let _ = server_out_tx.send(pullrun_vsock::Frame::WorkloadExit {
                 exit_code: Some(exit_code),
                 signal: None,
             });
+            let _ = stdin_handle.join();
+            let _ = stdout_handle.join();
         }
         return Ok(());
     }
@@ -5741,11 +5781,13 @@ fn run_runc_attach_session(
     child_stderr = child.stderr.take().ok_or("child stderr not available")?;
 
     // Thread: forward client_in_rx frames → child_stdin
+    let wl_id_log = workload_id.to_string();
     let stdin_handle = std::thread::spawn(move || {
         use std::io::Write;
         for frame in client_in_rx {
             match frame {
                 pullrun_vsock::Frame::WorkloadStdin(data) => {
+                    tracing::debug!(workload_id = %wl_id_log, bytes = data.len(), "attach stdin frame");
                     let _ = child_stdin.write_all(&data);
                 }
                 pullrun_vsock::Frame::StdinEof => break,
@@ -5803,16 +5845,18 @@ fn run_runc_attach_session(
     let exit_status = child.wait().map_err(|e| format!("wait runc child: {e}"))?;
     let exit_code = exit_status.code().unwrap_or(-1);
 
-    // Wait for I/O threads to finish.
-    let _ = stdin_handle.join();
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-
-    // Send exit status to the client.
+    // Send the exit frame before joining the stdin thread (same
+    // rationale as the TTY path: the stdin thread unblocks only when
+    // the client stream closes, which requires Exit to arrive first).
     let _ = server_out_tx.send(pullrun_vsock::Frame::WorkloadExit {
         exit_code: Some(exit_code),
         signal: None,
     });
+
+    // Wait for I/O threads to finish.
+    let _ = stdin_handle.join();
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
 
     Ok(())
 }

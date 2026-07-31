@@ -26,6 +26,9 @@ const (
 	streamTypeStdout = "stdout"
 	streamTypeStderr = "stderr"
 	streamTypeResize = "resize"
+	streamTypeError  = "error"
+
+	streamProtocolV4 = "v4.channel.k8s.io"
 )
 
 type execSession struct {
@@ -49,6 +52,34 @@ type streamingServer struct {
 	server        *http.Server
 	runtimeClient pullrunruntime.RuntimeClient
 	sessions      sync.Map
+}
+
+// writeExitStatus reports the process exit code to the v4 remotecommand
+// client via a Status JSON on the error stream, then closes it.
+func writeExitStatus(stream httpstream.Stream, exitCode int) {
+	if stream == nil {
+		return
+	}
+	var status string
+	if exitCode == 0 {
+		status = `{"status":"Success"}`
+	} else {
+		status = fmt.Sprintf(
+			`{"status":"Failure","reason":"NonZeroExitCode","details":{"causes":[{"reason":"ExitCode","message":"%d"}]}}`,
+			exitCode,
+		)
+	}
+	io.WriteString(stream, status)
+	stream.Close()
+}
+
+// writeErrorStatus reports a runtime error to the v4 remotecommand client.
+func writeErrorStatus(stream httpstream.Stream, message string) {
+	if stream == nil {
+		return
+	}
+	io.WriteString(stream, fmt.Sprintf(`{"status":"Failure","reason":"RuntimeError","message":%q}`, message))
+	stream.Close()
 }
 
 func newStreamingServer(runtimeClient pullrunruntime.RuntimeClient) (*streamingServer, error) {
@@ -205,15 +236,28 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 	stderrCh := make(chan []byte, 256)
 	exitCh := make(chan *pullrunruntime.AttachExit, 1)
 	errCh := make(chan error, 1)
+	quit := make(chan struct{})
+	sessionDone := make(chan struct{})
+
+	var errorStream httpstream.Stream
+	var streamMu sync.Mutex
 
 	var grpcWg sync.WaitGroup
 	grpcWg.Add(2)
 
 	go func() {
 		defer grpcWg.Done()
-		for msg := range stdinCh {
-			if err := grpcStream.Send(msg); err != nil {
-				log.Printf("grpc send: %v", err)
+		for {
+			select {
+			case msg, ok := <-stdinCh:
+				if !ok {
+					return
+				}
+				if err := grpcStream.Send(msg); err != nil {
+					log.Printf("grpc send: %v", err)
+					return
+				}
+			case <-quit:
 				return
 			}
 		}
@@ -221,6 +265,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer grpcWg.Done()
+		defer close(sessionDone)
 		defer close(stdoutCh)
 		defer close(stderrCh)
 		defer close(exitCh)
@@ -247,16 +292,27 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 				}
 			case *pullrunruntime.AttachMessage_Exit:
 				exitCh <- b.Exit
+				streamMu.Lock()
+				es := errorStream
+				streamMu.Unlock()
+				writeExitStatus(es, int(b.Exit.ExitCode))
 				return
 			case *pullrunruntime.AttachMessage_Error:
 				errCh <- fmt.Errorf("runtime error: %s", b.Error.Message)
+				streamMu.Lock()
+				es := errorStream
+				streamMu.Unlock()
+				writeErrorStatus(es, b.Error.Message)
 				return
 			}
 		}
 	}()
 
 	upgrader := spdy.NewResponseUpgrader()
-	var spdyWg sync.WaitGroup
+	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
+		log.Printf("exec protocol handshake: %v", err)
+		return
+	}
 
 	// Drain exit/error channels so the gRPC receiver goroutine
 	// never blocks indefinitely. Log any errors received.
@@ -272,10 +328,13 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 	conn := upgrader.UpgradeResponse(w, r, func(stream httpstream.Stream, _ <-chan struct{}) error {
 		st := stream.Headers().Get("streamType")
 		switch st {
+		case streamTypeError:
+			streamMu.Lock()
+			errorStream = stream
+			streamMu.Unlock()
+			return nil
 		case streamTypeStdin:
-			spdyWg.Add(1)
 			go func() {
-				defer spdyWg.Done()
 				defer stream.Close()
 				buf := make([]byte, 32768)
 				for {
@@ -289,17 +348,22 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 								Stdin: &pullrunruntime.AttachStdin{Data: data},
 							},
 						}:
-						default:
-							log.Printf("stdin channel full, dropping data")
+						case <-quit:
+							return
 						}
 					}
 					if err != nil {
 						if err == io.EOF {
-							stdinCh <- &pullrunruntime.AttachMessage{
+							select {
+							case stdinCh <- &pullrunruntime.AttachMessage{
 								Body: &pullrunruntime.AttachMessage_StdinEof{
 									StdinEof: &pullrunruntime.AttachStdinEof{},
 								},
+							}:
+							case <-quit:
 							}
+						} else {
+							log.Printf("stdin: read error: %v", err)
 						}
 						return
 					}
@@ -307,9 +371,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 			}()
 
 		case streamTypeStdout:
-			spdyWg.Add(1)
 			go func() {
-				defer spdyWg.Done()
 				defer stream.Close()
 				for data := range stdoutCh {
 					if _, err := stream.Write(data); err != nil {
@@ -319,9 +381,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 			}()
 
 		case streamTypeStderr:
-			spdyWg.Add(1)
 			go func() {
-				defer spdyWg.Done()
 				defer stream.Close()
 				for data := range stderrCh {
 					if _, err := stream.Write(data); err != nil {
@@ -341,8 +401,12 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spdyWg.Wait()
-	close(stdinCh)
+	// Wait for the runtime session to end (Exit/Error/stream EOF),
+	// then tear down the connection: closing it wakes any stream
+	// goroutine still blocked in Read/Write.
+	<-sessionDone
+	conn.Close()
+	close(quit)
 	grpcWg.Wait()
 }
 

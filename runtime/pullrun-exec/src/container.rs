@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
-use pullrun_net::{Direction, Ipam, NetworkManager, NetworkRule, ProxyNetwork};
+use pullrun_net::{Direction, IpRange, Ipam, NetworkManager, NetworkRule, ProxyNetwork};
 use pullrun_oci::OciMaterializer;
 use pullrun_store::MmapStore;
 
@@ -55,10 +55,14 @@ impl LinuxContainerExecutor {
     }
 
     fn should_setup_bridge(&self, spec: &WorkloadSpec) -> bool {
-        spec.bridge_name.is_some() || matches!(spec.network_mode, crate::types::NetworkMode::Bridge)
+        // Only the workload that anchors a network namespace (Bridge
+        // mode) gets a veth + IP. Joined containers (NetworkMode::Container)
+        // share the anchor's netns and must NOT get their own veth pair —
+        // the peer name `eth0` would collide with the sandbox's interface.
+        matches!(spec.network_mode, crate::types::NetworkMode::Bridge)
     }
 
-    fn ensure_bridge_exists(bridge_name: &str) -> Result<(), ExecError> {
+    fn ensure_bridge_exists(bridge_name: &str, subnet: Option<&IpRange>) -> Result<(), ExecError> {
         use std::process::Command;
         // Check that `ip` exists before trying to use it (macOS doesn't have it).
         if Command::new("ip").arg("--version").output().is_err() {
@@ -85,24 +89,73 @@ impl LinuxContainerExecutor {
                 })?;
         }
         // Assign the gateway IP to the bridge so the host kernel has a
-        // route to the container subnet (10.42.0.0/16). Without this,
-        // the proxy's TcpStream::connect(container_ip:port) would get
-        // "No route to host" and reset the client connection.
+        // route to the container subnet. Per-pod bridges get their own
+        // /24 with gateway .1; the default bridge keeps the flat /16.
         // Must run regardless of whether the bridge already existed.
-        if bridge_name == DEFAULT_BRIDGE_NAME {
-            let gateway_ip = DEFAULT_GATEWAY.to_string();
-            // Ignore error — the address may already be assigned.
-            let _ = Command::new("ip")
-                .args([
-                    "addr",
-                    "add",
-                    &format!("{gateway_ip}/16"),
-                    "dev",
-                    bridge_name,
-                ])
-                .status();
+        let (gateway_ip, prefix) = match subnet {
+            Some(s) => (Ipv4Addr::from(s.base + 1).to_string(), 24),
+            None => (DEFAULT_GATEWAY.to_string(), 16),
+        };
+        // Ignore error — the address may already be assigned.
+        let _ = Command::new("ip")
+            .args([
+                "addr",
+                "add",
+                &format!("{gateway_ip}/{prefix}"),
+                "dev",
+                bridge_name,
+            ])
+            .status();
+        // Per-pod bridges need outbound NAT: without it the pod subnet
+        // can reach its gateway but nothing beyond the host. Best-effort
+        // (iptables may be absent on locked-down hosts; the bridge still
+        // works for pod-internal traffic).
+        if let Some(s) = subnet {
+            Self::ensure_nat_for_subnet(s);
         }
         Ok(())
+    }
+
+    /// Install a MASQUERADE rule for the pod subnet (idempotent) and
+    /// enable IPv4 forwarding. Best-effort: failures are logged, not
+    /// fatal — pod-internal traffic works without NAT.
+    fn ensure_nat_for_subnet(subnet: &IpRange) {
+        use std::process::Command;
+        if Command::new("iptables").arg("--version").output().is_err() {
+            warn!(
+                "iptables not found; pod subnet {} has no outbound NAT",
+                subnet.base
+            );
+            return;
+        }
+        let cidr = format!("{}/24", Ipv4Addr::from(subnet.base));
+        let rule = [
+            "-t",
+            "nat",
+            "-C",
+            "POSTROUTING",
+            "-s",
+            &cidr,
+            "-j",
+            "MASQUERADE",
+        ];
+        let check = Command::new("iptables").args(rule).status();
+        let present = check.map(|s| s.success()).unwrap_or(false);
+        if !present {
+            let mut add = Vec::with_capacity(rule.len() + 2);
+            add.extend_from_slice(&[
+                "-t",
+                "nat",
+                "-A",
+                "POSTROUTING",
+                "-s",
+                &cidr,
+                "-j",
+                "MASQUERADE",
+            ]);
+            let _ = Command::new("iptables").args(add).status();
+        }
+        let _ = std::fs::write("/proc/sys/net/ipv4/ip_forward", b"1");
     }
 
     async fn setup_container_network(
@@ -111,6 +164,7 @@ impl LinuxContainerExecutor {
         ip: Ipv4Addr,
         host_ports: &[(u16, u16)],
         bridge: &str,
+        gateway: Ipv4Addr,
     ) -> Result<(), ExecError> {
         use std::process::Command as SyncCommand;
 
@@ -138,7 +192,14 @@ impl LinuxContainerExecutor {
 
         info!(id = %id, veth = veth_host, bridge = bridge, container_ip = %ip, pid = pid, "setting up container bridge network");
 
-        // Create veth pair with one end in the container's netns
+        // Create veth pair with one end in the container's netns. The
+        // name is derived from the workload id, so a leftover from a
+        // previous incarnation of the same id (e.g. a pod re-created
+        // with the same uid) would make this fail with "File exists";
+        // delete it first, ignoring errors (nothing to delete).
+        let _ = SyncCommand::new("ip")
+            .args(["link", "del", &veth_host])
+            .status();
         let status = SyncCommand::new("ip")
             .args([
                 "link",
@@ -208,7 +269,7 @@ impl LinuxContainerExecutor {
                 "add",
                 "default",
                 "via",
-                &DEFAULT_GATEWAY.to_string(),
+                &gateway.to_string(),
             ])
             .status()?;
 
@@ -299,12 +360,30 @@ impl Executor for LinuxContainerExecutor {
 
         // Allocate IP for bridge networking before spec.env is consumed
         let mut internal_ip: Option<Ipv4Addr> = None;
+        let mut gateway: Option<Ipv4Addr> = None;
         if self.should_setup_bridge(&spec) {
             let bridge_name = spec.bridge_name.as_deref().unwrap_or(DEFAULT_BRIDGE_NAME);
-            Self::ensure_bridge_exists(bridge_name)?;
+            // Per-pod bridges get their own /24 subnet (gateway .1);
+            // the default bridge keeps the flat /16 (gateway 10.42.0.1).
+            let subnet = if bridge_name == DEFAULT_BRIDGE_NAME {
+                None
+            } else {
+                self.ipam
+                    .as_ref()
+                    .and_then(|ipam| ipam.subnet_for(bridge_name))
+            };
+            Self::ensure_bridge_exists(bridge_name, subnet.as_ref())?;
             if let Some(ref ipam) = self.ipam {
-                if let Some(ip) = ipam.allocate() {
+                let ip = match &subnet {
+                    Some(s) => ipam.allocate_in(s),
+                    None => ipam.allocate(),
+                };
+                if let Some(ip) = ip {
                     internal_ip = Some(Ipv4Addr::from(ip));
+                    gateway = Some(match &subnet {
+                        Some(s) => Ipv4Addr::from(s.base + 1),
+                        None => DEFAULT_GATEWAY,
+                    });
                     let ip = internal_ip.expect("just allocated above");
                     info!(id = %spec.id, bridge = bridge_name, ip = %ip, "allocated bridge IP");
                 }
@@ -558,6 +637,7 @@ impl Executor for LinuxContainerExecutor {
             id: spec.id.clone(),
             pid: None,
             internal_ip: internal_ip.map(|ip| ip.to_string()),
+            gateway: gateway.map(|gw| gw.to_string()),
             host_ports: if network_join.is_some() {
                 // Port forwarding belongs to the sandbox's network
                 // namespace; a joined container shares it and must not
@@ -665,7 +745,12 @@ impl Executor for LinuxContainerExecutor {
                 ExecError::ExecutionFailed(format!("invalid internal_ip in handle: {e}"))
             })?;
             let bridge = handle.bridge_name.as_deref().unwrap_or(DEFAULT_BRIDGE_NAME);
-            self.setup_container_network(&handle.id, ip, &handle.host_ports, bridge)
+            let gateway = handle
+                .gateway
+                .as_deref()
+                .and_then(|g| g.parse().ok())
+                .unwrap_or(DEFAULT_GATEWAY);
+            self.setup_container_network(&handle.id, ip, &handle.host_ports, bridge, gateway)
                 .await?;
         }
 
@@ -1046,6 +1131,7 @@ impl Executor for RootlessContainerExecutor {
             id: spec.id.clone(),
             pid: None,
             internal_ip: None,
+            gateway: None,
             host_ports: if network_join.is_some() {
                 Vec::new()
             } else {

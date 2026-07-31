@@ -68,10 +68,16 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 
 	backend := backendForRuntimeHandler(sandbox.runtimeClass)
 	netMode := "container:" + sandbox.pullrunID
+	// The pod's per-pod bridge name is only meaningful when the
+	// container attaches to it (VM backend); a joined container
+	// shares the sandbox's netns and must not carry a bridge name
+	// (the executor would try to bridge it anyway).
+	bridgeName := ""
 	if backend == "vm" {
 		// VMs cannot join another workload's network namespace; run in
 		// the pod's per-pod bridge instead.
 		netMode = "bridge"
+		bridgeName = sandbox.bridgeName
 	}
 	if sandbox.hostNetwork {
 		netMode = "host"
@@ -140,7 +146,7 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 		MemoryBytes:     mem,
 		NetworkMode:     netMode,
 		WorkingDir:      cfg.WorkingDir,
-		BridgeName:      sandbox.bridgeName,
+		BridgeName:      bridgeName,
 		Mounts:          mounts,
 		Privileged:      privileged,
 		ReadonlyRootfs:  readonly,
