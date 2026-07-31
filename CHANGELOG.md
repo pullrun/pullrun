@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.7.7 — 2026-07-31
+
+### Critical fixes
+- **Unauthenticated daemon socket** (main.rs). The gRPC socket is now chmod 0700
+  and every accepted connection is verified via `SO_PEERCRED` against the
+  daemon's own euid before tonic sees it — other local users can no longer
+  reach the run/exec/copy surface, which was a local privilege-escalation
+  primitive on multi-user hosts. Daemon logs moved to stderr so CLI/MCP
+  stdout output stays clean.
+- **Path traversal via workload id** (service.rs). `validate_workload_id`
+  (ASCII alphanumeric + `-_.`, max 128 chars) now guards `run_workload`,
+  `stop_workload`, `exec_in_workload`, and `attach_workload` before ids are
+  used to build bundle paths.
+- **Arbitrary bind mounts** (service.rs). `sanitize_mounts` rejects mounts
+  that escape the store root, non-absolute or `..` destinations, and unknown
+  mount types at the gRPC boundary.
+- **Seccomp/readonly/noNewPrivileges parsed but never applied** (container.rs,
+  seccomp.rs). `maskedPaths`, `readonlyPaths`, read-only `/sys`,
+  `readonly_rootfs`, `noNewPrivileges`, and the seccomp policy (`default`
+  allowlist, `unconfined`, `pullrun:<json>`, fail-closed on unknown profiles)
+  are now emitted into the runc OCI spec and carried through restarts.
+- **`exec_in_workload` executed commands twice** (service.rs). The redundant
+  capture `runc exec` was removed; `Executor::exec` now returns exit code plus
+  captured stdout/stderr in a single call.
+- **Staged secrets world-readable** (secrets.rs, service.rs, store.rs).
+  Staging dirs/files are created 0700/0600 (`create_new` + fsync), the secret
+  key is fsync'd before use, and the store root defaults to 0700.
+
+### High-priority fixes
+- **Port-forward listeners leaked on container stop** (container.rs). Proxy
+  sessions are now torn down before SIGTERM so inbound forwards can't keep
+  forwarding to a dead workload IP.
+- **Cosign signature not bound to image content** (policy/lib.rs). The signed
+  payload's image ref and manifest digest must now match the image being
+  evaluated — a valid signature for image X can no longer authorize image Y.
+- **Firecracker tap name collisions** (pool.rs). Pool UUIDs now use RFC 4122
+  v4 entropy instead of a 4.29s-granularity clock-derived value.
+
+### Medium-priority fixes
+- **`--registry` silently overrode the ref's registry** (puller.rs).
+  `pullrun pull ghcr.io/user/app` no longer pulls `docker.io/user/app`; the
+  flag now only applies to bare refs (e.g. `--registry localhost:5000 alpine`).
+
 ## 0.7.6 — 2026-07-26
 
 ### 0.7.6 follow-up (4ec2891)
