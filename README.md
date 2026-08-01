@@ -437,6 +437,45 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 
 ---
 
+## 🧪 Testing
+
+> **247 tests, 0 failures** — every commit is gated by the full suite
+> (`cargo fmt --check`, `cargo test`, `go test ./...`, `golangci-lint`).
+
+| Suite | Stack | What it covers | Tests |
+|-------|-------|----------------|------:|
+| `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 30 |
+| `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 40 |
+| `pullrun-vm` | 🦀 Rust | network, ext4, OCI kernels, Apple Virt + Firecracker* | 28 |
+| `pullrun-net` | 🦀 Rust | IPAM, firewall, proxy, DNS, loopback | 18 |
+| `pullrun-policy` | 🦀 Rust | cosign, SBOM, gates | 17 |
+| `pullrun-oci` | 🦀 Rust | dockerfile parser, puller, converter, layouts | 16 |
+| `pullrun-gc` | 🦀 Rust | DAG garbage collection | 16 |
+| `pullrun-sync` | 🦀 Rust | P2P block sync, bloom, delta | 13 |
+| `pullrun-vsock` | 🦀 Rust | vsock transport | 9 |
+| `pullrun-exec` | 🦀 Rust | seccomp, rootless | 8 |
+| `pullrun-init` + `build-initramfs` | 🦀 Rust | guest agent, initramfs | 5 |
+| `pullrun-cri` | 🐹 Go | CRI shim lifecycle, filestore | 20 |
+| `pullrun-compose` | 🐹 Go | compose parsing, `up`/`down` flows | 15 |
+| `pullrun` CLI | 🐹 Go | workload run, commands | 9 |
+| `control-plane` | 🐹 Go | controller store | 9 |
+| **Total** | | | **247** |
+
+\* 2 Firecracker hardware tests are `#[ignore]`d (need /dev/kvm) — run manually:
+`cargo test -p pullrun-vm --test firecracker_boot -- --include-ignored --nocapture`
+
+```bash
+cargo test                                   # Rust workspace: 194 tests
+go test ./...                                # Go modules (cri, cli, compose, control-plane): 53 tests
+cargo fmt --all --check && golangci-lint run ./...   # CI gates
+```
+
+End-to-end CRI behavior (exec stdin streaming, exit-code propagation, pod
+teardown) is validated against a live `crictl` sandbox in a VM — see
+[`AGENTS.md`](AGENTS.md) release notes for the full lifecycle checklist.
+
+---
+
 ## 📚 Documentation
 
 | Document | What You'll Find |
