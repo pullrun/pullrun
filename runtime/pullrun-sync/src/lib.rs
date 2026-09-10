@@ -10,6 +10,7 @@ pub mod registrar;
 pub mod sync_puller;
 
 pub mod proto {
+    #![allow(clippy::result_large_err)]
     tonic::include_proto!("pullrun.sync");
 }
 
