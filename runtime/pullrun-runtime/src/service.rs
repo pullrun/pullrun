@@ -1787,6 +1787,7 @@ impl RuntimeService {
     /// Evaluate the policy for an image that was just pulled.
     /// `image_ref` is the user-supplied reference; `manifest_digest` is
     /// the rkyv root returned by the converter.
+    #[allow(clippy::result_large_err)]
     async fn evaluate_pulled(
         &self,
         image_ref: &str,
@@ -1823,6 +1824,7 @@ impl RuntimeService {
     /// Defense-in-depth check at run time. Uses the recorded image_ref
     /// (from PullImage) when available, falls back to a no-signature
     /// SBOM-only check otherwise.
+    #[allow(clippy::result_large_err)]
     async fn evaluate_for_run(&self, root_digest: &str) -> Result<(), Status> {
         let Some(engine) = &self.policy_engine else {
             return Ok(());
