@@ -6,9 +6,9 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/mark3labs/mcp-go v0.40.0
 	github.com/spf13/cobra v1.8.0
-	golang.org/x/sys v0.46.0
-	golang.org/x/term v0.44.0
-	google.golang.org/grpc v1.82.1
+	golang.org/x/sys v0.47.0
+	golang.org/x/term v0.45.0
+	google.golang.org/grpc v1.83.2
 	pullrun/protoapi v0.0.0-00010101000000-000000000000
 )
 
@@ -23,9 +23,9 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

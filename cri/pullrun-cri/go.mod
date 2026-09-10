@@ -3,7 +3,7 @@ module pullrun/cri
 go 1.26.0
 
 require (
-	google.golang.org/grpc v1.82.1
+	google.golang.org/grpc v1.83.2
 	k8s.io/cri-api v0.30.0
 	k8s.io/streaming v0.36.1
 	pullrun/protoapi v0.0.0
@@ -13,10 +13,10 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
