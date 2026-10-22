@@ -1509,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-exec"
-version = "0.7.1"
+version = "0.7.9"
 dependencies = [
  "async-trait",
  "libc",
@@ -1526,7 +1526,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-net"
-version = "0.7.1"
+version = "0.7.9"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-oci"
-version = "0.7.1"
+version = "0.7.9"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-store"
-version = "0.7.1"
+version = "0.7.9"
 dependencies = [
  "dashmap",
  "hex",
@@ -1586,7 +1586,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-vm"
-version = "0.7.1"
+version = "0.7.9"
 dependencies = [
  "async-trait",
  "block2",
@@ -1602,6 +1602,7 @@ dependencies = [
  "pullrun-oci",
  "pullrun-store",
  "pullrun-vsock",
+ "rand 0.8.6",
  "rkyv",
  "serde",
  "serde_json",
@@ -1615,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "pullrun-vsock"
-version = "0.7.1"
+version = "0.7.9"
 dependencies = [
  "bytes",
  "thiserror 1.0.69",
@@ -1940,9 +1941,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.40"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "once_cell",
  "ring",
@@ -1964,9 +1965,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
