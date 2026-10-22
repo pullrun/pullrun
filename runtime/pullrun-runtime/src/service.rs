@@ -1870,6 +1870,7 @@ impl RuntimeService {
     /// duplicating the bookkeeping.
     #[cfg(target_os = "macos")]
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::result_large_err)]
     async fn record_workload_state(
         &self,
         req: crate::proto::RunRequest,
