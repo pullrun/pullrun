@@ -3,7 +3,7 @@ module pullrun/cli
 go 1.25.0
 
 require (
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.18.7
 	github.com/mark3labs/mcp-go v0.40.0
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/sys v0.47.0
