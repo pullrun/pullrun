@@ -3,6 +3,7 @@ module pullrun/cli
 go 1.25.0
 
 require (
+	// >= v1.18.7 required for CVE-2026-63209 / GHSA-259r-337f-4rfw.
 	github.com/klauspost/compress v1.18.7
 	github.com/mark3labs/mcp-go v0.40.0
 	github.com/spf13/cobra v1.8.0
