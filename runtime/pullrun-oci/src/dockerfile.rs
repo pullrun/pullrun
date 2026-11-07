@@ -433,10 +433,16 @@ pub async fn build_dag_from_directory_with_platform(
 
     // build_tree is recursive and synchronous; run in spawn_blocking.
     let store_clone = store.clone();
-    let (tree_digest, cn, cb) = tokio::task::spawn_blocking(move || {
+    let (root_layer_digest, cn, cb) = tokio::task::spawn_blocking(move || {
         let mut node_count = 0usize;
         let mut blob_bytes = 0u64;
-        let d = build_tree(&store_clone, &root_entry, &mut node_count, &mut blob_bytes)?;
+        let d = build_tree(
+            &store_clone,
+            &root_entry,
+            "",
+            &mut node_count,
+            &mut blob_bytes,
+        )?;
         Ok::<_, OciError>((d, node_count, blob_bytes))
     })
     .await
@@ -445,11 +451,13 @@ pub async fn build_dag_from_directory_with_platform(
     let mut node_count = cn;
     let blob_bytes = cb;
 
-    // Wrap in a layer node
-    let layer_digest = store
-        .put(&DagNode::layer(vec![tree_digest], b"/".to_vec()))
-        .await?;
-    node_count += 1;
+    // `build_tree` already returned the root Layer node, whose prefix is
+    // empty (see the call above). Wrapping it again would add a redundant
+    // layer; more importantly, the prefix must stay empty here because
+    // `materialize_layer` joins it onto the bundle rootfs and `Path::join`
+    // discards the base when the argument is absolute ("/"), extracting
+    // the rootfs into the host root instead.
+    let layer_digest = root_layer_digest;
 
     let manifest_data = crate::ManifestData {
         entrypoint: vec![],
@@ -482,9 +490,14 @@ pub async fn build_dag_from_directory_with_platform(
 struct DirEntry {
     name: String,
     is_dir: bool,
+    is_symlink: bool,
+    symlink_target: Option<String>,
     file_digest: Digest,
     mode: u32,
     size: u64,
+    uid: u32,
+    gid: u32,
+    mtime: i64,
     children: Vec<DirEntry>,
 }
 
@@ -505,26 +518,52 @@ fn build_dir_entry_tree(
             .unwrap_or_default()
     };
 
+    // `symlink_metadata` must be used here: `metadata()` follows symlinks,
+    // so a symlink would report the target's type and `is_symlink` would
+    // never be true.
+    let meta = std::fs::symlink_metadata(current).ok();
+    let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+    let is_symlink = meta
+        .as_ref()
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+
     let mut children = Vec::new();
 
-    if let Ok(read_dir) = std::fs::read_dir(current) {
-        for child in read_dir.flatten() {
-            let path = child.path();
-            let ft = match child.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            if ft.is_symlink() || ft.is_file() || ft.is_dir() {
-                let child_entry = build_dir_entry_tree(root, &path, file_results, symlink_results)?;
-                children.push(child_entry);
+    // Only descend into real directories. Reading a symlink-to-directory
+    // would follow the link and attribute the target's children to the
+    // symlink entry itself.
+    if !is_symlink {
+        if let Ok(read_dir) = std::fs::read_dir(current) {
+            for child in read_dir.flatten() {
+                let path = child.path();
+                let ft = match child.file_type() {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                if ft.is_symlink() || ft.is_file() || ft.is_dir() {
+                    let child_entry =
+                        build_dir_entry_tree(root, &path, file_results, symlink_results)?;
+                    children.push(child_entry);
+                }
             }
         }
     }
 
-    let meta = current.metadata().ok();
-    let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-    let is_symlink = meta.as_ref().map(|m| m.is_symlink()).unwrap_or(false);
+    // Preserve the real permission bits. The previous heuristic
+    // (readonly ? 0o444 : is_dir ? 0o755 : 0o644) dropped the executable
+    // bit entirely, so binaries in built/committed images were not
+    // executable and workloads failed to start.
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        meta.as_ref()
+            .map(|m| m.permissions().mode() & 0o7777)
+            .unwrap_or(if is_dir { 0o755 } else { 0o644 })
+    };
+    #[cfg(not(unix))]
     let mode = meta
+        .as_ref()
         .map(|m| {
             if m.permissions().readonly() {
                 0o444
@@ -536,14 +575,34 @@ fn build_dir_entry_tree(
         })
         .unwrap_or(0o644);
 
-    let (file_digest, size) = if is_symlink || is_dir {
+    // Ownership and mtime must be carried into the DAG: the reader in
+    // `converter::DirectoryEntry::from_inline_bytes` requires them, and
+    // omitting them made every entry fail to parse and be dropped.
+    #[cfg(unix)]
+    let (uid, gid, mtime) = {
+        use std::os::unix::fs::MetadataExt;
+        match meta.as_ref() {
+            Some(m) => (m.uid(), m.gid(), m.mtime()),
+            None => (0, 0, 0),
+        }
+    };
+    #[cfg(not(unix))]
+    let (uid, gid, mtime) = (0u32, 0u32, 0i64);
+
+    let symlink_target = if is_symlink {
+        std::fs::read_link(current)
+            .ok()
+            .map(|t| t.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    let (file_digest, size) = if is_dir {
+        (Digest([0u8; 32]), 0)
+    } else if is_symlink {
         let rel = path_to_rel(root, current);
-        if is_symlink {
-            if let Some((d, sz)) = symlink_results.get(&rel) {
-                (*d, *sz)
-            } else {
-                (Digest([0u8; 32]), 0)
-            }
+        if let Some((d, sz)) = symlink_results.get(&rel) {
+            (*d, *sz)
         } else {
             (Digest([0u8; 32]), 0)
         }
@@ -559,9 +618,14 @@ fn build_dir_entry_tree(
     Ok(DirEntry {
         name,
         is_dir,
+        is_symlink,
+        symlink_target,
         file_digest,
         mode,
         size,
+        uid,
+        gid,
+        mtime,
         children,
     })
 }
@@ -573,9 +637,16 @@ fn path_to_rel(root: &Path, path: &Path) -> String {
 }
 
 /// Recursively build DAG tree nodes from a DirEntry tree (synchronous).
+///
+/// Mirrors `OciToDagConverter::store_trees`: every directory (including the
+/// root, whose `base_path` is empty) is encoded as a `Layer` node wrapping
+/// its `Tree` node, with the directory's relative path in `inline_data`.
+/// The materializer relies on that path to place nested entries, and on it
+/// being *empty* for the root so `rootfs.join(prefix)` does not escape.
 fn build_tree(
     store: &MmapStore,
     entry: &DirEntry,
+    base_path: &str,
     node_count: &mut usize,
     blob_bytes: &mut u64,
 ) -> Result<Digest, OciError> {
@@ -590,28 +661,36 @@ fn build_tree(
     let mut child_entry_data = Vec::new();
 
     for child in &entry.children {
-        let d = build_tree(store, child, node_count, blob_bytes)?;
+        let child_path = if base_path.is_empty() {
+            child.name.clone()
+        } else {
+            format!("{}/{}", base_path, child.name)
+        };
+        let d = build_tree(store, child, &child_path, node_count, blob_bytes)?;
         child_digests.push(d);
 
-        let entry_line = serde_json::json!({
-            "name": child.name,
-            "digest": d,
-            "mode": child.mode,
-            "size": child.size,
-            "is_dir": child.is_dir,
-            "is_symlink": false,
-        });
-        child_entry_data.push(entry_line);
+        // Serialize with the *reader's* own encoder so the on-disk
+        // schema can never drift from `DirectoryEntry::from_inline_bytes`.
+        // Hand-rolling this JSON previously omitted uid/gid/mtime/
+        // symlink_target, so every entry failed to parse and was
+        // silently dropped at materialization time (empty rootfs).
+        let dir_entry = crate::DirectoryEntry {
+            name: child.name.clone(),
+            digest: d,
+            mode: child.mode,
+            size: child.size,
+            uid: child.uid,
+            gid: child.gid,
+            mtime: child.mtime,
+            is_dir: child.is_dir,
+            is_symlink: child.is_symlink,
+            symlink_target: child.symlink_target.clone(),
+            xattrs: HashMap::new(),
+        };
+        child_entry_data.push(dir_entry.to_inline_bytes());
     }
 
-    let inline: Vec<u8> = child_entry_data
-        .iter()
-        .flat_map(|j| {
-            let mut b = serde_json::to_vec(j).unwrap_or_default();
-            b.push(b'\n');
-            b
-        })
-        .collect();
+    let inline: Vec<u8> = child_entry_data.concat();
 
     let tree_node = DagNode::tree(child_digests, inline);
     let tree_digest = store
@@ -619,7 +698,13 @@ fn build_tree(
         .map_err(|e| OciError::Other(format!("store tree: {e}")))?;
     *node_count += 1;
 
-    Ok(tree_digest)
+    let layer_node = DagNode::layer(vec![tree_digest], base_path.as_bytes().to_vec());
+    let layer_digest = store
+        .put_blocking(&layer_node)
+        .map_err(|e| OciError::Other(format!("store layer: {e}")))?;
+    *node_count += 1;
+
+    Ok(layer_digest)
 }
 
 // ---------------------------------------------------------------------------
@@ -744,5 +829,149 @@ mod tests {
         assert_eq!(df.stages.len(), 1);
         assert_eq!(df.stages[0].platform.as_deref(), Some("linux/amd64"));
         assert_eq!(df.stages[0].name.as_deref(), Some("base"));
+    }
+
+    /// Regression test for a host-rootfs escape bug.
+    ///
+    /// `build_dag_from_directory_with_platform` used to give the root layer
+    /// node a `"/"` prefix. `OciMaterializer::materialize_layer` joins that
+    /// prefix onto the bundle rootfs path, and `Path::join` discards the base
+    /// when the argument is absolute:
+    ///
+    ///     Path::new("/var/lib/pullrun/bundles/abc/rootfs").join("/") == "/"
+    ///
+    /// so materializing a committed or built image extracted its contents
+    /// into the host root instead of the bundle. Because it also silently
+    /// discarded the prefix, this only manifested at materialize time — well
+    /// after `commit`/`build` returned success.
+    ///
+    /// The assertion is deliberately on the *stored node prefix*, before any
+    /// materialization: asserting here means a regression fails the test
+    /// instead of writing to the developer's `/`.
+    #[tokio::test]
+    async fn test_build_from_directory_root_layer_has_empty_prefix() {
+        let src = tempfile::tempdir().unwrap();
+        let store_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(src.path().join("etc")).unwrap();
+        std::fs::write(src.path().join("etc/passwd"), b"root:x:0:0\n").unwrap();
+        std::fs::write(src.path().join("hello.txt"), b"hello").unwrap();
+
+        let store = Arc::new(MmapStore::new(store_dir.path().to_path_buf()));
+        let built = build_dag_from_directory_with_platform(&store, src.path(), "arm64", "linux")
+            .await
+            .expect("build from directory");
+
+        // manifest -> root layer
+        let manifest = store.get_archived(&built.manifest_digest).unwrap();
+        assert!(manifest.is_manifest(), "root node must be a manifest");
+        assert_eq!(
+            manifest.edges.len(),
+            1,
+            "build_from_directory must produce exactly one layer"
+        );
+        let layer_digest = Digest(manifest.edges[0]);
+        drop(manifest);
+
+        let layer = store.get_archived(&layer_digest).unwrap();
+        assert!(layer.is_layer(), "child node must be a layer");
+
+        assert!(
+            layer.inline_data.is_empty(),
+            "root layer prefix must be empty, got {:?} — a non-empty \
+             absolute prefix makes materialization escape the rootfs \
+             (see materialize_layer)",
+            String::from_utf8_lossy(&layer.inline_data)
+        );
+    }
+
+    /// Companion to the test above: the DAG built from a directory must
+    /// materialize *inside* the requested directory, with content intact.
+    ///
+    /// This covers three defects that previously made `build`/`commit`
+    /// produce an unusable image:
+    ///  1. entries were serialized with a schema the reader could not
+    ///     parse, so they were silently dropped (empty rootfs);
+    ///  2. subdirectories were not wrapped in path-carrying Layer nodes,
+    ///     so nested files flattened to the root;
+    ///  3. symlinks were written with `is_symlink: false`, so they
+    ///     materialized as regular files containing the target path.
+    #[tokio::test]
+    async fn test_build_from_directory_materializes_inside_target() {
+        let src = tempfile::tempdir().unwrap();
+        let store_dir = tempfile::tempdir().unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(src.path().join("etc")).unwrap();
+        std::fs::create_dir_all(src.path().join("bin")).unwrap();
+        std::fs::write(src.path().join("etc/passwd"), b"root:x:0:0\n").unwrap();
+        std::fs::write(src.path().join("hello.txt"), b"hello world").unwrap();
+        std::fs::write(src.path().join("bin/run"), b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                src.path().join("bin/run"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink("hello.txt", src.path().join("link.txt")).unwrap();
+        }
+
+        let store = Arc::new(MmapStore::new(store_dir.path().to_path_buf()));
+        let built = build_dag_from_directory_with_platform(&store, src.path(), "arm64", "linux")
+            .await
+            .expect("build from directory");
+
+        // Never materialize a DAG whose prefix would escape the target.
+        let manifest = store.get_archived(&built.manifest_digest).unwrap();
+        let layer_digest = Digest(manifest.edges[0]);
+        drop(manifest);
+        let layer = store.get_archived(&layer_digest).unwrap();
+        let prefix = String::from_utf8_lossy(&layer.inline_data).to_string();
+        drop(layer);
+        assert!(
+            !prefix.starts_with('/'),
+            "refusing to materialize: non-relative layer prefix {prefix:?}"
+        );
+
+        let materializer = crate::OciMaterializer::new(&store);
+        let bundle = materializer
+            .materialize_bundle(&built.manifest_digest, out_dir.path())
+            .expect("materialize bundle");
+
+        let rootfs = bundle.rootfs_path;
+        assert_eq!(
+            std::fs::read(rootfs.join("hello.txt")).unwrap(),
+            b"hello world",
+            "file must land inside the bundle rootfs"
+        );
+        assert_eq!(
+            std::fs::read(rootfs.join("etc/passwd")).unwrap(),
+            b"root:x:0:0\n",
+            "nested file must land inside the bundle rootfs"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::symlink_metadata(rootfs.join("link.txt")).unwrap();
+            assert!(
+                meta.file_type().is_symlink(),
+                "symlink must materialize as a symlink, not a regular file"
+            );
+            assert_eq!(
+                std::fs::read_link(rootfs.join("link.txt")).unwrap(),
+                std::path::Path::new("hello.txt")
+            );
+
+            let mode = std::fs::metadata(rootfs.join("bin/run"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o111,
+                0o111,
+                "executable bit must be preserved, got {mode:o}"
+            );
+        }
     }
 }

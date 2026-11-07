@@ -8,7 +8,7 @@ use std::sync::Arc;
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use tar::Archive;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use pullrun_store::{DagNode, Digest, MmapStore, NodeKind, SMALL_FILE_THRESHOLD};
 
@@ -69,6 +69,15 @@ impl DirectoryEntry {
                     symlink_target: e.symlink_target,
                     xattrs: e.xattrs,
                 });
+            } else {
+                // Never drop an entry silently: a schema mismatch here
+                // means the image will materialize with missing files,
+                // which previously surfaced as a confusing empty or
+                // partial rootfs far from the real cause.
+                warn!(
+                    line = %String::from_utf8_lossy(line),
+                    "skipping unparseable tree entry (schema mismatch?)"
+                );
             }
         }
         out

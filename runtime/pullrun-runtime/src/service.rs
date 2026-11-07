@@ -4827,10 +4827,15 @@ impl Runtime for RuntimeService {
             .map_err(|e| Status::internal(format!("commit failed: {e}")))?;
 
         // If a tag was provided, record it in the image tag map.
+        // Drop the write guard before saving: save_image_tags() takes a
+        // read lock on the same RwLock, and holding the write guard across
+        // it deadlocks the commit RPC.
         if !req.tag.is_empty() {
-            let mut tags = self.image_tags.write().await;
-            tags.insert(manifest_digest.as_hex(), req.tag.clone());
-            let _ = self.store.increment_refcount(&manifest_digest);
+            {
+                let mut tags = self.image_tags.write().await;
+                tags.insert(manifest_digest.as_hex(), req.tag.clone());
+                let _ = self.store.increment_refcount(&manifest_digest);
+            }
             self.save_image_tags().await;
         }
         op_lock.complete();
@@ -6688,5 +6693,127 @@ mod tests {
 
         let roots = svc.enumerate_gc_roots().await;
         assert_eq!(roots.len(), 0, "empty digest strings should be skipped");
+    }
+
+    /// Regression test for a deadlock in the `CommitImage` handler.
+    ///
+    /// The handler used to hold the `image_tags` *write* guard across the
+    /// call to `save_image_tags()`, which takes a *read* guard on the same
+    /// `RwLock`. `tokio::sync::RwLock` is not reentrant, so any commit that
+    /// carried a tag (i.e. every `pullrun commit <id> <tag>`) hung forever
+    /// and leaked the op lock.
+    ///
+    /// The test runs the real RPC against a real store and rootfs under a
+    /// timeout: a regression fails fast instead of hanging the suite.
+    #[tokio::test]
+    async fn commit_image_with_tag_returns_instead_of_deadlocking() {
+        let dir = fresh_dir("commit-tag-deadlock");
+        let cfg = ServiceConfig::new(dir.clone());
+        let bundle_root = cfg.bundle_root.clone();
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        // A minimal source image so the handler can read arch/os from the
+        // workload's recorded image_root.
+        let src = dir.join("src-image");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("hello.txt"), b"hello").unwrap();
+        let built =
+            pullrun_oci::build_dag_from_directory_with_platform(&svc.store, &src, "arm64", "linux")
+                .await
+                .expect("build source image");
+
+        // The rootfs that `commit` will scan.
+        let rootfs = bundle_root.join("wk-commit").join("rootfs");
+        std::fs::create_dir_all(&rootfs).unwrap();
+        std::fs::write(rootfs.join("state.txt"), b"after task work").unwrap();
+
+        {
+            let mut workloads = svc.workloads.write().await;
+            workloads.insert(
+                "wk-commit".to_string(),
+                WorkloadState {
+                    status: "running".to_string(),
+                    start_time: 1000,
+                    exit_time: 0,
+                    exit_code: None,
+                    backend: "container".to_string(),
+                    internal_ip: None,
+                    pid: 0,
+                    image_root: built.manifest_digest.as_hex(),
+                    command: vec![],
+                    network_rules: vec![],
+                    policy_decisions: HashMap::new(),
+                    kernel_image_ref: String::new(),
+                    kernel_image_digest: String::new(),
+                    working_dir: String::new(),
+                    rootfs_dir: None,
+                    health_check: None,
+                    health: String::new(),
+                    health_failures: 0,
+                    health_last_success: 0,
+                    restart_policy: pullrun_exec::types::RestartPolicy::No,
+                    restart_count: 0,
+                    env: HashMap::new(),
+                    cpu_millicores: None,
+                    memory_bytes: None,
+                    bridge_name: None,
+                    network_mode: "isolated".to_string(),
+                    mounts: vec![],
+                    privileged: false,
+                    readonly_rootfs: false,
+                    no_new_privileges: false,
+                    seccomp_profile: None,
+                    allowed_syscalls: vec![],
+                    dns: Default::default(),
+                    console_log_path: None,
+                },
+            );
+        }
+
+        let req = tonic::Request::new(CommitImageRequest {
+            id: "wk-commit".to_string(),
+            tag: "task-run:latest".to_string(),
+            message: String::new(),
+            author: String::new(),
+        });
+
+        let resp = tokio::time::timeout(std::time::Duration::from_secs(30), svc.commit_image(req))
+            .await
+            .expect("commit_image deadlocked holding the image_tags write guard")
+            .expect("commit_image returned an error");
+
+        let body = resp.into_inner();
+        assert_eq!(body.tag, "task-run:latest");
+
+        // The tag must be recorded and persisted.
+        let tags = svc.image_tags.read().await;
+        assert_eq!(
+            tags.get(&body.root_digest).map(String::as_str),
+            Some("task-run:latest"),
+            "commit did not record the tag"
+        );
+        drop(tags);
+
+        let persisted =
+            std::fs::read_to_string(svc.config.store_root.join("image_tags.json")).unwrap();
+        assert!(
+            persisted.contains("task-run:latest"),
+            "commit did not persist image_tags.json"
+        );
+
+        // The committed image must materialize with content (bug C guard).
+        let out = tempfile::tempdir().unwrap();
+        let materializer = OciMaterializer::new(&svc.store);
+        let bundle = materializer
+            .materialize_bundle(
+                &pullrun_store::Digest::from_hex(&body.root_digest).unwrap(),
+                out.path(),
+            )
+            .expect("materialize committed image");
+        assert_eq!(
+            std::fs::read(bundle.rootfs_path.join("state.txt")).unwrap(),
+            b"after task work",
+            "committed image must contain the workload's rootfs"
+        );
     }
 }
