@@ -18,7 +18,7 @@ Apple Virtualization VMs (macOS)** — all from the same image.
 | pullrun CLI | ✅ | ✅ |
 | pullrun-runtime daemon | ✅ (stores, sync, policy) | ✅ (all backends) |
 | P2P DAG block sync | ✅ | ✅ |
-| Policy engine (cosign, SBOM) | ✅ | ✅ |
+| Policy engine (image signatures, SBOM) | ✅ | ✅ |
 | CRI shim + Kubernetes | ❌ (needs runc) | ✅ |
 | `pullrun kernel install` | ✅ → arm64 | ✅ → amd64 |
 
@@ -227,7 +227,7 @@ pullrun-runtime daemon --require-signature --max-cvss 7.0
 | `--readonly-rootfs` | false | Declare rootfs must be read-only |
 | `--no-new-privileges` | false | Forbid privilege escalation |
 | `--deny-license` | (repeatable) | Banned SPDX license identifiers |
-| `--trusted-key` | (repeatable) | Trusted cosign public key (`id:base64`) |
+| `--trusted-key` | (repeatable) | Trusted ed25519 image-signing public key (`id:base64`) |
 | `--insecure-registry` | (repeatable) | Plain-HTTP registries (e.g. `localhost:5000`) |
 | `--vm-firecracker` | (none) | Path to firecracker binary (enables VM backend) |
 | `--vm-kernel` | (none) | Path to vmlinux kernel for VMs |

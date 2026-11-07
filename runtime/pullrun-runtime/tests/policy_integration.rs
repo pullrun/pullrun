@@ -19,8 +19,8 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
     use rand::rngs::OsRng;
 
-    use pullrun_policy::cosign::{self, SignatureBlob};
-    use pullrun_policy::{CosignKey, Policy, PolicyEngine};
+    use pullrun_policy::signature::{self, SignatureBlob};
+    use pullrun_policy::{Policy, PolicyEngine, TrustedKey};
     use pullrun_runtime::service::{RuntimeCommand, ServiceConfig};
     use pullrun_store::MmapStore;
 
@@ -31,7 +31,7 @@ mod tests {
     async fn make_service(
         dir: &Path,
         policy: Policy,
-        keys: Vec<CosignKey>,
+        keys: Vec<TrustedKey>,
     ) -> pullrun_runtime::service::RuntimeService {
         let mut cfg = ServiceConfig::new(dir.to_path_buf());
         cfg = cfg.with_policy(policy).trusted_keys(keys);
@@ -48,7 +48,7 @@ mod tests {
     /// Sign `image_ref`/`manifest` and write the resulting `SignatureBlob`
     /// into the store at the deterministic sig digest.
     fn store_signature(store: &Arc<MmapStore>, sk: &SigningKey, image_ref: &str, manifest: &str) {
-        let payload = cosign::canonical_payload(image_ref, manifest);
+        let payload = signature::canonical_payload(image_ref, manifest);
         let sig = sk.sign(payload.as_bytes());
         let blob = SignatureBlob {
             key_id: "trusted".into(),
@@ -56,7 +56,7 @@ mod tests {
             signature: sig.to_bytes().to_vec(),
         };
         let bytes = rkyv::to_bytes::<_, 256>(&blob).unwrap();
-        let digest = cosign::signature_digest_for(image_ref);
+        let digest = signature::signature_digest_for(image_ref);
         store.put_blob_blocking(&digest, &bytes).unwrap();
     }
 
@@ -114,7 +114,7 @@ mod tests {
         };
         let store = Arc::new(MmapStore::new(dir.clone()));
         let sk = SigningKey::generate(&mut OsRng);
-        let key = CosignKey {
+        let key = TrustedKey {
             id: "trusted".into(),
             verifying_key: sk.verifying_key(),
         };
@@ -147,7 +147,7 @@ mod tests {
         store_signature(&store, &sk_a, image_ref, manifest);
 
         // Trusted key is B, signature is from A -> Deny.
-        let key_b = CosignKey {
+        let key_b = TrustedKey {
             id: "trusted".into(),
             verifying_key: sk_b.verifying_key(),
         };
@@ -274,20 +274,20 @@ mod tests {
     #[test]
     fn test_trusted_key_parsing() {
         // Validate the CLI's --trusted-key parsing by feeding it through
-        // a fresh CosignKey::from_base64 and asserting the right error
+        // a fresh TrustedKey::from_base64 and asserting the right error
         // path is taken for bad input.
         let sk = SigningKey::generate(&mut OsRng);
         let bytes = sk.verifying_key().to_bytes();
         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        let key = CosignKey::from_base64("test-id", &b64).unwrap();
+        let key = TrustedKey::from_base64("test-id", &b64).unwrap();
         assert_eq!(key.id, "test-id");
 
         // Invalid base64 -> error
-        assert!(CosignKey::from_base64("test-id", "not base64 !!!").is_err());
+        assert!(TrustedKey::from_base64("test-id", "not base64 !!!").is_err());
 
         // Wrong length base64 -> error
         let short = base64::engine::general_purpose::STANDARD.encode([0u8; 16]);
-        assert!(CosignKey::from_base64("test-id", &short).is_err());
+        assert!(TrustedKey::from_base64("test-id", &short).is_err());
     }
 
     #[test]

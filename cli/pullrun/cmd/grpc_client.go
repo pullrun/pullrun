@@ -281,3 +281,37 @@ func (c *GRPCClient) InspectConfig(ctx context.Context, name string) (*runtimepb
 func (c *GRPCClient) RemoveConfig(ctx context.Context, name string) (*runtimepb.RemoveConfigResponse, error) {
 	return c.client.RemoveConfig(ctx, &runtimepb.RemoveConfigRequest{Name: name})
 }
+
+// AttachSignature records an ed25519 signature over the canonical payload of
+// (imageRef, manifestDigest). The runtime re-derives the payload and verifies
+// the signature against a configured trusted key before storing it.
+func (c *GRPCClient) AttachSignature(
+	ctx context.Context, imageRef, manifestDigest, keyID string, signature []byte,
+) (*runtimepb.AttachSignatureResponse, error) {
+	return c.client.AttachSignature(ctx, &runtimepb.AttachSignatureRequest{
+		ImageRef:       imageRef,
+		ManifestDigest: manifestDigest,
+		KeyId:          keyID,
+		Signature:      signature,
+	})
+}
+
+// AttachSbom stores a CycloneDX JSON SBOM for a manifest.
+func (c *GRPCClient) AttachSbom(
+	ctx context.Context, manifestDigest, cyclonedxJSON string,
+) (*runtimepb.AttachSbomResponse, error) {
+	return c.client.AttachSbom(ctx, &runtimepb.AttachSbomRequest{
+		ManifestDigest: manifestDigest,
+		CyclonedxJson:  cyclonedxJSON,
+	})
+}
+
+// GetAttestations reports the signature and SBOM recorded for an image.
+func (c *GRPCClient) GetAttestations(
+	ctx context.Context, imageRef, manifestDigest string,
+) (*runtimepb.GetAttestationsResponse, error) {
+	return c.client.GetAttestations(ctx, &runtimepb.GetAttestationsRequest{
+		ImageRef:       imageRef,
+		ManifestDigest: manifestDigest,
+	})
+}

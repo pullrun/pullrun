@@ -19,7 +19,7 @@
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![Rust](https://img.shields.io/badge/Rust-1.78+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org)
-[![Tests](https://img.shields.io/badge/tests-250%20passing-brightgreen?logo=checkmarx)](#testing)
+[![Tests](https://img.shields.io/badge/tests-255%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
@@ -48,7 +48,7 @@ Pullrun runs the same OCI image as a container or a VM. It stores layers in a co
 - **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
 - **~14 MB CLI + ~6 MB runtime daemon** (stripped) — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
 
-**Also included:** Kubernetes CRI shim (beta), Docker Compose support, MCP server for AI agents, policy engine (Cosign, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
+**Also included:** Kubernetes CRI shim (beta), Docker Compose support, MCP server for AI agents, policy engine (ed25519 image signatures, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
 
 ```bash
 # Apple Silicon VM (macOS default) — 3 s
@@ -267,7 +267,7 @@ Native [Model Context Protocol](https://modelcontextprotocol.io) server exposing
 
 ### 🔐 Policy Engine
 Gate workloads before they run — built-in support for:
-- **Cosign** signature verification (Ed25519 key pairs, key ID matching)
+- **ed25519 image signatures** — manifests signed over a canonical payload, key-ID matched against trusted keys (not Sigstore: no transparency log, no keyless signing)
 - **SBOM** evaluation (CVSS scoring, ban by license)
 - **Seccomp** profiles (`default` allowlist of ~50 syscalls, `unconfined`, or custom JSON)
 - **Read-only rootfs** — prevents runtime tampering (write only to `--volume` mounts)
@@ -275,6 +275,19 @@ Gate workloads before they run — built-in support for:
 - Policy is declarative: `required_signature: true`, `max_cvss_score: 7.0`, `deny_licenses: ["GPL-3.0"]`
 
 Compose all four: `--require-signature --readonly-rootfs --no-new-privileges --seccomp-profile default`.
+
+Produce the attestations the gate checks for:
+
+```bash
+pullrun keygen -o signing-key.json            # prints the "<id>:<base64>" trusted key
+pullrun sign alpine:3.18 --manifest <digest> --key signing-key.json
+pullrun sbom attach --manifest <digest> --file cyclonedx.json
+pullrun attest alpine:3.18 --manifest <digest>
+```
+
+The runtime verifies the signature against the key you pass as
+`--trusted-key <id>:<base64>` before storing it, so a signature can only be
+recorded by a key you already trust.
 
 ### 🌐 P2P Image Distribution
 Nodes share image blocks peer-to-peer via gRPC + Bloom filters. One node pulls from the registry, the rest delta-sync from each other. Features: mDNS/discovery for zero-config LAN peer finding, Bloom filter cache to avoid redundant transfers, gossip protocol for peer state, delta computation, registrar service for peer tracking.
@@ -424,7 +437,7 @@ runtime/          # Rust workspace — core data plane
   pullrun-dns/     # In-process DNS server for workload resolution
   pullrun-vsock/   # Vsock transport layer for VM guest-host communication
   pullrun-sync/    # P2P block sync (Bloom, mDNS, gossip)
-  pullrun-policy/  # Cosign, SBOM, seccomp gates
+  pullrun-policy/  # image signatures, SBOM, seccomp gates
   pullrun-runtime/ # gRPC daemon
 cli/pullrun/      # Go CLI (cobra) — 30+ commands
 cri/pullrun-cri/  # Kubernetes CRI shim
@@ -439,16 +452,16 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 
 ## 🧪 Testing
 
-> **250 tests, 0 failures** — every commit is gated by the full suite
+> **255 tests, 0 failures** — every commit is gated by the full suite
 > (`cargo fmt --check`, `cargo test`, `go test ./...`, `golangci-lint`).
 
 | Suite | Stack | What it covers | Tests |
 |-------|-------|----------------|------:|
 | `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 31 |
-| `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 41 |
+| `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 43 |
 | `pullrun-vm` | 🦀 Rust | network, ext4, OCI kernels, Apple Virt + Firecracker* | 23 |
 | `pullrun-net` | 🦀 Rust | IPAM, firewall, proxy, DNS, loopback | 18 |
-| `pullrun-policy` | 🦀 Rust | cosign, SBOM, gates | 17 |
+| `pullrun-policy` | 🦀 Rust | signatures, SBOM, gates | 17 |
 | `pullrun-oci` | 🦀 Rust | dockerfile parser, puller, converter, layouts | 18 |
 | `pullrun-gc` | 🦀 Rust | DAG garbage collection | 17 |
 | `pullrun-sync` | 🦀 Rust | P2P block sync, bloom, delta | 13 |
@@ -457,9 +470,9 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 | `pullrun-init` | 🦀 Rust | guest agent, initramfs | 2 |
 | `pullrun-cri` | 🐹 Go | CRI shim lifecycle, filestore | 20 |
 | `pullrun-compose` | 🐹 Go | compose parsing, `up`/`down` flows | 15 |
-| `pullrun` CLI | 🐹 Go | workload run, commands | 9 |
+| `pullrun` CLI | 🐹 Go | workload run, commands, attestations | 12 |
 | `control-plane` | 🐹 Go | controller store | 9 |
-| **Total** | | | **250** |
+| **Total** | | | **255** |
 
 * Counts measured on macOS; a few tests are platform-gated, so the per-suite
   numbers differ slightly on Linux. 2 Firecracker hardware tests are
@@ -467,7 +480,7 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 `cargo test -p pullrun-vm --test firecracker_boot -- --include-ignored --nocapture`
 
 ```bash
-cargo test                                   # Rust workspace: 197 tests
+cargo test                                   # Rust workspace: 199 tests
 go test ./...                                # Go modules (cri, cli, compose, control-plane): 53 tests
 cargo fmt --all --check && golangci-lint run ./...   # CI gates
 ```
@@ -485,7 +498,7 @@ teardown) is validated against a live `crictl` sandbox in a VM — see
 | [docs/PULLRUN_GUIDE.md](docs/PULLRUN_GUIDE.md) | Full user guide for all platforms |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | DAG store design, executor trait, network model |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Deploying, monitoring, troubleshooting |
-| [docs/POLICY.md](docs/POLICY.md) | Policy engine (cosign, SBOM, CVSS, license) |
+| [docs/POLICY.md](docs/POLICY.md) | Policy engine (signatures, SBOM, CVSS, license) |
 | [docs/WINDOWS.md](docs/WINDOWS.md) | Windows/WSL2 setup, Firecracker, known issues |
 | [docs/ALL_MCP.md](docs/ALL_MCP.md) | MCP server reference (AI agent integration) |
 | [docs/cross-node-dag-sync.md](docs/cross-node-dag-sync.md) | P2P block sync design |

@@ -13,7 +13,7 @@ accepts everything (the runtime runs with `policy: None`).
 The motivation: it's much easier to talk about what you want to
 *allow* than what you want to *deny*. The OCI ecosystem is
 huge; a deny list is doomed to be incomplete. An allow list,
-built on cryptographic identities (cosign) and structural
+built on cryptographic identities (ed25519 image signatures) and structural
 properties (SBOM contents), is auditable.
 
 ## What gets evaluated
@@ -39,20 +39,30 @@ a remote policy server in v0.
 
 The engine reads the image's stored metadata:
 
-- **Cosign signature.** A signature is a small blob stored
-  under a deterministic digest
-  (`sha256(canonical_payload(image_ref, manifest_digest))`).
-  The signature's public key is referenced by a *trusted key*
-  configured at runtime startup. Verification is
-  `ed25519_dalek`-based.
+- **ed25519 image signature.** A signature is a small rkyv blob
+  stored under a digest derived from the image reference:
+  `sha256("pullrun.image-signature.v1\n" + image_ref + "\n")`.
+  The public key is referenced by a *trusted key* configured at
+  runtime startup (`--trusted-key <id>:<base64>`).
+  Verification uses `ed25519_dalek`.
 
-  The signature payload is a JSON document
-  (`{"image_ref": "...", "manifest_digest": "..."}`) that
-  binds the *image reference* to the *manifest digest*. This
-  is what makes the signature non-spoofable: an attacker who
-  swapped the manifest would need to forge the signature
-  against the *new* manifest digest, but the *real* image_ref
-  is still in the payload.
+  The signed payload is the fixed byte string
+
+  ```
+  pullrun-image-v1\n<image_ref>\n<manifest_digest>\n
+  ```
+
+  which binds the *image reference* to the *manifest digest*.
+  That is what makes the signature non-spoofable: an attacker
+  who swapped the manifest would need a signature over the new
+  digest, and the verifier compares the digest inside the
+  payload with the manifest it is about to run.
+
+  Note this is **not** Sigstore/Cosign: there is no Rekor
+  transparency log, no Fulcio keyless signing and no OCI
+  referrers. It is ed25519 over a Pullrun-defined payload,
+  which is why the docs and CLI call it an *ed25519 image
+  signature* rather than "cosign".
 
 - **CycloneDX SBOM.** Stored as a blob with a deterministic
   digest. The engine parses the SBOM and looks at:
@@ -77,7 +87,7 @@ pullrun-runtime daemon \
     --require-signature \
     --require-sbom \
     --max-cvss 7.0 \
-    --trusted-key cosign.pub \
+    --trusted-key <id>:<base64-public-key> \
     ...
 ```
 
@@ -91,7 +101,7 @@ let policy = Policy {
     deny_licenses: vec!["AGPL-3.0".to_string(), "SSPL-1.0".to_string()],
     ..Default::default()
 };
-let engine = PolicyEngine::new(policy).with_trusted_keys(vec![cosign_key]);
+let engine = PolicyEngine::new(policy).with_trusted_keys(vec![trusted_key]);
 ```
 
 In v0 the policy is a *single* `Policy` object applied to all
@@ -105,32 +115,65 @@ The signature check is the only one that uses
 public-key cryptography. The flow:
 
 ```
-signing side (CI / registry):
-    payload = canonical_json({image_ref, manifest_digest})
-    sig = sign(private_key, payload)
-    store.put_blob(sig_digest, sig)
-        where sig_digest = sha256(payload)  // deterministic
+signing side (CLI, holds the private seed):
+    payload  = "pullrun-image-v1\n<image_ref>\n<manifest_digest>\n"
+    sig      = ed25519_sign(private_seed, payload)
+    RPC AttachSignature(image_ref, manifest_digest, key_id, sig)
 
-verifying side (runtime):
-    payload = canonical_json({image_ref, manifest_digest})
-    expected_sig_digest = sha256(payload)
-    sig_blob = store.get_blob(expected_sig_digest)?
-    sig.verify(public_key, payload)?
+runtime (AttachSignature handler):
+    payload  = rebuild the same bytes from the request
+    reject unless sig verifies against the trusted key `key_id`
+    store.put_blob(signature_digest_for(image_ref), rkyv(SignatureBlob))
+
+runtime (verification, at pull and again at run):
+    blob = store.get_blob(signature_digest_for(image_ref))?
+    parse rkyv -> { key_id, payload, signature }
+    require payload == canonical bytes for (image_ref, manifest_digest)
+    require ed25519_verify(trusted_key(with key_id), payload, signature)
 ```
 
-The *payload* is content-addressed (its digest is the same
-regardless of who computes it), so the signature blob's
-location in the store is determined by the public input
-(image_ref + manifest_digest). This means the store can verify
-signatures without an out-of-band channel to a key-value
-service.
+Two deliberate properties:
+
+- **The runtime rebuilds the payload itself.** A client supplies
+  only signature bytes, so it cannot get the runtime to store a
+  signature over a payload the operator never authorised. The
+  CLI does send the payload it signed, but the runtime uses it
+  solely to produce a precise error when the two disagree.
+- **The blob key is derived from `image_ref` alone.** Verification
+  therefore needs only the image reference to find the
+  signature; the manifest digest is checked *inside* the
+  payload, so a stale signature for the same reference fails
+  closed rather than authenticating a different image.
+
+Because the key is derived from the image reference, sign the
+**same string** you pass to `pullrun pull` / `pullrun run`
+(`alpine:3.18` and `docker.io/library/alpine:3.18` are
+different references).
+
+### Producing attestations
+
+```bash
+pullrun keygen -o signing-key.json          # prints "<id>:<base64>"
+pullrun pull alpine:3.18
+pullrun sign alpine:3.18 --manifest <digest> --key signing-key.json
+pullrun sbom attach --manifest <digest> --file cyclonedx.json
+pullrun attest alpine:3.18 --manifest <digest>
+```
+
+The runtime must be started with the matching public key:
+
+```bash
+pullrun-runtime daemon --trusted-key <id>:<base64-public-key> --policy policy.yaml
+```
 
 ### Trusted keys
 
-Trusted keys are passed at runtime startup as
-`Vec<CosignKey>`. Each `CosignKey` is a public key (PEM-encoded
-ed25519) with a name. The engine accepts a signature verified
-by *any* of the trusted keys.
+Trusted keys are passed at runtime startup as `Vec<TrustedKey>`
+(the type predates the rename; it holds an ed25519 verifying
+key and an id string). Each key is a raw 32-byte ed25519
+public key, base64-encoded, with an id. The engine accepts a
+signature verified by *any* of the trusted keys whose id
+matches the stored blob.
 
 In v0 the keys are a flat list; v1 will support a key
 rotation policy (overlap window, retirement) and a per-key
@@ -193,7 +236,7 @@ places:
 
 ## Runtime hardening primitives
 
-Alongside the image-level policy (cosign, SBOM), the runtime
+Alongside the image-level policy (signatures, SBOM), the runtime
 enforces per-workload hardening flags that are evaluated at
 `run_workload` time:
 
@@ -248,7 +291,7 @@ pullrun-runtime daemon \
   --no-new-privileges
 ```
 
-A workload that passes cosign + SBOM checks but has
+A workload that passes the signature + SBOM checks but has
 `--readonly-rootfs` will still fail if it tries to write to
 `/usr/`. The policy engine gates *can it run?*; these flags gate
 *how it runs* — defense in depth at both layers.

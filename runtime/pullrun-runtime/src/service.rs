@@ -34,7 +34,7 @@ use pullrun_oci::{
     DagDirectory, DagPusher, DirectoryEntry, OciAuth, OciMaterializer, OciPuller,
     OciToDagConverter,
 };
-use pullrun_policy::{CosignKey, Policy, PolicyDecision, PolicyEngine};
+use pullrun_policy::{Policy, PolicyDecision, PolicyEngine, TrustedKey};
 use pullrun_store::{Digest, MmapStore, OpLock};
 use pullrun_sync::PeerBloomCache;
 use pullrun_vm::{ext4_path_for, FirecrackerConfig, FirecrackerExecutor, StagedKernel};
@@ -46,24 +46,26 @@ const LOCAL_KERNEL_CACHE_KEY: &str = "__local";
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, BuildImageRequest, BuildImageResponse, CommitImageRequest, CommitImageResponse,
-    CopyFileRequest, CopyFileResponse, CreateConfigRequest, CreateConfigResponse,
-    CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse,
-    DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest, DiffResponse,
-    Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk, ExportImageRequest,
-    GcRequest, GcResponse, GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest,
-    HasImageResponse, ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse,
-    InspectConfigRequest, InspectConfigResponse, InspectRequest, InspectResponse,
-    InspectSecretRequest, InspectSecretResponse, ListConfigsRequest, ListConfigsResponse,
-    ListImagesRequest, ListImagesResponse, ListNetworksRequest, ListNetworksResponse,
-    ListSecretsRequest, ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk,
-    NetworkInfo, NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest,
-    PruneRequest, PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest,
-    PushImageResponse, RemoveConfigRequest, RemoveConfigResponse, RemoveImageRequest,
-    RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest,
-    RemoveSecretResponse, RunComposeRequest, RunComposeResponse, RunRequest, RunResponse,
-    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
-    UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    AttachMessage, AttachSbomRequest, AttachSbomResponse, AttachSignatureRequest,
+    AttachSignatureResponse, BuildImageRequest, BuildImageResponse, CommitImageRequest,
+    CommitImageResponse, CopyFileRequest, CopyFileResponse, CreateConfigRequest,
+    CreateConfigResponse, CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest,
+    CreateSecretResponse, DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest,
+    DiffResponse, Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk,
+    ExportImageRequest, GcRequest, GcResponse, GetAttestationsRequest, GetAttestationsResponse,
+    GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest, HasImageResponse,
+    ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
+    InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
+    InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListImagesRequest,
+    ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
+    ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
+    NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
+    PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
+    RemoveConfigRequest, RemoveConfigResponse, RemoveImageRequest, RemoveImageResponse,
+    RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest, RemoveSecretResponse,
+    RunComposeRequest, RunComposeResponse, RunRequest, RunResponse, StopRequest, StopResponse,
+    StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
+    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -94,7 +96,7 @@ pub struct ServiceConfig {
     pub bundle_root: PathBuf,
     pub checkpoints_dir: PathBuf,
     pub policy: Option<Policy>,
-    pub trusted_keys: Vec<CosignKey>,
+    pub trusted_keys: Vec<TrustedKey>,
     pub vm_backend: Option<VmBackendConfig>,
     /// Registries to reach over plain HTTP. Useful for
     /// local dev with `registry:2` containers or
@@ -134,12 +136,12 @@ impl ServiceConfig {
         self
     }
 
-    pub fn add_trusted_key(mut self, key: CosignKey) -> Self {
+    pub fn add_trusted_key(mut self, key: TrustedKey) -> Self {
         self.trusted_keys.push(key);
         self
     }
 
-    pub fn trusted_keys(mut self, keys: Vec<CosignKey>) -> Self {
+    pub fn trusted_keys(mut self, keys: Vec<TrustedKey>) -> Self {
         self.trusted_keys = keys;
         self
     }
@@ -5166,6 +5168,190 @@ impl Runtime for RuntimeService {
         Ok(tonic::Response::new(RemoveConfigResponse {}))
     }
 
+    /// Record an ed25519 signature over the canonical payload of
+    /// (image_ref, manifest_digest).
+    ///
+    /// The payload is rebuilt here rather than taken from the request: a
+    /// client supplies only signature bytes, so it cannot get the runtime to
+    /// store a signature over something the operator did not authorise. Any
+    /// client-supplied `signed_payload` is compared and used solely to give a
+    /// precise error.
+    #[allow(clippy::result_large_err)]
+    async fn attach_signature(
+        &self,
+        request: tonic::Request<AttachSignatureRequest>,
+    ) -> Result<tonic::Response<AttachSignatureResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.image_ref.is_empty() {
+            return Err(tonic::Status::invalid_argument("image_ref is required"));
+        }
+        if req.key_id.is_empty() {
+            return Err(tonic::Status::invalid_argument("key_id is required"));
+        }
+        if req.signature.len() != 64 {
+            return Err(tonic::Status::invalid_argument(format!(
+                "signature must be 64 bytes (ed25519), got {}",
+                req.signature.len()
+            )));
+        }
+        let manifest = Digest::from_hex(&req.manifest_digest).map_err(|e| {
+            tonic::Status::invalid_argument(format!("invalid manifest_digest: {e}"))
+        })?;
+        if !self.store.exists(&manifest) {
+            return Err(tonic::Status::not_found(format!(
+                "manifest {req} is not in the DAG store; pull it first",
+                req = req.manifest_digest
+            )));
+        }
+
+        let engine = self.policy_engine.as_ref().ok_or_else(|| {
+            tonic::Status::failed_precondition(
+                "the runtime is not running with a policy engine; start it with a policy                  and --trusted-key so signatures can be verified before storing",
+            )
+        })?;
+        let keys = engine.trusted_keys();
+        if keys.is_empty() {
+            return Err(tonic::Status::failed_precondition(
+                "no trusted keys configured; pass --trusted-key to the runtime",
+            ));
+        }
+        let key = keys.iter().find(|k| k.id == req.key_id).ok_or_else(|| {
+            tonic::Status::not_found(format!(
+                "no trusted key with id {:?}; configured ids: {:?}",
+                req.key_id,
+                keys.iter().map(|k| k.id.as_str()).collect::<Vec<_>>()
+            ))
+        })?;
+
+        // Canonical payload, derived server-side.
+        let payload = pullrun_policy::canonical_payload(&req.image_ref, &manifest.as_hex());
+        if !req.signed_payload.is_empty() && req.signed_payload != payload {
+            return Err(tonic::Status::invalid_argument(format!(
+                "signed_payload does not match the canonical payload for this image.\n\
+                 expected: {payload:?}\nreceived: {:?}",
+                req.signed_payload
+            )));
+        }
+
+        match pullrun_policy::verify_signature(key, payload.as_bytes(), &req.signature) {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(tonic::Status::permission_denied(
+                    "signature does not verify against the trusted key for this image",
+                ))
+            }
+            Err(e) => {
+                return Err(tonic::Status::invalid_argument(format!(
+                    "signature is malformed: {e}"
+                )))
+            }
+        }
+
+        let blob = pullrun_policy::SignatureBlob {
+            key_id: req.key_id.clone(),
+            payload,
+            signature: req.signature.clone(),
+        };
+        let bytes = pullrun_policy::encode_signature(&blob)
+            .map_err(|e| tonic::Status::internal(format!("encode signature: {e}")))?;
+
+        // Key the blob the same way the verifier looks it up.
+        let sig_digest = pullrun_policy::signature_digest_for(&req.image_ref);
+        let store = self.store.clone();
+        tokio::task::spawn_blocking(move || store.put_blob_blocking(&sig_digest, &bytes))
+            .await
+            .map_err(|e| tonic::Status::internal(format!("store task join: {e}")))?
+            .map_err(|e| tonic::Status::internal(format!("store signature: {e}")))?;
+
+        info!(image_ref = %req.image_ref, key_id = %req.key_id, "recorded image signature");
+        Ok(tonic::Response::new(AttachSignatureResponse {
+            signature_digest: sig_digest.as_hex(),
+            verified: true,
+        }))
+    }
+
+    /// Record a CycloneDX 1.5 JSON SBOM for an image manifest.
+    #[allow(clippy::result_large_err)]
+    async fn attach_sbom(
+        &self,
+        request: tonic::Request<AttachSbomRequest>,
+    ) -> Result<tonic::Response<AttachSbomResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.cyclonedx_json.trim().is_empty() {
+            return Err(tonic::Status::invalid_argument(
+                "cyclonedx_json is required",
+            ));
+        }
+        let manifest = Digest::from_hex(&req.manifest_digest).map_err(|e| {
+            tonic::Status::invalid_argument(format!("invalid manifest_digest: {e}"))
+        })?;
+        if !self.store.exists(&manifest) {
+            return Err(tonic::Status::not_found(format!(
+                "manifest {} is not in the DAG store; pull it first",
+                req.manifest_digest
+            )));
+        }
+
+        let blob = pullrun_policy::from_cyclonedx_json(&req.cyclonedx_json).map_err(|e| {
+            tonic::Status::invalid_argument(format!("CycloneDX JSON could not be parsed: {e}"))
+        })?;
+        let components = blob.components.len() as u64;
+        let vulnerabilities = blob.vulnerabilities.len() as u64;
+        let bytes = pullrun_policy::encode_sbom(&blob)
+            .map_err(|e| tonic::Status::internal(format!("encode sbom: {e}")))?;
+
+        let sbom_digest = pullrun_policy::sbom_digest_for(&manifest.as_hex());
+        let store = self.store.clone();
+        tokio::task::spawn_blocking(move || store.put_blob_blocking(&sbom_digest, &bytes))
+            .await
+            .map_err(|e| tonic::Status::internal(format!("store task join: {e}")))?
+            .map_err(|e| tonic::Status::internal(format!("store sbom: {e}")))?;
+
+        info!(manifest = %manifest, components, vulnerabilities, "recorded image SBOM");
+        Ok(tonic::Response::new(AttachSbomResponse {
+            sbom_digest: sbom_digest.as_hex(),
+            components,
+            vulnerabilities,
+        }))
+    }
+
+    /// Report which attestations are recorded for an image.
+    #[allow(clippy::result_large_err)]
+    async fn get_attestations(
+        &self,
+        request: tonic::Request<GetAttestationsRequest>,
+    ) -> Result<tonic::Response<GetAttestationsResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let manifest = Digest::from_hex(&req.manifest_digest).map_err(|e| {
+            tonic::Status::invalid_argument(format!("invalid manifest_digest: {e}"))
+        })?;
+
+        let mut out = GetAttestationsResponse::default();
+
+        if !req.image_ref.is_empty() {
+            if let Ok(Some(sig)) = pullrun_policy::read_signature(&self.store, &req.image_ref) {
+                out.has_signature = true;
+                out.key_id = sig.key_id;
+            }
+        }
+
+        match pullrun_policy::evaluate_sbom(&self.store, &manifest.as_hex()) {
+            Ok(pullrun_policy::SbomReport::Found(data)) => {
+                out.has_sbom = true;
+                out.components = data.components.len() as u64;
+                out.vulnerabilities = data.vulnerabilities.len() as u64;
+                out.max_cvss = data.max_cvss().unwrap_or(0.0);
+                out.licenses = data.licenses;
+            }
+            Ok(pullrun_policy::SbomReport::Missing) => {}
+            Err(e) => {
+                return Err(tonic::Status::internal(format!("read sbom: {e}")));
+            }
+        }
+
+        Ok(tonic::Response::new(out))
+    }
+
     async fn prune(
         &self,
         _request: tonic::Request<PruneRequest>,
@@ -6705,6 +6891,189 @@ mod tests {
     ///
     /// The test runs the real RPC against a real store and rootfs under a
     /// timeout: a regression fails fast instead of hanging the suite.
+    /// The policy gate must be satisfiable through the public surface.
+    ///
+    /// Before the attestation RPCs existed there was no way to put a
+    /// signature or an SBOM into the store, so `--require-signature` and
+    /// `--require-sbom` could only ever deny: the gate was unpassable.
+    /// This drives the real RPCs and then asks the policy engine, which
+    /// also proves the RPC and the verifier agree on where a signature
+    /// lives (a mismatch would store it somewhere the verifier never reads).
+    #[tokio::test]
+    async fn attestations_satisfy_a_strict_policy() {
+        use ed25519_dalek::Signer;
+
+        let dir = fresh_dir("attest-satisfy");
+        let sk = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let key_id = "release-key-1".to_string();
+        let key = pullrun_policy::TrustedKey {
+            id: key_id.clone(),
+            verifying_key: sk.verifying_key(),
+        };
+
+        let policy = pullrun_policy::Policy {
+            required_signature: true,
+            require_sbom: true,
+            ..Default::default()
+        };
+        let mut cfg = ServiceConfig::new(dir.clone());
+        cfg.policy = Some(policy.clone());
+        cfg.trusted_keys = vec![key];
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        // An image in the store to attest.
+        let src = dir.join("img");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("app"), b"payload").unwrap();
+        let built =
+            pullrun_oci::build_dag_from_directory_with_platform(&svc.store, &src, "arm64", "linux")
+                .await
+                .expect("build image");
+        let manifest_hex = built.manifest_digest.as_hex();
+        let image_ref = "test/img:latest";
+
+        let engine = svc.policy_engine.clone().expect("policy engine");
+        let before = engine
+            .evaluate_for_image(&policy, &svc.store, image_ref, &manifest_hex)
+            .expect("evaluate");
+        assert!(
+            matches!(before, pullrun_policy::PolicyDecision::Deny(_)),
+            "unsigned/unsbom'd image must be denied, got {before:?}"
+        );
+
+        // 1. Attach a signature over the canonical payload.
+        let payload = pullrun_policy::canonical_payload(image_ref, &manifest_hex);
+        let signature = sk.sign(payload.as_bytes());
+        let sig_resp = svc
+            .attach_signature(tonic::Request::new(AttachSignatureRequest {
+                image_ref: image_ref.to_string(),
+                manifest_digest: manifest_hex.clone(),
+                key_id: key_id.clone(),
+                signature: signature.to_bytes().to_vec(),
+                signed_payload: String::new(),
+            }))
+            .await
+            .expect("attach_signature")
+            .into_inner();
+        assert!(sig_resp.verified, "signature was not verified");
+        assert!(!sig_resp.signature_digest.is_empty());
+
+        // 2. Attach a CycloneDX SBOM.
+        let cdx = r#"{
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "components": [
+                {"name": "musl", "version": "1.2.5", "licenses": [{"license": {"id": "MIT"}}]},
+                {"name": "openssl", "version": "3.0.0", "licenses": [{"license": {"id": "Apache-2.0"}}]}
+            ],
+            "vulnerabilities": [
+                {"id": "CVE-2026-0001", "ratings": [{"score": 5.0}]}
+            ]
+        }"#;
+        let sbom_resp = svc
+            .attach_sbom(tonic::Request::new(AttachSbomRequest {
+                manifest_digest: manifest_hex.clone(),
+                cyclonedx_json: cdx.to_string(),
+            }))
+            .await
+            .expect("attach_sbom")
+            .into_inner();
+        assert_eq!(sbom_resp.components, 2);
+        assert_eq!(sbom_resp.vulnerabilities, 1);
+
+        // 3. The gate is now satisfiable.
+        let after = engine
+            .evaluate_for_image(&policy, &svc.store, image_ref, &manifest_hex)
+            .expect("evaluate");
+        assert!(
+            matches!(after, pullrun_policy::PolicyDecision::Allow),
+            "policy must allow once signed and SBOM-backed, got {after:?}"
+        );
+
+        // 4. The reporting RPC agrees.
+        let att = svc
+            .get_attestations(tonic::Request::new(GetAttestationsRequest {
+                image_ref: image_ref.to_string(),
+                manifest_digest: manifest_hex.clone(),
+            }))
+            .await
+            .expect("get_attestations")
+            .into_inner();
+        assert!(att.has_signature);
+        assert_eq!(att.key_id, key_id);
+        assert!(att.has_sbom);
+        assert_eq!(att.components, 2);
+        assert_eq!(att.vulnerabilities, 1);
+        assert!(att.licenses.iter().any(|l| l == "MIT"));
+    }
+
+    /// A signature must not be storable for a key the operator never trusted,
+    /// and a bogus signature must be rejected outright.
+    #[tokio::test]
+    async fn attach_signature_rejects_untrusted_or_invalid() {
+        let dir = fresh_dir("attest-reject");
+        let trusted = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let key = pullrun_policy::TrustedKey {
+            id: "trusted".to_string(),
+            verifying_key: trusted.verifying_key(),
+        };
+        let mut cfg = ServiceConfig::new(dir.clone());
+        cfg.policy = Some(pullrun_policy::Policy {
+            required_signature: true,
+            ..Default::default()
+        });
+        cfg.trusted_keys = vec![key];
+        let svc = RuntimeCommand::new(cfg).service().await;
+
+        let src = dir.join("img");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("app"), b"x").unwrap();
+        let built =
+            pullrun_oci::build_dag_from_directory_with_platform(&svc.store, &src, "arm64", "linux")
+                .await
+                .expect("build image");
+        let manifest_hex = built.manifest_digest.as_hex();
+
+        // Unknown key id.
+        let err = svc
+            .attach_signature(tonic::Request::new(AttachSignatureRequest {
+                image_ref: "test/img:latest".to_string(),
+                manifest_digest: manifest_hex.clone(),
+                key_id: "not-trusted".to_string(),
+                signature: vec![0u8; 64],
+                signed_payload: String::new(),
+            }))
+            .await
+            .expect_err("untrusted key must be rejected");
+        assert_eq!(err.code(), tonic::Code::NotFound);
+
+        // Right key id, garbage signature.
+        let err = svc
+            .attach_signature(tonic::Request::new(AttachSignatureRequest {
+                image_ref: "test/img:latest".to_string(),
+                manifest_digest: manifest_hex.clone(),
+                key_id: "trusted".to_string(),
+                signature: vec![7u8; 64],
+                signed_payload: String::new(),
+            }))
+            .await
+            .expect_err("invalid signature must be rejected");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+
+        // A client-supplied payload that disagrees is reported, not trusted.
+        let err = svc
+            .attach_signature(tonic::Request::new(AttachSignatureRequest {
+                image_ref: "test/img:latest".to_string(),
+                manifest_digest: manifest_hex,
+                key_id: "trusted".to_string(),
+                signature: vec![0u8; 64],
+                signed_payload: "pullrun-image-v1\nother\nref\n".to_string(),
+            }))
+            .await
+            .expect_err("mismatched payload must be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
     #[tokio::test]
     async fn commit_image_with_tag_returns_instead_of_deadlocking() {
         let dir = fresh_dir("commit-tag-deadlock");

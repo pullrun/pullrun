@@ -16,7 +16,7 @@ use proto::runtime_server::RuntimeServer;
 use pullrun_exec::types::{Backend, NetworkMode, WorkloadSpec};
 use pullrun_exec::{Executor, LinuxContainerExecutor};
 use pullrun_oci::{OciPuller, OciToDagConverter};
-use pullrun_policy::{CosignKey, Policy};
+use pullrun_policy::{Policy, TrustedKey};
 use pullrun_runtime::binfmt;
 use pullrun_runtime::metrics;
 use pullrun_runtime::proto;
@@ -62,7 +62,7 @@ enum Commands {
         metrics_addr: Option<SocketAddr>,
 
         // Policy flags
-        #[arg(long, help = "Require cosign signatures on all images")]
+        #[arg(long, help = "Require ed25519 image signatures on all images")]
         require_signature: bool,
         #[arg(long, help = "Require an SBOM for all images")]
         require_sbom: bool,
@@ -76,7 +76,7 @@ enum Commands {
         deny_license: Vec<String>,
         #[arg(
             long,
-            help = "Trusted cosign public key, base64 (id:base64, repeatable)"
+            help = "Trusted ed25519 image-signing public key (id:base64, repeatable)"
         )]
         trusted_key: Vec<String>,
 
@@ -243,7 +243,7 @@ fn build_policy(
     })
 }
 
-fn parse_trusted_keys(values: &[String]) -> Vec<CosignKey> {
+fn parse_trusted_keys(values: &[String]) -> Vec<TrustedKey> {
     let mut out = Vec::new();
     for v in values {
         let (id, b64) = match v.split_once(':') {
@@ -253,7 +253,7 @@ fn parse_trusted_keys(values: &[String]) -> Vec<CosignKey> {
                 continue;
             }
         };
-        match CosignKey::from_base64(id, b64) {
+        match TrustedKey::from_base64(id, b64) {
             Ok(k) => out.push(k),
             Err(e) => warn!("failed to parse --trusted-key {id}: {e}"),
         }

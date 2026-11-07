@@ -6118,6 +6118,408 @@ func (x *GcResponse) GetError() string {
 	return ""
 }
 
+type AttachSignatureRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Image reference the signature is over (e.g. "ghcr.io/org/app:v1").
+	ImageRef string `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
+	// Manifest digest (hex, optional "sha256:" prefix) of the image.
+	ManifestDigest string `protobuf:"bytes,2,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	// ID of the trusted key that produced the signature.
+	KeyId string `protobuf:"bytes,3,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	// ed25519 signature (64 bytes) over the canonical payload
+	//
+	//	"pullrun-image-v1\n<image_ref>\n<manifest_digest>\n"
+	//
+	// The runtime rebuilds this payload itself; a client-supplied
+	// `signed_payload` is used only to explain a mismatch.
+	Signature []byte `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	// Optional: the payload the client actually signed. Never trusted;
+	// only used to produce a precise error when it differs.
+	SignedPayload string `protobuf:"bytes,5,opt,name=signed_payload,json=signedPayload,proto3" json:"signed_payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttachSignatureRequest) Reset() {
+	*x = AttachSignatureRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachSignatureRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachSignatureRequest) ProtoMessage() {}
+
+func (x *AttachSignatureRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachSignatureRequest.ProtoReflect.Descriptor instead.
+func (*AttachSignatureRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *AttachSignatureRequest) GetImageRef() string {
+	if x != nil {
+		return x.ImageRef
+	}
+	return ""
+}
+
+func (x *AttachSignatureRequest) GetManifestDigest() string {
+	if x != nil {
+		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *AttachSignatureRequest) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *AttachSignatureRequest) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *AttachSignatureRequest) GetSignedPayload() string {
+	if x != nil {
+		return x.SignedPayload
+	}
+	return ""
+}
+
+type AttachSignatureResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Digest of the stored signature blob.
+	SignatureDigest string `protobuf:"bytes,1,opt,name=signature_digest,json=signatureDigest,proto3" json:"signature_digest,omitempty"`
+	// True when verification succeeded against a trusted key.
+	Verified      bool `protobuf:"varint,2,opt,name=verified,proto3" json:"verified,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttachSignatureResponse) Reset() {
+	*x = AttachSignatureResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachSignatureResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachSignatureResponse) ProtoMessage() {}
+
+func (x *AttachSignatureResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachSignatureResponse.ProtoReflect.Descriptor instead.
+func (*AttachSignatureResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *AttachSignatureResponse) GetSignatureDigest() string {
+	if x != nil {
+		return x.SignatureDigest
+	}
+	return ""
+}
+
+func (x *AttachSignatureResponse) GetVerified() bool {
+	if x != nil {
+		return x.Verified
+	}
+	return false
+}
+
+type AttachSbomRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Manifest digest (hex, optional "sha256:" prefix) of the image.
+	ManifestDigest string `protobuf:"bytes,1,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	// CycloneDX 1.5 JSON document.
+	CyclonedxJson string `protobuf:"bytes,2,opt,name=cyclonedx_json,json=cyclonedxJson,proto3" json:"cyclonedx_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttachSbomRequest) Reset() {
+	*x = AttachSbomRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachSbomRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachSbomRequest) ProtoMessage() {}
+
+func (x *AttachSbomRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachSbomRequest.ProtoReflect.Descriptor instead.
+func (*AttachSbomRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *AttachSbomRequest) GetManifestDigest() string {
+	if x != nil {
+		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *AttachSbomRequest) GetCyclonedxJson() string {
+	if x != nil {
+		return x.CyclonedxJson
+	}
+	return ""
+}
+
+type AttachSbomResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Digest of the stored SBOM blob.
+	SbomDigest      string `protobuf:"bytes,1,opt,name=sbom_digest,json=sbomDigest,proto3" json:"sbom_digest,omitempty"`
+	Components      uint64 `protobuf:"varint,2,opt,name=components,proto3" json:"components,omitempty"`
+	Vulnerabilities uint64 `protobuf:"varint,3,opt,name=vulnerabilities,proto3" json:"vulnerabilities,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AttachSbomResponse) Reset() {
+	*x = AttachSbomResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachSbomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachSbomResponse) ProtoMessage() {}
+
+func (x *AttachSbomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachSbomResponse.ProtoReflect.Descriptor instead.
+func (*AttachSbomResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *AttachSbomResponse) GetSbomDigest() string {
+	if x != nil {
+		return x.SbomDigest
+	}
+	return ""
+}
+
+func (x *AttachSbomResponse) GetComponents() uint64 {
+	if x != nil {
+		return x.Components
+	}
+	return 0
+}
+
+func (x *AttachSbomResponse) GetVulnerabilities() uint64 {
+	if x != nil {
+		return x.Vulnerabilities
+	}
+	return 0
+}
+
+type GetAttestationsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ImageRef       string                 `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
+	ManifestDigest string                 `protobuf:"bytes,2,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetAttestationsRequest) Reset() {
+	*x = GetAttestationsRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAttestationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAttestationsRequest) ProtoMessage() {}
+
+func (x *GetAttestationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAttestationsRequest.ProtoReflect.Descriptor instead.
+func (*GetAttestationsRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *GetAttestationsRequest) GetImageRef() string {
+	if x != nil {
+		return x.ImageRef
+	}
+	return ""
+}
+
+func (x *GetAttestationsRequest) GetManifestDigest() string {
+	if x != nil {
+		return x.ManifestDigest
+	}
+	return ""
+}
+
+type GetAttestationsResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	HasSignature    bool                   `protobuf:"varint,1,opt,name=has_signature,json=hasSignature,proto3" json:"has_signature,omitempty"`
+	KeyId           string                 `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	HasSbom         bool                   `protobuf:"varint,3,opt,name=has_sbom,json=hasSbom,proto3" json:"has_sbom,omitempty"`
+	Components      uint64                 `protobuf:"varint,4,opt,name=components,proto3" json:"components,omitempty"`
+	Vulnerabilities uint64                 `protobuf:"varint,5,opt,name=vulnerabilities,proto3" json:"vulnerabilities,omitempty"`
+	// Highest CVSS score present in the SBOM, 0 when none.
+	MaxCvss float32 `protobuf:"fixed32,6,opt,name=max_cvss,json=maxCvss,proto3" json:"max_cvss,omitempty"`
+	// Any licenses collected from the SBOM components.
+	Licenses      []string `protobuf:"bytes,7,rep,name=licenses,proto3" json:"licenses,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAttestationsResponse) Reset() {
+	*x = GetAttestationsResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAttestationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAttestationsResponse) ProtoMessage() {}
+
+func (x *GetAttestationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAttestationsResponse.ProtoReflect.Descriptor instead.
+func (*GetAttestationsResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *GetAttestationsResponse) GetHasSignature() bool {
+	if x != nil {
+		return x.HasSignature
+	}
+	return false
+}
+
+func (x *GetAttestationsResponse) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *GetAttestationsResponse) GetHasSbom() bool {
+	if x != nil {
+		return x.HasSbom
+	}
+	return false
+}
+
+func (x *GetAttestationsResponse) GetComponents() uint64 {
+	if x != nil {
+		return x.Components
+	}
+	return 0
+}
+
+func (x *GetAttestationsResponse) GetVulnerabilities() uint64 {
+	if x != nil {
+		return x.Vulnerabilities
+	}
+	return 0
+}
+
+func (x *GetAttestationsResponse) GetMaxCvss() float32 {
+	if x != nil {
+		return x.MaxCvss
+	}
+	return 0
+}
+
+func (x *GetAttestationsResponse) GetLicenses() []string {
+	if x != nil {
+		return x.Licenses
+	}
+	return nil
+}
+
 var File_pullrun_runtime_proto protoreflect.FileDescriptor
 
 const file_pullrun_runtime_proto_rawDesc = "" +
@@ -6599,14 +7001,46 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"bytesFreed\x12\x17\n" +
 	"\adry_run\x18\a \x01(\bR\x06dryRun\x12+\n" +
 	"\x11collected_digests\x18\b \x03(\tR\x10collectedDigests\x12\x14\n" +
-	"\x05error\x18\t \x01(\tR\x05error*\x80\x01\n" +
+	"\x05error\x18\t \x01(\tR\x05error\"\xba\x01\n" +
+	"\x16AttachSignatureRequest\x12\x1b\n" +
+	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12'\n" +
+	"\x0fmanifest_digest\x18\x02 \x01(\tR\x0emanifestDigest\x12\x15\n" +
+	"\x06key_id\x18\x03 \x01(\tR\x05keyId\x12\x1c\n" +
+	"\tsignature\x18\x04 \x01(\fR\tsignature\x12%\n" +
+	"\x0esigned_payload\x18\x05 \x01(\tR\rsignedPayload\"`\n" +
+	"\x17AttachSignatureResponse\x12)\n" +
+	"\x10signature_digest\x18\x01 \x01(\tR\x0fsignatureDigest\x12\x1a\n" +
+	"\bverified\x18\x02 \x01(\bR\bverified\"c\n" +
+	"\x11AttachSbomRequest\x12'\n" +
+	"\x0fmanifest_digest\x18\x01 \x01(\tR\x0emanifestDigest\x12%\n" +
+	"\x0ecyclonedx_json\x18\x02 \x01(\tR\rcyclonedxJson\"\x7f\n" +
+	"\x12AttachSbomResponse\x12\x1f\n" +
+	"\vsbom_digest\x18\x01 \x01(\tR\n" +
+	"sbomDigest\x12\x1e\n" +
+	"\n" +
+	"components\x18\x02 \x01(\x04R\n" +
+	"components\x12(\n" +
+	"\x0fvulnerabilities\x18\x03 \x01(\x04R\x0fvulnerabilities\"^\n" +
+	"\x16GetAttestationsRequest\x12\x1b\n" +
+	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12'\n" +
+	"\x0fmanifest_digest\x18\x02 \x01(\tR\x0emanifestDigest\"\xf1\x01\n" +
+	"\x17GetAttestationsResponse\x12#\n" +
+	"\rhas_signature\x18\x01 \x01(\bR\fhasSignature\x12\x15\n" +
+	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x19\n" +
+	"\bhas_sbom\x18\x03 \x01(\bR\ahasSbom\x12\x1e\n" +
+	"\n" +
+	"components\x18\x04 \x01(\x04R\n" +
+	"components\x12(\n" +
+	"\x0fvulnerabilities\x18\x05 \x01(\x04R\x0fvulnerabilities\x12\x19\n" +
+	"\bmax_cvss\x18\x06 \x01(\x02R\amaxCvss\x12\x1a\n" +
+	"\blicenses\x18\a \x03(\tR\blicenses*\x80\x01\n" +
 	"\rRestartPolicy\x12\x17\n" +
 	"\x13RESTART_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"RESTART_NO\x10\x01\x12\x16\n" +
 	"\x12RESTART_ON_FAILURE\x10\x02\x12\x12\n" +
 	"\x0eRESTART_ALWAYS\x10\x03\x12\x1a\n" +
-	"\x16RESTART_UNLESS_STOPPED\x10\x042\xc0\x1a\n" +
+	"\x16RESTART_UNLESS_STOPPED\x10\x042\xe3\x1c\n" +
 	"\aRuntime\x12R\n" +
 	"\tPullImage\x12!.pullrun.runtime.PullImageRequest\x1a\".pullrun.runtime.PullImageResponse\x12H\n" +
 	"\vRunWorkload\x12\x1b.pullrun.runtime.RunRequest\x1a\x1c.pullrun.runtime.RunResponse\x12K\n" +
@@ -6650,7 +7084,11 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\fCreateConfig\x12$.pullrun.runtime.CreateConfigRequest\x1a%.pullrun.runtime.CreateConfigResponse\x12X\n" +
 	"\vListConfigs\x12#.pullrun.runtime.ListConfigsRequest\x1a$.pullrun.runtime.ListConfigsResponse\x12^\n" +
 	"\rInspectConfig\x12%.pullrun.runtime.InspectConfigRequest\x1a&.pullrun.runtime.InspectConfigResponse\x12[\n" +
-	"\fRemoveConfig\x12$.pullrun.runtime.RemoveConfigRequest\x1a%.pullrun.runtime.RemoveConfigResponseB*Z(pullrun/protoapi/pullrun/runtime;runtimeb\x06proto3"
+	"\fRemoveConfig\x12$.pullrun.runtime.RemoveConfigRequest\x1a%.pullrun.runtime.RemoveConfigResponse\x12d\n" +
+	"\x0fAttachSignature\x12'.pullrun.runtime.AttachSignatureRequest\x1a(.pullrun.runtime.AttachSignatureResponse\x12U\n" +
+	"\n" +
+	"AttachSbom\x12\".pullrun.runtime.AttachSbomRequest\x1a#.pullrun.runtime.AttachSbomResponse\x12d\n" +
+	"\x0fGetAttestations\x12'.pullrun.runtime.GetAttestationsRequest\x1a(.pullrun.runtime.GetAttestationsResponseB*Z(pullrun/protoapi/pullrun/runtime;runtimeb\x06proto3"
 
 var (
 	file_pullrun_runtime_proto_rawDescOnce sync.Once
@@ -6665,7 +7103,7 @@ func file_pullrun_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_pullrun_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 106)
+var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 112)
 var file_pullrun_runtime_proto_goTypes = []any{
 	(RestartPolicy)(0),              // 0: pullrun.runtime.RestartPolicy
 	(*Mount)(nil),                   // 1: pullrun.runtime.Mount
@@ -6766,24 +7204,30 @@ var file_pullrun_runtime_proto_goTypes = []any{
 	(*RemoveConfigResponse)(nil),    // 96: pullrun.runtime.RemoveConfigResponse
 	(*GcRequest)(nil),               // 97: pullrun.runtime.GcRequest
 	(*GcResponse)(nil),              // 98: pullrun.runtime.GcResponse
-	nil,                             // 99: pullrun.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 100: pullrun.runtime.ComposeService.LabelsEntry
-	nil,                             // 101: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 102: pullrun.runtime.RunRequest.EnvEntry
-	nil,                             // 103: pullrun.runtime.Event.MetadataEntry
-	nil,                             // 104: pullrun.runtime.AttachOpen.EnvEntry
-	nil,                             // 105: pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 106: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	(*AttachSignatureRequest)(nil),  // 99: pullrun.runtime.AttachSignatureRequest
+	(*AttachSignatureResponse)(nil), // 100: pullrun.runtime.AttachSignatureResponse
+	(*AttachSbomRequest)(nil),       // 101: pullrun.runtime.AttachSbomRequest
+	(*AttachSbomResponse)(nil),      // 102: pullrun.runtime.AttachSbomResponse
+	(*GetAttestationsRequest)(nil),  // 103: pullrun.runtime.GetAttestationsRequest
+	(*GetAttestationsResponse)(nil), // 104: pullrun.runtime.GetAttestationsResponse
+	nil,                             // 105: pullrun.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 106: pullrun.runtime.ComposeService.LabelsEntry
+	nil,                             // 107: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 108: pullrun.runtime.RunRequest.EnvEntry
+	nil,                             // 109: pullrun.runtime.Event.MetadataEntry
+	nil,                             // 110: pullrun.runtime.AttachOpen.EnvEntry
+	nil,                             // 111: pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 112: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_pullrun_runtime_proto_depIdxs = []int32{
-	99,  // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
+	105, // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
 	3,   // 1: pullrun.runtime.ComposeService.ports:type_name -> pullrun.runtime.ComposePort
-	100, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
+	106, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
 	1,   // 3: pullrun.runtime.ComposeService.mounts:type_name -> pullrun.runtime.Mount
 	44,  // 4: pullrun.runtime.ComposeService.health_check:type_name -> pullrun.runtime.HealthCheck
 	2,   // 5: pullrun.runtime.RunComposeRequest.services:type_name -> pullrun.runtime.ComposeService
-	101, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	102, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
+	107, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	108, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
 	10,  // 8: pullrun.runtime.RunRequest.network_rules:type_name -> pullrun.runtime.NetworkRule
 	1,   // 9: pullrun.runtime.RunRequest.mounts:type_name -> pullrun.runtime.Mount
 	44,  // 10: pullrun.runtime.RunRequest.health_check:type_name -> pullrun.runtime.HealthCheck
@@ -6793,7 +7237,7 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	9,   // 14: pullrun.runtime.RunRequest.dns:type_name -> pullrun.runtime.DnsConfig
 	0,   // 15: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
 	15,  // 16: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
-	103, // 17: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
+	109, // 17: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
 	25,  // 18: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
 	26,  // 19: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
 	27,  // 20: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
@@ -6802,12 +7246,12 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	30,  // 23: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
 	31,  // 24: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
 	32,  // 25: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
-	104, // 26: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
+	110, // 26: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
 	37,  // 27: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
-	105, // 28: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	111, // 28: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
 	10,  // 29: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
 	58,  // 30: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
-	106, // 31: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	112, // 31: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 	0,   // 32: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
 	69,  // 33: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
 	79,  // 34: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
@@ -6853,47 +7297,53 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	91,  // 74: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
 	93,  // 75: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
 	95,  // 76: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
-	7,   // 77: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
-	11,  // 78: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
-	13,  // 79: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
-	15,  // 80: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
-	17,  // 81: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
-	19,  // 82: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
-	21,  // 83: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
-	23,  // 84: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
-	59,  // 85: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
-	24,  // 86: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
-	34,  // 87: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
-	36,  // 88: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
-	39,  // 89: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
-	41,  // 90: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
-	43,  // 91: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
-	46,  // 92: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
-	48,  // 93: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
-	50,  // 94: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
-	52,  // 95: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
-	54,  // 96: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
-	56,  // 97: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
-	5,   // 98: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
-	61,  // 99: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
-	63,  // 100: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
-	76,  // 101: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
-	72,  // 102: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
-	65,  // 103: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
-	67,  // 104: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
-	70,  // 105: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
-	74,  // 106: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
-	98,  // 107: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
-	81,  // 108: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
-	83,  // 109: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
-	85,  // 110: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
-	87,  // 111: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
-	90,  // 112: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
-	92,  // 113: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
-	94,  // 114: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
-	96,  // 115: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
-	77,  // [77:116] is the sub-list for method output_type
-	38,  // [38:77] is the sub-list for method input_type
+	99,  // 77: pullrun.runtime.Runtime.AttachSignature:input_type -> pullrun.runtime.AttachSignatureRequest
+	101, // 78: pullrun.runtime.Runtime.AttachSbom:input_type -> pullrun.runtime.AttachSbomRequest
+	103, // 79: pullrun.runtime.Runtime.GetAttestations:input_type -> pullrun.runtime.GetAttestationsRequest
+	7,   // 80: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
+	11,  // 81: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
+	13,  // 82: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
+	15,  // 83: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
+	17,  // 84: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
+	19,  // 85: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
+	21,  // 86: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
+	23,  // 87: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
+	59,  // 88: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
+	24,  // 89: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
+	34,  // 90: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
+	36,  // 91: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
+	39,  // 92: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
+	41,  // 93: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
+	43,  // 94: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
+	46,  // 95: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
+	48,  // 96: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
+	50,  // 97: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
+	52,  // 98: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
+	54,  // 99: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
+	56,  // 100: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
+	5,   // 101: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
+	61,  // 102: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
+	63,  // 103: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
+	76,  // 104: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
+	72,  // 105: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
+	65,  // 106: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
+	67,  // 107: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
+	70,  // 108: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
+	74,  // 109: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
+	98,  // 110: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
+	81,  // 111: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
+	83,  // 112: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
+	85,  // 113: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
+	87,  // 114: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
+	90,  // 115: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
+	92,  // 116: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
+	94,  // 117: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
+	96,  // 118: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
+	100, // 119: pullrun.runtime.Runtime.AttachSignature:output_type -> pullrun.runtime.AttachSignatureResponse
+	102, // 120: pullrun.runtime.Runtime.AttachSbom:output_type -> pullrun.runtime.AttachSbomResponse
+	104, // 121: pullrun.runtime.Runtime.GetAttestations:output_type -> pullrun.runtime.GetAttestationsResponse
+	80,  // [80:122] is the sub-list for method output_type
+	38,  // [38:80] is the sub-list for method input_type
 	38,  // [38:38] is the sub-list for extension type_name
 	38,  // [38:38] is the sub-list for extension extendee
 	0,   // [0:38] is the sub-list for field type_name
@@ -6920,7 +7370,7 @@ func file_pullrun_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pullrun_runtime_proto_rawDesc), len(file_pullrun_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   106,
+			NumMessages:   112,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

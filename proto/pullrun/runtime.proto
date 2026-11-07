@@ -126,6 +126,25 @@ service Runtime {
     rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse);
     rpc InspectConfig(InspectConfigRequest) returns (InspectConfigResponse);
     rpc RemoveConfig(RemoveConfigRequest) returns (RemoveConfigResponse);
+
+    // --- Policy attestations (image signatures and SBOMs) ---
+    //
+    // These exist so a policy configured with `--require-signature` or
+    // `--require-sbom` can actually be satisfied. The runtime owns the
+    // canonical signed payload and re-derives it server-side; a client
+    // only supplies the signature bytes, so it cannot vouch for a payload
+    // it did not sign.
+
+    // Record an ed25519 signature over the canonical payload of
+    // (image_ref, manifest_digest). The signature is verified against a
+    // configured trusted key before it is stored.
+    rpc AttachSignature(AttachSignatureRequest) returns (AttachSignatureResponse);
+
+    // Record a CycloneDX 1.5 JSON SBOM for an image manifest.
+    rpc AttachSbom(AttachSbomRequest) returns (AttachSbomResponse);
+
+    // Report which attestations are currently recorded for an image.
+    rpc GetAttestations(GetAttestationsRequest) returns (GetAttestationsResponse);
 }
 
 // --- Compose messages (Phase D) ---
@@ -867,4 +886,61 @@ message GcResponse {
     bool dry_run = 7;
     repeated string collected_digests = 8;
     string error = 9;
+}
+
+// --- Policy attestations ---
+
+message AttachSignatureRequest {
+    // Image reference the signature is over (e.g. "ghcr.io/org/app:v1").
+    string image_ref = 1;
+    // Manifest digest (hex, optional "sha256:" prefix) of the image.
+    string manifest_digest = 2;
+    // ID of the trusted key that produced the signature.
+    string key_id = 3;
+    // ed25519 signature (64 bytes) over the canonical payload
+    //   "pullrun-image-v1\n<image_ref>\n<manifest_digest>\n"
+    // The runtime rebuilds this payload itself; a client-supplied
+    // `signed_payload` is used only to explain a mismatch.
+    bytes signature = 4;
+    // Optional: the payload the client actually signed. Never trusted;
+    // only used to produce a precise error when it differs.
+    string signed_payload = 5;
+}
+
+message AttachSignatureResponse {
+    // Digest of the stored signature blob.
+    string signature_digest = 1;
+    // True when verification succeeded against a trusted key.
+    bool verified = 2;
+}
+
+message AttachSbomRequest {
+    // Manifest digest (hex, optional "sha256:" prefix) of the image.
+    string manifest_digest = 1;
+    // CycloneDX 1.5 JSON document.
+    string cyclonedx_json = 2;
+}
+
+message AttachSbomResponse {
+    // Digest of the stored SBOM blob.
+    string sbom_digest = 1;
+    uint64 components = 2;
+    uint64 vulnerabilities = 3;
+}
+
+message GetAttestationsRequest {
+    string image_ref = 1;
+    string manifest_digest = 2;
+}
+
+message GetAttestationsResponse {
+    bool has_signature = 1;
+    string key_id = 2;
+    bool has_sbom = 3;
+    uint64 components = 4;
+    uint64 vulnerabilities = 5;
+    // Highest CVSS score present in the SBOM, 0 when none.
+    float max_cvss = 6;
+    // Any licenses collected from the SBOM components.
+    repeated string licenses = 7;
 }

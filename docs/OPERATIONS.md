@@ -124,7 +124,7 @@ getcap /usr/local/bin/pullrun-runtime
 | `--readonly-rootfs` | false | Declare the rootfs must be read-only |
 | `--no-new-privileges` | false | Forbid privilege escalation |
 | `--deny-license <ID>` | (repeatable) | Banned SPDX license identifiers |
-| `--trusted-key <id:base64>` | (repeatable) | Trusted cosign public key |
+| `--trusted-key <id:base64>` | (repeatable) | Trusted ed25519 image-signing public key |
 | `--insecure-registry <HOST>` | (repeatable) | Allow plain-HTTP connections to this registry |
 | `--vm-firecracker <path>` | (none) | Path to the `firecracker` binary (enables VM backend) |
 | `--vm-kernel <path>` | (none) | Path to the Linux kernel image for VMs |

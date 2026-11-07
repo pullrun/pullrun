@@ -61,6 +61,9 @@ const (
 	Runtime_ListConfigs_FullMethodName      = "/pullrun.runtime.Runtime/ListConfigs"
 	Runtime_InspectConfig_FullMethodName    = "/pullrun.runtime.Runtime/InspectConfig"
 	Runtime_RemoveConfig_FullMethodName     = "/pullrun.runtime.Runtime/RemoveConfig"
+	Runtime_AttachSignature_FullMethodName  = "/pullrun.runtime.Runtime/AttachSignature"
+	Runtime_AttachSbom_FullMethodName       = "/pullrun.runtime.Runtime/AttachSbom"
+	Runtime_GetAttestations_FullMethodName  = "/pullrun.runtime.Runtime/GetAttestations"
 )
 
 // RuntimeClient is the client API for Runtime service.
@@ -153,6 +156,14 @@ type RuntimeClient interface {
 	ListConfigs(ctx context.Context, in *ListConfigsRequest, opts ...grpc.CallOption) (*ListConfigsResponse, error)
 	InspectConfig(ctx context.Context, in *InspectConfigRequest, opts ...grpc.CallOption) (*InspectConfigResponse, error)
 	RemoveConfig(ctx context.Context, in *RemoveConfigRequest, opts ...grpc.CallOption) (*RemoveConfigResponse, error)
+	// Record an ed25519 signature over the canonical payload of
+	// (image_ref, manifest_digest). The signature is verified against a
+	// configured trusted key before it is stored.
+	AttachSignature(ctx context.Context, in *AttachSignatureRequest, opts ...grpc.CallOption) (*AttachSignatureResponse, error)
+	// Record a CycloneDX 1.5 JSON SBOM for an image manifest.
+	AttachSbom(ctx context.Context, in *AttachSbomRequest, opts ...grpc.CallOption) (*AttachSbomResponse, error)
+	// Report which attestations are currently recorded for an image.
+	GetAttestations(ctx context.Context, in *GetAttestationsRequest, opts ...grpc.CallOption) (*GetAttestationsResponse, error)
 }
 
 type runtimeClient struct {
@@ -595,6 +606,36 @@ func (c *runtimeClient) RemoveConfig(ctx context.Context, in *RemoveConfigReques
 	return out, nil
 }
 
+func (c *runtimeClient) AttachSignature(ctx context.Context, in *AttachSignatureRequest, opts ...grpc.CallOption) (*AttachSignatureResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachSignatureResponse)
+	err := c.cc.Invoke(ctx, Runtime_AttachSignature_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) AttachSbom(ctx context.Context, in *AttachSbomRequest, opts ...grpc.CallOption) (*AttachSbomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachSbomResponse)
+	err := c.cc.Invoke(ctx, Runtime_AttachSbom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) GetAttestations(ctx context.Context, in *GetAttestationsRequest, opts ...grpc.CallOption) (*GetAttestationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAttestationsResponse)
+	err := c.cc.Invoke(ctx, Runtime_GetAttestations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RuntimeServer is the server API for Runtime service.
 // All implementations must embed UnimplementedRuntimeServer
 // for forward compatibility.
@@ -685,6 +726,14 @@ type RuntimeServer interface {
 	ListConfigs(context.Context, *ListConfigsRequest) (*ListConfigsResponse, error)
 	InspectConfig(context.Context, *InspectConfigRequest) (*InspectConfigResponse, error)
 	RemoveConfig(context.Context, *RemoveConfigRequest) (*RemoveConfigResponse, error)
+	// Record an ed25519 signature over the canonical payload of
+	// (image_ref, manifest_digest). The signature is verified against a
+	// configured trusted key before it is stored.
+	AttachSignature(context.Context, *AttachSignatureRequest) (*AttachSignatureResponse, error)
+	// Record a CycloneDX 1.5 JSON SBOM for an image manifest.
+	AttachSbom(context.Context, *AttachSbomRequest) (*AttachSbomResponse, error)
+	// Report which attestations are currently recorded for an image.
+	GetAttestations(context.Context, *GetAttestationsRequest) (*GetAttestationsResponse, error)
 	mustEmbedUnimplementedRuntimeServer()
 }
 
@@ -811,6 +860,15 @@ func (UnimplementedRuntimeServer) InspectConfig(context.Context, *InspectConfigR
 }
 func (UnimplementedRuntimeServer) RemoveConfig(context.Context, *RemoveConfigRequest) (*RemoveConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveConfig not implemented")
+}
+func (UnimplementedRuntimeServer) AttachSignature(context.Context, *AttachSignatureRequest) (*AttachSignatureResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AttachSignature not implemented")
+}
+func (UnimplementedRuntimeServer) AttachSbom(context.Context, *AttachSbomRequest) (*AttachSbomResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AttachSbom not implemented")
+}
+func (UnimplementedRuntimeServer) GetAttestations(context.Context, *GetAttestationsRequest) (*GetAttestationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAttestations not implemented")
 }
 func (UnimplementedRuntimeServer) mustEmbedUnimplementedRuntimeServer() {}
 func (UnimplementedRuntimeServer) testEmbeddedByValue()                 {}
@@ -1485,6 +1543,60 @@ func _Runtime_RemoveConfig_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Runtime_AttachSignature_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachSignatureRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).AttachSignature(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_AttachSignature_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).AttachSignature(ctx, req.(*AttachSignatureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_AttachSbom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachSbomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).AttachSbom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_AttachSbom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).AttachSbom(ctx, req.(*AttachSbomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_GetAttestations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAttestationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).GetAttestations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_GetAttestations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).GetAttestations(ctx, req.(*GetAttestationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Runtime_ServiceDesc is the grpc.ServiceDesc for Runtime service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1623,6 +1735,18 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveConfig",
 			Handler:    _Runtime_RemoveConfig_Handler,
+		},
+		{
+			MethodName: "AttachSignature",
+			Handler:    _Runtime_AttachSignature_Handler,
+		},
+		{
+			MethodName: "AttachSbom",
+			Handler:    _Runtime_AttachSbom_Handler,
+		},
+		{
+			MethodName: "GetAttestations",
+			Handler:    _Runtime_GetAttestations_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

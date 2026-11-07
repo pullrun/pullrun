@@ -1,7 +1,7 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Cosign-style signature verification for OCI image DAGs.
+//! ed25519 image signature verification for OCI image DAGs.
 //!
 //! A signature is a small DAG blob containing:
 //! ```text
@@ -25,7 +25,7 @@ use sha2::{Digest as _, Sha256};
 use pullrun_store::Digest;
 
 #[derive(Debug, thiserror::Error)]
-pub enum CosignError {
+pub enum SignatureError {
     #[error("base64 decode failed: {0}")]
     Base64(#[from] base64::DecodeError),
     #[error("invalid signature length: {0}")]
@@ -46,18 +46,19 @@ pub struct SignatureBlob {
 }
 
 #[derive(Debug, Clone)]
-pub struct CosignKey {
+pub struct TrustedKey {
     pub id: String,
     pub verifying_key: VerifyingKey,
 }
 
-impl CosignKey {
-    pub fn from_base64(id: impl Into<String>, pk_b64: &str) -> Result<Self, CosignError> {
+impl TrustedKey {
+    pub fn from_base64(id: impl Into<String>, pk_b64: &str) -> Result<Self, SignatureError> {
         let bytes = B64.decode(pk_b64.trim())?;
         let bytes: [u8; 32] = bytes
             .try_into()
-            .map_err(|v: Vec<u8>| CosignError::BadLength(v.len()))?;
-        let vk = VerifyingKey::from_bytes(&bytes).map_err(|e| CosignError::Key(e.to_string()))?;
+            .map_err(|v: Vec<u8>| SignatureError::BadLength(v.len()))?;
+        let vk =
+            VerifyingKey::from_bytes(&bytes).map_err(|e| SignatureError::Key(e.to_string()))?;
         Ok(Self {
             id: id.into(),
             verifying_key: vk,
@@ -77,14 +78,14 @@ impl CosignKey {
     }
 }
 
-pub fn verify_cosign_signature(
-    key: &CosignKey,
+pub fn verify_signature(
+    key: &TrustedKey,
     payload: &[u8],
     signature_bytes: &[u8],
-) -> Result<bool, CosignError> {
+) -> Result<bool, SignatureError> {
     let sig_bytes: [u8; 64] = signature_bytes
         .try_into()
-        .map_err(|_| CosignError::BadLength(signature_bytes.len()))?;
+        .map_err(|_| SignatureError::BadLength(signature_bytes.len()))?;
     let sig = Signature::from_bytes(&sig_bytes);
     match key.verifying_key.verify(payload, &sig) {
         Ok(()) => Ok(true),
@@ -93,16 +94,67 @@ pub fn verify_cosign_signature(
             if msg.contains("signature") || msg.contains("verify") || msg.contains("Invalid") {
                 Ok(false)
             } else {
-                Err(CosignError::Verify(msg))
+                Err(SignatureError::Verify(msg))
             }
         }
     }
 }
 
+/// Owned view of a stored signature, for reporting to clients.
+#[derive(Debug, Clone)]
+pub struct SignatureInfo {
+    pub key_id: String,
+    pub payload: String,
+}
+
+/// Read and decode the signature recorded for `image_ref`, if any.
+///
+/// Returns `Ok(None)` when no signature blob is present.
+pub fn read_signature(
+    store: &std::sync::Arc<pullrun_store::MmapStore>,
+    image_ref: &str,
+) -> Result<Option<SignatureInfo>, pullrun_store::StoreError> {
+    let digest = signature_digest_for(image_ref);
+    let bytes = match store.get_blob(&digest) {
+        Ok(b) => b,
+        Err(pullrun_store::StoreError::NotFound(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    match rkyv::check_archived_root::<SignatureBlob>(&bytes[..]) {
+        Ok(blob) => Ok(Some(SignatureInfo {
+            key_id: blob.key_id.to_string(),
+            payload: blob.payload.to_string(),
+        })),
+        // A corrupt blob is reported as "no signature" rather than an
+        // error: the caller only needs to know whether one is usable.
+        Err(_) => Ok(None),
+    }
+}
+
+/// Serialize a `SignatureBlob` to the rkyv bytes stored in the DAG.
+///
+/// The blob is stored at `signature_digest_for(image_ref)`; the runtime
+/// derives that key itself, so the write path and the verification path
+/// cannot disagree about where a signature lives.
+pub fn encode_signature(
+    blob: &SignatureBlob,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let bytes = rkyv::to_bytes::<_, 256>(blob)?;
+    Ok(bytes.to_vec())
+}
+
 /// Compute the deterministic DAG digest for the signature blob of an image.
+///
+/// The key depends only on the image reference, so verification can find the
+/// signature from the reference alone; the manifest digest is checked inside
+/// the signed payload, which makes a stale signature fail closed instead of
+/// authenticating a different image.
 pub fn signature_digest_for(image_ref: &str) -> Digest {
     let mut h = Sha256::new();
-    h.update(b"pullrun.cosign.sig.v1\n");
+    // Domain separator. Renamed from the earlier "cosign" salt while nothing
+    // could yet produce a signature (there was no ingestion path), so no
+    // existing attestation is invalidated by the change.
+    h.update(b"pullrun.image-signature.v1\n");
     h.update(image_ref.as_bytes());
     h.update(b"\n");
     let result: [u8; 32] = h.finalize().into();
@@ -120,10 +172,10 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
     use rand::rngs::OsRng;
 
-    fn fresh_keypair() -> (CosignKey, SigningKey) {
+    fn fresh_keypair() -> (TrustedKey, SigningKey) {
         let sk = SigningKey::generate(&mut OsRng);
         let vk = sk.verifying_key();
-        let key = CosignKey {
+        let key = TrustedKey {
             id: format!("test-key-{}", hex::encode(vk.to_bytes()[..4].as_ref())),
             verifying_key: vk,
         };
@@ -135,7 +187,7 @@ mod tests {
         let (key, sk) = fresh_keypair();
         let payload = b"hello world";
         let sig = sk.sign(payload);
-        assert!(verify_cosign_signature(&key, payload, &sig.to_bytes()).unwrap());
+        assert!(verify_signature(&key, payload, &sig.to_bytes()).unwrap());
     }
 
     #[test]
@@ -144,7 +196,7 @@ mod tests {
         let payload = b"hello world";
         let mut sig = sk.sign(payload).to_bytes();
         sig[0] ^= 1;
-        let ok = verify_cosign_signature(&key, payload, &sig).unwrap();
+        let ok = verify_signature(&key, payload, &sig).unwrap();
         assert!(!ok);
     }
 

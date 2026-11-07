@@ -10,11 +10,17 @@ use tracing::{debug, warn};
 
 pub use pullrun_store::{Digest as BlobDigest, MmapStore};
 
-pub mod cosign;
 pub mod sbom;
+pub mod signature;
 
-pub use cosign::{verify_cosign_signature, CosignKey, SignatureBlob};
-pub use sbom::{evaluate_sbom, SbomReport, Vulnerability};
+pub use sbom::{
+    encode_sbom, evaluate_sbom, from_cyclonedx_json, sbom_digest_for, SbomBlob, SbomReport,
+    Vulnerability,
+};
+pub use signature::{
+    canonical_payload, encode_signature, read_signature, signature_digest_for, verify_signature,
+    SignatureBlob, SignatureInfo, TrustedKey,
+};
 
 /// Declarative policy applied to a workload.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -63,7 +69,7 @@ impl From<pullrun_store::StoreError> for PolicyError {
 #[derive(Clone)]
 pub struct PolicyEngine {
     default_policy: Policy,
-    trusted_keys: Vec<CosignKey>,
+    trusted_keys: Vec<TrustedKey>,
 }
 
 impl PolicyEngine {
@@ -74,12 +80,12 @@ impl PolicyEngine {
         }
     }
 
-    pub fn with_trusted_keys(mut self, keys: Vec<CosignKey>) -> Self {
+    pub fn with_trusted_keys(mut self, keys: Vec<TrustedKey>) -> Self {
         self.trusted_keys = keys;
         self
     }
 
-    pub fn add_trusted_key(&mut self, key: CosignKey) {
+    pub fn add_trusted_key(&mut self, key: TrustedKey) {
         self.trusted_keys.push(key);
     }
 
@@ -87,7 +93,7 @@ impl PolicyEngine {
         &self.default_policy
     }
 
-    pub fn trusted_keys(&self) -> &[CosignKey] {
+    pub fn trusted_keys(&self) -> &[TrustedKey] {
         &self.trusted_keys
     }
 
@@ -189,7 +195,7 @@ impl PolicyEngine {
         image_ref: &str,
         manifest_digest: &str,
     ) -> Result<SignatureCheck, PolicyError> {
-        let sig_digest = cosign::signature_digest_for(image_ref);
+        let sig_digest = signature::signature_digest_for(image_ref);
         let sig_mmap = match store.get_blob(&sig_digest) {
             Ok(m) => m,
             Err(pullrun_store::StoreError::NotFound(_)) => return Ok(SignatureCheck::Missing),
@@ -230,7 +236,7 @@ impl PolicyEngine {
             if key.id != blob.key_id {
                 continue;
             }
-            match verify_cosign_signature(key, payload.as_bytes(), &signature) {
+            match verify_signature(key, payload.as_bytes(), &signature) {
                 Ok(true) => return Ok(SignatureCheck::Valid),
                 Ok(false) => continue,
                 Err(e) => return Ok(SignatureCheck::Invalid(e.to_string())),
@@ -251,7 +257,7 @@ enum SignatureCheck {
 }
 
 /// Helper: SHA-256 of a string, hex-encoded. Used to derive the DAG
-/// digest for a cosign signature blob stored alongside the image.
+/// digest for a image-signature blob stored alongside the image.
 pub fn sha256_hex(input: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(input);
@@ -282,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_signature_required_with_keys_allows_in_evaluate() {
-        use crate::cosign::{self, SignatureBlob};
+        use crate::signature::{self, SignatureBlob};
         use ed25519_dalek::{Signer, SigningKey};
         use rand::rngs::OsRng;
 
@@ -292,14 +298,14 @@ mod tests {
 
         let sk = SigningKey::generate(&mut OsRng);
         let vk = sk.verifying_key();
-        let key = CosignKey {
+        let key = TrustedKey {
             id: "test-1".into(),
             verifying_key: vk,
         };
 
         let image_ref = "alpine:latest";
         let manifest = "deadbeef";
-        let payload = cosign::canonical_payload(image_ref, manifest);
+        let payload = signature::canonical_payload(image_ref, manifest);
         let sig = sk.sign(payload.as_bytes());
         let blob = SignatureBlob {
             key_id: key.id.clone(),
@@ -307,7 +313,7 @@ mod tests {
             signature: sig.to_bytes().to_vec(),
         };
         let bytes = rkyv::to_bytes::<_, 256>(&blob).unwrap();
-        let digest = cosign::signature_digest_for(image_ref);
+        let digest = signature::signature_digest_for(image_ref);
         store.put_blob_blocking(&digest, &bytes).unwrap();
 
         let engine = PolicyEngine::new(Policy::default()).with_trusted_keys(vec![key]);
@@ -324,7 +330,7 @@ mod tests {
     #[test]
     fn test_signature_digest_mismatch_denies() {
         // A valid signature for digest X must not authorize image Y.
-        use crate::cosign::{self, SignatureBlob};
+        use crate::signature::{self, SignatureBlob};
         use ed25519_dalek::{Signer, SigningKey};
         use rand::rngs::OsRng;
 
@@ -334,13 +340,13 @@ mod tests {
 
         let sk = SigningKey::generate(&mut OsRng);
         let vk = sk.verifying_key();
-        let key = CosignKey {
+        let key = TrustedKey {
             id: "test-1".into(),
             verifying_key: vk,
         };
 
         let image_ref = "alpine:latest";
-        let payload = cosign::canonical_payload(image_ref, "digest-good");
+        let payload = signature::canonical_payload(image_ref, "digest-good");
         let sig = sk.sign(payload.as_bytes());
         let blob = SignatureBlob {
             key_id: key.id.clone(),
@@ -348,7 +354,7 @@ mod tests {
             signature: sig.to_bytes().to_vec(),
         };
         let bytes = rkyv::to_bytes::<_, 256>(&blob).unwrap();
-        let digest = cosign::signature_digest_for(image_ref);
+        let digest = signature::signature_digest_for(image_ref);
         store.put_blob_blocking(&digest, &bytes).unwrap();
 
         let engine = PolicyEngine::new(Policy::default()).with_trusted_keys(vec![key]);

@@ -64,6 +64,10 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewMCPCommand(opts))
 	cmd.AddCommand(NewVersionCommand())
 	cmd.AddCommand(NewComposeCommand(opts))
+	cmd.AddCommand(NewKeygenCommand())
+	cmd.AddCommand(NewSignCommand(opts))
+	cmd.AddCommand(NewSbomCommand(opts))
+	cmd.AddCommand(NewAttestCommand(opts))
 
 	return cmd
 }
