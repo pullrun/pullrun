@@ -19,7 +19,7 @@
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![Rust](https://img.shields.io/badge/Rust-1.78+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org)
-[![Tests](https://img.shields.io/badge/tests-247%20passing-brightgreen?logo=checkmarx)](#testing)
+[![Tests](https://img.shields.io/badge/tests-250%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
@@ -439,33 +439,35 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 
 ## 🧪 Testing
 
-> **247 tests, 0 failures** — every commit is gated by the full suite
+> **250 tests, 0 failures** — every commit is gated by the full suite
 > (`cargo fmt --check`, `cargo test`, `go test ./...`, `golangci-lint`).
 
 | Suite | Stack | What it covers | Tests |
 |-------|-------|----------------|------:|
-| `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 30 |
-| `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 40 |
-| `pullrun-vm` | 🦀 Rust | network, ext4, OCI kernels, Apple Virt + Firecracker* | 28 |
+| `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 31 |
+| `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 41 |
+| `pullrun-vm` | 🦀 Rust | network, ext4, OCI kernels, Apple Virt + Firecracker* | 23 |
 | `pullrun-net` | 🦀 Rust | IPAM, firewall, proxy, DNS, loopback | 18 |
 | `pullrun-policy` | 🦀 Rust | cosign, SBOM, gates | 17 |
-| `pullrun-oci` | 🦀 Rust | dockerfile parser, puller, converter, layouts | 16 |
-| `pullrun-gc` | 🦀 Rust | DAG garbage collection | 16 |
+| `pullrun-oci` | 🦀 Rust | dockerfile parser, puller, converter, layouts | 18 |
+| `pullrun-gc` | 🦀 Rust | DAG garbage collection | 17 |
 | `pullrun-sync` | 🦀 Rust | P2P block sync, bloom, delta | 13 |
 | `pullrun-vsock` | 🦀 Rust | vsock transport | 9 |
 | `pullrun-exec` | 🦀 Rust | seccomp, rootless | 8 |
-| `pullrun-init` + `build-initramfs` | 🦀 Rust | guest agent, initramfs | 5 |
+| `pullrun-init` | 🦀 Rust | guest agent, initramfs | 2 |
 | `pullrun-cri` | 🐹 Go | CRI shim lifecycle, filestore | 20 |
 | `pullrun-compose` | 🐹 Go | compose parsing, `up`/`down` flows | 15 |
 | `pullrun` CLI | 🐹 Go | workload run, commands | 9 |
 | `control-plane` | 🐹 Go | controller store | 9 |
-| **Total** | | | **247** |
+| **Total** | | | **250** |
 
-\* 2 Firecracker hardware tests are `#[ignore]`d (need /dev/kvm) — run manually:
+* Counts measured on macOS; a few tests are platform-gated, so the per-suite
+  numbers differ slightly on Linux. 2 Firecracker hardware tests are
+  `#[ignore]`d (need /dev/kvm) — run manually:
 `cargo test -p pullrun-vm --test firecracker_boot -- --include-ignored --nocapture`
 
 ```bash
-cargo test                                   # Rust workspace: 194 tests
+cargo test                                   # Rust workspace: 197 tests
 go test ./...                                # Go modules (cri, cli, compose, control-plane): 53 tests
 cargo fmt --all --check && golangci-lint run ./...   # CI gates
 ```

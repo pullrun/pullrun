@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.7.10 — 2026-11-07
+
+### build/commit produced unusable images (four defects)
+All four were in the `pullrun build` / `pullrun commit` path and only
+manifested once the resulting image was materialized.
+
+- **Root layer prefix escaped the rootfs** (`pullrun-oci/dockerfile.rs`).
+  The root Layer node used the prefix `"/"`, and `materialize_layer` joins
+  that prefix onto the bundle rootfs path. `Path::join` discards the base
+  when the argument is absolute, so `rootfs.join("/")` is `/` and
+  materialization extracted the image into the **host root** instead of the
+  bundle. The prefix is now empty at the root, matching `OciToDagConverter`.
+- **Tree-entry schema drift emptied the rootfs** (`pullrun-oci`).
+  `build_tree` hand-wrote tree entries with 6 fields; the reader,
+  `DirectoryEntry::from_inline_bytes`, requires 11 (uid, gid, mtime and
+  symlink_target were omitted). Parsing failed for every entry and the
+  `if let Ok(..)` reader dropped them silently, so built and committed
+  images materialized with a completely **empty rootfs** while `commit`
+  reported success. Entries now go through `DirectoryEntry::to_inline_bytes`,
+  the reader's own encoder, and the reader logs instead of discarding.
+- **Nested directories flattened to the image root.** Subdirectories were
+  not wrapped in path-carrying Layer nodes, so `etc/passwd` landed at
+  `/passwd`. `build_tree` now mirrors `OciToDagConverter::store_trees`.
+- **Symlinks and file modes were lost.** `build_dir_entry_tree` used
+  `metadata()`, which follows symlinks, so `is_symlink` was always false and
+  links materialized as regular files holding the target path; the mode
+  heuristic collapsed everything to `0644`, dropping the executable bit.
+  Now uses `symlink_metadata()`, carries `symlink_target`, and preserves the
+  real permission bits.
+
+> **Upgrade note:** images built or committed with 0.7.9 or earlier carry the
+> `"/"` prefix and the old 6-field schema in their DAG nodes. This fix does
+> not repair stored data — **rebuild those images**.
+
+### commit deadlocked on any tagged image
+`CommitImage` held the `image_tags` write guard across `save_image_tags()`,
+which takes a read guard on the same `RwLock`. `tokio::sync::RwLock` is not
+reentrant, so `pullrun commit <id> <tag>` hung forever and leaked the op lock.
+
+### Dependencies
+- `rustls` 0.23.45 → 0.23.46, fixing GHSA-c8m5-c952-6cm4 (medium) plus
+  GHSA-h2v8-394m-p7vv, GHSA-w44r-93j7-qv28 and GHSA-vp88-798v-h67f (low),
+  across the main workspace and the apple-virt/vm-outbound tool lockfiles.
+
+### Tests
+250 tests (197 Rust + 53 Go). Adds three regression tests, each verified to
+fail against the unfixed code: the root-layer prefix, end-to-end
+materialization (content, nesting, symlink type/target, executable bit), and
+a commit-with-tag deadlock guard that drives the real RPC under a timeout.
+
+## 0.7.9 — 2026-07-31
+
+- **CRI exec/attach correctness.** `serveAttach` handshakes
+  `streamProtocolV4` before the SPDY upgrade; v1 never closed stdin at EOF,
+  which hung `crictl exec -i` with piped stdin. Exit codes travel on the
+  error stream as a hand-rolled `metav1.Status` (`StatusCause.Type`
+  marshals as `reason`, not `type`).
+- **Detached stop.** The stop sequence runs in a spawned task so a cancelled
+  RPC (crictl's 2s default timeout) cannot abort cleanup and strand
+  containers in stale `running` state.
+- **Per-pod `/24` bridge subnets with NAT.** Each pod gets `pr-<podid>` and
+  its own subnet; `subnet_for`/`live_subnets_in_range` skip ranges owned by
+  live pods so leaked sandboxes cannot collide with new ones.
+- **Non-Docker registries.** `image_parts` no longer applies the `library/`
+  prefix outside docker.io, fixing 404s against registry.k8s.io, ghcr.io and
+  quay.io.
+- **Pod networking.** Containers join the sandbox netns through the OCI
+  spec's `linux.namespaces[].path` rather than the nonexistent
+  `runc --network` flag; the shim gained real pod/container modelling,
+  volume mounts and pod DNS.
+
 ## 0.7.8 — 2026-07-31
 
 ### CRI shim: real pod/container runtime
@@ -80,6 +151,13 @@
 - **`--registry` silently overrode the ref's registry** (puller.rs).
   `pullrun pull ghcr.io/user/app` no longer pulls `docker.io/user/app`; the
   flag now only applies to bare refs (e.g. `--registry localhost:5000 alpine`).
+
+## 0.7.7 — 2026-07-31
+
+- **Security hardening.** Daemon authentication, path-traversal fixes,
+  seccomp enforcement, and restrictive permissions on secret files.
+- Go 1.26 across all modules, `golangci-lint` clean, and `make fmt` covering
+  every module.
 
 ## 0.7.6 — 2026-07-26
 
