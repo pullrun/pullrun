@@ -16,3 +16,6 @@ async-trait.workspace = true
 libc.workspace = true
 nix.workspace = true
 serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"

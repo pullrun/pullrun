@@ -130,7 +130,7 @@ mod tests {
             if mount_overlay(&base_c, &upper_c, &work_c, &merged_c).is_err() {
                 unsafe { libc::_exit(13) };
             }
-            if std::fs::read(merged_c.join("hello")).ok().as_deref() != Some(b"base") {
+            if std::fs::read(merged_c.join("hello")).ok().as_deref() != Some(b"base".as_slice()) {
                 unsafe { libc::_exit(14) };
             }
             if std::fs::write(merged_c.join("new"), b"upper").is_err() {
