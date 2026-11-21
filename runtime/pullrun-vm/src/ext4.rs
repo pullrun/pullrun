@@ -86,6 +86,7 @@ pub async fn materialize_ext4_rootfs(
     root_digest: &Digest,
     output_path: &Path,
     options: Ext4Options,
+    init_command: &[String],
 ) -> Result<(), Ext4Error> {
     info!(
         %root_digest,
@@ -114,29 +115,46 @@ pub async fn materialize_ext4_rootfs(
     if !init_path.exists() {
         let materializer = OciMaterializer::new(store);
         let manifest_data = materializer.materialize_manifest(root_digest);
-        let shell_args: Vec<String> = match manifest_data {
-            Ok(data) => {
-                let merged = merge_command(&data.entrypoint, &data.cmd);
-                if merged.is_empty() {
-                    info!("OCI image has no ENTRYPOINT/CMD; injecting default /bin/sh");
-                    vec!["/bin/sh".to_string()]
-                } else {
-                    info!("injecting /init from OCI manifest: {}", merged.join(" "));
-                    merged
+        let (shell_args, run_wrapper): (Vec<String>, bool) = if !init_command.is_empty() {
+            info!(?init_command, "injecting /init from the workload command");
+            (init_command.to_vec(), true)
+        } else {
+            match manifest_data {
+                Ok(data) => {
+                    let merged = merge_command(&data.entrypoint, &data.cmd);
+                    if merged.is_empty() {
+                        info!("OCI image has no ENTRYPOINT/CMD; injecting default /bin/sh");
+                        (vec!["/bin/sh".to_string()], false)
+                    } else {
+                        info!("injecting /init from OCI manifest: {}", merged.join(" "));
+                        (merged, false)
+                    }
                 }
-            }
-            Err(e) => {
-                warn!("failed to read OCI manifest for /init: {e}; falling back to /bin/sh");
-                vec!["/bin/sh".to_string()]
+                Err(e) => {
+                    warn!("failed to read OCI manifest for /init: {e}; falling back to /bin/sh");
+                    (vec!["/bin/sh".to_string()], false)
+                }
             }
         };
         let mut init_content = String::from("#!/bin/sh\n");
-        init_content.push_str("exec");
-        for arg in &shell_args {
-            init_content.push(' ');
-            init_content.push_str(&shell_quote(arg));
+        if run_wrapper {
+            // Run the requested command, report its code on the serial
+            // console, then power the VM off so it does not reboot.
+            for arg in &shell_args {
+                init_content.push_str(&shell_quote(arg));
+                init_content.push(' ');
+            }
+            init_content.push_str("\ncode=$?\n");
+            init_content.push_str("echo \"PULLRUN_EXIT=$code\" >/dev/ttyS0 2>/dev/null\n");
+            init_content.push_str("echo o >/proc/sysrq-trigger 2>/dev/null || poweroff -f\n");
+        } else {
+            init_content.push_str("exec");
+            for arg in &shell_args {
+                init_content.push(' ');
+                init_content.push_str(&shell_quote(arg));
+            }
+            init_content.push('\n');
         }
-        init_content.push('\n');
         std::fs::write(&init_path, init_content.as_bytes())?;
         std::fs::set_permissions(&init_path, PermissionsExt::from_mode(0o755))?;
     }
@@ -437,6 +455,7 @@ mod tests {
                 size_mb: 128,
                 label: Some("pullrun-test".to_string()),
             },
+            &[],
         )
         .await
         .expect("materialize ext4");

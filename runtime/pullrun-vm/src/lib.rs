@@ -237,7 +237,7 @@ impl FirecrackerExecutor {
             label: Some("pullrun-base".to_string()),
         };
         info!(%digest, path = %base.display(), "building ext4 image base");
-        materialize_ext4_rootfs(&self.store, digest, &tmp, options)
+        materialize_ext4_rootfs(&self.store, digest, &tmp, options, &[])
             .await
             .map_err(|e| ExecError::ExecutionFailed(format!("ext4 base build: {e}")))?;
         match std::fs::rename(&tmp, &base) {
@@ -258,16 +258,23 @@ impl FirecrackerExecutor {
     }
 
     /// Provision this VM's ext4 image as a CoW clone of the base.
-    async fn provision_vm_rootfs(&self, digest: &Digest, id: &str) -> Result<PathBuf, ExecError> {
+    async fn provision_vm_rootfs(
+        &self,
+        digest: &Digest,
+        id: &str,
+        init_command: &[String],
+    ) -> Result<PathBuf, ExecError> {
         let dest = ext4_path_for(&self.config.rootfs_dir, id);
-        if self.cow_mode == cow::CowMode::Copy {
+        // A workload command needs its own /init, so it cannot reuse the
+        // per-digest base image (which carries the OCI default command).
+        if self.cow_mode == cow::CowMode::Copy || !init_command.is_empty() {
             // No reflink: a shared base cannot save bytes, so build the
             // VM image directly (same as the previous behaviour).
             let options = Ext4Options {
                 size_mb: self.config.size_mb,
                 label: Some(format!("pullrun-{id}")),
             };
-            materialize_ext4_rootfs(&self.store, digest, &dest, options)
+            materialize_ext4_rootfs(&self.store, digest, &dest, options, init_command)
                 .await
                 .map_err(|e| ExecError::ExecutionFailed(format!("ext4 materialization: {e}")))?;
             return Ok(dest);
@@ -300,7 +307,9 @@ impl FirecrackerExecutor {
         std::fs::create_dir_all(&vm_dir)?;
 
         // Provision the workload's ext4 rootfs from the image base.
-        let ext4_path = self.provision_vm_rootfs(&spec.image_root, &spec.id).await?;
+        let ext4_path = self
+            .provision_vm_rootfs(&spec.image_root, &spec.id, &spec.command)
+            .await?;
 
         // Hot-swap the rootfs on the running pool VM.
         pooled
@@ -505,7 +514,8 @@ impl Executor for FirecrackerExecutor {
         std::fs::create_dir_all(&vm_dir)?;
 
         // 4. Provision the ext4 rootfs as a CoW clone of the image base.
-        self.provision_vm_rootfs(&spec.image_root, &spec.id).await?;
+        self.provision_vm_rootfs(&spec.image_root, &spec.id, &spec.command)
+            .await?;
         let ext4_id = spec.id.clone();
 
         info!(id = %ext4_id, ip = %guest_ip, "ext4 rootfs ready, VM wired to bridge");
@@ -969,7 +979,7 @@ mod ext4_base_cache_tests {
         assert!(base_a.is_file());
 
         let vm_a = exec
-            .provision_vm_rootfs(&built.manifest_digest, "vm-a")
+            .provision_vm_rootfs(&built.manifest_digest, "vm-a", &[])
             .await
             .unwrap();
         let vm_b = exec
