@@ -3,6 +3,7 @@
 
 pub mod container;
 pub mod oci_spec;
+pub mod overlay;
 pub mod rootless;
 pub mod seccomp;
 pub mod types;
