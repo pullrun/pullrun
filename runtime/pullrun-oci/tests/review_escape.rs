@@ -223,13 +223,10 @@ async fn dag_imported_absolute_whiteout_is_rejected() {
     let manifest_digest = store.put(&manifest).await.unwrap();
 
     let bundle_dir = tempfile::tempdir().unwrap();
-    let result = OciMaterializer::new(&store)
-        .materialize_bundle(&manifest_digest, bundle_dir.path());
+    let result =
+        OciMaterializer::new(&store).materialize_bundle(&manifest_digest, bundle_dir.path());
 
-    assert!(
-        result.is_err(),
-        "absolute whiteout target must be rejected"
-    );
+    assert!(result.is_err(), "absolute whiteout target must be rejected");
     assert!(
         sentinel.exists(),
         "DAG whiteout deleted {} outside the rootfs",

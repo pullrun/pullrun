@@ -223,7 +223,11 @@ impl FirecrackerExecutor {
         let bases_dir = self.config.rootfs_dir.join("bases");
         std::fs::create_dir_all(&bases_dir)
             .map_err(|e| ExecError::ExecutionFailed(format!("create bases dir: {e}")))?;
-        let tmp = bases_dir.join(format!(".tmp-{}-{}.ext4", digest.as_hex(), std::process::id()));
+        let tmp = bases_dir.join(format!(
+            ".tmp-{}-{}.ext4",
+            digest.as_hex(),
+            std::process::id()
+        ));
         let _ = std::fs::remove_file(&tmp);
         let options = Ext4Options {
             size_mb: self.config.size_mb,
@@ -240,7 +244,9 @@ impl FirecrackerExecutor {
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&tmp);
-                return Err(ExecError::ExecutionFailed(format!("install ext4 base: {e}")));
+                return Err(ExecError::ExecutionFailed(format!(
+                    "install ext4 base: {e}"
+                )));
             }
         }
         std::fs::write(&ready, b"v1")
@@ -265,12 +271,11 @@ impl FirecrackerExecutor {
         }
         let base = self.ensure_ext4_base(digest).await?;
         let dest_for_clone = dest.clone();
-        let cloned = tokio::task::spawn_blocking(move || {
-            cow::try_clone_file(&base, &dest_for_clone)
-        })
-        .await
-        .map_err(|e| ExecError::ExecutionFailed(format!("clone join: {e}")))?
-        .map_err(|e| ExecError::ExecutionFailed(format!("clone ext4 base: {e}")))?;
+        let cloned =
+            tokio::task::spawn_blocking(move || cow::try_clone_file(&base, &dest_for_clone))
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("clone join: {e}")))?
+                .map_err(|e| ExecError::ExecutionFailed(format!("clone ext4 base: {e}")))?;
         debug_assert!(dest.is_file());
         let _ = cloned;
         Ok(dest)
@@ -292,9 +297,7 @@ impl FirecrackerExecutor {
         std::fs::create_dir_all(&vm_dir)?;
 
         // Provision the workload's ext4 rootfs from the image base.
-        let ext4_path = self
-            .provision_vm_rootfs(&spec.image_root, &spec.id)
-            .await?;
+        let ext4_path = self.provision_vm_rootfs(&spec.image_root, &spec.id).await?;
 
         // Hot-swap the rootfs on the running pool VM.
         pooled
@@ -471,8 +474,7 @@ impl Executor for FirecrackerExecutor {
         std::fs::create_dir_all(&vm_dir)?;
 
         // 4. Provision the ext4 rootfs as a CoW clone of the image base.
-        self.provision_vm_rootfs(&spec.image_root, &spec.id)
-            .await?;
+        self.provision_vm_rootfs(&spec.image_root, &spec.id).await?;
         let ext4_id = spec.id.clone();
 
         info!(id = %ext4_id, ip = %guest_ip, "ext4 rootfs ready, VM wired to bridge");
@@ -881,7 +883,6 @@ pub fn select_executor_for(spec: &WorkloadSpec) -> &'static str {
         Backend::Sandbox => "SandboxExecutor (Phase 5)",
     }
 }
-
 
 #[cfg(all(test, target_os = "linux"))]
 mod ext4_base_cache_tests {

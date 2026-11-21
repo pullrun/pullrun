@@ -122,8 +122,9 @@ impl<'a> OciMaterializer<'a> {
         }
 
         let layer_path_raw = String::from_utf8_lossy(&layer_node.inline_data).to_string();
-        let layer_path = RelPath::parse(&layer_path_raw)
-            .map_err(|e| OciError::Other(format!("invalid layer prefix {layer_path_raw:?}: {e}")))?;
+        let layer_path = RelPath::parse(&layer_path_raw).map_err(|e| {
+            OciError::Other(format!("invalid layer prefix {layer_path_raw:?}: {e}"))
+        })?;
 
         // Split edges into tree roots and whiteout nodes.
         let mut tree_edges = Vec::new();

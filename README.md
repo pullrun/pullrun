@@ -4,13 +4,15 @@
 
 # **Pullrun**
 
-### *One OCI image. Any execution target. CLI + runtime under 25 MB.*
+### *The AI agent sandbox runtime — a disposable microVM per task, booted from any OCI image in ~400 ms.*
 
-**Run the same OCI image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. No daemon required. No overlayfs. No separate VM images.**
+**Give every agent task its own sandbox. Pullrun boots any OCI image as a hardened Firecracker microVM (or Linux container / Apple Silicon VM) in ~400 ms — and shares one content-addressed copy of the image across your whole fleet. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and snapshot state directly. No daemon required. No overlayfs. No separate VM images.**
+
+**One OCI image. Any execution target — agent sandbox, container, Firecracker microVM, Apple Silicon VM, or Kubernetes workload. CLI + runtime under 25 MB.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pullrun/pullrun/ci.yml?branch=main&logo=github&label=CI)](https://github.com/pullrun/pullrun/actions/workflows/ci.yml)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20679669-007ec6?logo=doi)](https://doi.org/10.5281/zenodo.20679669)
-[![Version](https://img.shields.io/badge/version-0.7.8-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
+[![Version](https://img.shields.io/badge/version-0.7.9-6A1B9A?logo=git)](https://github.com/pullrun/pullrun/releases)
 [![License](https://img.shields.io/github/license/pullrun/pullrun?logo=apache)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon-333?logo=apple&logoColor=white)](docs/PULLRUN_GUIDE.md)
 [![Linux](https://img.shields.io/badge/Linux-x86__64_%7C_arm64-333?logo=linux&logoColor=white)](docs/PULLRUN_GUIDE.md)
@@ -25,30 +27,47 @@
 </div>
 
 <p align="center">
+  <a href="#-what-is-pullrun"><b>⚡ What is Pullrun?</b></a> •
+  <a href="#-agent-sandboxes"><b>🤖 Agent Sandboxes</b></a> •
   <a href="#-install"><b>⚡ 30-Second Install</b></a> •
   <a href="#-quick-start"><b>🚀 Quick Start</b></a> •
-  <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-why-pullrun"><b>🎯 Why Pullrun?</b></a> •
-  <a href="#-features"><b>🗺️ Feature Map</b></a> •
+  <a href="#-mcp-ai-integration"><b>🔌 MCP for Agents</b></a> •
   <a href="#-kubernetes"><b>☸️ Kubernetes</b></a> •
-  <a href="#-mcp-ai-integration"><b>🤖 AI Agents</b></a>
+  <a href="#-architecture"><b>🏗️ Architecture</b></a>
 </p>
 
 ---
 
 ## ⚡ What is Pullrun?
 
-Pullrun runs the same OCI image as a container or a VM. It stores layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and ships as a ~14 MB CLI + ~6 MB runtime daemon.
+Pullrun is the **sandbox runtime for AI agents** — and the same runtime underneath. It stores OCI layers in a content-addressed DAG (no overlayfs), syncs blocks peer-to-peer, and ships as a ~14 MB CLI + ~6 MB runtime daemon.
 
-**Why this matters:** Modern infrastructure uses too many execution engines — Docker for dev, containerd for production, Firecracker for isolation, CRI for Kubernetes, MCP agents for AI. Each has its own image format, storage, and operational model — even though they all run the same OCI images. Pullrun collapses these layers into one runtime.
+**The agent execution problem:** agents need to *run code* — and they need it fast, isolated, and cheap. Today that means unisolated execution on the host (dangerous), per-task Docker containers (~800 ms + a whole image copy per task), or heavyweight VM tooling built for long-lived servers, not task-scale churn. And agents need *state*: a sandbox that survives between turns, snapshots, and rollback.
+
+**Pullrun's answer:**
+
+```bash
+# opencode, Claude Code, Cursor — drive the runtime over MCP:
+pullrun mcp
+
+# Or boot a task sandbox directly — any OCI image, zero setup:
+pullrun run python:3.12 --backend vm --cmd "python" --cmd "-c" --cmd "print('hello')" --attach
+
+# Snapshot completed work — the next run boots straight from this state:
+pullrun commit <id> task-run-042:latest
+```
 
 **Key differentiators:**
-- **Containers and VMs from the same image** — no separate VM build step, no separate VM image format
-- **Content-addressed DAG store** — zero-copy mmap reads, deduplicated by content hash, byte-identical across every node
-- **P2P image distribution** — one registry pull per cluster, rest sync peer-to-peer at LAN speed
+- **MicroVM isolation per task** — untrusted agent code runs in its own Firecracker kernel, not a shared-host namespace. Containers and VMs boot from the *same* image, no separate build step
+- **~400 ms task boots** — Firecracker cold boot ~500 ms, warm pool ~200 ms, containers ~400 ms, Apple Silicon VM ~160 ms
+- **One image, any number of sandboxes** — DAG store dedupes by content hash; 1,000 agent sandboxes share one copy of `python:3.12`, `mmap`'d from the same host pages (see [Agent Sandboxes](#-agent-sandboxes))
+- **State that persists** — commit or snapshot a mid-task sandbox; the next run boots from that exact state, rollback is O(1)
+- **Native MCP server** — 15 runtime tools (run, exec, logs, build, push…) + resources; works in stdio (opencode, Claude Code, Cursor) or SSE (remote agents)
+- **P2P image distribution** — one registry pull per fleet, the rest sync peer-to-peer at LAN speed
 - **~14 MB CLI + ~6 MB runtime daemon** (stripped) — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
 
-**Also included:** Kubernetes CRI shim (beta), Docker Compose support, MCP server for AI agents, policy engine (ed25519 image signatures, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
+**Also included:** Kubernetes CRI shim (beta), Docker Compose support, policy engine (ed25519 image signatures, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
 
 ```bash
 # Apple Silicon VM (macOS default) — 3 s
@@ -99,6 +118,10 @@ cd cli/pullrun && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o pullrun.ex
 ## 🚀 Quick Start
 
 ```bash
+# ── Agent sandbox: 400 ms microVM from any OCI image ─────────
+pullrun run python:3.12 --backend vm --cmd "python" --cmd "-c" --cmd "print('hi')" --attach
+pullrun mcp                                # ...or hand the runtime to opencode/Claude Code/Cursor
+
 # ── Pull any OCI image ──────────────────────────────────────────
 pullrun pull alpine:3.18     # 968 ms — benchmark script at hack/bench.sh
 
@@ -183,6 +206,37 @@ pullrun mcp --sse :8080       # SSE mode (for remote agents)
 # ── P2P sync ───────────────────────────────────────────────────
 pullrun-runtime daemon --sync-addr 0.0.0.0:9500
 ```
+
+---
+
+## 🤖 Agent Sandboxes
+
+AI agents churn through sandboxes by the thousands. Pullrun is built for that churn — the DAG store makes the *N-th* sandbox essentially free.
+
+| What agents need | Pullrun provides |
+|------------------|------------------|
+| Fast task boot | Firecracker VM **~500 ms cold** / **~200 ms warm pool**, container **~400 ms**, Apple Silicon VM **~160 ms** |
+| Strong isolation | Kernel-per-task microVMs for untrusted code — no shared-kernel escapes; toggle to container for trusted code |
+| Cheap per-sandbox storage | DAG dedup by content hash: **1,000 sandboxes share one copy** of the image, `mmap`'d from the same host pages |
+| Low memory | Shared page cache across sandboxes; idle daemon RSS **24.6 MiB** |
+| Cross-turn state | `commit`/`snapshot` a mid-task sandbox → next run boots from that state; rollback is O(1) |
+| Agent-native control | Native **MCP** — `run`, `exec`, `logs`, `build`, `push`, `list_images`, `compose_up`… (15 tools) |
+| Guardrails | ed25519 image signatures, SBOM/CVSS gates, seccomp profiles, read-only rootfs, `no_new_privileges` |
+| Fleet distribution | P2P image sync — one registry pull per cluster, rest delta-sync over LAN |
+
+The same OCI image, the same command, the same store — sized for a single sandbox or a 10,000-agent fleet:
+
+```bash
+# one disposable microVM, direct from the CLI
+pullrun run python:3.12 --backend vm --cmd "python" --cmd "-c" --cmd "1+1" --attach
+
+# or an agent drives run/exec/build/push through MCP in plain English:
+#   "pull python:3.12 and run it as a VM"
+#   "exec into my sandbox and check /var/log"
+#   "commit this sandbox so the next task starts from here"
+```
+
+> Sandboxes are also full OCI runtimes: switch `--backend vm` to `--backend container` for trusted, densely-packed code, or point it at Kubernetes via the [CRI shim](#-kubernetes).
 
 ---
 
@@ -344,7 +398,7 @@ kubectl apply -f deploy/servicemonitor.yaml
 
 ## 🤖 MCP AI Integration
 
-Any MCP-compatible AI agent (opencode, Claude Code, Cursor) can control pullrun through natural language:
+Pullrun ships a native [Model Context Protocol](https://modelcontextprotocol.io) server — the agent's control plane for sandboxes. Any MCP-compatible agent (opencode, Claude Code, Cursor) can pull images, boot sandboxes, exec, inspect state, and ship builds through natural language:
 
 ```bash
 # Start the MCP server
@@ -357,7 +411,7 @@ pullrun mcp
 #   "run docker-compose up from my project"
 ```
 
-The MCP server exposes 15 tools and 4 resource types. SSE mode for remote agents: `pullrun mcp --sse :8080`.
+The MCP server exposes 15 tools (run, stop, exec, list, logs, stats, pull_image, build, push, prune…) and 4 resource types (`pullrun://workload/{id}`, `pullrun://workload/{id}/logs`, `pullrun://store/info`, `pullrun://images`). SSE mode for remote agents: `pullrun mcp --sse :8080`. Full reference in [docs/ALL_MCP.md](docs/ALL_MCP.md).
 
 ---
 
@@ -474,9 +528,7 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 | `control-plane` | 🐹 Go | controller store | 9 |
 | **Total** | | | **255** |
 
-* Counts measured on macOS; a few tests are platform-gated, so the per-suite
-  numbers differ slightly on Linux. 2 Firecracker hardware tests are
-  `#[ignore]`d (need /dev/kvm) — run manually:
+\* 2 Firecracker hardware tests are `#[ignore]`d (need /dev/kvm) — run manually:
 `cargo test -p pullrun-vm --test firecracker_boot -- --include-ignored --nocapture`
 
 ```bash
@@ -511,9 +563,40 @@ A technical report describing the architecture is available in [`/paper`](./pape
 
 ---
 
+## 👤 Author
+
+**Mohammed Boukaba** — product and architecture; built the Rust runtime, Go CLI, MCP server, policy engine, Kubernetes CRI shim, and the demo/site.
+
+---
+
 ## 📄 License
 
 Apache 2.0 — see [LICENSE](LICENSE). Contributions subject to [CLA.md](CLA.md).
+
+---
+
+## 💼 Commercial
+
+Pullrun is open source (Apache-2.0) **and** a business. Enterprise capabilities, shipped today:
+
+- **🛡️ Security Policy Engine** — deny-by-default image gate: ed25519 image-signature verification, CycloneDX SBOM checks (CVSS cap, license deny-list), evaluated at pull *and* run. Per-workload hardening: seccomp allowlists (`--seccomp-profile`), read-only rootfs, no-new-privileges.
+- **📊 Observability** — Prometheus `/metrics` endpoint on the runtime daemon (`--metrics-addr`): pull/start latencies, running workloads, store size, sync peers. Live `pullrun stats` and an event stream (`pullrun events`) covering pulls, runs, exits, and every policy decision.
+- **🔐 Secrets & Config** — Docker-style `secret` / `config` management (create, ls, inspect, rm), mounted under `/run/secrets`.
+- **🌐 Air-Gapped Fleet Sync** — P2P image distribution between nodes, kernel-as-image updates, offline registries, DAG garbage collection (`pullrun gc`).
+- **☸ Kubernetes CRI** — CRI shim (beta) with v4 streaming exec/attach and per-pod bridge subnets; run Pods on Firecracker VM backends via RuntimeClass.
+
+Commercial offerings on top of these capabilities, available today:
+
+- **🧠 Embedded Agent Sandboxes** — for AI agent platforms (Claude Code, opencode, Cursor-style products): license the runtime that boots a per-task microVM sandbox in **~500 ms cold / ~200 ms warm**, controlled over native MCP (15 tools). Fleet economics: the DAG store keeps **1,000 concurrent sandboxes on one image copy**.
+- **🔒 Isolation & Guardrails for agents** — kernel-per-task microVMs for untrusted agent code, deny-by-default image policy, seccomp/read-only rootfs/no-new-privileges, policy decisions streamed as audit events.
+- **☁️ Hosted Sandbox API** (planned) — managed sandbox endpoints: boot, run agent, snapshot state, resume — billed per active sandbox-second.
+- **Enterprise License** — per-cluster licensing for production fleets: Kubernetes CRI runtime, agent sandbox farms at scale, air-gapped registries, kernel-as-image updates. Predictable per-node pricing.
+- **Professional Services** — deployment and tuning on your infrastructure: custom executors/backends, P2P fleet network design, policy & seccomp hardening, Docker/containerd migrations, team training.
+- **OEM & Embed** — per-seat OEM licensing, custom MCP tool surfaces, co-branded runtime, white-glove onboarding for agent platform vendors.
+- **Managed Control Plane** (planned) — hosted SaaS: fleet-wide image sync, policy center, secrets, and observability across hundreds of nodes, billed per active sandbox.
+- **Support & SLAs** — priority engineering support with response SLAs, security fixes, and backports.
+
+Enterprise conversations: open an issue or email the maintainers via the GitHub repo.
 
 ---
 

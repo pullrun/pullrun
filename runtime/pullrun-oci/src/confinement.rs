@@ -85,7 +85,8 @@ impl RelPath {
     }
 
     pub fn push(&mut self, component: &str) -> Result<()> {
-        if component.is_empty() || component == "." || component == ".." || component.contains('/') {
+        if component.is_empty() || component == "." || component == ".." || component.contains('/')
+        {
             return Err(ConfineError::InvalidPath(
                 component.to_string(),
                 "component must be a single normal path element",
@@ -192,10 +193,7 @@ impl RootDir {
                     stack.push(openat_dir(current.as_raw_fd(), &name)?);
                 }
                 Err(err)
-                    if matches!(
-                        err.raw_os_error(),
-                        Some(libc::ENOTDIR) | Some(libc::ELOOP)
-                    ) =>
+                    if matches!(err.raw_os_error(), Some(libc::ENOTDIR) | Some(libc::ELOOP)) =>
                 {
                     // The component exists but is a symlink (or a
                     // non-directory). Follow it manually, staying inside
@@ -214,8 +212,7 @@ impl RootDir {
                             std::path::Component::CurDir => None,
                             // Absolute targets are re-rooted (chroot
                             // semantics): drop the leading `/`.
-                            std::path::Component::RootDir
-                            | std::path::Component::Prefix(_) => None,
+                            std::path::Component::RootDir | std::path::Component::Prefix(_) => None,
                         })
                         .collect();
                     if target_path.is_absolute() {
@@ -440,11 +437,7 @@ fn openat_file_create(dirfd: RawFd, name: &CStr, mode: u32) -> io::Result<RawFd>
         libc::openat(
             dirfd,
             name.as_ptr(),
-            libc::O_WRONLY
-                | libc::O_CREAT
-                | libc::O_EXCL
-                | libc::O_NOFOLLOW
-                | libc::O_CLOEXEC,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
             mode as libc::c_uint,
         )
     };
@@ -456,14 +449,8 @@ fn openat_file_create(dirfd: RawFd, name: &CStr, mode: u32) -> io::Result<RawFd>
 
 fn readlinkat(dirfd: RawFd, name: &CStr) -> io::Result<CString> {
     let mut buf = vec![0u8; libc::PATH_MAX as usize + 1];
-    let n = unsafe {
-        libc::readlinkat(
-            dirfd,
-            name.as_ptr(),
-            buf.as_mut_ptr().cast(),
-            buf.len() - 1,
-        )
-    };
+    let n =
+        unsafe { libc::readlinkat(dirfd, name.as_ptr(), buf.as_mut_ptr().cast(), buf.len() - 1) };
     if n < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -473,14 +460,7 @@ fn readlinkat(dirfd: RawFd, name: &CStr) -> io::Result<CString> {
 
 fn fstatat(dirfd: RawFd, name: &CStr) -> io::Result<libc::stat> {
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
-    let rc = unsafe {
-        libc::fstatat(
-            dirfd,
-            name.as_ptr(),
-            &mut stat,
-            libc::AT_SYMLINK_NOFOLLOW,
-        )
-    };
+    let rc = unsafe { libc::fstatat(dirfd, name.as_ptr(), &mut stat, libc::AT_SYMLINK_NOFOLLOW) };
     if rc < 0 {
         return Err(io::Error::last_os_error());
     }

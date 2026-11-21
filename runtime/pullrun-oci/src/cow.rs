@@ -11,9 +11,9 @@
 //! Hardlinks are never used: a sandbox write must never mutate the
 //! shared base.
 
-use std::fs::{self, File};
 #[cfg(target_os = "linux")]
 use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 #[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
@@ -270,7 +270,10 @@ pub fn read_to_string(path: &Path) -> io::Result<String> {
 
 /// Write a file atomically via a temp file in the same directory.
 pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
-    let parent: PathBuf = path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+    let parent: PathBuf = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
     fs::create_dir_all(&parent)?;
     let tmp = parent.join(format!(
         ".tmp-{}-{}",
@@ -337,6 +340,9 @@ mod tests {
     fn probe_returns_a_mode() {
         let dir = tempfile::tempdir().unwrap();
         let mode = probe(dir.path());
-        assert!(matches!(mode, CowMode::Apfs | CowMode::Ficlonable | CowMode::Copy));
+        assert!(matches!(
+            mode,
+            CowMode::Apfs | CowMode::Ficlonable | CowMode::Copy
+        ));
     }
 }

@@ -16,11 +16,7 @@ use crate::types::{ExecError, WorkloadSpec};
 
 /// Capabilities granted to unprivileged (rootless) workloads. These
 /// work inside a user namespace without granting host capabilities.
-pub const ROOTLESS_CAPABILITIES: &[&str] = &[
-    "CAP_AUDIT_WRITE",
-    "CAP_KILL",
-    "CAP_NET_BIND_SERVICE",
-];
+pub const ROOTLESS_CAPABILITIES: &[&str] = &["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"];
 
 fn default_capabilities() -> Vec<&'static str> {
     vec![
@@ -230,16 +226,17 @@ pub fn build_oci_config(
             );
         }
         if let Some(obj) = linux.as_object_mut() {
-            obj.insert("resources".to_string(), serde_json::Value::Object(resources));
+            obj.insert(
+                "resources".to_string(),
+                serde_json::Value::Object(resources),
+            );
         }
     }
 
     if !spec.privileged {
-        let seccomp = crate::seccomp::build_seccomp(
-            spec.seccomp_profile.as_deref(),
-            &spec.allowed_syscalls,
-        )
-        .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
+        let seccomp =
+            crate::seccomp::build_seccomp(spec.seccomp_profile.as_deref(), &spec.allowed_syscalls)
+                .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
         if let Some(seccomp) = seccomp {
             if let Some(obj) = linux.as_object_mut() {
                 obj.insert("seccomp".to_string(), seccomp);

@@ -83,7 +83,8 @@ impl BaseStore {
     }
 
     fn ready_marker(&self, digest: &Digest) -> PathBuf {
-        self.version_root().join(format!("{}.ready", digest.as_hex()))
+        self.version_root()
+            .join(format!("{}.ready", digest.as_hex()))
     }
 
     pub fn is_ready(&self, digest: &Digest) -> bool {
@@ -240,11 +241,9 @@ pub async fn prepare_bundle_from_base(
 
     let base_path = base.path.clone();
     let rootfs_for_clone = rootfs_path.clone();
-    let stats = tokio::task::spawn_blocking(move || {
-        cow::clone_tree(&base_path, &rootfs_for_clone)
-    })
-    .await
-    .map_err(|e| OciError::Other(format!("clone join: {e}")))??;
+    let stats = tokio::task::spawn_blocking(move || cow::clone_tree(&base_path, &rootfs_for_clone))
+        .await
+        .map_err(|e| OciError::Other(format!("clone join: {e}")))??;
 
     Ok((
         MaterializedBundle {

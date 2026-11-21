@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pullrun — One OCI Image. Any Execution Target. A Single 12 MB Binary.</title>
-    <meta name="description" content="Unified OCI platform: run the same image as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task — with a content-addressed DAG store, P2P sync, and zero daemon tax. 12 MB binary.">
-    <meta property="og:title" content="Pullrun — One OCI Image. Any Execution Target. A Single 12 MB Binary.">
-    <meta property="og:description" content="Same OCI image as container, VM, K8s workload, or AI agent. 12 MB. No daemon. No overlayfs. No separate VM images.">
+    <title>Pullrun — The AI Agent Sandbox Runtime. 400 ms microVMs from any OCI image.</title>
+    <meta name="description" content="The AI agent sandbox runtime. Give every task its own disposable microVM — booted from any OCI image in ~400 ms, with one content-addressed copy shared across your whole fleet. Native MCP for opencode, Claude Code, and Cursor. Containers, Firecracker VMs, and Apple Silicon VMs from the same image.">
+    <meta property="og:title" content="Pullrun — The AI Agent Sandbox Runtime.">
+    <meta property="og:description" content="Give every agent task its own sandbox. ~400 ms microVMs from any OCI image. Native MCP. One image, any execution target — agent, container, VM, Kubernetes.">
     <meta property="og:image" content="https://pullrun.dev/og-image.jpg">
     <meta property="og:image:width" content="1280">
     <meta property="og:image:height" content="640">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Pullrun — One OCI Image. Any Execution Target. A Single 12 MB Binary.">
-    <meta name="twitter:description" content="Same OCI image as container, VM, K8s workload, or AI agent. 12 MB. No daemon. No overlayfs. No separate VM images.">
+    <meta name="twitter:title" content="Pullrun — The AI Agent Sandbox Runtime.">
+    <meta name="twitter:description" content="Give every agent task its own sandbox. ~400 ms microVMs from any OCI image. Native MCP for opencode, Claude Code, and Cursor.">
     <meta name="twitter:image" content="https://pullrun.dev/og-image.jpg">
     <script type="application/ld+json">
     {
@@ -23,7 +23,7 @@
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Linux, macOS, Windows",
         "downloadUrl": "https://github.com/pullrun/pullrun",
-        "description": "One OCI image. Any execution target. A single 12 MB binary — unified OCI platform with content-addressed DAG store, P2P sync, zero daemon tax.",
+        "description": "The AI agent sandbox runtime. ~400 ms microVMs from any OCI image, one content-addressed copy shared across a fleet, native MCP for opencode / Claude Code / Cursor. Containers, Firecracker VMs, and Apple Silicon VMs from the same image.",
         "offers": {
             "@type": "Offer",
             "price": "0",
@@ -192,10 +192,11 @@
             color:var(--text-muted);font-size:.6875rem;font-weight:500;text-decoration:none
         }
         .mobile-nav a span{font-size:1.125rem}
+        .nav-theme-toggle{display:inline-flex}
         @media(max-width:768px){
             .mobile-nav{display:flex}
-            nav .links a{font-size:.75rem}
-            body{padding-bottom:56px}
+            nav .links{display:none}
+            body{padding-bottom:56px;overflow-x:hidden}
         }
 
         /* Hero */
@@ -215,11 +216,13 @@
         .hero .inner{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;text-align:left}
         @media(max-width:800px){.hero .inner{grid-template-columns:1fr;text-align:center}}
         .hero .left{position:relative;z-index:1}
+        .hero .right.diagram-wrapper{display:flex;align-items:center;justify-content:center}
+        .hero .right svg{width:100%;max-width:520px;height:auto}
         .hero h1{
-            font-size:clamp(2.5rem,6vw,5rem);
+            font-size:clamp(1.9rem,4vw,3.1rem);
             font-weight:800;
             letter-spacing:-.05em;
-            line-height:1.02;
+            line-height:1.1;
             margin-bottom:16px
         }
         .hero h1 .tagline{background:linear-gradient(135deg,var(--accent),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
@@ -301,7 +304,7 @@
         #features h2 + p{margin:0 auto 48px}
         .features-grid{
             display:grid;
-            grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+            grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
             gap:16px;
             text-align:left
         }
@@ -498,11 +501,17 @@
             .ecosystem-table td::before{content:attr(data-label);float:left;color:var(--text-muted);font-weight:400}
         }
 
+        /* Enterprise section */
+        #enterprise{text-align:center}
+        #enterprise h2 + p{margin:0 auto 48px;max-width:700px}
+        #enterprise .features-grid{margin-top:0}
+
         /* CTA */
         .cta{
             text-align:center;
             padding:100px 0;
-            position:relative
+            position:relative;
+            overflow:hidden
         }
         .cta::before{
             content:'';
@@ -512,7 +521,7 @@
             pointer-events:none
         }
         .cta h2{font-size:clamp(1.5rem,3vw,2.5rem);margin-bottom:12px}
-        .cta p{color:var(--text-muted);margin-bottom:28px;font-size:1.05rem}
+        .cta p{color:var(--text-muted);margin:0 auto 28px;font-size:1.05rem;max-width:600px}
         .cta .btn-group{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;position:relative}
         .cta .code-block{
             background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);
@@ -677,9 +686,10 @@
                 <a href="#demo">Quick Start</a>
                 <a href="#comparison">Benchmarks</a>
                 <a href="#ecosystem">Ecosystem</a>
+                <a href="#enterprise">Enterprise</a>
                 <a href="#install" class="nav-cta">⚡ Install</a>
-                <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme (t)">🌓</button>
             </div>
+            <button class="theme-toggle nav-theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle theme (t)">🌓</button>
         </div>
     </nav>
 
@@ -696,14 +706,15 @@
         <div class="container">
             <div class="inner">
                 <div class="left">
-                    <h1><span class="tagline">One OCI image. Any execution target. A single 12 MB binary.</span></h1>
-                    <p class="sub">Run the <strong>same OCI image</strong> as a container, Firecracker microVM, Apple Silicon VM, Kubernetes workload, or AI agent task. <strong>No daemon required. No overlayfs. No separate VM images.</strong></p>
+                    <h1>Every agent task. <span class="tagline">Its own sandbox. 400 ms.</span></h1>
+                    <p class="sub">Pullrun is the <strong>AI agent sandbox runtime</strong>. The same OCI image boots as a microVM, container, or Apple Silicon VM — with native <strong>MCP</strong> for opencode, Claude Code, and Cursor. <strong>No daemon. No overlayfs.</strong></p>
                     <div class="tags">
-                        <span class="tag">🔄 Container · VM · K8s</span>
+                        <span class="tag">🤖 Agent Sandboxes</span>
+                        <span class="tag">🔥 MicroVM per task</span>
+                        <span class="tag">🔌 MCP Native</span>
                         <span class="tag">🧬 DAG Store</span>
                         <span class="tag">🌐 P2P Sync</span>
-                        <span class="tag">🤖 MCP Native</span>
-                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.6.5 — Naming convention · install fixes</span>
+                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.7.9 — CRI v4 streaming · per-pod subnets</span>
                     </div>
                     <div class="buttons">
                         <a href="#install" class="btn btn-primary" onclick="track('hero_cta_click')">⚡ Install Now</a>
@@ -711,7 +722,7 @@
                     </div>
                 </div>
                 <div class="right diagram-wrapper">
-                    <svg viewBox="0 0 400 460" fill="none" xmlns="http://www.w3.org/2000/svg" id="arch-diagram">
+                    <svg viewBox="0 0 400 430" fill="none" xmlns="http://www.w3.org/2000/svg" id="arch-diagram">
                         <defs>
                             <linearGradient id="pg" x1="0" y1="0" x2="1" y2="1">
                                 <stop offset="0%" stop-color="#7c5cfc"/>
@@ -728,72 +739,72 @@
                         </defs>
 
                         <g class="diagram-node" data-tip="OCI-compatible images pulled from any registry">
-                            <rect x="100" y="0" width="200" height="52" rx="10" fill="url(#pg2)" stroke="rgba(124,92,252,.35)" stroke-width="1.5"/>
-                            <text x="200" y="32" text-anchor="middle" fill="var(--text)" font-family="'JetBrains Mono',monospace" font-size="14" font-weight="600" opacity=".9">OCI IMAGE</text>
+                            <rect x="100" y="10" width="200" height="52" rx="10" fill="url(#pg2)" stroke="rgba(124,92,252,.35)" stroke-width="1.5"/>
+                            <text x="200" y="42" text-anchor="middle" fill="var(--text)" font-family="'JetBrains Mono',monospace" font-size="14" font-weight="600" opacity=".9">OCI IMAGE</text>
                         </g>
 
                         <g class="anim-arrow">
-                            <line x1="200" y1="52" x2="200" y2="74" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".4"/>
-                            <polygon points="196,70 200,78 204,70" fill="var(--accent)" opacity=".6"/>
+                            <line x1="200" y1="62" x2="200" y2="84" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".4"/>
+                            <polygon points="196,80 200,88 204,80" fill="var(--accent)" opacity=".6"/>
                         </g>
 
                         <g class="diagram-node anim-logo" data-tip="Content-addressed DAG store with zero-copy mmap reads">
-                            <image class="logo-dark" href="/logo-svg.png" x="40" y="80" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
-                            <image class="logo-light" href="/logo-svg-light.v2.png" x="40" y="80" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
+                            <image class="logo-dark" href="/logo-svg.png" x="40" y="90" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
+                            <image class="logo-light" href="/logo-svg-light.v2.png" x="40" y="90" width="320" height="70" preserveAspectRatio="xMidYMid meet"/>
                         </g>
 
                         <g class="anim-branches">
-                            <line x1="160" y1="155" x2="80" y2="183" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
-                            <line x1="200" y1="155" x2="200" y2="183" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
-                            <line x1="240" y1="155" x2="320" y2="183" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
+                            <line x1="160" y1="165" x2="80" y2="193" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
+                            <line x1="200" y1="165" x2="200" y2="193" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
+                            <line x1="240" y1="165" x2="320" y2="193" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".25"/>
                         </g>
 
                         <g class="diagram-node anim-platform" data-tip="Linux containers via runc">
-                            <rect x="20" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
-                            <text x="80" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">🐧 Linux</text>
+                            <rect x="20" y="196" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="80" y="219" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">🐧 Linux</text>
                         </g>
                         <g class="diagram-node anim-platform" data-tip="Apple Silicon VM via Virtualization.framework">
-                            <rect x="140" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
-                            <text x="200" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">⌘ macOS</text>
+                            <rect x="140" y="196" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="200" y="219" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">⌘ macOS</text>
                         </g>
                         <g class="diagram-node anim-platform" data-tip="Windows WSL2 + Firecracker support">
-                            <rect x="260" y="186" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
-                            <text x="320" y="209" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">⊞ Windows</text>
+                            <rect x="260" y="196" width="120" height="36" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="320" y="219" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="13" font-weight="500" opacity=".9">⊞ Windows</text>
                         </g>
 
                         <g class="anim-arrows2">
-                            <line x1="80" y1="222" x2="80" y2="258" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
-                            <polygon points="76,255 80,263 84,255" fill="var(--accent)" opacity=".4"/>
-                            <line x1="200" y1="222" x2="200" y2="258" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
-                            <polygon points="196,255 200,263 204,255" fill="var(--accent)" opacity=".4"/>
-                            <line x1="320" y1="222" x2="320" y2="258" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
-                            <polygon points="316,255 320,263 324,255" fill="var(--accent)" opacity=".4"/>
+                            <line x1="80" y1="232" x2="80" y2="268" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
+                            <polygon points="76,265 80,273 84,265" fill="var(--accent)" opacity=".4"/>
+                            <line x1="200" y1="232" x2="200" y2="268" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
+                            <polygon points="196,265 200,273 204,265" fill="var(--accent)" opacity=".4"/>
+                            <line x1="320" y1="232" x2="320" y2="268" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".2"/>
+                            <polygon points="316,265 320,273 324,265" fill="var(--accent)" opacity=".4"/>
                         </g>
 
                         <g class="diagram-node anim-backend" data-tip="Isolated runc containers">
-                            <rect x="10" y="266" width="140" height="42" rx="8" fill="rgba(96,165,250,.1)" stroke="rgba(96,165,250,.25)" stroke-width="1.2"/>
-                            <text x="80" y="292" text-anchor="middle" fill="var(--blue)" font-family="Inter,sans-serif" font-size="14" font-weight="600" opacity=".9">Container</text>
+                            <rect x="10" y="276" width="140" height="42" rx="8" fill="rgba(96,165,250,.1)" stroke="rgba(96,165,250,.25)" stroke-width="1.2"/>
+                            <text x="80" y="302" text-anchor="middle" fill="var(--blue)" font-family="Inter,sans-serif" font-size="14" font-weight="600" opacity=".9">Container</text>
                         </g>
                         <g class="anim-backend">
-                            <rect x="170" y="266" width="60" height="42" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
-                            <text x="200" y="292" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="12" opacity=".6">or</text>
+                            <rect x="170" y="276" width="60" height="42" rx="8" fill="rgba(124,92,252,.08)" stroke="rgba(124,92,252,.2)" stroke-width="1"/>
+                            <text x="200" y="302" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="12" opacity=".6">or</text>
                         </g>
                         <g class="diagram-node anim-backend" data-tip="Firecracker microVMs with per-VM kernel">
-                            <rect x="250" y="266" width="140" height="42" rx="8" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.25)" stroke-width="1.2"/>
-                            <text x="320" y="292" text-anchor="middle" fill="var(--orange)" font-family="Inter,sans-serif" font-size="14" font-weight="600" opacity=".9">VM</text>
+                            <rect x="250" y="276" width="140" height="42" rx="8" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.25)" stroke-width="1.2"/>
+                            <text x="320" y="302" text-anchor="middle" fill="var(--orange)" font-family="Inter,sans-serif" font-size="14" font-weight="600" opacity=".9">VM</text>
                         </g>
 
-                        <text x="200" y="348" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="11" letter-spacing="2" text-transform="uppercase" opacity=".5">Same image · Any backend</text>
-                        <line x1="40" y1="366" x2="360" y2="366" stroke="var(--accent)" stroke-width="1" opacity=".1"/>
+                        <text x="200" y="355" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="11" letter-spacing="2" text-transform="uppercase" opacity=".5">One image · Any sandbox</text>
+                        <line x1="40" y1="373" x2="360" y2="373" stroke="var(--accent)" stroke-width="1" opacity=".1"/>
 
                         <text x="80" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">12 MB</text>
                         <text x="80" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">BINARY</text>
                         <text x="200" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">400 ms</text>
-                        <text x="200" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">CONTAINER BOOT</text>
+                        <text x="200" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">SANDBOX BOOT</text>
                         <text x="320" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">0</text>
                         <text x="320" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">DAEMON TAX</text>
 
-                        <circle cx="200" cy="115" r="4" fill="#7c5cfc" opacity=".6">
+                        <circle cx="200" cy="125" r="4" fill="#7c5cfc" opacity=".6">
                             <animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite"/>
                             <animate attributeName="opacity" values=".6;0;.6" dur="2s" repeatCount="indefinite"/>
                         </circle>
@@ -810,9 +821,14 @@
     <section id="problem">
         <div class="container">
             <span class="section-label">The Problem</span>
-            <h2>Modern infrastructure runs on too many engines</h2>
-            <p>Docker for development. containerd for production. Firecracker for isolation. CRI for Kubernetes. Separate tooling for AI agents. Each one has its own image format, storage layer, and operational model — even though they all run the same OCI images.</p>
+            <h2>Agents need to run code — nothing runs it safely, fast, and cheap</h2>
+            <p>AI agents churn through executions by the thousands. Host exec is unisolated. Docker gives you slow ~800 ms starts and a full image copy per task. VMs give isolation but heavyweight tooling built for servers, not tasks. And none of it hands your agent a control plane it understands.</p>
             <div class="problem-grid">
+                <div class="problem-card highlighted">
+                    <div class="icon">🤖</div>
+                    <h3>Agent sandboxes today</h3>
+                    <p>Unisolated host exec (dangerous), slow per-task containers that duplicate the image every time, or heavy VM tooling with its own image format. No cross-turn state, no fleet-wide storage sharing.</p>
+                </div>
                 <div class="problem-card">
                     <div class="icon">🐳</div>
                     <h3>Docker</h3>
@@ -828,11 +844,6 @@
                     <h3>Firecracker / Kata</h3>
                     <p>Strong VM isolation, but require separate VM image tooling and don't speak OCI natively without containerd shims.</p>
                 </div>
-                <div class="problem-card highlighted">
-                    <div class="icon">⚡</div>
-                    <h3>Pullrun</h3>
-                    <p>One binary. One runtime. One image format. Containers, VMs, Kubernetes, and AI agents — all sharing the same OCI image, store, and execution model.</p>
-                </div>
             </div>
         </div>
     </section>
@@ -840,23 +851,23 @@
     <section id="features">
         <div class="container">
             <span class="section-label">Features</span>
-            <h2>Everything you need, nothing you don't</h2>
-            <p>A platform, not just a runtime. Image management, storage, security policies, secrets, CRI, Compose, and MCP — all in one binary, not a stack of separate daemons.</p>
+            <h2>Built for agent workloads, sized for fleets</h2>
+            <p>Fast, isolated, cheap sandboxes — with storage that makes the N-th sandbox essentially free. Image management, security policies, secrets, CRI, Compose, and MCP — all in one binary, not a stack of separate daemons.</p>
             <div class="features-grid">
+                <div class="feature-card featured">
+                    <div class="icon">🤖</div>
+                    <h3>AI Agent Sandboxes</h3>
+                    <p>MicroVM per task — booted from any OCI image in ~400 ms, kernel-level isolation for untrusted agent code, cross-turn state via <code>commit</code>/snapshot, and a native MCP server agents drive directly.</p>
+                </div>
                 <div class="feature-card featured">
                     <div class="icon">🧬</div>
                     <h3>Content-Addressed DAG Store</h3>
-                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash — byte-identical across every node. Mark-and-sweep GC reclaims unreachable blobs. No overlayfs, no layer duplication, no escape CVEs.</p>
+                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash — 1,000 sandboxes share one copy of the image. Mark-and-sweep GC reclaims unreachable blobs. No overlayfs, no layer duplication, no escape CVEs.</p>
                 </div>
                 <div class="feature-card featured">
                     <div class="icon">🔄</div>
                     <h3>Universal OCI Execution</h3>
                     <p>Same image → runc container, Firecracker microVM, or Apple Silicon VM. No separate VM image build step. The OCI manifest <em>is</em> the rootfs.</p>
-                </div>
-                <div class="feature-card featured">
-                    <div class="icon">🌐</div>
-                    <h3>P2P Image Distribution</h3>
-                    <p>Nodes share image blocks peer-to-peer via gRPC and Bloom filters. One pull from registry; the rest delta-sync from each other at LAN speed.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">☸️</div>
@@ -874,14 +885,19 @@
                     <p>Cosign signature verification, SBOM evaluation, seccomp profiles, read-only rootfs — gate workloads before they run. Defense-in-depth as code.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="icon">🤖</div>
-                    <h3>MCP AI Integration</h3>
-                    <p>Native Model Context Protocol server — let AI agents run, stop, exec, and manage workloads through natural language. Agent → MCP → Pullrun → Container/VM.</p>
+                    <div class="icon">🔌</div>
+                    <h3>MCP Server</h3>
+                    <p>Native Model Context Protocol — 15 tools (run, exec, logs, build, push…) over stdio or SSE. opencode, Claude Code, and Cursor pull images, boot sandboxes, and inspect state through natural language.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">📦</div>
                     <h3>Encrypted Secrets</h3>
                     <p>AES-256-GCM at rest, decrypted into workload tmpfs at runtime. <code>pullrun secret create/get/ls</code> — data stays encrypted on disk.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🌐</div>
+                    <h3>P2P Image Distribution</h3>
+                    <p>Nodes share image blocks peer-to-peer via gRPC and Bloom filters. One pull from registry; the rest delta-sync from each other at LAN speed.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">⌘</div>
@@ -943,8 +959,8 @@
                 </div>
                 <div class="stat-item">
                     <div class="num" data-target="400" data-suffix=" ms">0</div>
-                    <div class="label">Container Boot</div>
-                    <div class="sub">Cold start latency</div>
+                    <div class="label">Sandbox Boot</div>
+                    <div class="sub">Firecracker microVM cold start</div>
                 </div>
                 <div class="stat-item">
                     <div class="num" data-target="160" data-suffix=" ms">0</div>
@@ -964,8 +980,8 @@
         <div class="container">
             <div>
                 <span class="section-label">Quick Start</span>
-                <h2>One command.&nbsp;Any platform.&nbsp;Zero daemon.</h2>
-                <p>Install in 30 seconds and start running containers or VMs from the same OCI image.</p>
+                <h2>Give it a spin in the terminal</h2>
+                <p>Boot a sandbox in 30 seconds — the same image runs as a container, VM, or agent task.</p>
                 <p style="color:var(--text-muted);font-size:.875rem;margin-top:8px">Type <code style="color:var(--accent)">help</code> for available commands in the terminal.</p>
             </div>
             <div class="terminal" id="terminal">
@@ -977,7 +993,7 @@
                 <div class="terminal-body" id="terminal-body">
                     <div class="terminal-line"><span class="cm"># Welcome to Pullrun! Type a command or press Enter to replay demo.</span></div>
                     <div class="terminal-line"><span class="prompt">$ </span><span class="fn">pullrun</span> --help</div>
-                    <div class="terminal-line"><span class="output">One OCI image. Any execution target. A single 12 MB binary.</span></div>
+                    <div class="terminal-line"><span class="output">The AI agent sandbox runtime — 400 ms microVMs from any OCI image.</span></div>
                     <div class="terminal-line" id="terminal-output"></div>
                     <div class="terminal-input-line" id="terminal-input-line">
                         <span class="prompt">$</span>
@@ -994,12 +1010,12 @@
             <h2>Built different from the ground up</h2>
             <p>No overlayfs. No daemon tax. No separate VM images. A platform, not just a runtime.</p>
             <div class="why-grid">
-                <div class="why-card"><div class="big">1</div><div class="label">Same image, any backend</div><div class="sub">OCI manifest IS the VM rootfs</div></div>
-                <div class="why-card"><div class="big">2</div><div class="label">Rootless by default</div><div class="sub">No sudo, no dockerd, no TCP socket</div></div>
-                <div class="why-card"><div class="big">3</div><div class="label">Content-addressed store</div><div class="sub">No overlayfs, no escape CVEs</div></div>
-                <div class="why-card"><div class="big">4</div><div class="label">P2P block sync</div><div class="sub">One registry pull for the whole cluster</div></div>
-                <div class="why-card"><div class="big">5</div><div class="label">Cross-platform</div><div class="sub">macOS, Linux, Windows — same binary</div></div>
-                <div class="why-card"><div class="big">6</div><div class="label">AI-native</div><div class="sub">MCP protocol for agentic workloads</div></div>
+                <div class="why-card"><div class="big">400 ms</div><div class="label">Task sandbox boot</div><div class="sub">MicroVM cold boot ~500 ms, warm pool ~200 ms</div></div>
+                <div class="why-card"><div class="big">1</div><div class="label">Image per fleet</div><div class="sub">DAG dedup — 1,000 sandboxes, one copy</div></div>
+                <div class="why-card"><div class="big">🛡️</div><div class="label">MicroVM isolation</div><div class="sub">Kernel-per-task for untrusted agent code</div></div>
+                <div class="why-card"><div class="big">🔌</div><div class="label">MCP native</div><div class="sub">opencode, Claude Code, Cursor drive it</div></div>
+                <div class="why-card"><div class="big">💾</div><div class="label">State that persists</div><div class="sub">commit / snapshot — next run boots from it</div></div>
+                <div class="why-card"><div class="big">0</div><div class="label">Daemon tax</div><div class="sub">Rootless, no sudo, no dockerd</div></div>
             </div>
         </div>
     </section>
@@ -1020,12 +1036,14 @@
                         <tr><td data-label="">First alpine:3.18 pull</td><td class="center" data-label="Pullrun"><strong id="b-pull">968 ms</strong></td><td class="center" data-label="Docker">~2 s</td></tr>
                         <tr><td data-label="">Container run latency</td><td class="center" data-label="Pullrun"><strong id="b-run">~400 ms</strong></td><td class="center" data-label="Docker">~800 ms</td></tr>
                         <tr><td data-label="">Apple Silicon VM boot</td><td class="center" data-label="Pullrun"><strong id="b-vm">~160 ms</strong></td><td class="center" data-label="Docker">N/A</td></tr>
+                        <tr><td data-label="">Agent sandbox (Firecracker VM)</td><td class="center" data-label="Pullrun"><strong>~500 ms</strong></td><td class="center" data-label="Docker"><span class="cross">N/A</span></td></tr>
                         <tr><td data-label="">Idle daemon RSS</td><td class="center" data-label="Pullrun"><strong id="b-rss">24.6 MiB</strong></td><td class="center" data-label="Docker">~90 MiB</td></tr>
                         <tr><td data-label="">Binary size</td><td class="center" data-label="Pullrun"><strong id="b-size">12 MB</strong></td><td class="center" data-label="Docker">~75 MB</td></tr>
                         <tr><td data-label="">Rootless by default</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                         <tr><td data-label="">Containers + VMs from same image</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                         <tr><td data-label="">P2P image sync</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
-                        <tr><td data-label="">MCP AI integration</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">MCP for AI agents</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
+                        <tr><td data-label="">MicroVM per agent task</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                         <tr><td data-label="">Content-addressed store</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                         <tr><td data-label="">Optional daemon</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                     </tbody>
@@ -1042,6 +1060,10 @@
             <p>Everything you need to know before getting started.</p>
             <div class="faq-list">
                 <details class="faq-item">
+                    <summary>How does Pullrun work with AI agents?</summary>
+                    <div class="answer">Pullrun exposes a native MCP server (<code>pullrun mcp</code>). Flow: Agent → MCP → Pullrun → Container/VM. Agents pull images, boot per-task microVM sandboxes in ~400 ms, exec, snapshot state with <code>commit</code>, and push builds — through 15 tools (run, exec, logs, statatch, build, push…) in stdio or SSE mode. Because sandboxes share one content-addressed image copy, a fleet of agents costs about the same storage as one.</div>
+                </details>
+                <details class="faq-item">
                     <summary>How is this different from Podman?</summary>
                     <div class="answer">Podman is daemonless but does not support running the same OCI image as a VM, lacks built-in P2P image distribution, and has no native MCP AI integration. Pullrun gives you containers <em>and</em> Firecracker/Apple VMs from the same image, P2P block sync for cluster-wide pulls, and a native MCP server for AI agent control — all in a single 12 MB binary.</div>
                 </details>
@@ -1051,7 +1073,7 @@
                 </details>
                 <details class="faq-item">
                     <summary>Is this production-ready?</summary>
-                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 175+ tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. v0.6.5 adds consistent binary naming across install paths, fixes the install.sh binary-selection bug, and adds `-V` shorthand flags for both the CLI and runtime.</div>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 247 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. v0.7.9 adds CRI v4 streaming handshake, per-pod bridge subnets, and robust detached-stop cleanup.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Does it require root or a daemon?</summary>
@@ -1060,6 +1082,10 @@
                 <details class="faq-item">
                     <summary>What platforms are supported?</summary>
                     <div class="answer">Linux (x86_64, arm64), macOS (Apple Silicon via Virtualization.framework), and Windows (WSL2 with runc + Firecracker). The same binary works everywhere — download once, run anywhere.</div>
+                </details>
+                <details class="faq-item">
+                    <summary>Is Pullrun open source? How do you make money?</summary>
+                    <div class="answer">Yes — Apache-2.0, everything in this repo. Commercial revenue comes from enterprise licensing for production fleets, professional services (deployment, hardening, custom backends, migrations), a managed control-plane SaaS, and support SLAs. The open-source runtime is the wedge; enterprise deployments are the business — and we are already structured to sell them.</div>
                 </details>
             </div>
         </div>
@@ -1074,6 +1100,7 @@
                 <table class="ecosystem-table">
                     <thead><tr><th>If you use</th><th>Pullrun gives you</th></tr></thead>
                     <tbody>
+                        <tr><td data-label="If you use">AI agents (opencode, Claude Code, Cursor)</td><td data-label="Pullrun gives you">Native MCP server + per-task microVM sandboxes + DAG dedup for fleets + cross-turn state via commit/snapshot</td></tr>
                         <tr><td data-label="If you use">Docker</td><td data-label="Pullrun gives you">Daemonless runtime + native VM execution from the same image + P2P distribution + CRI shim</td></tr>
                         <tr><td data-label="If you use">Podman</td><td data-label="Pullrun gives you">Kubernetes CRI support + Firecracker/Apple VM backends + MCP AI agent protocol + P2P block sync</td></tr>
                         <tr><td data-label="If you use">containerd</td><td data-label="Pullrun gives you">Integrated content-addressed DAG store + P2P distribution + Compose + secrets in a single binary</td></tr>
@@ -1085,10 +1112,98 @@
         </div>
     </section>
 
+    <section id="enterprise">
+        <div class="container">
+            <span class="section-label">Enterprise & Commercial</span>
+            <h2>Open source. And ready to be a business.</h2>
+            <p>Pullrun ships as Apache-2.0 open source — and as a commercial offering for teams that run it in production. Same runtime, same images: from free OSS to a supported, licensed deployment.</p>
+            <h3 style="margin:0 0 24px;font-size:1.05rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em">Shipped and available today</h3>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="icon">🛡️</div>
+                    <h3>Security Policy Engine</h3>
+                    <p>Deny-by-default image gate: cosign signature verification, CycloneDX SBOM checks (CVSS cap, license deny-list), evaluated at pull <em>and</em> run. Per-workload hardening: seccomp allowlists, read-only rootfs, no-new-privileges.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">📊</div>
+                    <h3>Observability</h3>
+                    <p>Prometheus <code>/metrics</code> endpoint on the runtime daemon — pull &amp; start latencies, running workloads, store size, sync peers. Live <code>pullrun stats</code> and an event stream (<code>pullrun events</code>) covering pulls, runs, exits, and every policy decision.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🔐</div>
+                    <h3>Secrets &amp; Config</h3>
+                    <p>Docker-style <code>secret</code> and <code>config</code> management — create, list, inspect, remove — mounted under <code>/run/secrets</code>, never stored in plaintext in workload images.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🌐</div>
+                    <h3>Air-Gapped Fleet Sync</h3>
+                    <p>P2P image distribution between nodes — one pull seeds the fleet. Kernel-as-image updates, offline registries, and DAG garbage collection keep air-gapped clusters self-sufficient.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">☸</div>
+                    <h3>Kubernetes CRI</h3>
+                    <p>CRI shim (beta) with v4 streaming exec/attach — run Pods against Firecracker VM backends via RuntimeClass, with per-pod bridge subnets and NAT.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🏢</div>
+                    <h3>Enterprise License</h3>
+                    <p>Per-cluster licensing for production fleets — Kubernetes CRI runtime, agent sandbox farms at scale, air-gapped registries, kernel-as-image updates. Predictable per-node pricing.</p>
+                </div>
+            </div>
+            <h3 style="margin:48px 0 24px;font-size:1.05rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em">For AI agent platforms</h3>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="icon">🧠</div>
+                    <h3>Embedded Agent Sandboxes</h3>
+                    <p>License Pullrun inside your agent product — Claude Code, opencode, Cursor-style products included. Per-task microVM sandbox in <strong>~500 ms cold / ~200 ms warm</strong>, driven over a native MCP server (15 tools: run, exec, logs, build, push, commit…).</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">💰</div>
+                    <h3>Fleet Economics</h3>
+                    <p>Content-addressed DAG storage: <strong>1,000 concurrent sandboxes share one copy</strong> of each image, mmap'd from the same host pages (idle daemon RSS 24.6 MiB). Sandbox cost stays flat as the fleet grows — the N-th sandbox is essentially free.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🔒</div>
+                    <h3>Isolation &amp; Guardrails</h3>
+                    <p>Kernel-per-task microVMs for untrusted agent code — no shared-kernel escapes. Deny-by-default image policy, seccomp profiles, read-only rootfs, no-new-privileges; every policy decision emitted as an audit event.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">☁️</div>
+                    <h3>Hosted Sandbox API</h3>
+                    <p>Planned: managed sandbox endpoints — boot, run agent, snapshot state, resume — billed per active sandbox-second. Your agents get enterprise isolation without you running a single VM.</p>
+                </div>
+            </div>
+            <h3 style="margin:48px 0 24px;font-size:1.05rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em">How we sell it</h3>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="icon">🧑‍🔬</div>
+                    <h3>Professional Services</h3>
+                    <p>We deploy and tune Pullrun on your infrastructure: custom executors and backends, P2P fleet network design, policy &amp; seccomp hardening, migration from Docker/containerd, team training.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">☁️</div>
+                    <h3>Managed Control Plane</h3>
+                    <p>Planned: a hosted SaaS control plane — fleet-wide image sync, policy center, secrets, and observability across hundreds of nodes, billed per active sandbox. Built and run by the team that writes the runtime.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🕐</div>
+                    <h3>Support &amp; SLAs</h3>
+                    <p>Priority engineering support with response SLAs for enterprise deployments — security fixes, backports, and a roadmap that follows paying customers.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🤝</div>
+                    <h3>OEM &amp; Embed</h3>
+                    <p>Build Pullrun into your product: per-seat OEM licensing, custom MCP tool surfaces, co-branded runtime, and white-glove onboarding for agent platform vendors.</p>
+                </div>
+            </div>
+            <p style="color:var(--text-muted);font-size:.95rem;margin-top:32px">Enterprise conversations start here — <a href="https://github.com/pullrun/pullrun/issues" style="color:var(--accent);text-decoration:underline">open an issue on GitHub</a>.</p>
+        </div>
+    </section>
+
     <section id="install" class="cta">
         <div class="container">
             <h2>Ready to pullrun?</h2>
-            <p>Install in 30 seconds. macOS, Linux, or Windows.</p>
+            <p>Give your agents a sandbox that boots in 400 ms. macOS, Linux, or Windows.</p>
             <div class="btn-group">
                 <a href="https://github.com/pullrun/pullrun#-install" class="btn btn-primary" onclick="track('install_cta_click')">⚡ Install Now</a>
                 <a href="https://github.com/pullrun/pullrun" class="btn btn-secondary">View on GitHub →</a>
@@ -1120,9 +1235,9 @@
         window.__pullrun_ab = bucket;
         if(bucket === 'B'){
             var btn = document.querySelector('.hero .btn-primary');
-            if(btn) btn.textContent = '⚡ Run your first VM in 400ms';
+            if(btn) btn.textContent = '⚡ Boot a sandbox in 400ms';
             var h1 = document.querySelector('.hero h1 .tagline');
-            if(h1) h1.textContent = 'Same OCI image. Container or VM. No daemon.';
+            if(h1) h1.textContent = 'One OCI image. Any execution target. Zero daemon.';
         }
     })();
 
@@ -1179,7 +1294,7 @@
     }
 
     // Keyboard navigation
-    var sections = ['hero','features','scroll-stats','architecture','demo','why','comparison','ecosystem','install'];
+    var sections = ['hero','features','scroll-stats','architecture','demo','why','comparison','ecosystem','enterprise','install'];
     var curSection = 0;
     function goToSection(i){
         if(i >= 0 && i < sections.length){
@@ -1206,7 +1321,7 @@
 
     // Interactive terminal
     var terminalResponses = {
-        'help': 'One OCI image. Any execution target. A single 12 MB binary.\n\nAvailable commands: pull, run, build, compose, stop, exec, logs, mcp, network, secret, stats, info, gc, version\nType any command to see it in action.',
+        'help': 'The AI agent sandbox runtime — 400 ms microVMs from any OCI image.\n\nAvailable commands: pull, run, build, compose, stop, exec, logs, mcp, network, secret, stats, info, gc, version\nType any command to see it in action.',
         'pullrun pull alpine:3.18': 'Pulling alpine:3.18...\n✓ 968 ms — 7 layers, 7.05 MB\nContent-addressed and verified.',
         'pullrun run alpine:3.18 --cmd echo hello': 'Starting alpine:3.18 (container)...\n✓ 401 ms\nhello',
         'pullrun run alpine:3.18 --backend vm': 'Starting alpine:3.18 (Firecracker VM)...\n✓ 512 ms\nBooted with per-VM kernel isolation.',
@@ -1277,8 +1392,8 @@
     // Auto-replay demo
     var demoCommands = [
         'pullrun pull alpine:3.18',
-        'pullrun run alpine:3.18 --cmd echo hello',
         'pullrun run alpine:3.18 --backend vm',
+        'pullrun run alpine:3.18 --cmd echo hello',
         'pullrun mcp',
     ];
     var demoIdx = 0;
@@ -1516,10 +1631,10 @@
         if(!svg) return;
         var ns = 'http://www.w3.org/2000/svg';
         var paths = [
-            {from:200,fromY:52,to:200,toY:74,color:'#7c5cfc'},
-            {from:160,fromY:155,to:80,toY:183,color:'#60a5fa'},
-            {from:200,fromY:155,to:200,toY:183,color:'#60a5fa'},
-            {from:240,fromY:155,to:320,toY:183,color:'#60a5fa'},
+            {from:200,fromY:62,to:200,toY:84,color:'#7c5cfc'},
+            {from:160,fromY:165,to:80,toY:193,color:'#60a5fa'},
+            {from:200,fromY:165,to:200,toY:193,color:'#60a5fa'},
+            {from:240,fromY:165,to:320,toY:193,color:'#60a5fa'},
         ];
         paths.forEach(function(p, idx){
             var block = document.createElementNS(ns, 'rect');

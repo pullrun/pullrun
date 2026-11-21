@@ -2450,19 +2450,19 @@ impl Runtime for RuntimeService {
                     .await
                     .map_err(|e| tonic::Status::internal(format!("prepare image base: {e}")))?;
 
-                    let rootfs_path = self.store.root_dir().join("rootfs").join(&req.id);
-                    let base_path = base.path.clone();
-                    let dest = rootfs_path.clone();
-                    tokio::task::spawn_blocking(move || {
-                        pullrun_oci::cow::clone_tree(&base_path, &dest)
-                    })
+                let rootfs_path = self.store.root_dir().join("rootfs").join(&req.id);
+                let base_path = base.path.clone();
+                let dest = rootfs_path.clone();
+                tokio::task::spawn_blocking(move || {
+                    pullrun_oci::cow::clone_tree(&base_path, &dest)
+                })
+                .await
+                .map_err(|e| tonic::Status::internal(format!("clone rootfs join: {e}")))?
+                .map_err(|e| tonic::Status::internal(format!("clone rootfs: {e}")))?;
+                self.rootfs_cache
+                    .write()
                     .await
-                    .map_err(|e| tonic::Status::internal(format!("clone rootfs join: {e}")))?
-                    .map_err(|e| tonic::Status::internal(format!("clone rootfs: {e}")))?;
-                    self.rootfs_cache
-                        .write()
-                        .await
-                        .insert(req.id.clone(), rootfs_path);
+                    .insert(req.id.clone(), rootfs_path);
             }
         }
 
@@ -3899,17 +3899,12 @@ impl Runtime for RuntimeService {
                         };
                     // Record the guest's real exit status before the
                     // VM teardown callback can default it to 137.
-                    if let pullrun_vsock::Frame::WorkloadExit {
-                        exit_code,
-                        signal,
-                    } = &frame
-                    {
+                    if let pullrun_vsock::Frame::WorkloadExit { exit_code, signal } = &frame {
                         let code = exit_code
                             .map(|c| c as u32)
                             .or_else(|| signal.map(|s| 128 + s as u32));
-                        if let Some(state) = workloads_drain
-                            .blocking_write()
-                            .get_mut(&workload_id_dr)
+                        if let Some(state) =
+                            workloads_drain.blocking_write().get_mut(&workload_id_dr)
                         {
                             state.status = "exited".to_string();
                             state.exit_code = code.or(state.exit_code);
@@ -3919,11 +3914,7 @@ impl Runtime for RuntimeService {
                                     .map(|d| d.as_secs() as i64)
                                     .unwrap_or(0);
                             }
-                            write_workload_checkpoint(
-                                &checkpoints_drain,
-                                &workload_id_dr,
-                                state,
-                            );
+                            write_workload_checkpoint(&checkpoints_drain, &workload_id_dr, state);
                         }
                     }
                     if let pullrun_vsock::Frame::WorkloadStdout(ref data) = frame {

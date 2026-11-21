@@ -15,12 +15,7 @@ use std::io;
 use std::path::Path;
 
 #[cfg(target_os = "linux")]
-pub fn mount_overlay(
-    base: &Path,
-    upper: &Path,
-    work: &Path,
-    merged: &Path,
-) -> io::Result<()> {
+pub fn mount_overlay(base: &Path, upper: &Path, work: &Path, merged: &Path) -> io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
 
     let cstr = |p: &Path| {
@@ -59,12 +54,7 @@ pub fn mount_overlay(
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn mount_overlay(
-    _base: &Path,
-    _upper: &Path,
-    _work: &Path,
-    _merged: &Path,
-) -> io::Result<()> {
+pub fn mount_overlay(_base: &Path, _upper: &Path, _work: &Path, _merged: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "overlayfs is only available on Linux",
@@ -158,9 +148,7 @@ mod tests {
             // so skip instead of failing. The real behavior checks
             // (14/15/16) still fail the test.
             10..=13 => {
-                eprintln!(
-                    "skipping overlay user-namespace test: setup unavailable (code {code})"
-                );
+                eprintln!("skipping overlay user-namespace test: setup unavailable (code {code})");
             }
             other => panic!("overlay user-namespace test failed (code {other})"),
         }

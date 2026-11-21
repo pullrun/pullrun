@@ -938,17 +938,14 @@ fn build_attach_vm_config(
         let delta_tag = NSString::from_str("pullrun-upper");
         let allocated_delta: Allocated<VZVirtioFileSystemDeviceConfiguration> =
             unsafe { msg_send![VZVirtioFileSystemDeviceConfiguration::class(), alloc] };
-        let delta_device =
-            unsafe { VZVirtioFileSystemDeviceConfiguration::init(allocated_delta) };
+        let delta_device = unsafe { VZVirtioFileSystemDeviceConfiguration::init(allocated_delta) };
         unsafe { delta_device.setTag(&delta_tag) };
-        let delta_url = NSURL::fileURLWithPath(&NSString::from_str(
-            delta.to_string_lossy().as_ref(),
-        ));
+        let delta_url =
+            NSURL::fileURLWithPath(&NSString::from_str(delta.to_string_lossy().as_ref()));
         let allocated_dsd: Allocated<VZSharedDirectory> =
             unsafe { msg_send![VZSharedDirectory::class(), alloc] };
-        let delta_shared = unsafe {
-            VZSharedDirectory::initWithURL_readOnly(allocated_dsd, &delta_url, false)
-        };
+        let delta_shared =
+            unsafe { VZSharedDirectory::initWithURL_readOnly(allocated_dsd, &delta_url, false) };
         let allocated_dsh: Allocated<VZSingleDirectoryShare> =
             unsafe { msg_send![VZSingleDirectoryShare::class(), alloc] };
         let delta_share =
@@ -1478,10 +1475,7 @@ pub fn spawn_vm_inner(
                                 };
                                 if unsafe { libc::poll(&mut pfd, 1, 1000) } > 0 {
                                     let mut sink = [0u8; 64];
-                                    let _ = std::io::Read::read(
-                                        &mut &read_file,
-                                        &mut sink,
-                                    );
+                                    let _ = std::io::Read::read(&mut &read_file, &mut sink);
                                 }
                             }
                             break; // workload exited — stop VM

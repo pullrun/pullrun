@@ -13,9 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, info, warn};
 
 use pullrun_net::{Direction, IpRange, Ipam, NetworkManager, NetworkRule, ProxyNetwork};
-use pullrun_oci::{
-    bundle_from_manifest, prepare_bundle_from_base, BaseStore, OciMaterializer,
-};
+use pullrun_oci::{bundle_from_manifest, prepare_bundle_from_base, BaseStore, OciMaterializer};
 use pullrun_store::MmapStore;
 
 use crate::overlay::{mount_overlay, unmount_overlay};
@@ -359,12 +357,9 @@ impl LinuxContainerExecutor {
                 .ensure_base(&digest)
                 .await
                 .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
-            let (bundle, stats) =
-                prepare_bundle_from_base(&self.store, &base, &digest, bundle_dir)
-                    .await
-                    .map_err(|e| {
-                        ExecError::ExecutionFailed(format!("clone image base: {e}"))
-                    })?;
+            let (bundle, stats) = prepare_bundle_from_base(&self.store, &base, &digest, bundle_dir)
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("clone image base: {e}")))?;
             debug!(
                 id = %spec.id,
                 cloned = stats.cloned,
@@ -384,10 +379,9 @@ impl LinuxContainerExecutor {
         spec: &WorkloadSpec,
         bundle_dir: &std::path::Path,
     ) -> Result<pullrun_oci::MaterializedBundle, ExecError> {
-        let base_store = self
-            .base_store
-            .as_ref()
-            .ok_or_else(|| ExecError::ExecutionFailed("overlay rootfs needs a base store".into()))?;
+        let base_store = self.base_store.as_ref().ok_or_else(|| {
+            ExecError::ExecutionFailed("overlay rootfs needs a base store".into())
+        })?;
         let digest = spec.image_root;
         let base = base_store
             .ensure_base(&digest)
@@ -399,10 +393,7 @@ impl LinuxContainerExecutor {
         let work = bundle_dir.join("work");
         let merged = bundle_dir.join("merged");
         mount_overlay(&base.path, &upper, &work, &merged).map_err(|e| {
-            ExecError::ExecutionFailed(format!(
-                "mount overlay ({}): {e}",
-                merged.display()
-            ))
+            ExecError::ExecutionFailed(format!("mount overlay ({}): {e}", merged.display()))
         })?;
 
         match bundle_from_manifest(&self.store, &digest, bundle_dir, &merged) {
@@ -415,13 +406,10 @@ impl LinuxContainerExecutor {
             }
             Err(e) => {
                 let _ = unmount_overlay(&merged);
-                Err(ExecError::ExecutionFailed(format!(
-                    "overlay manifest: {e}"
-                )))
+                Err(ExecError::ExecutionFailed(format!("overlay manifest: {e}")))
             }
         }
     }
-
 }
 
 #[async_trait]
@@ -616,9 +604,7 @@ impl Executor for LinuxContainerExecutor {
 
         let stderr_path = bdir.join("runc.stderr.log");
         let stderr_file = std::fs::File::create(&stderr_path).ok();
-        let stderr_for_cmd = stderr_file
-            .as_ref()
-            .and_then(|f| f.try_clone().ok());
+        let stderr_for_cmd = stderr_file.as_ref().and_then(|f| f.try_clone().ok());
         let mut child = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawning foreground runc run -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
@@ -977,9 +963,7 @@ fn runc_startup_error(stderr_path: &std::path::Path) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    if trimmed.contains("level=error")
-        || trimmed.contains("runc:")
-        || trimmed.contains("failed to")
+    if trimmed.contains("level=error") || trimmed.contains("runc:") || trimmed.contains("failed to")
     {
         Some(trimmed.to_string())
     } else {
@@ -1134,14 +1118,10 @@ impl Executor for RootlessContainerExecutor {
                 .ensure_base(&spec.image_root)
                 .await
                 .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
-            let (bundle, stats) = prepare_bundle_from_base(
-                &self.store,
-                &base,
-                &spec.image_root,
-                &bundle_dir,
-            )
-            .await
-            .map_err(|e| ExecError::ExecutionFailed(format!("clone image base: {e}")))?;
+            let (bundle, stats) =
+                prepare_bundle_from_base(&self.store, &base, &spec.image_root, &bundle_dir)
+                    .await
+                    .map_err(|e| ExecError::ExecutionFailed(format!("clone image base: {e}")))?;
             debug!(
                 id = %spec.id,
                 cloned = stats.cloned,
@@ -1249,11 +1229,8 @@ impl Executor for RootlessContainerExecutor {
 
         let mut container_pid = None;
         for _ in 0..20 {
-            container_pid = rootless_state_pid(
-                &self.config.runc_path,
-                &self.config.state_root,
-                &handle.id,
-            );
+            container_pid =
+                rootless_state_pid(&self.config.runc_path, &self.config.state_root, &handle.id);
             if container_pid.is_some() {
                 break;
             }
@@ -1305,7 +1282,9 @@ impl Executor for RootlessContainerExecutor {
                         }
                     }
                 }
-                None => warn!(id = %handle.id, "container pid unavailable; skipping rootless networking"),
+                None => {
+                    warn!(id = %handle.id, "container pid unavailable; skipping rootless networking")
+                }
             }
         }
 

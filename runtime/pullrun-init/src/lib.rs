@@ -146,12 +146,7 @@ pub async fn run() -> Result<(), InitError> {
     // milliseconds tears the VM down before the host reader has
     // consumed its stdout/stderr/exit frames, which showed up as a
     // missing exit code and no output.
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        client.recv_frame(),
-    )
-    .await
-    {
+    match tokio::time::timeout(std::time::Duration::from_secs(5), client.recv_frame()).await {
         Ok(Ok(pullrun_vsock::Frame::ExitAck)) => info!("host acknowledged exit"),
         Ok(Ok(other)) => warn!(?other, "unexpected frame while waiting for exit ack"),
         Ok(Err(e)) => warn!(error = %e, "vsock error while waiting for exit ack"),
@@ -279,25 +274,24 @@ impl Workload {
         let mut root_path = std::path::PathBuf::from(MOUNT_POINT);
         const DELTA_MOUNT: &str = "/mnt/delta";
         let delta_mounted = {
-            std::fs::create_dir_all(DELTA_MOUNT).is_ok()
-                && {
-                    let tag = std::ffi::CString::new("pullrun-upper")
-                        .map_err(|_| InitError::Exec("NUL in delta tag".into()))?;
-                    let mnt = std::ffi::CString::new(DELTA_MOUNT)
-                        .map_err(|_| InitError::Exec("NUL in delta mount".into()))?;
-                    let fstype = std::ffi::CString::new("virtiofs")
-                        .map_err(|_| InitError::Exec("NUL in delta fstype".into()))?;
-                    let rc = unsafe {
-                        libc::mount(
-                            tag.as_ptr(),
-                            mnt.as_ptr(),
-                            fstype.as_ptr(),
-                            0,
-                            std::ptr::null(),
-                        )
-                    };
-                    rc == 0
-                }
+            std::fs::create_dir_all(DELTA_MOUNT).is_ok() && {
+                let tag = std::ffi::CString::new("pullrun-upper")
+                    .map_err(|_| InitError::Exec("NUL in delta tag".into()))?;
+                let mnt = std::ffi::CString::new(DELTA_MOUNT)
+                    .map_err(|_| InitError::Exec("NUL in delta mount".into()))?;
+                let fstype = std::ffi::CString::new("virtiofs")
+                    .map_err(|_| InitError::Exec("NUL in delta fstype".into()))?;
+                let rc = unsafe {
+                    libc::mount(
+                        tag.as_ptr(),
+                        mnt.as_ptr(),
+                        fstype.as_ptr(),
+                        0,
+                        std::ptr::null(),
+                    )
+                };
+                rc == 0
+            }
         };
 
         if delta_mounted {

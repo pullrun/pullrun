@@ -603,9 +603,9 @@ impl MmapStore {
         let bytes: &[u8] = &mmap[..];
         let archived = rkyv::check_archived_root::<DagNode>(bytes)
             .map_err(|_| StoreError::Corrupted(*digest, "invalid archived DAG node".into()))?;
-        let node: DagNode = archived
-            .deserialize(&mut rkyv::Infallible)
-            .map_err(|_| StoreError::Corrupted(*digest, "DAG node deserialization failed".into()))?;
+        let node: DagNode = archived.deserialize(&mut rkyv::Infallible).map_err(|_| {
+            StoreError::Corrupted(*digest, "DAG node deserialization failed".into())
+        })?;
         Ok(node)
     }
 

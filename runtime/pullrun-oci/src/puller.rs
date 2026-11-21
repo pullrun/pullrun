@@ -429,11 +429,7 @@ impl OciPuller {
     /// 60 s timeout used to turn that into a failed pull even though an
     /// immediate retry succeeds. Retry connect/timeout/request errors
     /// and 429/5xx responses with a short exponential backoff.
-    async fn send_retry<F>(
-        &self,
-        what: &str,
-        mut make: F,
-    ) -> Result<reqwest::Response, OciError>
+    async fn send_retry<F>(&self, what: &str, mut make: F) -> Result<reqwest::Response, OciError>
     where
         F: FnMut() -> reqwest::RequestBuilder,
     {
@@ -553,8 +549,8 @@ impl OciPuller {
                     if let (Some(user), Some(pass)) = (&auth.username, &auth.password) {
                         let encoded = base64::engine::general_purpose::STANDARD
                             .encode(format!("{user}:{pass}"));
-                        req = req
-                            .header(reqwest::header::AUTHORIZATION, format!("Basic {encoded}"));
+                        req =
+                            req.header(reqwest::header::AUTHORIZATION, format!("Basic {encoded}"));
                     }
                 }
                 req
@@ -747,8 +743,7 @@ impl OciPuller {
                             "application/vnd.docker.distribution.manifest.v2+json",
                         );
                     if let Some(t) = token {
-                        req = req
-                            .header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                        req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
                     }
                     req
                 })
@@ -832,8 +827,7 @@ impl OciPuller {
                             "application/vnd.docker.distribution.manifest.list.v2+json",
                         );
                     if let Some(t) = token {
-                        req = req
-                            .header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                        req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
                     }
                     req
                 })

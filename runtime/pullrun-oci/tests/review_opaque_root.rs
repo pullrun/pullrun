@@ -95,7 +95,11 @@ async fn root_opaque_whiteout_is_confined_to_bundle() {
         schema_version: 2,
         media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
         artifact_type: None,
-        config: descriptor("application/vnd.oci.image.config.v1+json", &Digest([1u8; 32]), 2),
+        config: descriptor(
+            "application/vnd.oci.image.config.v1+json",
+            &Digest([1u8; 32]),
+            2,
+        ),
         layers: vec![
             descriptor(
                 "application/vnd.oci.image.layer.v1.tar+gzip",
