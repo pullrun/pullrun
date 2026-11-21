@@ -27,7 +27,7 @@ execute `/bin/sh -c true`.
 | tier | sequential | concurrent |
 |---|---:|---:|
 | container (rootless runc) | 3,592 ms | **914 ms** |
-| per-task Firecracker VM | not measured (`/dev/kvm` unavailable) | — |
+| per-task Firecracker VM | boot smoke **1.15 s**; tier timing pending | — |
 | group | not implemented on Linux | — |
 
 Interpretation:
@@ -37,9 +37,14 @@ Interpretation:
 - On Linux, five rootless containers complete concurrently in ~0.9 s.
   The measurement includes rootfs clone, `runc` startup, and exit
   detection; it is a debug runtime.
-- Firecracker was not measured because the test host exposes
-  `/dev/kvm` only to the `kvm` group, which the unprivileged user
-  cannot join.
+- Firecracker boot smoke passed in **1.15 s** (serial marker) once
+  `/dev/kvm` was made accessible. The tier timing above was not
+  completed: the Linux test host went fully offline during the
+  daemon/CLI VM run. Re-run `hack/tier-bench.sh` on Linux with
+  `/dev/kvm`, `PULLRUN_FC_BIN`, and `PULLRUN_FC_VMLINUX` set to fill
+  the row.
+- The boot test now builds its rootfs with `mkfs.ext4 -d` instead of a
+  loop mount, so it runs as an unprivileged user with KVM access.
 
 ## Caveats
 
