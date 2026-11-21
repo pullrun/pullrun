@@ -1005,7 +1005,7 @@ mod ext4_base_cache_tests {
             .await
             .unwrap();
         let vm_b = exec
-            .provision_vm_rootfs(&built.manifest_digest, "vm-b")
+            .provision_vm_rootfs(&built.manifest_digest, "vm-b", &[])
             .await
             .unwrap();
         assert_ne!(vm_a, vm_b);
