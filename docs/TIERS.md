@@ -42,10 +42,12 @@ Interpretation:
   `/bin/sh -c 'echo fc-user-ok; exit 7'`, printed
   `PULLRUN_EXIT=7`, and powered off (`sysrq: Power Off`,
   `reboot: Power down`). Isolated VMs create no tap/bridge/NIC.
-- Remaining gap: `run --attach` does not yet return on VM poweroff
-  (`[pullrun] detached` then hang), and the CLI does not propagate the
-  guest exit code. `status()` parses `PULLRUN_EXIT=` and kills the
-  Firecracker VMM, but the attach lifecycle needs the exit frame.
+- `run --attach` now returns on VM poweroff with the guest exit code
+  (`exit 3`/`exit 7` verified): `status()` parses `PULLRUN_EXIT=`,
+  kills the VMM, and the CLI polls GetWorkload while attached.
+- Remaining gap: the VM's serial stdout is not forwarded to the attach
+  client yet (it is present in the daemon-side `console.log`), so
+  `run --attach` returns the right code with empty stdout.
 - Re-run `hack/tier-bench.sh` on Linux with `/dev/kvm`,
   `PULLRUN_FC_BIN`, and `PULLRUN_FC_VMLINUX` once attach returns to
   fill the tier row.
