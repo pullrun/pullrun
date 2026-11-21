@@ -634,8 +634,6 @@ impl Executor for FirecrackerExecutor {
             .arg(&config_path)
             .arg("--log-path")
             .arg(&log_path)
-            .arg("--metrics-path")
-            .arg(vm_dir.join("firecracker.metrics"))
             .arg("--level")
             .arg("Info")
             .stdout(
