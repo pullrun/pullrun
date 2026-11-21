@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-11-21
+
+Security and correctness release. Fixes host-filesystem escapes in OCI
+extraction, restores real exit codes for VMs and containers, honours the
+workload spec in rootless mode, and replaces per-workload image
+extraction with immutable image bases plus copy-on-write clones. Adds
+sandbox groups (one Apple VM, concurrent sandboxes), container
+overlayfs mode, and pull retries.
+
+**Upgrade notes:** macOS VM rootfs now lives under
+`<store>/rootfs/<workload-id>/` (per-workload clone) instead of a shared
+per-digest directory; images built or committed with ≤0.7.9 still need
+rebuilding. Rootless containers now run as container uid 0 mapped to the
+host user. `commit` captures filesystem state only — not guest memory.
 
 ### Security
 - **Confined OCI extraction.** Layer tars are now resolved with a

@@ -110,7 +110,7 @@ pub fn try_clone_file(src: &Path, dst: &Path) -> io::Result<bool> {
         let rc = unsafe {
             libc::ioctl(
                 dst_file.as_raw_fd(),
-                FICLONE,
+                FICLONE as _,
                 src_file.as_raw_fd() as libc::c_int,
             )
         };
