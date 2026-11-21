@@ -146,7 +146,13 @@ pub async fn materialize_ext4_rootfs(
             }
             init_content.push_str("\ncode=$?\n");
             init_content.push_str("echo \"PULLRUN_EXIT=$code\" >/dev/ttyS0 2>/dev/null\n");
-            init_content.push_str("echo o >/proc/sysrq-trigger 2>/dev/null || poweroff -f\n");
+            // /proc is not mounted by the kernel in this minimal rootfs;
+            // mount it so sysrq poweroff is available, then fall back to
+            // busybox poweroff.
+            init_content.push_str("mount -t proc proc /proc 2>/dev/null\n");
+            init_content.push_str("echo 1 >/proc/sys/kernel/sysrq 2>/dev/null\n");
+            init_content.push_str("echo o >/proc/sysrq-trigger 2>/dev/null\n");
+            init_content.push_str("poweroff -f 2>/dev/null\n");
         } else {
             init_content.push_str("exec");
             for arg in &shell_args {
