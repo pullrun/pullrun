@@ -3264,9 +3264,7 @@ impl Runtime for RuntimeService {
         // Containers are reaped by the 5s background watcher, which makes
         // `run --attach` (which polls GetWorkload) feel slow. Ask the
         // executor directly while the workload is still marked running.
-        if state.status == "running"
-            && (state.backend == "container" || state.backend == "rootless")
-        {
+        if state.status == "running" && state.backend.starts_with("container") {
             if let Ok(live) = self.executor.status(&req.id).await {
                 if live.starts_with("exited(") {
                     state.status = "exited".to_string();
