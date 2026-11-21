@@ -110,6 +110,18 @@ pub enum VmCommand {
     },
     /// The attached client has disconnected.
     DetachClient { session_id: u64 },
+    /// Route frames tagged with a sandbox id to this sender.
+    AttachSandbox {
+        /// Sandbox id.
+        id: String,
+        /// Destination for that sandbox's frames.
+        out: std::sync::mpsc::Sender<Frame>,
+    },
+    /// Stop routing frames for a sandbox.
+    DetachSandbox {
+        /// Sandbox id.
+        id: String,
+    },
     /// Shut down the VM entirely.
     Shutdown,
 }
@@ -130,6 +142,29 @@ impl VmPersistentHandle {
     /// Returns true if the VM's internal thread is still running.
     pub fn is_alive(&self) -> bool {
         self.inner.is_alive()
+    }
+
+    /// Register a sink for one sandbox's tagged output frames.
+    pub fn attach_sandbox(
+        &self,
+        id: &str,
+        out: std::sync::mpsc::Sender<Frame>,
+    ) -> Result<(), AttachError> {
+        self.inner
+            .cmd_tx
+            .send(VmCommand::AttachSandbox {
+                id: id.to_string(),
+                out,
+            })
+            .map_err(|_| AttachError::Vsock("VM session shut down".into()))
+    }
+
+    /// Stop routing frames for a sandbox.
+    pub fn detach_sandbox(&self, id: &str) {
+        let _ = self
+            .inner
+            .cmd_tx
+            .send(VmCommand::DetachSandbox { id: id.to_string() });
     }
 
     /// Send a raw frame to the guest (sandbox groups use this to

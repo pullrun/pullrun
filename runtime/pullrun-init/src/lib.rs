@@ -226,18 +226,25 @@ fn mount_group_tmpfs() -> Result<(), InitError> {
 }
 
 #[cfg(target_os = "linux")]
-fn reset_group_sandbox_dirs() -> Result<(), InitError> {
-    for dir in [
-        "/mnt/sandbox/upper",
-        "/mnt/sandbox/work",
-        "/mnt/sandbox/merged",
-    ] {
-        let _ = std::fs::remove_dir_all(dir);
+fn sandbox_dirs(id: &str) -> Result<(String, String, String), InitError> {
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(InitError::Exec(format!("invalid sandbox id {id:?}")));
+    }
+    let root = format!("/mnt/sandbox/{id}");
+    let upper = format!("{root}/upper");
+    let work = format!("{root}/work");
+    let merged = format!("{root}/merged");
+    let _ = std::fs::remove_dir_all(&root);
+    for dir in [&upper, &work, &merged] {
         std::fs::create_dir_all(dir).map_err(InitError::Io)?;
     }
-    std::fs::create_dir_all("/mnt/sandbox/merged/proc").map_err(InitError::Io)?;
-    std::fs::create_dir_all("/mnt/sandbox/merged/dev").map_err(InitError::Io)?;
-    Ok(())
+    std::fs::create_dir_all(format!("{merged}/proc")).map_err(InitError::Io)?;
+    std::fs::create_dir_all(format!("{merged}/dev")).map_err(InitError::Io)?;
+    Ok((upper, work, merged))
 }
 
 #[cfg(target_os = "linux")]
@@ -257,6 +264,7 @@ struct GroupOutcome {
 /// page cache are shared by every sandbox in the group.
 #[cfg(target_os = "linux")]
 fn run_group_sandbox(
+    id: &str,
     command: Vec<String>,
     env: Vec<String>,
     working_dir: String,
@@ -264,21 +272,19 @@ fn run_group_sandbox(
     use std::os::unix::process::CommandExt;
     use std::os::unix::process::ExitStatusExt;
 
-    reset_group_sandbox_dirs()?;
+    let (upper, work, merged) = sandbox_dirs(id)?;
 
     let (program, args) = command
         .split_first()
         .ok_or_else(|| InitError::Exec("empty command".into()))?;
 
-    let merged = std::ffi::CString::new("/mnt/sandbox/merged").unwrap();
-    let merged_proc = std::ffi::CString::new("/mnt/sandbox/merged/proc").unwrap();
-    let merged_dev = std::ffi::CString::new("/mnt/sandbox/merged/dev").unwrap();
+    let merged_c = std::ffi::CString::new(merged.clone()).unwrap();
+    let merged_proc = std::ffi::CString::new(format!("{merged}/proc")).unwrap();
+    let merged_dev = std::ffi::CString::new(format!("{merged}/dev")).unwrap();
+    let overlay_data = format!("lowerdir=/mnt/root,upperdir={upper},workdir={work},userxattr");
     let overlay_src = std::ffi::CString::new("overlay").unwrap();
     let overlay_type = std::ffi::CString::new("overlay").unwrap();
-    let overlay_data = std::ffi::CString::new(
-        "lowerdir=/mnt/root,upperdir=/mnt/sandbox/upper,workdir=/mnt/sandbox/work,userxattr",
-    )
-    .unwrap();
+    let overlay_data = std::ffi::CString::new(overlay_data).unwrap();
     let proc_src = std::ffi::CString::new("proc").unwrap();
     let proc_type = std::ffi::CString::new("proc").unwrap();
     let dev_src = std::ffi::CString::new("/dev").unwrap();
@@ -308,7 +314,7 @@ fn run_group_sandbox(
             }
             if libc::mount(
                 overlay_src.as_ptr(),
-                merged.as_ptr(),
+                merged_c.as_ptr(),
                 overlay_type.as_ptr(),
                 0,
                 overlay_data.as_ptr().cast(),
@@ -338,7 +344,7 @@ fn run_group_sandbox(
             {
                 return Err(std::io::Error::last_os_error());
             }
-            if libc::chroot(merged.as_ptr()) != 0 {
+            if libc::chroot(merged_c.as_ptr()) != 0 {
                 return Err(std::io::Error::last_os_error());
             }
             if libc::chdir(cwd_c.as_ptr()) != 0 {
@@ -353,6 +359,7 @@ fn run_group_sandbox(
         .output()
         .map_err(|e| InitError::Exec(format!("spawn {program}: {e}")))?;
     info!(program = %program, code = ?output.status.code(), "sandbox exec finished");
+    let _ = std::fs::remove_dir_all(format!("/mnt/sandbox/{id}"));
     Ok(GroupOutcome {
         stdout: output.stdout,
         stderr: output.stderr,
@@ -362,12 +369,48 @@ fn run_group_sandbox(
 }
 
 #[cfg(target_os = "linux")]
-async fn send_stdout_chunks(
+async fn send_sandbox_output(
     client: &VsockClient,
+    write_lock: &tokio::sync::Mutex<()>,
+    id: &str,
     data: &[u8],
     stderr: bool,
 ) -> Result<(), InitError> {
     const CHUNK: usize = 32 * 1024;
+    if data.is_empty() {
+        return Ok(());
+    }
+    let _guard = write_lock.lock().await;
+    for chunk in data.chunks(CHUNK) {
+        let frames = if stderr {
+            pullrun_vsock::Frame::SandboxStderr {
+                id: id.to_string(),
+                data: bytes::Bytes::copy_from_slice(chunk),
+            }
+        } else {
+            pullrun_vsock::Frame::SandboxStdout {
+                id: id.to_string(),
+                data: bytes::Bytes::copy_from_slice(chunk),
+            }
+        };
+        client
+            .send_frame(frames)
+            .await
+            .map_err(InitError::VsockSend)?;
+    }
+    Ok(())
+}
+
+/// Untagged output helper for the legacy sequential WorkloadSpec path.
+#[cfg(target_os = "linux")]
+async fn send_workload_output(
+    client: &VsockClient,
+    write_lock: &tokio::sync::Mutex<()>,
+    data: &[u8],
+    stderr: bool,
+) -> Result<(), InitError> {
+    const CHUNK: usize = 32 * 1024;
+    let _guard = write_lock.lock().await;
     for chunk in data.chunks(CHUNK) {
         let frame = if stderr {
             pullrun_vsock::Frame::WorkloadStderr(bytes::Bytes::copy_from_slice(chunk))
@@ -382,13 +425,17 @@ async fn send_stdout_chunks(
     Ok(())
 }
 
-/// Sandbox-group supervisor: keep the VM alive and execute one
-/// `WorkloadSpec` at a time from the host.
+/// Sandbox-group supervisor: keep the VM alive and run sandboxes
+/// concurrently, tagging every output/exit frame with its sandbox id.
 #[cfg(target_os = "linux")]
 async fn run_group_supervisor(client: &VsockClient) -> Result<(), InitError> {
     mount_group_base()?;
     mount_group_tmpfs()?;
     info!("sandbox-group supervisor ready");
+
+    let write_lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+    let rt = tokio::runtime::Handle::current();
+    let client_arc = std::sync::Arc::new(client.clone());
 
     loop {
         let frame = match client.recv_frame().await {
@@ -399,17 +446,82 @@ async fn run_group_supervisor(client: &VsockClient) -> Result<(), InitError> {
             }
         };
         match frame {
+            pullrun_vsock::Frame::SandboxSpec {
+                id,
+                command,
+                env,
+                working_dir,
+            } => {
+                info!(sandbox = %id, ?command, "group: launching sandbox");
+                let client = std::sync::Arc::clone(&client_arc);
+                let lock = std::sync::Arc::clone(&write_lock);
+                let rt = rt.clone();
+                let id_for_thread = id.clone();
+                std::thread::spawn(move || {
+                    let outcome = run_group_sandbox(&id_for_thread, command, env, working_dir);
+                    rt.block_on(async {
+                        match outcome {
+                            Ok(out) => {
+                                let _ = send_sandbox_output(
+                                    &client,
+                                    &lock,
+                                    &id_for_thread,
+                                    &out.stdout,
+                                    false,
+                                )
+                                .await;
+                                let _ = send_sandbox_output(
+                                    &client,
+                                    &lock,
+                                    &id_for_thread,
+                                    &out.stderr,
+                                    true,
+                                )
+                                .await;
+                                let _guard = lock.lock().await;
+                                let _ = client
+                                    .send_frame(pullrun_vsock::Frame::SandboxExit {
+                                        id: id_for_thread.clone(),
+                                        exit_code: out.code,
+                                        signal: out.signal,
+                                    })
+                                    .await;
+                            }
+                            Err(e) => {
+                                let _guard = lock.lock().await;
+                                let _ = client
+                                    .send_frame(pullrun_vsock::Frame::SandboxError {
+                                        id: id_for_thread.clone(),
+                                        message: e.to_string(),
+                                    })
+                                    .await;
+                            }
+                        }
+                    });
+                });
+            }
+            pullrun_vsock::Frame::GroupShutdown => {
+                info!("group shutdown requested");
+                break;
+            }
+            pullrun_vsock::Frame::Error(msg) => {
+                info!(error = %msg, "group host error");
+                break;
+            }
             pullrun_vsock::Frame::WorkloadSpec {
                 command,
                 env,
                 working_dir,
                 ..
             } => {
-                info!(?command, "group: running sandbox");
-                match run_group_sandbox(command, env, working_dir) {
+                // Backward-compatible sequential execution.
+                info!(?command, "group: running sandbox sequentially");
+                match run_group_sandbox("sequential", command, env, working_dir) {
                     Ok(outcome) => {
-                        send_stdout_chunks(client, &outcome.stdout, false).await?;
-                        send_stdout_chunks(client, &outcome.stderr, true).await?;
+                        let _ =
+                            send_workload_output(client, &write_lock, &outcome.stdout, false).await;
+                        let _ =
+                            send_workload_output(client, &write_lock, &outcome.stderr, true).await;
                         client
                             .send_frame(pullrun_vsock::Frame::WorkloadExit {
                                 exit_code: outcome.code,
@@ -425,14 +537,6 @@ async fn run_group_supervisor(client: &VsockClient) -> Result<(), InitError> {
                             .map_err(InitError::VsockSend)?;
                     }
                 }
-            }
-            pullrun_vsock::Frame::GroupShutdown => {
-                info!("group shutdown requested");
-                break;
-            }
-            pullrun_vsock::Frame::Error(msg) => {
-                info!(error = %msg, "group host error");
-                break;
             }
             other => {
                 info!(?other, "group: ignoring frame");

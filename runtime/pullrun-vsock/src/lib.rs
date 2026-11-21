@@ -129,6 +129,18 @@ pub enum FrameType {
 
     /// Host → guest. Stop the group supervisor and let the VM exit.
     GroupShutdown = 0x0C,
+
+    /// Host → guest. Start one concurrent sandbox in a group; the
+    /// payload carries the sandbox id.
+    SandboxSpec = 0x0D,
+    /// Guest → host. Stdout bytes for one sandbox, tagged with its id.
+    SandboxStdout = 0x0E,
+    /// Guest → host. Stderr bytes for one sandbox, tagged with its id.
+    SandboxStderr = 0x0F,
+    /// Guest → host. One sandbox exited (id + exit code/signal).
+    SandboxExit = 0x10,
+    /// Guest → host. One sandbox could not run (id + message).
+    SandboxError = 0x11,
 }
 
 impl FrameType {
@@ -148,6 +160,11 @@ impl FrameType {
             0x0A => Self::ExitAck,
             0x0B => Self::GroupInit,
             0x0C => Self::GroupShutdown,
+            0x0D => Self::SandboxSpec,
+            0x0E => Self::SandboxStdout,
+            0x0F => Self::SandboxStderr,
+            0x10 => Self::SandboxExit,
+            0x11 => Self::SandboxError,
             _ => return None,
         })
     }
@@ -168,6 +185,11 @@ impl fmt::Display for FrameType {
             Self::ExitAck => "ExitAck",
             Self::GroupInit => "GroupInit",
             Self::GroupShutdown => "GroupShutdown",
+            Self::SandboxSpec => "SandboxSpec",
+            Self::SandboxStdout => "SandboxStdout",
+            Self::SandboxStderr => "SandboxStderr",
+            Self::SandboxExit => "SandboxExit",
+            Self::SandboxError => "SandboxError",
         })
     }
 }
@@ -267,6 +289,52 @@ pub enum Frame {
 
     /// Host → guest. Stop the sandbox-group supervisor.
     GroupShutdown,
+
+    /// Host → guest. Start a sandbox concurrently inside the group.
+    SandboxSpec {
+        /// Host-assigned sandbox id, unique within the group.
+        id: String,
+        /// argv, with `argv[0]` being the executable name.
+        command: Vec<String>,
+        /// Environment variables in `KEY=VALUE` form.
+        env: Vec<String>,
+        /// Working directory inside the sandbox.
+        working_dir: String,
+    },
+
+    /// Guest → host. Stdout bytes for a sandbox.
+    SandboxStdout {
+        /// Sandbox the bytes belong to.
+        id: String,
+        /// Output bytes.
+        data: Bytes,
+    },
+
+    /// Guest → host. Stderr bytes for a sandbox.
+    SandboxStderr {
+        /// Sandbox the bytes belong to.
+        id: String,
+        /// Error bytes.
+        data: Bytes,
+    },
+
+    /// Guest → host. A sandbox exited.
+    SandboxExit {
+        /// Sandbox that exited.
+        id: String,
+        /// Exit code when the process exited normally.
+        exit_code: Option<i32>,
+        /// Signal number when the process was killed.
+        signal: Option<i32>,
+    },
+
+    /// Guest → host. A sandbox could not run.
+    SandboxError {
+        /// Sandbox that failed.
+        id: String,
+        /// Human-readable failure message.
+        message: String,
+    },
 }
 
 impl Frame {
@@ -285,6 +353,11 @@ impl Frame {
             Self::ExitAck => FrameType::ExitAck,
             Self::GroupInit => FrameType::GroupInit,
             Self::GroupShutdown => FrameType::GroupShutdown,
+            Self::SandboxSpec { .. } => FrameType::SandboxSpec,
+            Self::SandboxStdout { .. } => FrameType::SandboxStdout,
+            Self::SandboxStderr { .. } => FrameType::SandboxStderr,
+            Self::SandboxExit { .. } => FrameType::SandboxExit,
+            Self::SandboxError { .. } => FrameType::SandboxError,
         }
     }
 
@@ -333,6 +406,60 @@ impl Frame {
             }
             Self::WorkloadStdout(b) | Self::WorkloadStderr(b) | Self::WorkloadStdin(b) => b.clone(),
             Self::StdinEof | Self::ExitAck | Self::GroupInit | Self::GroupShutdown => Bytes::new(),
+            Self::SandboxSpec {
+                id,
+                command,
+                env,
+                working_dir,
+            } => {
+                let mut buf = BytesMut::new();
+                write_length_prefixed_string(&mut buf, id);
+                buf.put_u32(command.len() as u32);
+                for s in command {
+                    write_length_prefixed_string(&mut buf, s);
+                }
+                buf.put_u32(env.len() as u32);
+                for s in env {
+                    write_length_prefixed_string(&mut buf, s);
+                }
+                write_length_prefixed_string(&mut buf, working_dir);
+                buf.freeze()
+            }
+            Self::SandboxStdout { id, data } | Self::SandboxStderr { id, data } => {
+                let mut buf = BytesMut::new();
+                write_length_prefixed_string(&mut buf, id);
+                buf.extend_from_slice(data);
+                buf.freeze()
+            }
+            Self::SandboxExit {
+                id,
+                exit_code,
+                signal,
+            } => {
+                let mut buf = BytesMut::new();
+                write_length_prefixed_string(&mut buf, id);
+                let mut flags = 0u8;
+                if exit_code.is_some() {
+                    flags |= 0x01;
+                }
+                if signal.is_some() {
+                    flags |= 0x02;
+                }
+                buf.put_u8(flags);
+                if let Some(c) = exit_code {
+                    buf.put_i32(*c);
+                }
+                if let Some(s) = signal {
+                    buf.put_i32(*s);
+                }
+                buf.freeze()
+            }
+            Self::SandboxError { id, message } => {
+                let mut buf = BytesMut::new();
+                write_length_prefixed_string(&mut buf, id);
+                write_length_prefixed_string(&mut buf, message);
+                buf.freeze()
+            }
             Self::WorkloadExit { exit_code, signal } => {
                 let mut buf = BytesMut::new();
                 // Bitfield: bit 0 = has_exit_code, bit 1 = has_signal.
@@ -496,6 +623,59 @@ impl Frame {
             FrameType::Error => {
                 let msg = read_length_prefixed_string(&mut cur, ty)?;
                 Self::Error(msg)
+            }
+            FrameType::SandboxSpec => {
+                let id = read_length_prefixed_string(&mut cur, ty)?;
+                let n_cmd = cur.get_u32() as usize;
+                let mut command = Vec::with_capacity(n_cmd);
+                for _ in 0..n_cmd {
+                    command.push(read_length_prefixed_string(&mut cur, ty)?);
+                }
+                let n_env = cur.get_u32() as usize;
+                let mut env = Vec::with_capacity(n_env);
+                for _ in 0..n_env {
+                    env.push(read_length_prefixed_string(&mut cur, ty)?);
+                }
+                let working_dir = read_length_prefixed_string(&mut cur, ty)?;
+                Self::SandboxSpec {
+                    id,
+                    command,
+                    env,
+                    working_dir,
+                }
+            }
+            FrameType::SandboxStdout | FrameType::SandboxStderr => {
+                let id = read_length_prefixed_string(&mut cur, ty)?;
+                let data = cur;
+                if ty == FrameType::SandboxStdout {
+                    Self::SandboxStdout { id, data }
+                } else {
+                    Self::SandboxStderr { id, data }
+                }
+            }
+            FrameType::SandboxExit => {
+                let id = read_length_prefixed_string(&mut cur, ty)?;
+                let flags = cur.get_u8();
+                let exit_code = if flags & 0x01 != 0 {
+                    Some(cur.get_i32())
+                } else {
+                    None
+                };
+                let signal = if flags & 0x02 != 0 {
+                    Some(cur.get_i32())
+                } else {
+                    None
+                };
+                Self::SandboxExit {
+                    id,
+                    exit_code,
+                    signal,
+                }
+            }
+            FrameType::SandboxError => {
+                let id = read_length_prefixed_string(&mut cur, ty)?;
+                let message = read_length_prefixed_string(&mut cur, ty)?;
+                Self::SandboxError { id, message }
             }
             FrameType::ExitAck => Self::ExitAck,
             FrameType::GroupInit => Self::GroupInit,
@@ -766,6 +946,29 @@ mod tests {
     fn roundtrip_group_frames() {
         roundtrip(&Frame::GroupInit);
         roundtrip(&Frame::GroupShutdown);
+        roundtrip(&Frame::SandboxSpec {
+            id: "sbx-1".into(),
+            command: vec!["/bin/sh".into(), "-c".into(), "echo hi".into()],
+            env: vec!["A=B".into()],
+            working_dir: "/".into(),
+        });
+        roundtrip(&Frame::SandboxStdout {
+            id: "sbx-1".into(),
+            data: Bytes::from_static(b"hi\n"),
+        });
+        roundtrip(&Frame::SandboxStderr {
+            id: "sbx-1".into(),
+            data: Bytes::from_static(b"err"),
+        });
+        roundtrip(&Frame::SandboxExit {
+            id: "sbx-1".into(),
+            exit_code: Some(42),
+            signal: None,
+        });
+        roundtrip(&Frame::SandboxError {
+            id: "sbx-1".into(),
+            message: "boom".into(),
+        });
     }
 
     #[test]

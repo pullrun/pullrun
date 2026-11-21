@@ -33,7 +33,7 @@
 
 #![cfg(target_os = "macos")]
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::os::fd::FromRawFd;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
@@ -687,7 +687,7 @@ pub fn run_session_blocking(
                     // closes the workload's stdin pipe on this frame.
                     break;
                 }
-                Frame::WorkloadSpec { .. } | Frame::GroupShutdown => {
+                Frame::WorkloadSpec { .. } | Frame::GroupShutdown | Frame::SandboxSpec { .. } => {
                     let encoded = pullrun_vsock::encode(&frame);
                     let ptr = encoded.as_ptr() as *const libc::c_void;
                     let _ = unsafe { libc::write(stdin_write_fd, ptr, encoded.len()) };
@@ -1341,6 +1341,8 @@ pub fn spawn_vm_inner(
             let mut client_out: Option<sync_mpsc::Sender<Frame>> = None;
             let mut session_id: u64 = 0;
             let mut pending_frames: VecDeque<Frame> = VecDeque::new();
+            let mut sandbox_out: HashMap<String, sync_mpsc::Sender<Frame>> = HashMap::new();
+            let mut sandbox_pending: HashMap<String, VecDeque<Frame>> = HashMap::new();
             let mut header_buf = [0u8; HEADER_LEN + TYPE_LEN];
 
             loop {
@@ -1383,6 +1385,18 @@ pub fn spawn_vm_inner(
                             client_out = None;
                         }
                     }
+                    Ok(crate::attach::VmCommand::AttachSandbox { id, out }) => {
+                        if let Some(pending) = sandbox_pending.remove(&id) {
+                            for frame in pending {
+                                let _ = out.send(frame);
+                            }
+                        }
+                        sandbox_out.insert(id, out);
+                    }
+                    Ok(crate::attach::VmCommand::DetachSandbox { id }) => {
+                        sandbox_out.remove(&id);
+                        sandbox_pending.remove(&id);
+                    }
                     Ok(crate::attach::VmCommand::Shutdown)
                     | Err(sync_mpsc::TryRecvError::Disconnected) => {
                         let _ = client_out.take();
@@ -1404,7 +1418,11 @@ pub fn spawn_vm_inner(
                                 );
                             }
                         }
-                        Ok(frame @ (Frame::WorkloadSpec { .. } | Frame::GroupShutdown)) => {
+                        Ok(
+                            frame @ (Frame::WorkloadSpec { .. }
+                            | Frame::GroupShutdown
+                            | Frame::SandboxSpec { .. }),
+                        ) => {
                             let encoded = pullrun_vsock::encode(&frame);
                             unsafe {
                                 libc::write(
@@ -1480,6 +1498,21 @@ pub fn spawn_vm_inner(
                     }
                     if let Ok(frame) = pullrun_vsock::decode(&payload, ty) {
                         debug!(?frame, "persistent: received guest frame");
+                        let sandbox_id = match &frame {
+                            Frame::SandboxStdout { id, .. }
+                            | Frame::SandboxStderr { id, .. }
+                            | Frame::SandboxExit { id, .. }
+                            | Frame::SandboxError { id, .. } => Some(id.clone()),
+                            _ => None,
+                        };
+                        if let Some(id) = sandbox_id {
+                            if let Some(tx) = sandbox_out.get(&id) {
+                                let _ = tx.send(frame);
+                            } else {
+                                sandbox_pending.entry(id).or_default().push_back(frame);
+                            }
+                            continue;
+                        }
                         let is_exit = matches!(frame, Frame::WorkloadExit { .. });
                         // Forward to attached client, or buffer if none.
                         if let Some(ref tx) = client_out {

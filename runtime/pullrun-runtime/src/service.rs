@@ -1696,7 +1696,6 @@ pub struct GroupState {
     pub image_root: String,
     pub backend: String,
     pub created_at: i64,
-    pub busy: std::sync::atomic::AtomicBool,
     #[cfg(target_os = "macos")]
     pub vm: Arc<pullrun_vm::VmPersistentHandle>,
 }
@@ -1706,6 +1705,13 @@ fn new_group_id() -> String {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     format!("grp-{:08x}{:04x}", std::process::id(), n)
+}
+
+#[cfg(target_os = "macos")]
+fn new_sandbox_id() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("sbx-{:08x}{:04x}", std::process::id(), n)
 }
 
 pub struct RuntimeService {
@@ -4564,7 +4570,6 @@ impl Runtime for RuntimeService {
                 image_root: req.image_root.clone(),
                 backend: "apple-virt-group".to_string(),
                 created_at: now,
-                busy: std::sync::atomic::AtomicBool::new(false),
                 vm: Arc::new(handle),
             });
             self.groups.write().await.insert(group_id.clone(), state);
@@ -4595,13 +4600,7 @@ impl Runtime for RuntimeService {
             let alive = group.vm.is_alive();
             #[cfg(not(target_os = "macos"))]
             let alive = false;
-            let status = if !alive {
-                "stopped"
-            } else if group.busy.load(std::sync::atomic::Ordering::Acquire) {
-                "busy"
-            } else {
-                "running"
-            };
+            let status = if alive { "running" } else { "stopped" };
             out.push(GroupInfo {
                 group_id: group.id.clone(),
                 image_root: group.image_root.clone(),
@@ -4655,73 +4654,68 @@ impl Runtime for RuntimeService {
                     "sandbox group VM is not running",
                 ));
             }
-            if group.busy.swap(true, std::sync::atomic::Ordering::AcqRel) {
-                return Err(tonic::Status::resource_exhausted(
-                    "sandbox group is busy with another sandbox",
-                ));
-            }
 
-            let frame = pullrun_vsock::Frame::WorkloadSpec {
+            let sandbox_id = new_sandbox_id();
+            let (tx, rx) = std::sync::mpsc::channel::<pullrun_vsock::Frame>();
+            group
+                .vm
+                .attach_sandbox(&sandbox_id, tx)
+                .map_err(|e| tonic::Status::internal(format!("attach sandbox: {e}")))?;
+
+            let spec = pullrun_vsock::Frame::SandboxSpec {
+                id: sandbox_id.clone(),
                 command: req.command,
                 env: req.env,
                 working_dir: req.working_dir,
-                tty: false,
-                rows: 0,
-                cols: 0,
-                mounts: vec![],
             };
-            if let Err(e) = group.vm.send_frame(frame) {
-                group
-                    .busy
-                    .store(false, std::sync::atomic::Ordering::Release);
+            if let Err(e) = group.vm.send_frame(spec) {
+                group.vm.detach_sandbox(&sandbox_id);
                 return Err(tonic::Status::internal(format!("dispatch sandbox: {e}")));
             }
 
-            let (client_in_tx, client_in_rx) = std::sync::mpsc::channel::<pullrun_vsock::Frame>();
-            let (server_out_tx, server_out_rx) = std::sync::mpsc::channel::<pullrun_vsock::Frame>();
-            let handle = Arc::clone(&group.vm);
-            let session = tokio::task::spawn_blocking(move || {
-                pullrun_vm::attach_to_vm(&handle, client_in_rx, server_out_tx)
-            });
-
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-            let mut exit_code = None;
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
-            while std::time::Instant::now() < deadline {
-                match server_out_rx.recv_timeout(std::time::Duration::from_millis(500)) {
-                    Ok(pullrun_vsock::Frame::WorkloadStdout(data)) => {
-                        stdout.extend_from_slice(&data)
+            let wait = tokio::task::spawn_blocking(move || {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                let mut exit_code = None;
+                let mut failure = None;
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+                while std::time::Instant::now() < deadline {
+                    match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                        Ok(pullrun_vsock::Frame::SandboxStdout { data, .. }) => {
+                            stdout.extend_from_slice(&data)
+                        }
+                        Ok(pullrun_vsock::Frame::SandboxStderr { data, .. }) => {
+                            stderr.extend_from_slice(&data)
+                        }
+                        Ok(pullrun_vsock::Frame::SandboxExit {
+                            exit_code: code,
+                            signal,
+                            ..
+                        }) => {
+                            exit_code = Some(code.unwrap_or_else(|| 128 + signal.unwrap_or(0)));
+                            break;
+                        }
+                        Ok(pullrun_vsock::Frame::SandboxError { message, .. }) => {
+                            failure = Some(message);
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     }
-                    Ok(pullrun_vsock::Frame::WorkloadStderr(data)) => {
-                        stderr.extend_from_slice(&data)
-                    }
-                    Ok(pullrun_vsock::Frame::WorkloadExit {
-                        exit_code: code,
-                        signal,
-                    }) => {
-                        exit_code = Some(code.unwrap_or_else(|| 128 + signal.unwrap_or(0)));
-                        break;
-                    }
-                    Ok(pullrun_vsock::Frame::Error(msg)) => {
-                        drop(client_in_tx);
-                        let _ = session.await;
-                        group
-                            .busy
-                            .store(false, std::sync::atomic::Ordering::Release);
-                        return Err(tonic::Status::internal(format!("sandbox error: {msg}")));
-                    }
-                    Ok(_) => {}
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
-            }
-            drop(client_in_tx);
-            let _ = session.await;
-            group
-                .busy
-                .store(false, std::sync::atomic::Ordering::Release);
+                (stdout, stderr, exit_code, failure)
+            })
+            .await
+            .map_err(|e| tonic::Status::internal(format!("sandbox waiter: {e}")))?;
+            let (stdout, stderr, exit_code, failure) = wait;
+            group.vm.detach_sandbox(&sandbox_id);
 
+            if let Some(message) = failure {
+                return Err(tonic::Status::internal(format!(
+                    "sandbox failed: {message}"
+                )));
+            }
             let exit_code = exit_code.ok_or_else(|| {
                 tonic::Status::deadline_exceeded("sandbox did not report an exit code")
             })?;
