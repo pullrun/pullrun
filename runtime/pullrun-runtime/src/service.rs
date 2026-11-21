@@ -1701,6 +1701,7 @@ pub struct GroupState {
     pub vm: Arc<pullrun_vm::VmPersistentHandle>,
 }
 
+#[cfg(target_os = "macos")]
 fn new_group_id() -> String {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
