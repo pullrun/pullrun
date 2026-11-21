@@ -1,6 +1,7 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
+pub mod confinement;
 pub mod converter;
 pub mod dag_export;
 pub mod dag_import;
@@ -10,6 +11,7 @@ pub mod oci_layout;
 pub mod puller;
 pub mod push;
 
+pub use confinement::{ConfineError, RelPath, RootDir};
 pub use converter::{DirectoryEntry, ManifestData, OciToDagConverter};
 
 pub use dag_export::export_dag_to_tar;

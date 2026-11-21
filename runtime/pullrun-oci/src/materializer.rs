@@ -7,38 +7,9 @@ use tracing::{debug, info};
 
 use pullrun_store::{Digest, MmapStore};
 
+use crate::confinement::{RelPath, RootDir};
 use crate::converter::ManifestData;
 use crate::puller::OciError;
-
-// Platform-specific helpers for file attributes.
-#[cfg(unix)]
-mod imp {
-    use std::path::Path;
-
-    pub fn set_owner(path: &Path, uid: u32, gid: u32) {
-        use std::os::unix::fs::MetadataExt;
-        // Only chown if the current owner/gid differ from target.
-        if let Ok(meta) = std::fs::metadata(path) {
-            if meta.uid() != uid || meta.gid() != gid {
-                let _ = std::os::unix::fs::chown(path, Some(uid), Some(gid));
-            }
-        }
-    }
-
-    pub fn set_mtime(path: &Path, mtime: i64) {
-        if mtime < 0 {
-            return;
-        }
-        let ft = filetime::FileTime::from_unix_time(mtime, 0);
-        let _ = filetime::set_file_mtime(path, ft);
-    }
-
-    pub fn set_xattr(path: &Path, name: &[u8], value: &[u8]) {
-        use std::os::unix::ffi::OsStrExt;
-        let name_os = std::ffi::OsStr::from_bytes(name);
-        let _ = xattr::set(path, name_os, value);
-    }
-}
 
 pub struct MaterializedBundle {
     pub rootfs_path: PathBuf,
@@ -81,7 +52,7 @@ impl<'a> OciMaterializer<'a> {
         output_dir: &Path,
     ) -> Result<MaterializedBundle, OciError> {
         let rootfs_path = output_dir.join("rootfs");
-        std::fs::create_dir_all(&rootfs_path)?;
+        let root = RootDir::open(&rootfs_path)?;
 
         let manifest_data = self.materialize_manifest(manifest_digest)?;
 
@@ -95,7 +66,7 @@ impl<'a> OciMaterializer<'a> {
 
         for (i, layer_digest) in layer_digests.iter().enumerate() {
             debug!(layer = i, %layer_digest, "materializing layer");
-            self.materialize_layer(layer_digest, &rootfs_path)?;
+            self.materialize_layer(layer_digest, &root)?;
         }
 
         let config_path = output_dir.join("config.json");
@@ -122,7 +93,7 @@ impl<'a> OciMaterializer<'a> {
         manifest_digest: &Digest,
         target_dir: &Path,
     ) -> Result<(), OciError> {
-        std::fs::create_dir_all(target_dir)?;
+        let root = RootDir::open(target_dir)?;
 
         info!(%manifest_digest, target = %target_dir.display(), "materializing DAG root into target dir");
 
@@ -134,13 +105,13 @@ impl<'a> OciMaterializer<'a> {
 
         for (i, layer_digest) in layer_digests.iter().enumerate() {
             debug!(layer = i, %layer_digest, "materializing layer");
-            self.materialize_layer(layer_digest, target_dir)?;
+            self.materialize_layer(layer_digest, &root)?;
         }
 
         Ok(())
     }
 
-    fn materialize_layer(&self, layer_digest: &Digest, rootfs_path: &Path) -> Result<(), OciError> {
+    fn materialize_layer(&self, layer_digest: &Digest, root: &RootDir) -> Result<(), OciError> {
         let layer_node = self
             .store
             .get_archived(layer_digest)
@@ -150,7 +121,9 @@ impl<'a> OciMaterializer<'a> {
             return Ok(());
         }
 
-        let layer_path = String::from_utf8_lossy(&layer_node.inline_data).to_string();
+        let layer_path_raw = String::from_utf8_lossy(&layer_node.inline_data).to_string();
+        let layer_path = RelPath::parse(&layer_path_raw)
+            .map_err(|e| OciError::Other(format!("invalid layer prefix {layer_path_raw:?}: {e}")))?;
 
         // Split edges into tree roots and whiteout nodes.
         let mut tree_edges = Vec::new();
@@ -171,43 +144,28 @@ impl<'a> OciMaterializer<'a> {
             let whiteout_node = self.store.get_archived(whiteout_digest).map_err(|e| {
                 OciError::Other(format!("corrupt whiteout node {whiteout_digest}: {e}"))
             })?;
-            let target_path_str = String::from_utf8_lossy(&whiteout_node.inline_data).to_string();
-
-            if *is_opaque {
-                // Opaque whiteout: remove ALL children of the target directory.
-                let dir_path = if layer_path.is_empty() {
-                    rootfs_path.join(&target_path_str)
-                } else {
-                    rootfs_path.join(&layer_path).join(&target_path_str)
-                };
-                if dir_path.is_dir() {
-                    debug!(target = %dir_path.display(), "applying opaque whiteout");
-                    for entry in std::fs::read_dir(&dir_path)? {
-                        let entry = entry?;
-                        let path = entry.path();
-                        if path.is_dir() {
-                            std::fs::remove_dir_all(&path)?;
-                        } else {
-                            std::fs::remove_file(&path)?;
-                        }
-                    }
-                }
+            let target_raw = String::from_utf8_lossy(&whiteout_node.inline_data).to_string();
+            let target = RelPath::parse(&target_raw).map_err(|e| {
+                OciError::Other(format!("invalid whiteout target {target_raw:?}: {e}"))
+            })?;
+            let effective = layer_path.join(&target);
+            if effective.is_root() {
+                // Replacing the whole rootfs: clear the bundle, never a
+                // host path.
+                debug!("applying root opaque whiteout");
+                root.clear_dir(&RelPath::root())?;
+            } else if *is_opaque {
+                debug!(target = %effective.display(), "applying opaque whiteout");
+                root.clear_dir(&effective)?;
             } else {
-                // Explicit whiteout: delete a single path.
-                let full_path = if layer_path.is_empty() {
-                    rootfs_path.join(&target_path_str)
-                } else {
-                    rootfs_path.join(&layer_path).join(&target_path_str)
-                };
-                debug!(target = %full_path.display(), "applying whiteout");
-                let _ = std::fs::remove_file(&full_path);
-                let _ = std::fs::remove_dir(&full_path);
+                debug!(target = %effective.display(), "applying whiteout");
+                root.remove_path(&effective)?;
             }
         }
 
         // Now extract the tree contents (this layer's actual files).
         for child_digest in &tree_edges {
-            self.materialize_tree(child_digest, rootfs_path, &layer_path)?;
+            self.materialize_tree(child_digest, root, &layer_path)?;
         }
 
         Ok(())
@@ -216,8 +174,8 @@ impl<'a> OciMaterializer<'a> {
     fn materialize_tree(
         &self,
         tree_digest: &Digest,
-        rootfs_path: &Path,
-        base_path: &str,
+        root: &RootDir,
+        base_path: &RelPath,
     ) -> Result<(), OciError> {
         let tree_node = self
             .store
@@ -225,10 +183,12 @@ impl<'a> OciMaterializer<'a> {
             .map_err(|e| OciError::Other(format!("corrupt tree node {tree_digest}: {e}")))?;
 
         if tree_node.is_layer() {
-            let layer_path = String::from_utf8_lossy(&tree_node.inline_data).to_string();
+            let raw = String::from_utf8_lossy(&tree_node.inline_data).to_string();
+            let layer_path = RelPath::parse(&raw)
+                .map_err(|e| OciError::Other(format!("invalid layer prefix {raw:?}: {e}")))?;
             for edge in tree_node.edges.iter() {
                 let child_digest = Digest(*edge);
-                self.materialize_tree(&child_digest, rootfs_path, &layer_path)?;
+                self.materialize_tree(&child_digest, root, &layer_path)?;
             }
             return Ok(());
         }
@@ -242,39 +202,26 @@ impl<'a> OciMaterializer<'a> {
         if !inline_data.is_empty() {
             let entries = crate::converter::DirectoryEntry::from_inline_bytes(inline_data);
             for entry in entries {
-                let entry_path = if base_path.is_empty() {
-                    entry.name.clone()
-                } else {
-                    format!("{}/{}", base_path, entry.name)
-                };
-
-                let full_path = rootfs_path.join(&entry_path);
-
+                let rel = base_path.with(&entry.name).map_err(|e| {
+                    OciError::Other(format!("invalid entry name {:?}: {e}", entry.name))
+                })?;
                 if entry.is_dir {
-                    std::fs::create_dir_all(&full_path)?;
+                    root.ensure_dir(&rel)?;
                 } else if entry.is_symlink {
                     if let Some(target) = &entry.symlink_target {
-                        let _ = std::fs::remove_file(&full_path);
-                        let _ = std::os::unix::fs::symlink(target, &full_path);
+                        root.symlink(&rel, std::ffi::OsStr::new(target))?;
                     }
                 } else {
-                    if let Some(parent) = full_path.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-
                     let blob_path = self.store.blob_path(&entry.digest);
                     if blob_path.exists() {
-                        std::fs::copy(&blob_path, &full_path)?;
+                        root.copy_file_from(&rel, &blob_path, 0o644)?;
                     } else if let Ok(blob_node) = self.store.get_archived(&entry.digest) {
-                        std::fs::write(&full_path, &blob_node.inline_data[..])?;
+                        root.write_file(&rel, &blob_node.inline_data[..], 0o644)?;
                     }
                 }
 
                 // Apply file attributes (mode, uid, gid, mtime, xattrs).
-                #[cfg(unix)]
-                {
-                    apply_unix_attributes(&full_path, &entry);
-                }
+                apply_unix_attributes(root, &rel, &entry)?;
             }
         }
 
@@ -284,7 +231,7 @@ impl<'a> OciMaterializer<'a> {
                 debug!(child = %child_digest, "skipping edge (symlink marker, not a stored node)");
                 continue;
             }
-            self.materialize_tree(&child_digest, rootfs_path, base_path)?;
+            self.materialize_tree(&child_digest, root, base_path)?;
         }
 
         Ok(())
@@ -409,9 +356,11 @@ fn parse_user_string(user: &Option<String>) -> (u32, u32) {
 }
 
 #[cfg(unix)]
-fn apply_unix_attributes(full_path: &Path, entry: &crate::converter::DirectoryEntry) {
-    use std::os::unix::fs::PermissionsExt;
-
+fn apply_unix_attributes(
+    root: &RootDir,
+    rel: &RelPath,
+    entry: &crate::converter::DirectoryEntry,
+) -> Result<(), OciError> {
     // Set permissions (mode).
     let mode = if entry.is_dir {
         if entry.mode == 0 {
@@ -426,18 +375,27 @@ fn apply_unix_attributes(full_path: &Path, entry: &crate::converter::DirectoryEn
     } else {
         entry.mode
     };
-    let _ = std::fs::set_permissions(full_path, std::fs::Permissions::from_mode(mode));
+    let _ = root.set_mode(rel, mode);
 
     // Set ownership (best-effort — may fail as non-root).
-    imp::set_owner(full_path, entry.uid, entry.gid);
+    let _ = root.set_owner(rel, entry.uid, entry.gid);
 
     // Set mtime (best-effort).
-    imp::set_mtime(full_path, entry.mtime);
+    let _ = root.set_mtime(rel, entry.mtime);
 
     // Apply extended attributes (best-effort).
-    if !entry.xattrs.is_empty() {
-        for (name, value) in &entry.xattrs {
-            imp::set_xattr(full_path, name.as_bytes(), value);
-        }
+    for (name, value) in &entry.xattrs {
+        let _ = root.set_xattr(rel, name.as_bytes(), value);
     }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_unix_attributes(
+    _root: &RootDir,
+    _rel: &RelPath,
+    _entry: &crate::converter::DirectoryEntry,
+) -> Result<(), OciError> {
+    Ok(())
 }

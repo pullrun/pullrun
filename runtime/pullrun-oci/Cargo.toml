@@ -26,6 +26,7 @@ rayon = "1"
 filetime.workspace = true
 xattr.workspace = true
 zstd.workspace = true
+libc.workspace = true
 
 [dev-dependencies]
 tempfile = "3.10"

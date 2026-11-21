@@ -396,9 +396,17 @@ fn extract_tar_entries_sync(
     for entry_result in archive.entries()? {
         let mut entry = entry_result?;
         let path = entry.path()?;
-        let path_str = path.to_string_lossy().to_string();
+        let raw_path = path.to_string_lossy().to_string();
 
-        if path_str == "." || path_str.is_empty() || path_str.contains("..") {
+        // Validate at the *component* level: reject absolute paths and
+        // parent components, skip `.`/empty components. In particular,
+        // do NOT filter on `contains("..")` — opaque whiteout markers
+        // (`.wh..wh..opq`) contain dots but are ordinary names.
+        let Some(path_str) = normalize_tar_path(&raw_path) else {
+            debug!(path = %raw_path, "skipping invalid tar path");
+            continue;
+        };
+        if path_str.is_empty() {
             continue;
         }
 
@@ -431,7 +439,10 @@ fn extract_tar_entries_sync(
                 None
             };
             let hardlink_target = if is_hardlink {
-                header.link_name()?.map(|p| p.to_string_lossy().to_string())
+                header
+                    .link_name()?
+                    .map(|p| p.to_string_lossy().to_string())
+                    .and_then(|p| normalize_tar_path(&p))
             } else {
                 None
             };
@@ -477,8 +488,10 @@ fn extract_tar_entries_sync(
         if !is_dir && name.starts_with(".wh.") {
             if name == ".wh..wh..opq" {
                 // Opaque whiteout — hides all children of this directory.
+                // Root opacity is represented by the empty relative
+                // path, never by "/" (see confinement::RelPath).
                 let target_dir = if parent.is_empty() {
-                    "/".to_string()
+                    String::new()
                 } else {
                     parent.clone()
                 };
@@ -644,6 +657,23 @@ fn decompress_layer(blob: &[u8], media_type: &str) -> Result<Vec<u8>, OciError> 
 
     // Uncompressed (tar only).
     Ok(blob.to_vec())
+}
+
+/// Normalise an untrusted tar path to a relative, parent-free path.
+/// Returns `None` for absolute paths or any path containing `..`.
+fn normalize_tar_path(raw: &str) -> Option<String> {
+    if raw.starts_with('/') {
+        return None;
+    }
+    let mut parts: Vec<&str> = Vec::new();
+    for component in raw.split('/') {
+        match component {
+            "" | "." => continue,
+            ".." => return None,
+            other => parts.push(other),
+        }
+    }
+    Some(parts.join("/"))
 }
 
 fn split_path(path: &str) -> (String, String) {
