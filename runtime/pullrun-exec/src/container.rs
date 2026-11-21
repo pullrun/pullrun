@@ -32,6 +32,9 @@ pub struct LinuxContainerExecutor {
     /// Immutable per-digest bases; when set, container rootfs comes
     /// from a CoW clone instead of a fresh per-workload extraction.
     base_store: Option<Arc<BaseStore>>,
+    /// Foreground `runc run` children, keyed by workload id, so
+    /// `status()` can report the workload's real exit code.
+    children: Mutex<HashMap<String, std::process::Child>>,
 }
 
 impl LinuxContainerExecutor {
@@ -45,6 +48,7 @@ impl LinuxContainerExecutor {
             ipam: None,
             proxy: None,
             base_store: None,
+            children: Mutex::new(HashMap::new()),
         }
     }
 
@@ -506,47 +510,54 @@ impl Executor for LinuxContainerExecutor {
         let runc_path_for_cleanup = runc_path.clone();
         let id_for_cleanup = id.clone();
 
-        let status = tokio::task::spawn_blocking(move || {
-            tracing::debug!("spawn_blocking: spawning runc run -d -b {:?} {}", bdir, id);
+        let mut child = tokio::task::spawn_blocking(move || {
+            tracing::debug!("spawning foreground runc run -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
-            cmd.arg("run").arg("-d");
-            cmd.arg("-b").arg(&bdir).arg(&id);
-            let s = cmd
+            // Foreground run: runc stays alive as the container's
+            // parent and exits with the workload status, which is the
+            // only reliable way to observe the exit code.
+            cmd.arg("run").arg("-b").arg(&bdir).arg(&id);
+            cmd.stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-            match s {
-                Ok(s) => {
-                    tracing::debug!("runc exited with status: {:?}", s);
-                    Ok(s)
-                }
-                Err(e) => {
-                    tracing::error!("runc spawn failed: {e}");
-                    Err(e)
-                }
-            }
+                .stderr(std::process::Stdio::inherit())
+                .spawn()
         })
         .await
         .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking failed: {e}")))?
         .map_err(|e| ExecError::ExecutionFailed(format!("runc spawn failed: {e}")))?;
 
-        if !status.success() {
-            // A failed `runc run -d` can leave container state behind;
-            // clean it up so the next attempt isn't blocked by a
-            // "container already exists" error. (Cloned before the
-            // spawn_blocking above moved the originals.)
-            let cleanup_runc = runc_path_for_cleanup.clone();
-            let cleanup_id = id_for_cleanup.clone();
-            tokio::task::spawn_blocking(move || {
-                let mut del = SyncCommand::new(&cleanup_runc);
-                del.args(["delete", "--force"]).arg(&cleanup_id);
-                let _ = del.output();
-            });
-            return Err(ExecError::ExecutionFailed(format!(
-                "runc run failed for {} (check runc logs)",
-                handle.id
-            )));
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        let early = child.try_wait().ok().flatten();
+        if let Some(status) = early {
+            let started = std::process::Command::new(&runc_path_for_cleanup)
+                .args(["state", &id_for_cleanup])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !started && !status.success() {
+                let cleanup_runc = runc_path_for_cleanup.clone();
+                let cleanup_id = id_for_cleanup.clone();
+                tokio::task::spawn_blocking(move || {
+                    let mut del = SyncCommand::new(&cleanup_runc);
+                    del.args(["delete", "--force"]).arg(&cleanup_id);
+                    let _ = del.output();
+                });
+                return Err(ExecError::ExecutionFailed(format!(
+                    "runc run failed for {} (check runc logs)",
+                    handle.id
+                )));
+            }
+            tracing::info!(
+                id = %handle.id,
+                exit = ?status.code(),
+                "container exited immediately"
+            );
         }
+
+        self.children
+            .lock()
+            .expect("children lock poisoned")
+            .insert(handle.id.clone(), child);
 
         // Set up bridge networking if an IP was allocated in create()
         if let Some(ref ip_str) = handle.internal_ip {
@@ -609,6 +620,15 @@ impl Executor for LinuxContainerExecutor {
             warn!(%id, "runc delete warning: {stderr}");
         }
 
+        // Reap the foreground runc child now that the container is gone.
+        let child = {
+            let mut children = self.children.lock().expect("children lock poisoned");
+            children.remove(id)
+        };
+        if let Some(mut child) = child {
+            tokio::task::spawn_blocking(move || child.wait()).await.ok();
+        }
+
         let bundle_dir = self.bundle_dir(id);
         if bundle_dir.exists() {
             tokio::fs::remove_dir_all(&bundle_dir).await.ok();
@@ -652,6 +672,20 @@ impl Executor for LinuxContainerExecutor {
     }
 
     async fn status(&self, id: &str) -> Result<String, ExecError> {
+        {
+            let mut children = self.children.lock().expect("children lock poisoned");
+            if let Some(child) = children.get_mut(id) {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let code = status.code().unwrap_or(137);
+                        return Ok(format!("exited({code})"));
+                    }
+                    Ok(None) => return Ok("running".to_string()),
+                    Err(_) => {}
+                }
+            }
+        }
+
         let output = Command::new(&self.runc_path)
             .args(["state", id])
             .output()
@@ -811,6 +845,26 @@ impl Executor for LinuxContainerExecutor {
 /// workload can join it (pod model). The pid is only known to runc at
 /// runtime, so this queries `runc state` and maps the container init
 /// pid to `/proc/<pid>/ns/net`.
+/// Read the container PID from `runc state`.
+fn rootless_state_pid(
+    runc_path: &std::path::Path,
+    state_root: &std::path::Path,
+    id: &str,
+) -> Option<u32> {
+    let output = std::process::Command::new(runc_path)
+        .arg("--root")
+        .arg(state_root)
+        .arg("state")
+        .arg(id)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    value.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32)
+}
+
 fn netns_path_of(
     runc_path: &std::path::Path,
     state_root: Option<&std::path::Path>,
@@ -1026,15 +1080,43 @@ impl Executor for RootlessContainerExecutor {
         let mut child = cmd.spawn().map_err(|e| {
             ExecError::ExecutionFailed(format!("rootless runc spawn failed for {}: {e}", handle.id))
         })?;
-        let pid = child.id();
 
-        // Quick non-blocking check: did runc fail immediately?
-        // runc run -d succeeds or fails fast, so try_wait catches bad flags/config
-        // without blocking when runc is still starting the container.
-        if let Ok(Some(status)) = child.try_wait() {
-            if !status.success() {
-                // A failed `runc run -d` can leave container state
-                // behind; clean it up so the next attempt isn't blocked.
+        // `runc run` is now foreground: it stays alive as the
+        // container's parent and exits with the workload's status.
+        // Give it a moment to create the container, then decide
+        // whether this is a long-running workload or an immediate
+        // exit (echo, true, exit 42, ...).
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        let early_status = child.try_wait().ok().flatten();
+
+        let mut container_pid = None;
+        for _ in 0..20 {
+            container_pid = rootless_state_pid(
+                &self.config.runc_path,
+                &self.config.state_root,
+                &handle.id,
+            );
+            if container_pid.is_some() {
+                break;
+            }
+            if early_status.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        if let Some(status) = early_status {
+            // The process exited. If runc created a container, the
+            // exit code is the workload's (including non-zero); if it
+            // did not, this was a startup failure.
+            let started = container_pid.is_some()
+                || rootless_state_pid(
+                    &self.config.runc_path,
+                    &self.config.state_root,
+                    &handle.id,
+                )
+                .is_some();
+            if !started && !status.success() {
                 let mut del = std::process::Command::new(&self.config.runc_path);
                 del.arg("--root")
                     .arg(&self.config.state_root)
@@ -1047,27 +1129,35 @@ impl Executor for RootlessContainerExecutor {
                     status.code()
                 )));
             }
-            // runc exited successfully — container is running in background.
-        }
-
-        // Run pasta/slirp4netns in the container's network namespace,
-        // unless the container joined the sandbox's network namespace.
-        if network_join.is_none() {
-            match crate::rootless::setup_rootless_network(&handle.id, pid, self.use_pasta).await {
-                Ok(net) => {
-                    info!(id = %handle.id, "rootless networking set up");
-                    self.net_handles
-                        .lock()
-                        .expect("net_handles lock poisoned")
-                        .insert(handle.id.clone(), net);
+            info!(
+                id = %handle.id,
+                exit = ?status.code(),
+                "rootless container exited immediately"
+            );
+        } else if network_join.is_none() {
+            match container_pid {
+                Some(pid) => {
+                    match crate::rootless::setup_rootless_network(&handle.id, pid, self.use_pasta)
+                        .await
+                    {
+                        Ok(net) => {
+                            info!(id = %handle.id, "rootless networking set up");
+                            self.net_handles
+                                .lock()
+                                .expect("net_handles lock poisoned")
+                                .insert(handle.id.clone(), net);
+                        }
+                        Err(e) => {
+                            warn!(id = %handle.id, "rootless networking failed: {e} - container may have no network");
+                        }
+                    }
                 }
-                Err(e) => {
-                    warn!(id = %handle.id, "rootless networking failed: {e} - container may have no network");
-                }
+                None => warn!(id = %handle.id, "container pid unavailable; skipping rootless networking"),
             }
         }
 
-        // Store the runc child so we can wait() on it later.
+        // Keep the foreground runc child so status() can report the
+        // real exit code.
         self.children
             .lock()
             .expect("children lock poisoned")
@@ -1147,6 +1237,22 @@ impl Executor for RootlessContainerExecutor {
     }
 
     async fn status(&self, id: &str) -> Result<String, ExecError> {
+        // The foreground runc child is the authoritative source for
+        // exited containers: its exit status is the workload's.
+        {
+            let mut children = self.children.lock().expect("children lock poisoned");
+            if let Some(child) = children.get_mut(id) {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let code = status.code().unwrap_or(137);
+                        return Ok(format!("exited({code})"));
+                    }
+                    Ok(None) => return Ok("running".to_string()),
+                    Err(_) => {}
+                }
+            }
+        }
+
         let output = Command::new(&self.config.runc_path)
             .args(["state", "--root"])
             .arg(&self.config.state_root)

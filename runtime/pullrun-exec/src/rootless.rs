@@ -53,8 +53,10 @@ pub fn rootless_runc_command(config: &RootlessConfig, id: &str, bundle: &Path) -
     let mut cmd = Command::new(&config.runc_path);
     cmd.arg("--root")
         .arg(&config.state_root)
+        // Foreground run: runc stays alive as the container's parent,
+        // so its exit status is the workload's exit code. `run -d`
+        // detaches and loses it.
         .arg("run")
-        .arg("-d")
         .arg("--bundle")
         .arg(bundle)
         .arg(id);
