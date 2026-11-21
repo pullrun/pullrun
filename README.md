@@ -276,7 +276,8 @@ The image cache is warmed once (3.3 → 9.3 MiB) and adds nothing per
 sandbox. Groups are macOS-only for now, sandboxes are network-isolated,
 and writes are discarded when a sandbox exits. See
 [docs/GROUPS.md](docs/GROUPS.md) for semantics, caveats, and the
-reproduction script.
+reproduction script; [docs/TIERS.md](docs/TIERS.md) compares group,
+per-task VM, and container latency on macOS and Linux.
 
 ---
 
