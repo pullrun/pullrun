@@ -97,8 +97,8 @@ async fn build_smoke_rootfs(
     target: &std::path::Path,
     stage_dir: &std::path::Path,
 ) -> Result<(), String> {
-    let mount = stage_dir.join("mnt");
-    std::fs::create_dir_all(&mount).map_err(|e| e.to_string())?;
+    let rootfs_dir = stage_dir.join("rootfs");
+    std::fs::create_dir_all(&rootfs_dir).map_err(|e| e.to_string())?;
 
     let run = |argv: &[&str]| -> Result<(), String> {
         let out = Command::new(argv[0])
@@ -114,16 +114,6 @@ async fn build_smoke_rootfs(
         Ok(())
     };
 
-    run(&["truncate", "-s", "128M", target.to_str().unwrap()])?;
-    run(&["mkfs.ext4", "-F", "-L", "pullrun", target.to_str().unwrap()])?;
-    run(&[
-        "mount",
-        "-o",
-        "loop",
-        target.to_str().unwrap(),
-        mount.to_str().unwrap(),
-    ])?;
-
     let tar_url = std::env::var("PULLRUN_FC_ROOTFS_TAR").unwrap_or_else(|_|
         "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz".into()
     );
@@ -135,7 +125,9 @@ async fn build_smoke_rootfs(
     };
     let decoder = flate2::read::GzDecoder::new(&bytes[..]);
     let mut archive = tar::Archive::new(decoder);
-    archive.unpack(&mount).map_err(|e| format!("untar: {e}"))?;
+    archive
+        .unpack(&rootfs_dir)
+        .map_err(|e| format!("untar: {e}"))?;
 
     let init_script = r#"#!/bin/sh
 mount -t proc none /proc 2>/dev/null
@@ -147,13 +139,24 @@ sync
 echo o > /proc/sysrq-trigger 2>/dev/null
 sleep 1
 "#;
-    std::fs::write(mount.join("init"), init_script).map_err(|e| e.to_string())?;
+    std::fs::write(rootfs_dir.join("init"), init_script).map_err(|e| e.to_string())?;
     let _ = Command::new("chmod")
         .args(["+x"])
-        .arg(mount.join("init"))
+        .arg(rootfs_dir.join("init"))
         .status();
 
-    run(&["umount", mount.to_str().unwrap()])?;
+    // Build the ext4 image from the directory without a loop mount, so
+    // the test runs as an unprivileged user with /dev/kvm access.
+    let _ = std::fs::remove_file(target);
+    run(&[
+        "mkfs.ext4",
+        "-F",
+        "-L",
+        "pullrun",
+        "-d",
+        rootfs_dir.to_str().unwrap(),
+        target.to_str().unwrap(),
+    ])?;
     Ok(())
 }
 
