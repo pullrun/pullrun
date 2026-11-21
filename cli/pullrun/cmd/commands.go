@@ -946,9 +946,22 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 	}()
 
 	exitCode := 0
+	// The runtime may keep the attach stream open after a VM powers
+	// off (the serial console just goes quiet). Poll the workload
+	// state as a backstop so attach returns with the real exit code.
+	pollTicker := time.NewTicker(500 * time.Millisecond)
+	defer pollTicker.Stop()
 loop:
 	for {
 		select {
+		case <-pollTicker.C:
+			st, stErr := client.GetWorkload(ctx, workloadID)
+			if stErr == nil && (st.State == "exited" || st.State == "stopped") {
+				if st.ExitCode != 0 {
+					exitCode = int(st.ExitCode)
+				}
+				break loop
+			}
 		case result := <-recvCh:
 			if result.err == io.EOF {
 				break loop
