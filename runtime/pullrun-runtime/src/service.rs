@@ -4619,12 +4619,12 @@ impl Runtime for RuntimeService {
     ) -> Result<tonic::Response<RemoveGroupResponse>, tonic::Status> {
         let req = request.into_inner();
         let group = self.groups.write().await.remove(&req.group_id);
-        let Some(group) = group else {
+        let Some(_group) = group else {
             return Ok(tonic::Response::new(RemoveGroupResponse { removed: false }));
         };
         #[cfg(target_os = "macos")]
         {
-            let vm = Arc::clone(&group.vm);
+            let vm = Arc::clone(&_group.vm);
             tokio::task::spawn_blocking(move || {
                 let _ = vm.send_frame(pullrun_vsock::Frame::GroupShutdown);
                 vm.stop();
