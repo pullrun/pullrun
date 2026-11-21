@@ -47,7 +47,8 @@ use tracing::{info, warn};
 use pullrun_exec::types::NetworkMode;
 use pullrun_exec::{ExecError, Executor, ProcessHandle};
 use pullrun_net::{Ipam, NetworkEndpoint, NetworkManager, ProxyNetwork};
-use pullrun_store::MmapStore;
+use pullrun_oci::cow;
+use pullrun_store::{Digest, MmapStore};
 
 pub use ext4::{
     ext4_path_for, firecracker_config, materialize_ext4_rootfs, Ext4Error, Ext4Options,
@@ -113,6 +114,12 @@ pub struct FirecrackerExecutor {
     /// These skip certain cleanup in `stop()` because the pool entry
     /// has already been consumed.
     pool_allocations: Mutex<HashSet<String>>,
+    /// Single-flight locks for per-digest ext4 base images.
+    base_locks: Mutex<HashMap<Digest, Arc<tokio::sync::Mutex<()>>>>,
+    /// Reflink capability of the rootfs filesystem. Without reflink a
+    /// shared base would only add one more full copy, so ext4 hosts
+    /// keep building each VM's image directly.
+    cow_mode: cow::CowMode,
 }
 
 impl FirecrackerExecutor {
@@ -122,6 +129,7 @@ impl FirecrackerExecutor {
         ipam: Arc<Ipam>,
         proxy: Arc<ProxyNetwork>,
     ) -> Self {
+        let cow_mode = cow::probe(&config.rootfs_dir);
         Self {
             config,
             store,
@@ -131,6 +139,8 @@ impl FirecrackerExecutor {
             slirp_children: Mutex::new(HashMap::new()),
             pool: None,
             pool_allocations: Mutex::new(HashSet::new()),
+            base_locks: Mutex::new(HashMap::new()),
+            cow_mode,
         }
     }
 
@@ -182,6 +192,90 @@ impl FirecrackerExecutor {
         format!("tap-{suffix}")
     }
 
+    fn ext4_base_path(&self, digest: &Digest) -> PathBuf {
+        self.config
+            .rootfs_dir
+            .join("bases")
+            .join(format!("{}.ext4", digest.as_hex()))
+    }
+
+    /// Build (once) the flattened ext4 image for `digest`.
+    async fn ensure_ext4_base(&self, digest: &Digest) -> Result<PathBuf, ExecError> {
+        let base = self.ext4_base_path(digest);
+        let ready = PathBuf::from(format!("{}.ready", base.display()));
+        if base.is_file() && ready.is_file() {
+            return Ok(base);
+        }
+
+        let lock = {
+            let mut locks = self.base_locks.lock().expect("base_locks poisoned");
+            locks
+                .entry(*digest)
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+
+        if base.is_file() && ready.is_file() {
+            return Ok(base);
+        }
+
+        let bases_dir = self.config.rootfs_dir.join("bases");
+        std::fs::create_dir_all(&bases_dir)
+            .map_err(|e| ExecError::ExecutionFailed(format!("create bases dir: {e}")))?;
+        let tmp = bases_dir.join(format!(".tmp-{}-{}.ext4", digest.as_hex(), std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        let options = Ext4Options {
+            size_mb: self.config.size_mb,
+            label: Some("pullrun-base".to_string()),
+        };
+        info!(%digest, path = %base.display(), "building ext4 image base");
+        materialize_ext4_rootfs(&self.store, digest, &tmp, options)
+            .await
+            .map_err(|e| ExecError::ExecutionFailed(format!("ext4 base build: {e}")))?;
+        match std::fs::rename(&tmp, &base) {
+            Ok(()) => {}
+            Err(_) if base.is_file() => {
+                let _ = std::fs::remove_file(&tmp);
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(ExecError::ExecutionFailed(format!("install ext4 base: {e}")));
+            }
+        }
+        std::fs::write(&ready, b"v1")
+            .map_err(|e| ExecError::ExecutionFailed(format!("write base marker: {e}")))?;
+        Ok(base)
+    }
+
+    /// Provision this VM's ext4 image as a CoW clone of the base.
+    async fn provision_vm_rootfs(&self, digest: &Digest, id: &str) -> Result<PathBuf, ExecError> {
+        let dest = ext4_path_for(&self.config.rootfs_dir, id);
+        if self.cow_mode == cow::CowMode::Copy {
+            // No reflink: a shared base cannot save bytes, so build the
+            // VM image directly (same as the previous behaviour).
+            let options = Ext4Options {
+                size_mb: self.config.size_mb,
+                label: Some(format!("pullrun-{id}")),
+            };
+            materialize_ext4_rootfs(&self.store, digest, &dest, options)
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("ext4 materialization: {e}")))?;
+            return Ok(dest);
+        }
+        let base = self.ensure_ext4_base(digest).await?;
+        let dest_for_clone = dest.clone();
+        let cloned = tokio::task::spawn_blocking(move || {
+            cow::try_clone_file(&base, &dest_for_clone)
+        })
+        .await
+        .map_err(|e| ExecError::ExecutionFailed(format!("clone join: {e}")))?
+        .map_err(|e| ExecError::ExecutionFailed(format!("clone ext4 base: {e}")))?;
+        debug_assert!(dest.is_file());
+        let _ = cloned;
+        Ok(dest)
+    }
+
     /// Fast path: create a workload from a pre-booted pool VM.
     /// Materializes the workload's ext4 rootfs, hot-swaps it into the
     /// running pool VM via the Firecracker API, and reboots the VM so
@@ -197,26 +291,10 @@ impl FirecrackerExecutor {
         let vm_dir = self.vm_dir(&spec.id);
         std::fs::create_dir_all(&vm_dir)?;
 
-        // Materialize the workload's ext4 rootfs.
-        let ext4_path = ext4_path_for(&self.config.rootfs_dir, &spec.id);
-        let options = Ext4Options {
-            size_mb: self.config.size_mb,
-            label: Some(format!("pullrun-{}", spec.id)),
-        };
-        let store = self.store.clone();
-        let root_digest = spec.image_root;
-        let ext4_path_owned = ext4_path.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async {
-                materialize_ext4_rootfs(&store, &root_digest, &ext4_path_owned, options)
-                    .await
-                    .map_err(|e| ExecError::ExecutionFailed(format!("ext4 materialization: {e}")))
-            })
-        })
-        .await
-        .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking: {e}")))??;
+        // Provision the workload's ext4 rootfs from the image base.
+        let ext4_path = self
+            .provision_vm_rootfs(&spec.image_root, &spec.id)
+            .await?;
 
         // Hot-swap the rootfs on the running pool VM.
         pooled
@@ -392,28 +470,10 @@ impl Executor for FirecrackerExecutor {
         let vm_dir = self.vm_dir(&spec.id);
         std::fs::create_dir_all(&vm_dir)?;
 
-        // 4. Materialize the DAG root as an ext4 rootfs.
-        let ext4_path = ext4_path_for(&self.config.rootfs_dir, &spec.id);
-        let options = Ext4Options {
-            size_mb: self.config.size_mb,
-            label: Some(format!("pullrun-{}", spec.id)),
-        };
-
-        let store = self.store.clone();
-        let root_digest = spec.image_root;
-        let ext4_path_owned = ext4_path.clone();
+        // 4. Provision the ext4 rootfs as a CoW clone of the image base.
+        self.provision_vm_rootfs(&spec.image_root, &spec.id)
+            .await?;
         let ext4_id = spec.id.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async {
-                materialize_ext4_rootfs(&store, &root_digest, &ext4_path_owned, options)
-                    .await
-                    .map_err(|e| ExecError::ExecutionFailed(format!("ext4 materialization: {e}")))
-            })
-        })
-        .await
-        .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking: {e}")))??;
 
         info!(id = %ext4_id, ip = %guest_ip, "ext4 rootfs ready, VM wired to bridge");
 
@@ -819,5 +879,81 @@ pub fn select_executor_for(spec: &WorkloadSpec) -> &'static str {
         Backend::ContainerRootless => "RootlessContainerExecutor",
         Backend::Vm => "FirecrackerExecutor / AppleVirtExecutor",
         Backend::Sandbox => "SandboxExecutor (Phase 5)",
+    }
+}
+
+
+#[cfg(all(test, target_os = "linux"))]
+mod ext4_base_cache_tests {
+    use super::*;
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    fn have_mkfs() -> bool {
+        std::process::Command::new("mkfs.ext4")
+            .arg("-V")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    #[tokio::test]
+    async fn ext4_base_is_built_once_and_cloned() {
+        if !have_mkfs() {
+            eprintln!("skipping: mkfs.ext4 not available");
+            return;
+        }
+        let src = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(src.path().join("etc")).unwrap();
+        std::fs::write(src.path().join("etc/passwd"), b"root:x:0:0\n").unwrap();
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MmapStore::new(store_dir.path().to_path_buf()));
+        let built = pullrun_oci::build_dag_from_directory(&store, src.path())
+            .await
+            .expect("build DAG from dir");
+
+        let vm_root = tempfile::tempdir().unwrap();
+        let proxy = Arc::new(ProxyNetwork::new().unwrap());
+        let mut cfg = FirecrackerConfig::new(
+            PathBuf::from("/nonexistent/firecracker"),
+            PathBuf::from("/nonexistent/vmlinux"),
+            vm_root.path().to_path_buf(),
+        );
+        cfg.size_mb = 32;
+        let exec = FirecrackerExecutor::new(cfg, store, proxy.ipam_handle(), proxy);
+
+        let base_a = exec.ensure_ext4_base(&built.manifest_digest).await.unwrap();
+        let base_b = exec.ensure_ext4_base(&built.manifest_digest).await.unwrap();
+        assert_eq!(base_a, base_b, "base must be built once per digest");
+        assert!(base_a.is_file());
+
+        let vm_a = exec
+            .provision_vm_rootfs(&built.manifest_digest, "vm-a")
+            .await
+            .unwrap();
+        let vm_b = exec
+            .provision_vm_rootfs(&built.manifest_digest, "vm-b")
+            .await
+            .unwrap();
+        assert_ne!(vm_a, vm_b);
+
+        // Bytes at offset 0 (the ext4 superblock area) must be
+        // independent: writing to one clone cannot change the base or
+        // the other clone.
+        let read4 = |p: &std::path::Path| -> Vec<u8> {
+            let mut f = std::fs::File::open(p).unwrap();
+            let mut buf = [0u8; 8];
+            f.seek(SeekFrom::Start(0)).unwrap();
+            let _ = f.read(&mut buf);
+            buf.to_vec()
+        };
+        let base_before = read4(&base_a);
+        let b_before = read4(&vm_b);
+        {
+            let mut f = std::fs::OpenOptions::new().write(true).open(&vm_a).unwrap();
+            f.seek(SeekFrom::Start(0)).unwrap();
+            f.write_all(b"COWPROBE").unwrap();
+        }
+        assert_eq!(read4(&base_a), base_before, "base image was modified");
+        assert_eq!(read4(&vm_b), b_before, "sibling clone was modified");
     }
 }
