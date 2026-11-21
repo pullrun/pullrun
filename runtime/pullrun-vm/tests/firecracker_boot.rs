@@ -148,6 +148,7 @@ sleep 1
     // Build the ext4 image from the directory without a loop mount, so
     // the test runs as an unprivileged user with /dev/kvm access.
     let _ = std::fs::remove_file(target);
+    run(&["truncate", "-s", "128M", target.to_str().unwrap()])?;
     run(&[
         "mkfs.ext4",
         "-F",
