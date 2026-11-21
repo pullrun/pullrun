@@ -225,7 +225,7 @@ impl VmPool {
         let child = tokio::process::Command::new(&self.fc_config.firecracker_path)
             .arg("--api-sock")
             .arg(&api_socket)
-            .arg("--config-path")
+            .arg("--config-file")
             .arg(&config_path)
             .arg("--log-path")
             .arg(&log_path)

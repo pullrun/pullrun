@@ -630,7 +630,7 @@ impl Executor for FirecrackerExecutor {
         let child = Command::new(&self.config.firecracker_path)
             .arg("--api-sock")
             .arg(&api_socket)
-            .arg("--config-path")
+            .arg("--config-file")
             .arg(&config_path)
             .arg("--log-path")
             .arg(&log_path)
