@@ -315,3 +315,29 @@ func (c *GRPCClient) GetAttestations(
 		ManifestDigest: manifestDigest,
 	})
 }
+
+// CreateGroup boots a sandbox-group VM for an image.
+func (c *GRPCClient) CreateGroup(ctx context.Context, imageRoot, name string) (*runtimepb.CreateGroupResponse, error) {
+	return c.client.CreateGroup(ctx, &runtimepb.CreateGroupRequest{
+		ImageRoot: imageRoot,
+		Name:      name,
+	})
+}
+
+// ListGroups returns the sandbox groups known to the runtime.
+func (c *GRPCClient) ListGroups(ctx context.Context) (*runtimepb.ListGroupsResponse, error) {
+	return c.client.ListGroups(ctx, &runtimepb.ListGroupsRequest{})
+}
+
+// RemoveGroup stops and removes a sandbox group.
+func (c *GRPCClient) RemoveGroup(ctx context.Context, groupID string, force bool) (*runtimepb.RemoveGroupResponse, error) {
+	return c.client.RemoveGroup(ctx, &runtimepb.RemoveGroupRequest{
+		GroupId: groupID,
+		Force:   force,
+	})
+}
+
+// RunGroupSandbox runs one sandbox inside an existing group VM.
+func (c *GRPCClient) RunGroupSandbox(ctx context.Context, req *runtimepb.RunGroupSandboxRequest) (*runtimepb.RunGroupSandboxResponse, error) {
+	return c.client.RunGroupSandbox(ctx, req)
+}

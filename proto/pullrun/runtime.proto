@@ -39,6 +39,13 @@ service Runtime {
     // Workload statistics
     rpc GetWorkloadStats(GetWorkloadStatsRequest) returns (WorkloadStats);
 
+    // --- Sandbox groups ---
+    // One VM hosting multiple sandboxes (shared guest page cache).
+    rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
+    rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse);
+    rpc RemoveGroup(RemoveGroupRequest) returns (RemoveGroupResponse);
+    rpc RunGroupSandbox(RunGroupSandboxRequest) returns (RunGroupSandboxResponse);
+
     // --- Image build/push/save/load (Phase D) ---
 
     // Build an OCI image from a Dockerfile and import into the
@@ -943,4 +950,55 @@ message GetAttestationsResponse {
     float max_cvss = 6;
     // Any licenses collected from the SBOM components.
     repeated string licenses = 7;
+}
+
+// --- Sandbox groups ---
+
+message CreateGroupRequest {
+    // Image digest (DAG root) or image reference already in the store.
+    string image_root = 1;
+    string name = 2;
+}
+
+message CreateGroupResponse {
+    string group_id = 1;
+    string image_root = 2;
+    string backend = 3;
+}
+
+message ListGroupsRequest {}
+
+message GroupInfo {
+    string group_id = 1;
+    string image_root = 2;
+    // "running" | "stopped" | "busy"
+    string status = 3;
+    string backend = 4;
+    int64 created_at = 5;
+}
+
+message ListGroupsResponse {
+    repeated GroupInfo groups = 1;
+}
+
+message RemoveGroupRequest {
+    string group_id = 1;
+    bool force = 2;
+}
+
+message RemoveGroupResponse {
+    bool removed = 1;
+}
+
+message RunGroupSandboxRequest {
+    string group_id = 1;
+    repeated string command = 2;
+    repeated string env = 3;
+    string working_dir = 4;
+}
+
+message RunGroupSandboxResponse {
+    int32 exit_code = 1;
+    bytes stdout = 2;
+    bytes stderr = 3;
 }

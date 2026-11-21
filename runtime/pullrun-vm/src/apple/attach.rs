@@ -1351,6 +1351,11 @@ pub fn spawn_vm_inner(
                         stdout_tx,
                     }) => {
                         session_id = sid;
+                        debug!(
+                            session_id = sid,
+                            pending = pending_frames.len(),
+                            "persistent: client attached"
+                        );
                         client_out = Some(stdout_tx);
                         while let Some(frame) = pending_frames.pop_front() {
                             if client_out.as_ref().unwrap().send(frame).is_err() {
@@ -1474,6 +1479,7 @@ pub fn spawn_vm_inner(
                         continue;
                     }
                     if let Ok(frame) = pullrun_vsock::decode(&payload, ty) {
+                        debug!(?frame, "persistent: received guest frame");
                         let is_exit = matches!(frame, Frame::WorkloadExit { .. });
                         // Forward to attached client, or buffer if none.
                         if let Some(ref tx) = client_out {
@@ -1482,6 +1488,11 @@ pub fn spawn_vm_inner(
                             }
                         } else {
                             pending_frames.push_back(frame);
+                        }
+                        if is_exit && group_mode {
+                            // Group supervisor stays alive for the
+                            // next sandbox; do not acknowledge/teardown.
+                            continue;
                         }
                         if is_exit {
                             // Acknowledge before teardown so the guest
@@ -1559,6 +1570,7 @@ pub fn attach_to_vm_inner(
         .map_err(|_| AttachError::Vsock("VM session shut down".into()))?;
 
     // Spawn stdin forwarder: reads from gRPC, sends to VM.
+    let (shutdown_tx, shutdown_rx) = sync_mpsc::channel::<()>();
     let stdin_tx = handle.stdin_tx.clone();
     let stdin_handle = std::thread::spawn(move || {
         loop {
@@ -1578,12 +1590,19 @@ pub fn attach_to_vm_inner(
             }
         }
         drop(stdin_tx);
+        let _ = shutdown_tx.send(());
     });
 
     // Read from session output and forward to gRPC.
     loop {
+        // The caller dropped stdin (e.g. a one-shot sandbox finished):
+        // detach instead of waiting for the VM to exit.
+        if shutdown_rx.try_recv().is_ok() {
+            break;
+        }
         match session_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(frame) => {
+                debug!(?frame, "attach: forwarding guest frame");
                 if server_out.send(frame).is_err() {
                     break; // gRPC receiver gone
                 }

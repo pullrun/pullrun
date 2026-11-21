@@ -27,7 +27,7 @@ control-plane/pullrun-control-plane
 .env.local
 
 # Built binaries
-bin/
+/bin/
 
 # Generated
 proto-go/*/go.sum

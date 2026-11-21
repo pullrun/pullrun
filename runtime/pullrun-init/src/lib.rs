@@ -290,7 +290,9 @@ fn run_group_sandbox(
     let cwd_c = std::ffi::CString::new(cwd).unwrap();
 
     let mut cmd = std::process::Command::new(program);
-    cmd.args(args).env_clear();
+    cmd.args(args)
+        .env_clear()
+        .stdin(std::process::Stdio::null());
     for kv in &env {
         if let Some((k, v)) = kv.split_once('=') {
             cmd.env(k, v);
@@ -346,9 +348,11 @@ fn run_group_sandbox(
         });
     }
 
+    info!(program = %program, "sandbox exec starting");
     let output = cmd
         .output()
         .map_err(|e| InitError::Exec(format!("spawn {program}: {e}")))?;
+    info!(program = %program, code = ?output.status.code(), "sandbox exec finished");
     Ok(GroupOutcome {
         stdout: output.stdout,
         stderr: output.stderr,

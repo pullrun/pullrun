@@ -49,23 +49,25 @@ use crate::proto::{
     AttachMessage, AttachSbomRequest, AttachSbomResponse, AttachSignatureRequest,
     AttachSignatureResponse, BuildImageRequest, BuildImageResponse, CommitImageRequest,
     CommitImageResponse, CopyFileRequest, CopyFileResponse, CreateConfigRequest,
-    CreateConfigResponse, CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest,
-    CreateSecretResponse, DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest,
-    DiffResponse, Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk,
-    ExportImageRequest, GcRequest, GcResponse, GetAttestationsRequest, GetAttestationsResponse,
-    GetWorkloadRequest, GetWorkloadStatsRequest, HasImageRequest, HasImageResponse,
-    ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
-    InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
-    InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListImagesRequest,
+    CreateConfigResponse, CreateGroupRequest, CreateGroupResponse, CreateNetworkRequest,
+    CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse, DagNode, DagStoreInfoRequest,
+    DagStoreInfoResponse, DiffRequest, DiffResponse, Event as ProtoEvent, ExecRequest,
+    ExecResponse, ExportImageChunk, ExportImageRequest, GcRequest, GcResponse,
+    GetAttestationsRequest, GetAttestationsResponse, GetWorkloadRequest, GetWorkloadStatsRequest,
+    GroupInfo, HasImageRequest, HasImageResponse, ImportImageChunk, ImportImageResponse,
+    InfoRequest, InfoResponse, InspectConfigRequest, InspectConfigResponse, InspectRequest,
+    InspectResponse, InspectSecretRequest, InspectSecretResponse, ListConfigsRequest,
+    ListConfigsResponse, ListGroupsRequest, ListGroupsResponse, ListImagesRequest,
     ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
     ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
     NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
     PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
-    RemoveConfigRequest, RemoveConfigResponse, RemoveImageRequest, RemoveImageResponse,
-    RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest, RemoveSecretResponse,
-    RunComposeRequest, RunComposeResponse, RunRequest, RunResponse, StopRequest, StopResponse,
-    StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
-    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    RemoveConfigRequest, RemoveConfigResponse, RemoveGroupRequest, RemoveGroupResponse,
+    RemoveImageRequest, RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse,
+    RemoveSecretRequest, RemoveSecretResponse, RunComposeRequest, RunComposeResponse,
+    RunGroupSandboxRequest, RunGroupSandboxResponse, RunRequest, RunResponse, StopRequest,
+    StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
+    UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -948,6 +950,7 @@ impl RuntimeCommand {
             kernel_cache: Arc::new(RwLock::new(HashMap::new())),
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
             base_store,
+            groups: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(self.config.clone()),
             start_time: AtomicI64::new(start_time),
             #[cfg(target_os = "macos")]
@@ -1686,6 +1689,24 @@ pub struct WorkloadState {
     pub console_log_path: Option<std::path::PathBuf>,
 }
 
+/// One sandbox-group VM. Sandboxes run inside it in sequence and
+/// share the guest kernel page cache.
+pub struct GroupState {
+    pub id: String,
+    pub image_root: String,
+    pub backend: String,
+    pub created_at: i64,
+    pub busy: std::sync::atomic::AtomicBool,
+    #[cfg(target_os = "macos")]
+    pub vm: Arc<pullrun_vm::VmPersistentHandle>,
+}
+
+fn new_group_id() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("grp-{:08x}{:04x}", std::process::id(), n)
+}
+
 pub struct RuntimeService {
     pub store: Arc<MmapStore>,
     pub policy_engine: Option<Arc<PolicyEngine>>,
@@ -1744,6 +1765,8 @@ pub struct RuntimeService {
     pub config: Arc<ServiceConfig>,
     /// Immutable per-digest image bases plus CoW clone helpers.
     pub base_store: Arc<pullrun_oci::BaseStore>,
+    /// Sandbox groups: one VM hosting multiple sandboxes.
+    pub groups: Arc<RwLock<HashMap<String, Arc<GroupState>>>>,
     /// Unix timestamp (seconds) when the service started.
     pub start_time: AtomicI64,
     /// Persistent Apple Virt VM sessions keyed by workload id.
@@ -4473,6 +4496,246 @@ impl Runtime for RuntimeService {
                 network_tx_bytes: s.network_tx_bytes,
             })),
             Err(e) => Err(tonic::Status::not_found(format!("{e}"))),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Sandbox groups
+    // ------------------------------------------------------------------
+
+    async fn create_group(
+        &self,
+        request: tonic::Request<CreateGroupRequest>,
+    ) -> Result<tonic::Response<CreateGroupResponse>, tonic::Status> {
+        #[cfg(target_os = "macos")]
+        {
+            let req = request.into_inner();
+            let digest = pullrun_store::Digest::from_hex(&req.image_root).map_err(|e| {
+                tonic::Status::invalid_argument(format!("invalid image digest: {e}"))
+            })?;
+            let base = self
+                .base_store
+                .ensure_base(&digest)
+                .await
+                .map_err(|e| tonic::Status::internal(format!("prepare image base: {e}")))?;
+
+            let (vmlinux, initramfs) = find_local_kernel().ok_or_else(|| {
+                tonic::Status::failed_precondition(
+                    "sandbox groups need a local kernel (make install-kernel)",
+                )
+            })?;
+            let kernel = pullrun_vm::StagedKernel::from_paths(vmlinux, initramfs)
+                .map_err(|e| tonic::Status::internal(format!("stage kernel: {e}")))?;
+
+            let group_id = new_group_id();
+            let console_log =
+                std::path::PathBuf::from(format!("/tmp/pullrun-group-{group_id}.log"));
+            let cfg = pullrun_vm::AppleVirtAttachConfig {
+                kernel,
+                rootfs_dir: base.path.clone(),
+                rootfs_upper: None,
+                group_mode: true,
+                command: vec![],
+                env: vec![],
+                working_dir: "/".to_string(),
+                cpus: 1,
+                mem_mib: 512,
+                vsock_port: Some(pullrun_vm::DEFAULT_VSOCK_PORT),
+                console_log: Some(console_log),
+                workload_id: group_id.clone(),
+                tty: false,
+                initial_rows: 0,
+                initial_cols: 0,
+                mounts: vec![],
+            };
+
+            let handle = tokio::task::spawn_blocking(move || pullrun_vm::spawn_vm(cfg, None))
+                .await
+                .map_err(|e| tonic::Status::internal(format!("group boot join: {e}")))?
+                .map_err(|e| tonic::Status::internal(format!("boot group VM: {e}")))?;
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let state = Arc::new(GroupState {
+                id: group_id.clone(),
+                image_root: req.image_root.clone(),
+                backend: "apple-virt-group".to_string(),
+                created_at: now,
+                busy: std::sync::atomic::AtomicBool::new(false),
+                vm: Arc::new(handle),
+            });
+            self.groups.write().await.insert(group_id.clone(), state);
+            info!(group_id = %group_id, image = %req.image_root, "sandbox group created");
+            Ok(tonic::Response::new(CreateGroupResponse {
+                group_id,
+                image_root: req.image_root,
+                backend: "apple-virt-group".to_string(),
+            }))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = request;
+            Err(tonic::Status::unimplemented(
+                "sandbox groups require macOS Apple Virtualization in this build",
+            ))
+        }
+    }
+
+    async fn list_groups(
+        &self,
+        _request: tonic::Request<ListGroupsRequest>,
+    ) -> Result<tonic::Response<ListGroupsResponse>, tonic::Status> {
+        let groups = self.groups.read().await;
+        let mut out = Vec::with_capacity(groups.len());
+        for group in groups.values() {
+            #[cfg(target_os = "macos")]
+            let alive = group.vm.is_alive();
+            #[cfg(not(target_os = "macos"))]
+            let alive = false;
+            let status = if !alive {
+                "stopped"
+            } else if group.busy.load(std::sync::atomic::Ordering::Acquire) {
+                "busy"
+            } else {
+                "running"
+            };
+            out.push(GroupInfo {
+                group_id: group.id.clone(),
+                image_root: group.image_root.clone(),
+                status: status.to_string(),
+                backend: group.backend.clone(),
+                created_at: group.created_at,
+            });
+        }
+        Ok(tonic::Response::new(ListGroupsResponse { groups: out }))
+    }
+
+    async fn remove_group(
+        &self,
+        request: tonic::Request<RemoveGroupRequest>,
+    ) -> Result<tonic::Response<RemoveGroupResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let group = self.groups.write().await.remove(&req.group_id);
+        let Some(group) = group else {
+            return Ok(tonic::Response::new(RemoveGroupResponse { removed: false }));
+        };
+        #[cfg(target_os = "macos")]
+        {
+            let vm = Arc::clone(&group.vm);
+            tokio::task::spawn_blocking(move || {
+                let _ = vm.send_frame(pullrun_vsock::Frame::GroupShutdown);
+                vm.stop();
+            })
+            .await
+            .ok();
+        }
+        info!(group_id = %req.group_id, "sandbox group removed");
+        Ok(tonic::Response::new(RemoveGroupResponse { removed: true }))
+    }
+
+    async fn run_group_sandbox(
+        &self,
+        request: tonic::Request<RunGroupSandboxRequest>,
+    ) -> Result<tonic::Response<RunGroupSandboxResponse>, tonic::Status> {
+        #[cfg(target_os = "macos")]
+        {
+            let req = request.into_inner();
+            let group = self
+                .groups
+                .read()
+                .await
+                .get(&req.group_id)
+                .cloned()
+                .ok_or_else(|| tonic::Status::not_found("sandbox group not found"))?;
+            if !group.vm.is_alive() {
+                return Err(tonic::Status::failed_precondition(
+                    "sandbox group VM is not running",
+                ));
+            }
+            if group.busy.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                return Err(tonic::Status::resource_exhausted(
+                    "sandbox group is busy with another sandbox",
+                ));
+            }
+
+            let frame = pullrun_vsock::Frame::WorkloadSpec {
+                command: req.command,
+                env: req.env,
+                working_dir: req.working_dir,
+                tty: false,
+                rows: 0,
+                cols: 0,
+                mounts: vec![],
+            };
+            if let Err(e) = group.vm.send_frame(frame) {
+                group
+                    .busy
+                    .store(false, std::sync::atomic::Ordering::Release);
+                return Err(tonic::Status::internal(format!("dispatch sandbox: {e}")));
+            }
+
+            let (client_in_tx, client_in_rx) = std::sync::mpsc::channel::<pullrun_vsock::Frame>();
+            let (server_out_tx, server_out_rx) = std::sync::mpsc::channel::<pullrun_vsock::Frame>();
+            let handle = Arc::clone(&group.vm);
+            let session = tokio::task::spawn_blocking(move || {
+                pullrun_vm::attach_to_vm(&handle, client_in_rx, server_out_tx)
+            });
+
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let mut exit_code = None;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+            while std::time::Instant::now() < deadline {
+                match server_out_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                    Ok(pullrun_vsock::Frame::WorkloadStdout(data)) => {
+                        stdout.extend_from_slice(&data)
+                    }
+                    Ok(pullrun_vsock::Frame::WorkloadStderr(data)) => {
+                        stderr.extend_from_slice(&data)
+                    }
+                    Ok(pullrun_vsock::Frame::WorkloadExit {
+                        exit_code: code,
+                        signal,
+                    }) => {
+                        exit_code = Some(code.unwrap_or_else(|| 128 + signal.unwrap_or(0)));
+                        break;
+                    }
+                    Ok(pullrun_vsock::Frame::Error(msg)) => {
+                        drop(client_in_tx);
+                        let _ = session.await;
+                        group
+                            .busy
+                            .store(false, std::sync::atomic::Ordering::Release);
+                        return Err(tonic::Status::internal(format!("sandbox error: {msg}")));
+                    }
+                    Ok(_) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            drop(client_in_tx);
+            let _ = session.await;
+            group
+                .busy
+                .store(false, std::sync::atomic::Ordering::Release);
+
+            let exit_code = exit_code.ok_or_else(|| {
+                tonic::Status::deadline_exceeded("sandbox did not report an exit code")
+            })?;
+            Ok(tonic::Response::new(RunGroupSandboxResponse {
+                exit_code,
+                stdout,
+                stderr,
+            }))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = request;
+            Err(tonic::Status::unimplemented(
+                "sandbox groups require macOS Apple Virtualization in this build",
+            ))
         }
     }
 

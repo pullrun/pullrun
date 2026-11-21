@@ -39,6 +39,10 @@ const (
 	Runtime_PortForward_FullMethodName      = "/pullrun.runtime.Runtime/PortForward"
 	Runtime_UpdateWorkload_FullMethodName   = "/pullrun.runtime.Runtime/UpdateWorkload"
 	Runtime_GetWorkloadStats_FullMethodName = "/pullrun.runtime.Runtime/GetWorkloadStats"
+	Runtime_CreateGroup_FullMethodName      = "/pullrun.runtime.Runtime/CreateGroup"
+	Runtime_ListGroups_FullMethodName       = "/pullrun.runtime.Runtime/ListGroups"
+	Runtime_RemoveGroup_FullMethodName      = "/pullrun.runtime.Runtime/RemoveGroup"
+	Runtime_RunGroupSandbox_FullMethodName  = "/pullrun.runtime.Runtime/RunGroupSandbox"
 	Runtime_BuildImage_FullMethodName       = "/pullrun.runtime.Runtime/BuildImage"
 	Runtime_PushImage_FullMethodName        = "/pullrun.runtime.Runtime/PushImage"
 	Runtime_ExportImage_FullMethodName      = "/pullrun.runtime.Runtime/ExportImage"
@@ -96,6 +100,12 @@ type RuntimeClient interface {
 	UpdateWorkload(ctx context.Context, in *UpdateWorkloadRequest, opts ...grpc.CallOption) (*UpdateWorkloadResponse, error)
 	// Workload statistics
 	GetWorkloadStats(ctx context.Context, in *GetWorkloadStatsRequest, opts ...grpc.CallOption) (*WorkloadStats, error)
+	// --- Sandbox groups ---
+	// One VM hosting multiple sandboxes (shared guest page cache).
+	CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error)
+	ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error)
+	RemoveGroup(ctx context.Context, in *RemoveGroupRequest, opts ...grpc.CallOption) (*RemoveGroupResponse, error)
+	RunGroupSandbox(ctx context.Context, in *RunGroupSandboxRequest, opts ...grpc.CallOption) (*RunGroupSandboxResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error)
@@ -368,6 +378,46 @@ func (c *runtimeClient) GetWorkloadStats(ctx context.Context, in *GetWorkloadSta
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WorkloadStats)
 	err := c.cc.Invoke(ctx, Runtime_GetWorkloadStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateGroupResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListGroupsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListGroups_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveGroup(ctx context.Context, in *RemoveGroupRequest, opts ...grpc.CallOption) (*RemoveGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveGroupResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RunGroupSandbox(ctx context.Context, in *RunGroupSandboxRequest, opts ...grpc.CallOption) (*RunGroupSandboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunGroupSandboxResponse)
+	err := c.cc.Invoke(ctx, Runtime_RunGroupSandbox_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -666,6 +716,12 @@ type RuntimeServer interface {
 	UpdateWorkload(context.Context, *UpdateWorkloadRequest) (*UpdateWorkloadResponse, error)
 	// Workload statistics
 	GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error)
+	// --- Sandbox groups ---
+	// One VM hosting multiple sandboxes (shared guest page cache).
+	CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error)
+	ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error)
+	RemoveGroup(context.Context, *RemoveGroupRequest) (*RemoveGroupResponse, error)
+	RunGroupSandbox(context.Context, *RunGroupSandboxRequest) (*RunGroupSandboxResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error)
@@ -794,6 +850,18 @@ func (UnimplementedRuntimeServer) UpdateWorkload(context.Context, *UpdateWorkloa
 }
 func (UnimplementedRuntimeServer) GetWorkloadStats(context.Context, *GetWorkloadStatsRequest) (*WorkloadStats, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetWorkloadStats not implemented")
+}
+func (UnimplementedRuntimeServer) CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateGroup not implemented")
+}
+func (UnimplementedRuntimeServer) ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListGroups not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveGroup(context.Context, *RemoveGroupRequest) (*RemoveGroupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveGroup not implemented")
+}
+func (UnimplementedRuntimeServer) RunGroupSandbox(context.Context, *RunGroupSandboxRequest) (*RunGroupSandboxResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunGroupSandbox not implemented")
 }
 func (UnimplementedRuntimeServer) BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BuildImage not implemented")
@@ -1161,6 +1229,78 @@ func _Runtime_GetWorkloadStats_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).GetWorkloadStats(ctx, req.(*GetWorkloadStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_CreateGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateGroup(ctx, req.(*CreateGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListGroups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListGroupsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListGroups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListGroups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListGroups(ctx, req.(*ListGroupsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveGroup(ctx, req.(*RemoveGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RunGroupSandbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunGroupSandboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RunGroupSandbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RunGroupSandbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RunGroupSandbox(ctx, req.(*RunGroupSandboxRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1655,6 +1795,22 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetWorkloadStats",
 			Handler:    _Runtime_GetWorkloadStats_Handler,
+		},
+		{
+			MethodName: "CreateGroup",
+			Handler:    _Runtime_CreateGroup_Handler,
+		},
+		{
+			MethodName: "ListGroups",
+			Handler:    _Runtime_ListGroups_Handler,
+		},
+		{
+			MethodName: "RemoveGroup",
+			Handler:    _Runtime_RemoveGroup_Handler,
+		},
+		{
+			MethodName: "RunGroupSandbox",
+			Handler:    _Runtime_RunGroupSandbox_Handler,
 		},
 		{
 			MethodName: "BuildImage",

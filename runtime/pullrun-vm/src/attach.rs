@@ -132,6 +132,15 @@ impl VmPersistentHandle {
         self.inner.is_alive()
     }
 
+    /// Send a raw frame to the guest (sandbox groups use this to
+    /// dispatch `WorkloadSpec`/`GroupShutdown`).
+    pub fn send_frame(&self, frame: pullrun_vsock::Frame) -> Result<(), AttachError> {
+        self.inner
+            .stdin_tx
+            .send(frame)
+            .map_err(|_| AttachError::Vsock("VM session shut down".into()))
+    }
+
     /// Send a Shutdown command and wait for the VM thread to exit.
     pub fn stop(&self) {
         let _ = self.inner.cmd_tx.send(VmCommand::Shutdown);
@@ -149,6 +158,12 @@ impl VmPersistentHandle {
     /// Stub: non-macOS handles are never alive.
     pub fn is_alive(&self) -> bool {
         false
+    }
+
+    pub fn send_frame(&self, _frame: pullrun_vsock::Frame) -> Result<(), AttachError> {
+        Err(AttachError::BackendUnavailable(
+            "Apple Virtualization is macOS-only".into(),
+        ))
     }
 }
 
