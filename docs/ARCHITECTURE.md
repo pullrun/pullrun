@@ -189,21 +189,36 @@ storage growth.
 
 ### Materialization
 
-When a workload is executed, the DAG must be converted to a
-runnable rootfs:
+The DAG is flattened **once per manifest digest** into an immutable
+base tree under `<store_root>/bases/v1/<digest>/`. Workloads never
+share a writable tree, and hardlinks are never used (a container write
+must not mutate the store).
 
-- **Containers:** The OCI pipeline produces a rootfs directory of
-  hardlinks pointing at the mmap'd DAG node pages. Multiple
-  containers on the same image share the same on-disk bytes.
-- **Linux VMs (Firecracker):** Layer blobs are streamed through
-  `mkfs.ext4` to produce a sparse ext4 rootfs image.
-- **macOS VMs (Apple Virt):** The rootfs directory is shared
-  directly via VirtioFS — no image build step.
+- **Containers:** a per-workload reflink clone of the base
+  (`clonefile(2)` on APFS, `FICLONE` on btrfs/XFS, full copy on ext4).
+  With `--rootfs-overlay` the base is mounted as a read-only lower
+  layer with a private upper/work pair instead.
+- **Linux VMs (Firecracker):** one ext4 base image per digest, cloned
+  per VM with `FICLONE` on reflink filesystems. Filesystems without
+  reflink build each VM image directly (a shared base would only add
+  another full copy).
+- **macOS VMs (Apple Virt):** each workload gets an APFS reflink clone
+  of the base (`<store_root>/rootfs/<workload-id>/`). Writes are
+  private to that VM.
+- **Sandbox groups:** the VM mounts the base read-only once and gives
+  every sandbox a tmpfs overlay upper; sandboxes share the guest page
+  cache.
 
-The materialized rootfs lives at
-`<store_root>/rootfs/<digest>/` — the store root is
-`~/.local/share/pullrun/` by default, ensuring rootfs survives
-host reboots (unlike `/tmp`).
+Base construction is the **only** place OCI whiteouts and tar paths are
+applied. It uses the confined extractor (`pullrun-oci/src/confinement.rs`):
+descriptor-relative `openat` walks, symlink targets re-rooted inside the
+bundle, absolute/parent paths rejected, and opaque root opacity applied
+to the bundle rather than a host path. Runtime materialization never
+deletes untrusted paths.
+
+The store root is `~/.local/share/pullrun/` by default, so bases and
+per-workload rootfs survive host reboots (unlike `/tmp`). Unused bases
+and stale per-workload clones are reclaimed by `prune`/`gc`.
 
 #### `pullrun exec` and PTY handling
 
@@ -294,10 +309,11 @@ already done by Pullrun, so runc only sees a Pullrun-formatted OCI
 bundle on disk. Calls `runc create` → `runc start` → `runc
 delete` through the standard lifecycle.
 
-The container's rootfs is *materialized* from the DAG on demand:
-the converter produces a directory of hardlinks pointing at the
-mmap'd DAG nodes. Multiple containers on the same image share the
-same on-disk bytes; the hardlinks are free.
+The container's rootfs is a **copy-on-write clone of the immutable
+image base**, or an overlayfs mount when `--rootfs-overlay` is enabled.
+Each container has its own writable tree; hardlinks are deliberately
+not used because a write through a shared inode would corrupt the
+store. See "Materialization" above.
 
 **Rootless mode:** When EUID != 0, Pullrun uses a
 `RootlessContainerExecutor` that patches the OCI spec with a user
@@ -472,6 +488,33 @@ routes by `spec.backend`. From the gRPC handler's perspective,
 it's just `Executor`. The router also handles the case where the
 request names a VM but the VM backend isn't configured (returns
 `BackendNotAvailable`).
+
+## 3b. Sandbox groups (Apple Virtualization)
+
+A sandbox group is a single VM that hosts many sandboxes. The guest
+agent (`pullrun-init`) is started with `GroupInit` instead of a single
+`WorkloadSpec`; it mounts the image base read-only and then runs each
+`SandboxSpec` concurrently:
+
+- namespaces: mount, network, UTS, IPC (per sandbox)
+- rootfs: overlay with the base as `lowerdir` and a per-sandbox tmpfs
+  `upperdir` (`userxattr`), so writes are discarded on exit and the base
+  is never modified
+- I/O: every `SandboxStdout`/`SandboxStderr`/`SandboxExit` frame is
+  tagged with the sandbox id
+- lifecycle: the VM stays alive between sandboxes; `GroupShutdown`
+  stops it
+
+On the host, `CreateGroup` boots the VM, and `RunGroupSandbox` registers
+a per-sandbox frame sink (`AttachSandbox`), dispatches the spec, and
+waits in a blocking task for the tagged exit frame. The persistent VM
+loop buffers frames that arrive before the sink is registered.
+
+Sandboxes share the guest kernel and page cache. Measured on Apple
+Silicon: the first reader warms ~6 MiB of guest cache and 5-10 further
+sandboxes add zero cached bytes; 10 concurrent trivial sandboxes finish
+in ~185 ms. See `docs/GROUPS.md` for semantics, limitations (no
+networking or per-sandbox limits yet) and the benchmark script.
 
 ## 4. The shared network model (`pullrun-net`)
 

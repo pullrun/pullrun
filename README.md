@@ -6,7 +6,7 @@
 
 ### *The AI agent sandbox runtime — a disposable microVM per task, booted from any OCI image in ~400 ms.*
 
-**Give every agent task its own sandbox. Pullrun boots any OCI image as a hardened Firecracker microVM (or Linux container / Apple Silicon VM) in ~400 ms — and shares one content-addressed copy of the image across your whole fleet. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and snapshot state directly. No daemon required. No overlayfs. No separate VM images.**
+**Give every agent task its own sandbox. Pullrun boots any OCI image as a hardened microVM (Firecracker or Apple Silicon), a Linux container, or a dense sandbox group in ~400 ms — from one content-addressed image store. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and commit filesystem state directly. No daemon required. No overlayfs in the image store. No separate VM images.**
 
 **One OCI image. Any execution target — agent sandbox, container, Firecracker microVM, Apple Silicon VM, or Kubernetes workload. CLI + runtime under 25 MB.**
 
@@ -21,7 +21,7 @@
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![Rust](https://img.shields.io/badge/Rust-1.78+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org)
-[![Tests](https://img.shields.io/badge/tests-255%20passing-brightgreen?logo=checkmarx)](#testing)
+[![Tests](https://img.shields.io/badge/tests-272%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
@@ -61,8 +61,9 @@ pullrun commit <id> task-run-042:latest
 **Key differentiators:**
 - **MicroVM isolation per task** — untrusted agent code runs in its own Firecracker kernel, not a shared-host namespace. Containers and VMs boot from the *same* image, no separate build step
 - **~400 ms task boots** — Firecracker cold boot ~500 ms, warm pool ~200 ms, containers ~400 ms, Apple Silicon VM ~160 ms
-- **One image, any number of sandboxes** — DAG store dedupes by content hash; 1,000 agent sandboxes share one copy of `python:3.12`, `mmap`'d from the same host pages (see [Agent Sandboxes](#-agent-sandboxes))
-- **State that persists** — commit or snapshot a mid-task sandbox; the next run boots from that exact state, rollback is O(1)
+- **One image, any number of sandboxes** — the DAG store dedupes by content hash. Per-task VMs get reflink clones that share physical image blocks on APFS/btrfs/XFS; group sandboxes share one read-only base and the guest page cache (measured in [docs/GROUPS.md](docs/GROUPS.md))
+- **State that persists** — `commit` captures a sandbox's filesystem (guest memory is not snapshotted yet); the next run boots from that rootfs
+- **Sandbox groups** — one VM, concurrent sandboxes with private overlays and a shared guest page cache: 10 trivial sandboxes in ~185 ms, image cache warmed once (see [docs/GROUPS.md](docs/GROUPS.md))
 - **Native MCP server** — 15 runtime tools (run, exec, logs, build, push…) + resources; works in stdio (opencode, Claude Code, Cursor) or SSE (remote agents)
 - **P2P image distribution** — one registry pull per fleet, the rest sync peer-to-peer at LAN speed
 - **~14 MB CLI + ~6 MB runtime daemon** (stripped) — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
@@ -130,6 +131,11 @@ pullrun run alpine:3.18 --cmd "echo" --cmd "hello pullrun"
 
 # ── Run as a microVM (macOS/Linux) ─────────────────────────────
 pullrun run alpine:3.18 --backend vm --cmd "echo" --cmd "hello" --attach -t
+
+# ── Dense fleet: one VM, many concurrent sandboxes (macOS) ─────
+GID=$(pullrun group create --image alpine:3.18)
+pullrun group run "$GID" -- /bin/sh -c 'echo hi from a group sandbox'
+pullrun group ls && pullrun group rm "$GID"
 
 # ── Interactive shell with detach ──────────────────────────────
 pullrun run alpine:3.18 --tty --attach --cmd /bin/sh
@@ -216,10 +222,11 @@ AI agents churn through sandboxes by the thousands. Pullrun is built for that ch
 | What agents need | Pullrun provides |
 |------------------|------------------|
 | Fast task boot | Firecracker VM **~500 ms cold** / **~200 ms warm pool**, container **~400 ms**, Apple Silicon VM **~160 ms** |
-| Strong isolation | Kernel-per-task microVMs for untrusted code — no shared-kernel escapes; toggle to container for trusted code |
-| Cheap per-sandbox storage | DAG dedup by content hash: **1,000 sandboxes share one copy** of the image, `mmap`'d from the same host pages |
-| Low memory | Shared page cache across sandboxes; idle daemon RSS **24.6 MiB** |
-| Cross-turn state | `commit`/`snapshot` a mid-task sandbox → next run boots from that state; rollback is O(1) |
+| Strong isolation | Kernel-per-task microVMs for untrusted code; group sandboxes share a guest kernel and are meant for trusted same-tenant tasks |
+| Cheap per-sandbox storage | Base image stored once; reflink clones share blocks (APFS/btrfs/XFS); group sandboxes share one base + page cache |
+| Low memory | Group sandboxes share the guest page cache (measured: 6 MiB warmed once, zero per extra reader); per-task VMs have independent guest memory |
+| Cross-turn state | `commit` captures filesystem state → next run boots from that rootfs; guest-memory snapshot/restore is on the roadmap |
+| Dense fleets | Sandbox groups: one VM hosting concurrent sandboxes (CLI: `pullrun group`) |
 | Agent-native control | Native **MCP** — `run`, `exec`, `logs`, `build`, `push`, `list_images`, `compose_up`… (15 tools) |
 | Guardrails | ed25519 image signatures, SBOM/CVSS gates, seccomp profiles, read-only rootfs, `no_new_privileges` |
 | Fleet distribution | P2P image sync — one registry pull per cluster, rest delta-sync over LAN |
@@ -240,11 +247,44 @@ pullrun run python:3.12 --backend vm --cmd "python" --cmd "-c" --cmd "1+1" --att
 
 ---
 
+## 👥 Sandbox Groups
+
+One VM, many sandboxes. A group boots a single VM and runs sandboxes
+concurrently inside it; all of them share the guest kernel and its page
+cache, while each sandbox gets a private tmpfs overlay over the same
+read-only image base.
+
+```bash
+GID=$(pullrun group create --image alpine:3.18)
+pullrun group run "$GID" -- /bin/sh -c 'echo hi' &
+pullrun group run "$GID" -- /bin/sh -c 'echo there' &
+wait
+pullrun group rm "$GID"
+```
+
+Measured on Apple Silicon (debug build, `alpine:3.18`):
+
+| metric | result |
+|---|---|
+| group boot (one VM) | ~450-480 ms |
+| 10 × `true`, sequential | 1,171 ms |
+| 10 × `true`, concurrent | **185 ms** |
+| 10 concurrent image readers | 355 ms (vs 1,395 ms sequential) |
+| guest `Cached` after 1 / 5 / 10 readers | 9.3 / 9.3 / 9.3 MiB |
+
+The image cache is warmed once (3.3 → 9.3 MiB) and adds nothing per
+sandbox. Groups are macOS-only for now, sandboxes are network-isolated,
+and writes are discarded when a sandbox exits. See
+[docs/GROUPS.md](docs/GROUPS.md) for semantics, caveats, and the
+reproduction script.
+
+---
+
 ## 🎯 Why Pullrun?
 
 ### 🏗️ Architecture is Everything
 
-Docker's overlayfs store is a filesystem overlay — CVEs in overlayfs (CVE-2023-0386, CVE-2023-32629) can let a container escape to the host. Pullrun's content-addressed DAG store stores layers **as-is**, verified by content hash. No overlayfs, no escape.
+Docker's image store is an overlay filesystem, so overlayfs has historically been part of the container escape surface (CVE-2023-0386, CVE-2023-32629). Pullrun's image store is not an overlay: OCI layers are stored **as-is** by content hash, and the DAG is materialized into per-workload rootfs views. Overlayfs appears only as a confined runtime view (the optional container `--rootfs-overlay` mode and the guest-side upper layer of group sandboxes), never as the store.
 
 Pullrun also mitigates **shared-kernel cross-container risks** that aren't specific to any storage driver — for example, kernel page-cache bugs like CVE-2026-31431 ("Copy Fail") affect all containers sharing a host kernel, regardless of the storage backend. Per-VM kernel isolation (Firecracker, Apple Virtualization) fully contains these. The DAG store makes the VM path zero-cost: the same image, no separate VM build step.
 
@@ -506,33 +546,33 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 
 ## 🧪 Testing
 
-> **255 tests, 0 failures** — every commit is gated by the full suite
+> **272 tests, 0 failures** — every commit is gated by the full suite
 > (`cargo fmt --check`, `cargo test`, `go test ./...`, `golangci-lint`).
 
 | Suite | Stack | What it covers | Tests |
 |-------|-------|----------------|------:|
 | `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 31 |
 | `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 43 |
-| `pullrun-vm` | 🦀 Rust | network, ext4, OCI kernels, Apple Virt + Firecracker* | 23 |
+| `pullrun-vm` | 🦀 Rust | network, ext4 bases, OCI kernels, Apple Virt + group, Firecracker* | 25 |
 | `pullrun-net` | 🦀 Rust | IPAM, firewall, proxy, DNS, loopback | 18 |
 | `pullrun-policy` | 🦀 Rust | signatures, SBOM, gates | 17 |
-| `pullrun-oci` | 🦀 Rust | dockerfile parser, puller, converter, layouts | 18 |
+| `pullrun-oci` | 🦀 Rust | confinement, bases/CoW, dockerfile, puller, converter, layouts | 30 |
 | `pullrun-gc` | 🦀 Rust | DAG garbage collection | 17 |
 | `pullrun-sync` | 🦀 Rust | P2P block sync, bloom, delta | 13 |
-| `pullrun-vsock` | 🦀 Rust | vsock transport | 9 |
-| `pullrun-exec` | 🦀 Rust | seccomp, rootless | 8 |
+| `pullrun-vsock` | 🦀 Rust | vsock transport, group frames | 10 |
+| `pullrun-exec` | 🦀 Rust | seccomp, rootless, OCI spec, overlay | 10 |
 | `pullrun-init` | 🦀 Rust | guest agent, initramfs | 2 |
 | `pullrun-cri` | 🐹 Go | CRI shim lifecycle, filestore | 20 |
 | `pullrun-compose` | 🐹 Go | compose parsing, `up`/`down` flows | 15 |
 | `pullrun` CLI | 🐹 Go | workload run, commands, attestations | 12 |
 | `control-plane` | 🐹 Go | controller store | 9 |
-| **Total** | | | **255** |
+| **Total** | | | **272** |
 
 \* 2 Firecracker hardware tests are `#[ignore]`d (need /dev/kvm) — run manually:
 `cargo test -p pullrun-vm --test firecracker_boot -- --include-ignored --nocapture`
 
 ```bash
-cargo test                                   # Rust workspace: 199 tests
+cargo test                                   # Rust workspace: 216 tests
 go test ./...                                # Go modules (cri, cli, compose, control-plane): 53 tests
 cargo fmt --all --check && golangci-lint run ./...   # CI gates
 ```
@@ -587,7 +627,7 @@ Pullrun is open source (Apache-2.0) **and** a business. Enterprise capabilities,
 
 Commercial offerings on top of these capabilities, available today:
 
-- **🧠 Embedded Agent Sandboxes** — for AI agent platforms (Claude Code, opencode, Cursor-style products): license the runtime that boots a per-task microVM sandbox in **~500 ms cold / ~200 ms warm**, controlled over native MCP (15 tools). Fleet economics: the DAG store keeps **1,000 concurrent sandboxes on one image copy**.
+- **🧠 Embedded Agent Sandboxes** — for AI agent platforms (Claude Code, opencode, Cursor-style products): license the runtime that boots a per-task microVM sandbox in **~500 ms cold / ~200 ms warm**, controlled over native MCP (15 tools). Fleet economics: one image base plus copy-on-write deltas — reflink clones for per-task VMs, and shared guest page cache for group sandboxes (measured in [docs/GROUPS.md](docs/GROUPS.md)).
 - **🔒 Isolation & Guardrails for agents** — kernel-per-task microVMs for untrusted agent code, deny-by-default image policy, seccomp/read-only rootfs/no-new-privileges, policy decisions streamed as audit events.
 - **☁️ Hosted Sandbox API** (planned) — managed sandbox endpoints: boot, run agent, snapshot state, resume — billed per active sandbox-second.
 - **Enterprise License** — per-cluster licensing for production fleets: Kubernetes CRI runtime, agent sandbox farms at scale, air-gapped registries, kernel-as-image updates. Predictable per-node pricing.

@@ -20,6 +20,7 @@ Apple Virtualization VMs (macOS)** — all from the same image.
 | P2P DAG block sync | ✅ | ✅ |
 | Policy engine (image signatures, SBOM) | ✅ | ✅ |
 | CRI shim + Kubernetes | ❌ (needs runc) | ✅ |
+| Sandbox groups (one VM, many sandboxes) | ✅ (Apple Virt) | ❌ (not yet) |
 | `pullrun kernel install` | ✅ → arm64 | ✅ → amd64 |
 
 **Key insight:** pullrun works identically on both platforms for all
@@ -52,6 +53,11 @@ pullrun run alpine:3.18 --backend vm --cmd /bin/echo --cmd hello --attach
 
 # 5. macOS — interactive VM shell (persistent, detach with Ctrl-P Ctrl-Q):
 pullrun run alpine:3.18 --backend vm --tty --attach --cmd /bin/sh
+
+# 6. macOS — sandbox group: one VM, concurrent sandboxes
+GID=$(pullrun group create --image alpine:3.18)
+pullrun group run "$GID" -- /bin/sh -c 'echo hi'
+pullrun group rm "$GID"
 ```
 
 > **`--cmd` takes separate arguments.** Use `--cmd /bin/echo --cmd hello`

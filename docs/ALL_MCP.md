@@ -189,3 +189,10 @@ Inspect workload wl-abc123 in detail.
 Stop workload wl-abc123.
 List workloads again to confirm it stopped.
 ```
+
+## Not exposed over MCP (yet)
+
+Sandbox groups (`pullrun group create/run/ls/rm`) are available over
+the CLI and gRPC API, but are not part of the MCP tool surface yet.
+Agents that need one-VM-many-sandboxes execution should use the CLI
+until a `group_run` tool lands.

@@ -133,6 +133,7 @@ getcap /usr/local/bin/pullrun-runtime
 | `--vm-mem-mib <MiB>` | 512 | Default memory per VM |
 | `--vm-size-mb <MiB>` | 256 | Rootfs size per VM |
 | `--vm-warm-pool-size <N>` | 0 | Pre-booted VMs in warm pool (0 = disabled) |
+| `--rootfs-overlay` | false | Use overlayfs lowerdirs for container rootfs (requires root; Linux) |
 | `--sync-addr <ADDR>` | `0.0.0.0:0` | BlockSync gRPC address (port 0 = disabled) |
 | `--registrar-addr <ADDR>` | (none) | Host Registrar gRPC service on this address |
 | `--registrar-connect <ADDR>` | (none) | Register with a remote Registrar |
@@ -180,13 +181,17 @@ Restart limits:
 
 ### VM state persistence
 
-VM workloads preserve their rootfs across `exited → exec`
-transitions. This is a key operational difference from containers:
+VM workloads preserve their **rootfs** (filesystem) across
+`exited → exec` transitions. This is not a memory snapshot: guest RAM
+and processes are not preserved, and `commit` captures the filesystem
+only. Apple VMs use a per-workload APFS reflink clone; Firecracker VMs
+keep their ext4 image. This is a key operational difference from
+containers:
 
 | Backend | Rootfs persists? | Mechanism |
 |---------|-----------------|-----------|
-| **Container** (runc) | ❌ — fresh OCI rootfs on each boot | Rootfs is materialized from the DAG each time. Only `--volume` mounts survive. |
-| **Apple Virt VM** | ✅ | VirtioFS shares the host directory directly. Every write hits the host filesystem; the same directory is shared on re-attach. |
+| **Container** (runc) | ❌ — fresh rootfs on each boot | A new CoW clone of the image base per container. Only `--volume` mounts survive. |
+| **Apple Virt VM** | ✅ | Per-workload APFS reflink clone retained in `<store>/rootfs/<id>/`; writes hit that clone and the same directory is reused on re-attach. |
 | **Firecracker VM** | ✅ (within same daemon session) | The ext4 image file is retained on disk and reused. `exec` from `exited` boots the same image. |
 
 Operationally, this means:
@@ -196,6 +201,49 @@ Operationally, this means:
 - OS package installations inside a VM survive stop/restart cycles.
 - To reset a VM to its image state, use `pullrun stop` followed
   by a fresh `pullrun run` (not `exec`).
+
+### Sandbox groups (macOS)
+
+A group boots one Apple Virtualization VM and runs sandboxes inside it.
+All sandboxes share the guest kernel and page cache; each gets a
+private tmpfs overlay over the read-only image base.
+
+```bash
+GID=$(pullrun group create --image alpine:3.18)
+pullrun group run "$GID" -- /bin/sh -c 'echo hi'
+pullrun group run "$GID" -- /bin/sh -c 'exit 7'   # CLI exits 7
+pullrun group ls
+pullrun group rm "$GID"
+```
+
+Operational notes:
+
+- Groups are **macOS-only** in this build; Linux returns
+  `Unimplemented`.
+- Sandboxes run **concurrently**. Do not expect a shared filesystem
+  between them; each sandbox starts from the same base and discards its
+  writes on exit.
+- Each sandbox has an isolated (empty) network namespace — no
+  connectivity yet.
+- There are no per-sandbox CPU/memory limits yet; the VM size is fixed
+  when the group is created (1 vCPU / 512 MiB in v0).
+- `group rm` sends `GroupShutdown` and stops the VM. A crashed group is
+  reported as `stopped` by `group ls`.
+- Benchmark and caveats: `docs/GROUPS.md`, `hack/group-bench.sh`.
+
+### Base store and disk usage
+
+Flattened image bases live under `<store_root>/bases/v1/<digest>/`
+(with a `.ready` marker). Per-workload container bundles stay under
+`<store_root>/bundles/<id>/`, and macOS VM rootfs clones under
+`<store_root>/rootfs/<workload-id>/`.
+
+`pullrun gc` and `pullrun prune` reclaim:
+
+- unreachable DAG nodes/blobs,
+- bases not referenced by a tag or tracked workload,
+- stale per-workload rootfs clones,
+- orphaned bundle and secret-staging directories.
 
 ### Environment variables
 

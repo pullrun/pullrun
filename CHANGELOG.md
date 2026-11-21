@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- **Confined OCI extraction.** Layer tars are now resolved with a
+  descriptor-relative `RootDir`: absolute paths and parent components
+  are rejected, symlink targets are re-rooted inside the rootfs, and
+  final operations use `*at` syscalls. Fixes symlink+whiteout escapes
+  and absolute whiteout targets from crafted DAG imports.
+- **Opaque whiteouts fixed.** The converter previously dropped every
+  `.wh..wh..opq` because it filtered on `contains("..")`; path
+  validation is now component-based and root opacity clears only the
+  bundle.
+
+### Correctness
+- **Apple VM fast exits.** `ExitAck` handshake, no `SHUT_WR` on the
+  duplex vsock, and guest stdout/stderr drained to EOF. Fast commands
+  keep their output and exit code; the daemon records the real code
+  instead of defaulting to 137.
+- **Container exit codes.** Containers run under a foreground `runc`
+  child, so `exited(<code>)` is recorded and returned; startup errors
+  are distinguished from workload exits via captured stderr.
+- **Rootless honours the workload spec.** Command, env, mounts,
+  working dir, security flags, and limits are built by a shared OCI
+  config builder; the process runs as container uid 0 mapped to the
+  host user instead of an unmapped host uid.
+- **Stale runc state** is cleared before start.
+
+### Storage
+- **Immutable image bases** (`pullrun-oci::base`): one flattened tree
+  per digest, single-flight build, atomic rename, `.ready` marker, and
+  GC on `prune`/`gc`.
+- **Copy-on-write clones** (`pullrun-oci::cow`): APFS `clonefile`,
+  Linux `FICLONE`, copy fallback, capability probe. Per-task containers
+  and macOS VMs get private clones instead of sharing one writable
+  rootfs.
+- **Firecracker ext4 bases** are built once per digest and cloned with
+  `FICLONE` on reflink filesystems; ext4 hosts build per VM.
+- **`--rootfs-overlay`** for containers: base as read-only lower layer,
+  private upper/work per sandbox.
+
+### Sandbox groups (macOS)
+- `pullrun group create/run/ls/rm`: one Apple VM, concurrent sandboxes
+  with mount/net/UTS/IPC namespaces and per-sandbox tmpfs overlays.
+- Id-tagged vsock frames (`SandboxSpec/Stdout/Stderr/Exit/Error`);
+  concurrent sandboxes share the guest page cache.
+- Measured: 10 trivial sandboxes in ~185 ms; the image cache warms
+  6 MiB once and adds zero per extra reader (`docs/GROUPS.md`).
+
+### Reliability
+- OCI pulls retry transient connect/timeout/5xx failures (3 attempts,
+  10 s connect timeout) and use `registry-1.docker.io`.
+- Linux clippy/test fixes and a CI-safe overlay userns test.
+
 ## 0.7.10 — 2026-11-07
 
 ### build/commit produced unusable images (four defects)
