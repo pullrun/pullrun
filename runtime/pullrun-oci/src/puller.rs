@@ -403,6 +403,7 @@ impl OciPuller {
         let client = reqwest::Client::builder()
             .default_headers(default_headers)
             .redirect(reqwest::redirect::Policy::limited(5))
+            .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(60))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -419,6 +420,55 @@ impl OciPuller {
             auth,
             insecure_registries: HashSet::new(),
         }
+    }
+
+    /// Send an idempotent GET with bounded retries.
+    ///
+    /// Registry endpoints intermittently black-hole a connection (seen
+    /// on Docker Hub's legacy `index.docker.io` endpoint). A single
+    /// 60 s timeout used to turn that into a failed pull even though an
+    /// immediate retry succeeds. Retry connect/timeout/request errors
+    /// and 429/5xx responses with a short exponential backoff.
+    async fn send_retry<F>(
+        &self,
+        what: &str,
+        mut make: F,
+    ) -> Result<reqwest::Response, OciError>
+    where
+        F: FnMut() -> reqwest::RequestBuilder,
+    {
+        const ATTEMPTS: usize = 3;
+        let mut last_error = String::new();
+        for attempt in 0..ATTEMPTS {
+            let result = make().send().await;
+            match result {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let retryable = status.as_u16() == 429
+                        || status.as_u16() == 500
+                        || status.as_u16() == 502
+                        || status.as_u16() == 503
+                        || status.as_u16() == 504;
+                    if !retryable {
+                        return Ok(resp);
+                    }
+                    last_error = format!("HTTP {status}");
+                    // Drain so the connection can be reused/closed.
+                    let _ = resp.bytes().await;
+                }
+                Err(err) if err.is_timeout() || err.is_connect() || err.is_request() => {
+                    last_error = describe_reqwest_error(&err);
+                }
+                Err(err) => return Err(err.into()),
+            }
+            if attempt + 1 < ATTEMPTS {
+                let backoff = std::time::Duration::from_millis(250 * (1 << attempt));
+                tokio::time::sleep(backoff).await;
+            }
+        }
+        Err(OciError::Other(format!(
+            "{what}: failed after {ATTEMPTS} attempts: {last_error}"
+        )))
     }
 
     /// `https://` for normal registries; `http://` for
@@ -496,16 +546,20 @@ impl OciPuller {
             )
         };
 
-        let mut req = self.client.get(&url);
-        if let Some(auth) = &self.auth {
-            if let (Some(user), Some(pass)) = (&auth.username, &auth.password) {
-                let encoded =
-                    base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
-                req = req.header(reqwest::header::AUTHORIZATION, format!("Basic {encoded}"));
-            }
-        }
-
-        let resp = req.send().await?;
+        let resp = self
+            .send_retry(&format!("token {url}"), || {
+                let mut req = self.client.get(&url);
+                if let Some(auth) = &self.auth {
+                    if let (Some(user), Some(pass)) = (&auth.username, &auth.password) {
+                        let encoded = base64::engine::general_purpose::STANDARD
+                            .encode(format!("{user}:{pass}"));
+                        req = req
+                            .header(reqwest::header::AUTHORIZATION, format!("Basic {encoded}"));
+                    }
+                }
+                req
+            })
+            .await?;
         if resp.status().is_success() {
             #[derive(Deserialize)]
             struct TokenResponse {
@@ -677,25 +731,28 @@ impl OciPuller {
     ) -> FetchResult<'a> {
         Box::pin(async move {
             let url = manifest_url(self, registry, repository, reference);
-            let mut req = self
-                .client
-                .get(&url)
-                .header("Accept", media_types::IMAGE_INDEX)
-                .header(
-                    "Accept",
-                    "application/vnd.docker.distribution.manifest.list.v2+json",
-                )
-                .header("Accept", media_types::IMAGE_MANIFEST)
-                .header(
-                    "Accept",
-                    "application/vnd.docker.distribution.manifest.v2+json",
-                );
-
-            if let Some(t) = token {
-                req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
-            }
-
-            let resp = req.send().await?;
+            let resp = self
+                .send_retry(&format!("manifest list {url}"), || {
+                    let mut req = self
+                        .client
+                        .get(&url)
+                        .header("Accept", media_types::IMAGE_INDEX)
+                        .header(
+                            "Accept",
+                            "application/vnd.docker.distribution.manifest.list.v2+json",
+                        )
+                        .header("Accept", media_types::IMAGE_MANIFEST)
+                        .header(
+                            "Accept",
+                            "application/vnd.docker.distribution.manifest.v2+json",
+                        );
+                    if let Some(t) = token {
+                        req = req
+                            .header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                    }
+                    req
+                })
+                .await?;
             if !resp.status().is_success() {
                 let body = resp.text().await.unwrap_or_default();
                 return Err(OciError::InvalidManifest(format!(
@@ -759,25 +816,28 @@ impl OciPuller {
     > {
         Box::pin(async move {
             let url = manifest_url(self, registry, repository, reference);
-            let mut req = self
-                .client
-                .get(&url)
-                .header("Accept", media_types::IMAGE_MANIFEST)
-                .header("Accept", media_types::IMAGE_INDEX)
-                .header(
-                    "Accept",
-                    "application/vnd.docker.distribution.manifest.v2+json",
-                )
-                .header(
-                    "Accept",
-                    "application/vnd.docker.distribution.manifest.list.v2+json",
-                );
-
-            if let Some(t) = token {
-                req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
-            }
-
-            let resp = req.send().await?;
+            let resp = self
+                .send_retry(&format!("manifest {reference}"), || {
+                    let mut req = self
+                        .client
+                        .get(&url)
+                        .header("Accept", media_types::IMAGE_MANIFEST)
+                        .header("Accept", media_types::IMAGE_INDEX)
+                        .header(
+                            "Accept",
+                            "application/vnd.docker.distribution.manifest.v2+json",
+                        )
+                        .header(
+                            "Accept",
+                            "application/vnd.docker.distribution.manifest.list.v2+json",
+                        );
+                    if let Some(t) = token {
+                        req = req
+                            .header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                    }
+                    req
+                })
+                .await?;
             if !resp.status().is_success() {
                 let body = resp.text().await.unwrap_or_default();
                 return Err(OciError::InvalidManifest(format!(
@@ -901,13 +961,16 @@ impl OciPuller {
         token: Option<&str>,
     ) -> Result<OciImageConfig, OciError> {
         let url = blob_url(self, registry, repository, digest);
-        let mut req = self.client.get(&url);
 
-        if let Some(t) = token {
-            req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
-        }
-
-        let resp = req.send().await?;
+        let resp = self
+            .send_retry(&format!("config {digest}"), || {
+                let mut req = self.client.get(&url);
+                if let Some(t) = token {
+                    req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                }
+                req
+            })
+            .await?;
         let content_encoding = resp
             .headers()
             .get(reqwest::header::CONTENT_ENCODING)
@@ -932,13 +995,16 @@ impl OciPuller {
         token: Option<&str>,
     ) -> Result<Vec<u8>, OciError> {
         let url = blob_url(self, registry, repository, digest);
-        let mut req = self.client.get(&url);
 
-        if let Some(t) = token {
-            req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
-        }
-
-        let resp = req.send().await?;
+        let resp = self
+            .send_retry(&format!("config {digest}"), || {
+                let mut req = self.client.get(&url);
+                if let Some(t) = token {
+                    req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                }
+                req
+            })
+            .await?;
         let content_encoding = resp
             .headers()
             .get(reqwest::header::CONTENT_ENCODING)
@@ -1021,12 +1087,15 @@ impl OciPuller {
             url.push_str(&format!("?artifactType={at}"));
         }
 
-        let mut req = self.client.get(&url);
-        if let Some(t) = token {
-            req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
-        }
-
-        let resp = req.send().await?;
+        let resp = self
+            .send_retry(&format!("referrers {digest}"), || {
+                let mut req = self.client.get(&url);
+                if let Some(t) = token {
+                    req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {t}"));
+                }
+                req
+            })
+            .await?;
         let content_encoding = resp
             .headers()
             .get(reqwest::header::CONTENT_ENCODING)
@@ -1052,9 +1121,22 @@ fn decode_body(encoding: &str, data: Vec<u8>) -> Result<Vec<u8>, OciError> {
     }
 }
 
+/// Flatten a reqwest error into a message that includes the underlying
+/// cause (DNS, TLS, connection reset, ...), which `Display` alone omits.
+fn describe_reqwest_error(err: &reqwest::Error) -> String {
+    let mut out = err.to_string();
+    let mut source: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(err);
+    while let Some(cause) = source {
+        out.push_str(": ");
+        out.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    out
+}
+
 fn manifest_url(puller: &OciPuller, registry: &str, repository: &str, reference: &str) -> String {
     if registry == "registry-1.docker.io" || registry == "docker.io" {
-        format!("https://index.docker.io/v2/{repository}/manifests/{reference}")
+        format!("https://registry-1.docker.io/v2/{repository}/manifests/{reference}")
     } else {
         format!(
             "{}//{registry}/v2/{repository}/manifests/{reference}",
@@ -1065,7 +1147,7 @@ fn manifest_url(puller: &OciPuller, registry: &str, repository: &str, reference:
 
 fn blob_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) -> String {
     if registry == "registry-1.docker.io" || registry == "docker.io" {
-        format!("https://index.docker.io/v2/{repository}/blobs/{digest}")
+        format!("https://registry-1.docker.io/v2/{repository}/blobs/{digest}")
     } else {
         format!(
             "{}//{registry}/v2/{repository}/blobs/{digest}",
@@ -1076,7 +1158,7 @@ fn blob_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) 
 
 fn referrers_url(puller: &OciPuller, registry: &str, repository: &str, digest: &str) -> String {
     if registry == "registry-1.docker.io" || registry == "docker.io" {
-        format!("https://index.docker.io/v2/{repository}/referrers/{digest}")
+        format!("https://registry-1.docker.io/v2/{repository}/referrers/{digest}")
     } else {
         format!(
             "{}//{registry}/v2/{repository}/referrers/{digest}",
