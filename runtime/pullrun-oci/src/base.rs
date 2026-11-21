@@ -297,6 +297,28 @@ mod tests {
         (store, manifest_digest, dir)
     }
 
+    #[test]
+    fn gc_removes_unlive_bases_only() {
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MmapStore::new(store_dir.path().join("store")));
+        let base_store = BaseStore::from_store(store);
+        let version_root = base_store.version_root();
+        std::fs::create_dir_all(&version_root).unwrap();
+
+        for digest in [Digest([1u8; 32]), Digest([2u8; 32])] {
+            let dir = base_store.base_path(&digest);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("hello"), b"x").unwrap();
+            std::fs::write(base_store.ready_marker(&digest), b"v1").unwrap();
+        }
+
+        let live = std::collections::HashSet::from([Digest([1u8; 32])]);
+        assert_eq!(base_store.gc(&live).unwrap(), 1);
+        assert!(base_store.is_ready(&Digest([1u8; 32])));
+        assert!(!base_store.is_ready(&Digest([2u8; 32])));
+        assert!(!base_store.base_path(&Digest([2u8; 32])).exists());
+    }
+
     #[tokio::test]
     async fn ensure_base_is_idempotent_and_cloneable() {
         let (store, digest, _dir) = store_with_one_file();

@@ -4259,6 +4259,7 @@ impl Runtime for RuntimeService {
         let store_root = self.config.store_root.clone();
         let dry_run = req.dry_run;
         let force = req.force;
+        let live_for_bases: std::collections::HashSet<Digest> = roots.iter().copied().collect();
         let report = tokio::task::spawn_blocking(move || {
             let gc = GarbageCollector::new(store, store_root)
                 .with_dry_run(dry_run)
@@ -4269,6 +4270,16 @@ impl Runtime for RuntimeService {
         .map_err(|join_err| tonic::Status::internal(format!("GC task panicked: {join_err}")))?;
 
         let report = report.map_err(Self::gc_error_to_status)?;
+
+        if !dry_run {
+            match self.base_store.gc(&live_for_bases) {
+                Ok(removed) if removed > 0 => {
+                    info!(bases_removed = removed, "reclaimed unused image bases")
+                }
+                Ok(_) => {}
+                Err(e) => warn!(error = %e, "base GC failed"),
+            }
+        }
 
         let resp = GcResponse {
             total_nodes: report.total_nodes as u64,
@@ -5495,6 +5506,28 @@ impl Runtime for RuntimeService {
             }
         });
 
+        // 2b. Remove per-workload VM rootfs clones for workloads that
+        //     are no longer tracked (macOS Apple Virt path).
+        let rootfs_root = store_root.join("rootfs");
+        if rootfs_root.exists() {
+            if let Ok(entries) = std::fs::read_dir(&rootfs_root) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_dir() {
+                        continue;
+                    }
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    if !active_ids.contains(&name) {
+                        std::fs::remove_dir_all(&path).ok();
+                    }
+                }
+            }
+        }
+
         // 3. Clean up orphaned secret/config staging directories.
         let staged_root = store_root.join("run").join("secrets-stage");
         if staged_root.exists() {
@@ -5516,6 +5549,30 @@ impl Runtime for RuntimeService {
                         std::fs::remove_dir_all(&path).ok();
                     }
                 }
+            }
+        }
+
+        // 4. Reclaim image bases no longer referenced by a tag or a
+        //    tracked workload.
+        {
+            let live: std::collections::HashSet<Digest> = {
+                let tags = self.image_tags.read().await;
+                let workloads = self.workloads.read().await;
+                tags.keys()
+                    .filter_map(|hex| Digest::from_hex(hex).ok())
+                    .chain(
+                        workloads
+                            .values()
+                            .filter_map(|w| Digest::from_hex(&w.image_root).ok()),
+                    )
+                    .collect()
+            };
+            match self.base_store.gc(&live) {
+                Ok(removed) if removed > 0 => {
+                    info!(bases_removed = removed, "prune reclaimed image bases")
+                }
+                Ok(_) => {}
+                Err(e) => warn!(error = %e, "prune base GC failed"),
             }
         }
 
