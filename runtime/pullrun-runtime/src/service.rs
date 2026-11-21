@@ -2449,19 +2449,20 @@ impl Runtime for RuntimeService {
                     .ensure_base(&digest)
                     .await
                     .map_err(|e| tonic::Status::internal(format!("prepare image base: {e}")))?;
-                let rootfs_path = self.store.root_dir().join("rootfs").join(&req.id);
-                let base_path = base.path.clone();
-                let dest = rootfs_path.clone();
-                tokio::task::spawn_blocking(move || {
-                    pullrun_oci::cow::clone_tree(&base_path, &dest)
-                })
-                .await
-                .map_err(|e| tonic::Status::internal(format!("clone rootfs join: {e}")))?
-                .map_err(|e| tonic::Status::internal(format!("clone rootfs: {e}")))?;
-                self.rootfs_cache
-                    .write()
+
+                    let rootfs_path = self.store.root_dir().join("rootfs").join(&req.id);
+                    let base_path = base.path.clone();
+                    let dest = rootfs_path.clone();
+                    tokio::task::spawn_blocking(move || {
+                        pullrun_oci::cow::clone_tree(&base_path, &dest)
+                    })
                     .await
-                    .insert(req.id.clone(), rootfs_path);
+                    .map_err(|e| tonic::Status::internal(format!("clone rootfs join: {e}")))?
+                    .map_err(|e| tonic::Status::internal(format!("clone rootfs: {e}")))?;
+                    self.rootfs_cache
+                        .write()
+                        .await
+                        .insert(req.id.clone(), rootfs_path);
             }
         }
 
@@ -3767,6 +3768,11 @@ impl Runtime for RuntimeService {
                 workload_id: workload_id.clone(),
                 kernel: kernel.unwrap(),
                 rootfs_dir: rootfs_dir.clone().unwrap(),
+                // Apple VM rootfs uses an APFS reflink clone (shared
+                // blocks, private inode). Guest overlayfs over
+                // VirtioFS is not usable yet (overlayfs workdir
+                // creation fails on the share).
+                rootfs_upper: None,
                 command: command.clone(),
                 env: env.clone(),
                 working_dir: working_dir.clone(),

@@ -273,9 +273,74 @@ impl Workload {
         }
         info!("mounted OCI rootfs via VirtioFS");
 
+        // Optional writable delta: base is shared read-only and an
+        // overlay is mounted with the delta as its upper layer. This
+        // gives every VM its own writes without cloning the image.
+        let mut root_path = std::path::PathBuf::from(MOUNT_POINT);
+        const DELTA_MOUNT: &str = "/mnt/delta";
+        let delta_mounted = {
+            std::fs::create_dir_all(DELTA_MOUNT).is_ok()
+                && {
+                    let tag = std::ffi::CString::new("pullrun-upper")
+                        .map_err(|_| InitError::Exec("NUL in delta tag".into()))?;
+                    let mnt = std::ffi::CString::new(DELTA_MOUNT)
+                        .map_err(|_| InitError::Exec("NUL in delta mount".into()))?;
+                    let fstype = std::ffi::CString::new("virtiofs")
+                        .map_err(|_| InitError::Exec("NUL in delta fstype".into()))?;
+                    let rc = unsafe {
+                        libc::mount(
+                            tag.as_ptr(),
+                            mnt.as_ptr(),
+                            fstype.as_ptr(),
+                            0,
+                            std::ptr::null(),
+                        )
+                    };
+                    rc == 0
+                }
+        };
+
+        if delta_mounted {
+            let merged = "/mnt/merged";
+            std::fs::create_dir_all(merged).map_err(InitError::Io)?;
+            let work = format!("{DELTA_MOUNT}/work");
+            std::fs::create_dir_all(&work).map_err(InitError::Io)?;
+            // `userxattr` is required when the upper filesystem does
+            // not allow trusted.* xattrs (VirtioFS on Apple VMs).
+            let data = format!(
+                "lowerdir={MOUNT_POINT},upperdir={DELTA_MOUNT}/upper,workdir={work},userxattr"
+            );
+            let c_merged = std::ffi::CString::new(merged)
+                .map_err(|_| InitError::Exec("NUL in merged path".into()))?;
+            let c_overlay = std::ffi::CString::new("overlay")
+                .map_err(|_| InitError::Exec("NUL in overlay type".into()))?;
+            let c_data = std::ffi::CString::new(data)
+                .map_err(|_| InitError::Exec("NUL in overlay options".into()))?;
+            let c_source = std::ffi::CString::new("overlay")
+                .map_err(|_| InitError::Exec("NUL in overlay source".into()))?;
+            let rc = unsafe {
+                libc::mount(
+                    c_source.as_ptr(),
+                    c_merged.as_ptr(),
+                    c_overlay.as_ptr(),
+                    0,
+                    c_data.as_ptr().cast(),
+                )
+            };
+            if rc == 0 {
+                info!("mounted overlay rootfs (base read-only + delta)");
+                root_path = std::path::PathBuf::from(merged);
+            } else {
+                info!(
+                    error = %std::io::Error::last_os_error(),
+                    "overlay mount failed; using read-only base"
+                );
+            }
+        }
+
         // Mount /proc inside the new root so the workload sees a
         // proper /proc (needed by many tools).
-        let proc_dest = std::ffi::CString::new(format!("{MOUNT_POINT}/proc"))
+        let proc_dest = std::ffi::CString::new(format!("{}/proc", root_path.display()))
             .map_err(|_| InitError::Exec("NUL in proc path".into()))?;
         let proc_type =
             std::ffi::CString::new("proc").map_err(|_| InitError::Exec("NUL in proc".into()))?;
@@ -289,8 +354,10 @@ impl Workload {
             )
         };
 
-        // chroot into the OCI rootfs.
-        let ret = unsafe { libc::chroot(mnt_c.as_ptr()) };
+        // chroot into the (possibly overlaid) OCI rootfs.
+        let root_c = std::ffi::CString::new(root_path.to_string_lossy().as_bytes())
+            .map_err(|_| InitError::Exec("NUL in root path".into()))?;
+        let ret = unsafe { libc::chroot(root_c.as_ptr()) };
         if ret != 0 {
             return Err(InitError::Io(std::io::Error::last_os_error()));
         }

@@ -53,6 +53,11 @@ pub struct AppleVirtAttachConfig {
     /// root, or an ext4 image). Must be a directory; the VM
     /// shares it with the guest over 9p/VirtioFS.
     pub rootfs_dir: PathBuf,
+    /// Optional writable delta directory shared to the guest as
+    /// `pullrun-upper`. When set, `rootfs_dir` is shared read-only and
+    /// the guest mounts `overlay(lower=rootfs_dir,
+    /// upper=delta/upper, work=delta/work)`.
+    pub rootfs_upper: Option<PathBuf>,
     /// What to run inside the VM. `argv[0]` is the
     /// executable, the rest are arguments.
     pub command: Vec<String>,

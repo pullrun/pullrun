@@ -296,6 +296,7 @@ fn run_body(args: Args) -> i32 {
     let cfg = AppleVirtAttachConfig {
         kernel,
         rootfs_dir: args.rootfs.clone(),
+        rootfs_upper: None,
         command: args.cmd.clone(),
         env: args.envs.clone(),
         working_dir: args.cwd.clone(),

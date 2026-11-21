@@ -920,14 +920,42 @@ fn build_attach_vm_config(
     ));
     let allocated_sd: Allocated<VZSharedDirectory> =
         unsafe { msg_send![VZSharedDirectory::class(), alloc] };
-    let shared_dir =
-        unsafe { VZSharedDirectory::initWithURL_readOnly(allocated_sd, &store_url, false) };
+    // When a writable delta is present the base must be read-only so a
+    // guest write can never modify the shared image.
+    let base_read_only = cfg.rootfs_upper.is_some();
+    let shared_dir = unsafe {
+        VZSharedDirectory::initWithURL_readOnly(allocated_sd, &store_url, base_read_only)
+    };
     let allocated_sh: Allocated<VZSingleDirectoryShare> =
         unsafe { msg_send![VZSingleDirectoryShare::class(), alloc] };
     let share = unsafe { VZSingleDirectoryShare::initWithDirectory(allocated_sh, &shared_dir) };
     unsafe { fs_device.setShare(Some(&share)) };
     let mut all_fs_devices: Vec<Retained<VZDirectorySharingDeviceConfiguration>> =
         vec![fs_device.into_super()];
+
+    // 4a. Writable delta for base-ro + overlay (tag `pullrun-upper`).
+    if let Some(ref delta) = cfg.rootfs_upper {
+        let delta_tag = NSString::from_str("pullrun-upper");
+        let allocated_delta: Allocated<VZVirtioFileSystemDeviceConfiguration> =
+            unsafe { msg_send![VZVirtioFileSystemDeviceConfiguration::class(), alloc] };
+        let delta_device =
+            unsafe { VZVirtioFileSystemDeviceConfiguration::init(allocated_delta) };
+        unsafe { delta_device.setTag(&delta_tag) };
+        let delta_url = NSURL::fileURLWithPath(&NSString::from_str(
+            delta.to_string_lossy().as_ref(),
+        ));
+        let allocated_dsd: Allocated<VZSharedDirectory> =
+            unsafe { msg_send![VZSharedDirectory::class(), alloc] };
+        let delta_shared = unsafe {
+            VZSharedDirectory::initWithURL_readOnly(allocated_dsd, &delta_url, false)
+        };
+        let allocated_dsh: Allocated<VZSingleDirectoryShare> =
+            unsafe { msg_send![VZSingleDirectoryShare::class(), alloc] };
+        let delta_share =
+            unsafe { VZSingleDirectoryShare::initWithDirectory(allocated_dsh, &delta_shared) };
+        unsafe { delta_device.setShare(Some(&delta_share)) };
+        all_fs_devices.push(delta_device.into_super());
+    }
 
     // 4b. Volume mounts — additional VirtioFS shares.
     for (i, mount) in cfg.mounts.iter().enumerate() {

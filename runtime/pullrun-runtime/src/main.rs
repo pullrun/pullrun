@@ -109,7 +109,7 @@ enum Commands {
         vm_warm_pool_size: usize,
         #[arg(
             long,
-            help = "Use overlayfs lowerdirs for container rootfs (requires root)"
+            help = "Use overlayfs lowerdirs for container rootfs (requires root; Linux)"
         )]
         rootfs_overlay: bool,
 
