@@ -126,6 +126,7 @@ pub fn try_clone_file(src: &Path, dst: &Path) -> io::Result<bool> {
     Ok(false)
 }
 
+#[cfg(target_os = "macos")]
 fn path_cstr(path: &Path) -> io::Result<std::ffi::CString> {
     use std::os::unix::ffi::OsStrExt;
     std::ffi::CString::new(path.as_os_str().as_bytes())
@@ -162,6 +163,7 @@ pub fn clone_tree(src: &Path, dst: &Path) -> io::Result<CloneStats> {
     Ok(stats)
 }
 
+#[cfg(target_os = "macos")]
 fn dir_stats(root: &Path) -> io::Result<(u64, u64)> {
     let mut files = 0;
     let mut bytes = 0;

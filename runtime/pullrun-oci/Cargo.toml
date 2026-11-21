@@ -17,7 +17,6 @@ reqwest = { workspace = true }
 flate2.workspace = true
 tar.workspace = true
 tokio-util = "0.7"
-async-trait.workspace = true
 base64 = "0.22"
 rkyv.workspace = true
 bytes.workspace = true
