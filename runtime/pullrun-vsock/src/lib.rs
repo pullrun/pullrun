@@ -116,6 +116,11 @@ pub enum FrameType {
     /// Host → guest. Update the PTY window size (rows, cols).
     /// Ignored if the workload doesn't have a PTY.
     WindowSize = 0x09,
+
+    /// Host → guest. Acknowledges `WorkloadExit`. The guest holds
+    /// the connection open until it receives this, so short-lived
+    /// workloads cannot outrun the host's frame reader.
+    ExitAck = 0x0A,
 }
 
 impl FrameType {
@@ -132,6 +137,7 @@ impl FrameType {
             0x07 => Self::WorkloadExit,
             0x08 => Self::Error,
             0x09 => Self::WindowSize,
+            0x0A => Self::ExitAck,
             _ => return None,
         })
     }
@@ -149,6 +155,7 @@ impl fmt::Display for FrameType {
             Self::WorkloadExit => "WorkloadExit",
             Self::Error => "Error",
             Self::WindowSize => "WindowSize",
+            Self::ExitAck => "ExitAck",
         })
     }
 }
@@ -238,6 +245,10 @@ pub enum Frame {
         /// Terminal columns (width).
         cols: u16,
     },
+
+    /// Host → guest. The host has consumed `WorkloadExit`; the
+    /// guest may close the connection and exit.
+    ExitAck,
 }
 
 impl Frame {
@@ -253,6 +264,7 @@ impl Frame {
             Self::WorkloadExit { .. } => FrameType::WorkloadExit,
             Self::Error(_) => FrameType::Error,
             Self::WindowSize { .. } => FrameType::WindowSize,
+            Self::ExitAck => FrameType::ExitAck,
         }
     }
 
@@ -300,7 +312,7 @@ impl Frame {
                 buf.freeze()
             }
             Self::WorkloadStdout(b) | Self::WorkloadStderr(b) | Self::WorkloadStdin(b) => b.clone(),
-            Self::StdinEof => Bytes::new(),
+            Self::StdinEof | Self::ExitAck => Bytes::new(),
             Self::WorkloadExit { exit_code, signal } => {
                 let mut buf = BytesMut::new();
                 // Bitfield: bit 0 = has_exit_code, bit 1 = has_signal.
@@ -465,6 +477,7 @@ impl Frame {
                 let msg = read_length_prefixed_string(&mut cur, ty)?;
                 Self::Error(msg)
             }
+            FrameType::ExitAck => Self::ExitAck,
             FrameType::WindowSize => {
                 if cur.remaining() < 4 {
                     return Err(ProtocolError::Truncated {

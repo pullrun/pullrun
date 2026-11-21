@@ -3850,6 +3850,8 @@ impl Runtime for RuntimeService {
         //    blocking task until the session ends.
         let tx_drain = tx.clone();
         let workload_id_dr = workload_id.clone();
+        let workloads_drain = Arc::clone(&self.workloads);
+        let checkpoints_drain = self.config.checkpoints_dir.clone();
         let drainer = tokio::spawn(async move {
             tokio::task::spawn_blocking(move || {
                 let mut total_bytes: u64 = 0;
@@ -3860,6 +3862,35 @@ impl Runtime for RuntimeService {
                             Err(sync_mpsc::RecvTimeoutError::Timeout) => continue,
                             Err(sync_mpsc::RecvTimeoutError::Disconnected) => return,
                         };
+                    // Record the guest's real exit status before the
+                    // VM teardown callback can default it to 137.
+                    if let pullrun_vsock::Frame::WorkloadExit {
+                        exit_code,
+                        signal,
+                    } = &frame
+                    {
+                        let code = exit_code
+                            .map(|c| c as u32)
+                            .or_else(|| signal.map(|s| 128 + s as u32));
+                        if let Some(state) = workloads_drain
+                            .blocking_write()
+                            .get_mut(&workload_id_dr)
+                        {
+                            state.status = "exited".to_string();
+                            state.exit_code = code.or(state.exit_code);
+                            if state.exit_time == 0 {
+                                state.exit_time = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_secs() as i64)
+                                    .unwrap_or(0);
+                            }
+                            write_workload_checkpoint(
+                                &checkpoints_drain,
+                                &workload_id_dr,
+                                state,
+                            );
+                        }
+                    }
                     if let pullrun_vsock::Frame::WorkloadStdout(ref data) = frame {
                         total_bytes += data.len() as u64;
                         tracing::debug!(
@@ -3944,6 +3975,26 @@ impl Runtime for RuntimeService {
                             let cp_exit = checkpoints_dir.clone();
                             let on_exit: Option<Box<dyn FnOnce() + Send>> =
                                 Some(Box::new(move || {
+                                    // The guest sends WorkloadExit and
+                                    // waits for ExitAck, so the frame
+                                    // is normally already in the
+                                    // drainer when this runs. Give the
+                                    // drainer a short window to record
+                                    // the real code before defaulting
+                                    // to 137 (unexpected VM death).
+                                    let deadline = std::time::Instant::now()
+                                        + std::time::Duration::from_secs(2);
+                                    loop {
+                                        let done = wls_exit
+                                            .blocking_read()
+                                            .get(&wl_id_exit)
+                                            .map(|s| s.exit_code.is_some())
+                                            .unwrap_or(true);
+                                        if done || std::time::Instant::now() >= deadline {
+                                            break;
+                                        }
+                                        std::thread::sleep(std::time::Duration::from_millis(20));
+                                    }
                                     let mut wls = wls_exit.blocking_write();
                                     if let Some(s) = wls.get_mut(&wl_id_exit) {
                                         s.status = "exited".to_string();

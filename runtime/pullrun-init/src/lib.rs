@@ -62,7 +62,7 @@ pub mod vsock_client;
 
 pub use vsock_client::VsockClient;
 
-use tracing::info;
+use tracing::{info, warn};
 
 /// Default port for the host-side vsock listener.
 pub use pullrun_vsock::DEFAULT_VSOCK_PORT as DEFAULT_HOST_VSOCK_PORT;
@@ -140,6 +140,23 @@ pub async fn run() -> Result<(), InitError> {
         })
         .await
         .map_err(InitError::VsockSend)?;
+
+    // Hold the connection open until the host acknowledges the exit
+    // frame. Without this handshake a workload that exits in a few
+    // milliseconds tears the VM down before the host reader has
+    // consumed its stdout/stderr/exit frames, which showed up as a
+    // missing exit code and no output.
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client.recv_frame(),
+    )
+    .await
+    {
+        Ok(Ok(pullrun_vsock::Frame::ExitAck)) => info!("host acknowledged exit"),
+        Ok(Ok(other)) => warn!(?other, "unexpected frame while waiting for exit ack"),
+        Ok(Err(e)) => warn!(error = %e, "vsock error while waiting for exit ack"),
+        Err(_) => warn!("timed out waiting for exit ack; exiting anyway"),
+    }
 
     info!("pullrun-init exiting cleanly");
     Ok(())
@@ -930,14 +947,22 @@ esac
             .await
             .map_err(|e| InitError::Exec(format!("waitpid: {e}")))?;
 
-        // Cancel the I/O tasks (they'll exit when their pipes
-        // close naturally).
-        stdout_task.abort();
-        stderr_task.abort();
+        // The child is gone, but its stdout/stderr tasks may still
+        // hold buffered bytes that were written just before exit.
+        // Let them reach EOF (bounded) instead of aborting them, or a
+        // fast `echo` loses its output entirely.
         stdin_task.abort();
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
         let _ = stdin_task.await;
+        let drain = async {
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(2), drain)
+            .await
+            .is_err()
+        {
+            warn!("timed out draining workload stdout/stderr");
+        }
 
         Ok(WorkloadExit {
             code: status.code(),

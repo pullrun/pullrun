@@ -676,9 +676,10 @@ pub fn run_session_blocking(
                     let ptr = encoded.as_ptr() as *const libc::c_void;
                     let len = encoded.len();
                     let _ = unsafe { libc::write(stdin_write_fd, ptr, len) };
-                    // Shutdown the write side so the guest
-                    // sees EOF on its stdin pipe.
-                    unsafe { libc::shutdown(stdin_write_fd, libc::SHUT_WR) };
+                    // Do NOT shutdown(SHUT_WR): this fd is
+                    // full-duplex and is also how ExitAck is
+                    // delivered after the workload exits. The guest
+                    // closes the workload's stdin pipe on this frame.
                     break;
                 }
                 _ => {
@@ -779,6 +780,44 @@ pub fn run_session_blocking(
             break Ok(());
         }
         if is_exit {
+            // Acknowledge the exit before the guest tears the VM
+            // down. `pullrun-init` waits for this frame, which
+            // guarantees that stdout/stderr/exit frames written just
+            // before it are consumed by this loop even when the
+            // workload lived for only a few milliseconds.
+            let ack = pullrun_vsock::encode(&Frame::ExitAck);
+            let n = unsafe {
+                libc::write(
+                    write_fd_only,
+                    ack.as_ptr() as *const libc::c_void,
+                    ack.len(),
+                )
+            };
+            if n < 0 || (n as usize) != ack.len() {
+                warn!(
+                    written = n,
+                    expected = ack.len(),
+                    "failed to write ExitAck to guest"
+                );
+            } else {
+                // Keep the connection alive until the guest has had a
+                // chance to read the ack. Apple Virt's vsock discards
+                // unread buffers when the host side is dropped, which
+                // made the ack invisible and produced a spurious EOF
+                // in the guest. The guest closes the connection right
+                // after receiving the ack, so this normally returns
+                // immediately.
+                let mut pfd = libc::pollfd {
+                    fd: write_fd_only,
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                let rc = unsafe { libc::poll(&mut pfd, 1, 1000) };
+                if rc > 0 {
+                    let mut sink = [0u8; 64];
+                    let _ = std::io::Read::read(&mut &read_file, &mut sink);
+                }
+            }
             break Ok(());
         }
     };
@@ -1324,8 +1363,10 @@ pub fn spawn_vm_inner(
                                     encoded.as_ptr() as *const libc::c_void,
                                     encoded.len(),
                                 );
-                                libc::shutdown(stdin_write_fd, libc::SHUT_WR);
                             }
+                            // Full-duplex fd: do not shutdown(SHUT_WR),
+                            // ExitAck is written on it after the
+                            // workload exits.
                         }
                         Err(sync_mpsc::TryRecvError::Empty) => break,
                         Err(sync_mpsc::TryRecvError::Disconnected) => {
@@ -1389,6 +1430,32 @@ pub fn spawn_vm_inner(
                             pending_frames.push_back(frame);
                         }
                         if is_exit {
+                            // Acknowledge before teardown so the guest
+                            // can flush and close cleanly; then keep
+                            // the connection open briefly (Apple Virt
+                            // drops unread vsock buffers on close).
+                            let ack = pullrun_vsock::encode(&Frame::ExitAck);
+                            let n = unsafe {
+                                libc::write(
+                                    stdin_write_fd,
+                                    ack.as_ptr() as *const libc::c_void,
+                                    ack.len(),
+                                )
+                            };
+                            if n == ack.len() as isize {
+                                let mut pfd = libc::pollfd {
+                                    fd: read_fd,
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                };
+                                if unsafe { libc::poll(&mut pfd, 1, 1000) } > 0 {
+                                    let mut sink = [0u8; 64];
+                                    let _ = std::io::Read::read(
+                                        &mut &read_file,
+                                        &mut sink,
+                                    );
+                                }
+                            }
                             break; // workload exited — stop VM
                         }
                     }
