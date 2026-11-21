@@ -3773,6 +3773,7 @@ impl Runtime for RuntimeService {
                 // VirtioFS is not usable yet (overlayfs workdir
                 // creation fails on the share).
                 rootfs_upper: None,
+                group_mode: false,
                 command: command.clone(),
                 env: env.clone(),
                 working_dir: working_dir.clone(),

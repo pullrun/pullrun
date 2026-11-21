@@ -297,6 +297,7 @@ fn run_body(args: Args) -> i32 {
         kernel,
         rootfs_dir: args.rootfs.clone(),
         rootfs_upper: None,
+        group_mode: false,
         command: args.cmd.clone(),
         env: args.envs.clone(),
         working_dir: args.cwd.clone(),

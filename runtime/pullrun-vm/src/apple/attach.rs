@@ -511,6 +511,7 @@ pub fn run_session_blocking(
     //    `WorkloadSpec` frame we send to the guest (the
     //    guest runs whatever command is in the spec,
     //    not whatever is in the kernel cmdline).
+    let group_mode = cfg.group_mode;
     let spec_command = cfg.command.clone();
     let spec_env = cfg.env.clone();
     let spec_cwd = cfg.working_dir.clone();
@@ -603,14 +604,18 @@ pub fn run_session_blocking(
     // `command` field to determine what to run, not
     // anything from the kernel cmdline (despite the
     // comment in the v0 stub).
-    let workload_spec = Frame::WorkloadSpec {
-        command: spec_command.clone(),
-        env: spec_env.clone(),
-        working_dir: spec_cwd.clone(),
-        tty: spec_tty,
-        rows: spec_rows,
-        cols: spec_cols,
-        mounts: spec_mounts,
+    let workload_spec = if group_mode {
+        Frame::GroupInit
+    } else {
+        Frame::WorkloadSpec {
+            command: spec_command.clone(),
+            env: spec_env.clone(),
+            working_dir: spec_cwd.clone(),
+            tty: spec_tty,
+            rows: spec_rows,
+            cols: spec_cols,
+            mounts: spec_mounts,
+        }
     };
     let spec_bytes = pullrun_vsock::encode(&workload_spec);
     info!(
@@ -681,6 +686,11 @@ pub fn run_session_blocking(
                     // delivered after the workload exits. The guest
                     // closes the workload's stdin pipe on this frame.
                     break;
+                }
+                Frame::WorkloadSpec { .. } | Frame::GroupShutdown => {
+                    let encoded = pullrun_vsock::encode(&frame);
+                    let ptr = encoded.as_ptr() as *const libc::c_void;
+                    let _ = unsafe { libc::write(stdin_write_fd, ptr, encoded.len()) };
                 }
                 _ => {
                     debug!("stdin writer: ignoring {:?}", frame);
@@ -778,6 +788,10 @@ pub fn run_session_blocking(
             // Receiver dropped; the gRPC handler is
             // gone.
             break Ok(());
+        }
+        if is_exit && group_mode {
+            // Group supervisor stays alive for the next sandbox.
+            continue;
         }
         if is_exit {
             // Acknowledge the exit before the guest tears the VM
@@ -1242,6 +1256,7 @@ pub fn spawn_vm_inner(
         })
         .collect();
     let thread_name = format!("vm-{}", cfg.workload_id);
+    let group_mode = cfg.group_mode;
 
     // Boot the VM. The raw parts contain `*mut c_void` pointers
     // to the `!Send` ObjC objects — raw pointers are `Send`, so
@@ -1260,14 +1275,18 @@ pub fn spawn_vm_inner(
     }
 
     // Write WorkloadSpec to guest.
-    let workload_spec = Frame::WorkloadSpec {
-        command: spec_command,
-        env: spec_env,
-        working_dir: spec_cwd,
-        tty: spec_tty,
-        rows: spec_rows,
-        cols: spec_cols,
-        mounts: spec_mounts,
+    let workload_spec = if group_mode {
+        Frame::GroupInit
+    } else {
+        Frame::WorkloadSpec {
+            command: spec_command,
+            env: spec_env,
+            working_dir: spec_cwd,
+            tty: spec_tty,
+            rows: spec_rows,
+            cols: spec_cols,
+            mounts: spec_mounts,
+        }
     };
     let spec_bytes = pullrun_vsock::encode(&workload_spec);
     let n = unsafe {
@@ -1372,6 +1391,16 @@ pub fn spawn_vm_inner(
                     match stdin_rx.try_recv() {
                         Ok(Frame::WorkloadStdin(data)) => {
                             let encoded = pullrun_vsock::encode(&Frame::WorkloadStdin(data));
+                            unsafe {
+                                libc::write(
+                                    stdin_write_fd,
+                                    encoded.as_ptr() as *const libc::c_void,
+                                    encoded.len(),
+                                );
+                            }
+                        }
+                        Ok(frame @ (Frame::WorkloadSpec { .. } | Frame::GroupShutdown)) => {
+                            let encoded = pullrun_vsock::encode(&frame);
                             unsafe {
                                 libc::write(
                                     stdin_write_fd,

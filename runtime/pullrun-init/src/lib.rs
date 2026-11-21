@@ -96,8 +96,26 @@ pub async fn run() -> Result<(), InitError> {
         .map_err(InitError::VsockSend)?;
     info!(workload_id, init_pid, "sent init hello");
 
-    // 3. Receive the workload spec (or error).
-    let spec = match client.recv_frame().await.map_err(InitError::VsockRecv)? {
+    // 3. Receive the first control frame. `GroupInit` switches this
+    //    process into sandbox-group supervisor mode; otherwise the
+    //    frame is the single workload spec.
+    let first = client.recv_frame().await.map_err(InitError::VsockRecv)?;
+    if matches!(first, pullrun_vsock::Frame::GroupInit) {
+        #[cfg(target_os = "linux")]
+        {
+            run_group_supervisor(&client).await?;
+            info!("group supervisor exiting");
+            return Ok(());
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            return Err(InitError::Protocol(
+                "sandbox groups are only supported in Linux guests".into(),
+            ));
+        }
+    }
+
+    let spec = match first {
         pullrun_vsock::Frame::WorkloadSpec {
             command,
             env,
@@ -154,6 +172,269 @@ pub async fn run() -> Result<(), InitError> {
     }
 
     info!("pullrun-init exiting cleanly");
+    Ok(())
+}
+
+/// Mount the read-only image base for group mode (no chroot).
+#[cfg(target_os = "linux")]
+fn mount_group_base() -> Result<(), InitError> {
+    const MOUNT_POINT: &str = "/mnt/root";
+    std::fs::create_dir_all(MOUNT_POINT).map_err(InitError::Io)?;
+    let tag = std::ffi::CString::new("pullrun-rootfs")
+        .map_err(|_| InitError::Exec("NUL in tag".into()))?;
+    let mnt =
+        std::ffi::CString::new(MOUNT_POINT).map_err(|_| InitError::Exec("NUL in mount".into()))?;
+    let fstype =
+        std::ffi::CString::new("virtiofs").map_err(|_| InitError::Exec("NUL in fstype".into()))?;
+    let rc = unsafe {
+        libc::mount(
+            tag.as_ptr(),
+            mnt.as_ptr(),
+            fstype.as_ptr(),
+            0,
+            std::ptr::null(),
+        )
+    };
+    if rc != 0 {
+        return Err(InitError::Io(std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+/// Mount a small tmpfs to hold per-sandbox overlay upper/work dirs.
+#[cfg(target_os = "linux")]
+fn mount_group_tmpfs() -> Result<(), InitError> {
+    const DIR: &str = "/mnt/sandbox";
+    std::fs::create_dir_all(DIR).map_err(InitError::Io)?;
+    let src = std::ffi::CString::new("tmpfs").unwrap();
+    let dst = std::ffi::CString::new(DIR).unwrap();
+    let fstype = std::ffi::CString::new("tmpfs").unwrap();
+    let data = std::ffi::CString::new("size=256m,mode=755").unwrap();
+    let rc = unsafe {
+        libc::mount(
+            src.as_ptr(),
+            dst.as_ptr(),
+            fstype.as_ptr(),
+            0,
+            data.as_ptr().cast(),
+        )
+    };
+    if rc != 0 {
+        return Err(InitError::Io(std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn reset_group_sandbox_dirs() -> Result<(), InitError> {
+    for dir in [
+        "/mnt/sandbox/upper",
+        "/mnt/sandbox/work",
+        "/mnt/sandbox/merged",
+    ] {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).map_err(InitError::Io)?;
+    }
+    std::fs::create_dir_all("/mnt/sandbox/merged/proc").map_err(InitError::Io)?;
+    std::fs::create_dir_all("/mnt/sandbox/merged/dev").map_err(InitError::Io)?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+struct GroupOutcome {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    code: Option<i32>,
+    signal: Option<i32>,
+}
+
+/// Run one sandbox inside the group VM.
+///
+/// The base image stays mounted read-only at `/mnt/root`; each sandbox
+/// gets a fresh tmpfs-backed overlay upper, so writes never touch the
+/// base and are discarded when the sandbox ends. Mount, network, UTS,
+/// and IPC namespaces isolate the process; the guest kernel and its
+/// page cache are shared by every sandbox in the group.
+#[cfg(target_os = "linux")]
+fn run_group_sandbox(
+    command: Vec<String>,
+    env: Vec<String>,
+    working_dir: String,
+) -> Result<GroupOutcome, InitError> {
+    use std::os::unix::process::CommandExt;
+    use std::os::unix::process::ExitStatusExt;
+
+    reset_group_sandbox_dirs()?;
+
+    let (program, args) = command
+        .split_first()
+        .ok_or_else(|| InitError::Exec("empty command".into()))?;
+
+    let merged = std::ffi::CString::new("/mnt/sandbox/merged").unwrap();
+    let merged_proc = std::ffi::CString::new("/mnt/sandbox/merged/proc").unwrap();
+    let merged_dev = std::ffi::CString::new("/mnt/sandbox/merged/dev").unwrap();
+    let overlay_src = std::ffi::CString::new("overlay").unwrap();
+    let overlay_type = std::ffi::CString::new("overlay").unwrap();
+    let overlay_data = std::ffi::CString::new(
+        "lowerdir=/mnt/root,upperdir=/mnt/sandbox/upper,workdir=/mnt/sandbox/work,userxattr",
+    )
+    .unwrap();
+    let proc_src = std::ffi::CString::new("proc").unwrap();
+    let proc_type = std::ffi::CString::new("proc").unwrap();
+    let dev_src = std::ffi::CString::new("/dev").unwrap();
+    let cwd = if working_dir.is_empty() {
+        "/".to_string()
+    } else {
+        working_dir.clone()
+    };
+    let cwd_c = std::ffi::CString::new(cwd).unwrap();
+
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args).env_clear();
+    for kv in &env {
+        if let Some((k, v)) = kv.split_once('=') {
+            cmd.env(k, v);
+        }
+    }
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::unshare(
+                libc::CLONE_NEWNS | libc::CLONE_NEWNET | libc::CLONE_NEWUTS | libc::CLONE_NEWIPC,
+            ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::mount(
+                overlay_src.as_ptr(),
+                merged.as_ptr(),
+                overlay_type.as_ptr(),
+                0,
+                overlay_data.as_ptr().cast(),
+            ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            let _ = libc::mkdir(merged_proc.as_ptr(), 0o755);
+            let _ = libc::mkdir(merged_dev.as_ptr(), 0o755);
+            if libc::mount(
+                proc_src.as_ptr(),
+                merged_proc.as_ptr(),
+                proc_type.as_ptr(),
+                0,
+                std::ptr::null(),
+            ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::mount(
+                dev_src.as_ptr(),
+                merged_dev.as_ptr(),
+                std::ptr::null(),
+                libc::MS_BIND | libc::MS_REC,
+                std::ptr::null(),
+            ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::chroot(merged.as_ptr()) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::chdir(cwd_c.as_ptr()) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| InitError::Exec(format!("spawn {program}: {e}")))?;
+    Ok(GroupOutcome {
+        stdout: output.stdout,
+        stderr: output.stderr,
+        code: output.status.code(),
+        signal: output.status.signal(),
+    })
+}
+
+#[cfg(target_os = "linux")]
+async fn send_stdout_chunks(
+    client: &VsockClient,
+    data: &[u8],
+    stderr: bool,
+) -> Result<(), InitError> {
+    const CHUNK: usize = 32 * 1024;
+    for chunk in data.chunks(CHUNK) {
+        let frame = if stderr {
+            pullrun_vsock::Frame::WorkloadStderr(bytes::Bytes::copy_from_slice(chunk))
+        } else {
+            pullrun_vsock::Frame::WorkloadStdout(bytes::Bytes::copy_from_slice(chunk))
+        };
+        client
+            .send_frame(frame)
+            .await
+            .map_err(InitError::VsockSend)?;
+    }
+    Ok(())
+}
+
+/// Sandbox-group supervisor: keep the VM alive and execute one
+/// `WorkloadSpec` at a time from the host.
+#[cfg(target_os = "linux")]
+async fn run_group_supervisor(client: &VsockClient) -> Result<(), InitError> {
+    mount_group_base()?;
+    mount_group_tmpfs()?;
+    info!("sandbox-group supervisor ready");
+
+    loop {
+        let frame = match client.recv_frame().await {
+            Ok(frame) => frame,
+            Err(e) => {
+                info!(error = %e, "group connection ended");
+                break;
+            }
+        };
+        match frame {
+            pullrun_vsock::Frame::WorkloadSpec {
+                command,
+                env,
+                working_dir,
+                ..
+            } => {
+                info!(?command, "group: running sandbox");
+                match run_group_sandbox(command, env, working_dir) {
+                    Ok(outcome) => {
+                        send_stdout_chunks(client, &outcome.stdout, false).await?;
+                        send_stdout_chunks(client, &outcome.stderr, true).await?;
+                        client
+                            .send_frame(pullrun_vsock::Frame::WorkloadExit {
+                                exit_code: outcome.code,
+                                signal: outcome.signal,
+                            })
+                            .await
+                            .map_err(InitError::VsockSend)?;
+                    }
+                    Err(e) => {
+                        client
+                            .send_frame(pullrun_vsock::Frame::Error(format!("sandbox failed: {e}")))
+                            .await
+                            .map_err(InitError::VsockSend)?;
+                    }
+                }
+            }
+            pullrun_vsock::Frame::GroupShutdown => {
+                info!("group shutdown requested");
+                break;
+            }
+            pullrun_vsock::Frame::Error(msg) => {
+                info!(error = %msg, "group host error");
+                break;
+            }
+            other => {
+                info!(?other, "group: ignoring frame");
+            }
+        }
+    }
     Ok(())
 }
 

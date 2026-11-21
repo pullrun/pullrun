@@ -121,6 +121,14 @@ pub enum FrameType {
     /// the connection open until it receives this, so short-lived
     /// workloads cannot outrun the host's frame reader.
     ExitAck = 0x0A,
+
+    /// Host → guest. Switch the init process into sandbox-group
+    /// supervisor mode: it stays alive and runs one `WorkloadSpec` per
+    /// sandbox, in sequence, instead of exiting after the first.
+    GroupInit = 0x0B,
+
+    /// Host → guest. Stop the group supervisor and let the VM exit.
+    GroupShutdown = 0x0C,
 }
 
 impl FrameType {
@@ -138,6 +146,8 @@ impl FrameType {
             0x08 => Self::Error,
             0x09 => Self::WindowSize,
             0x0A => Self::ExitAck,
+            0x0B => Self::GroupInit,
+            0x0C => Self::GroupShutdown,
             _ => return None,
         })
     }
@@ -156,6 +166,8 @@ impl fmt::Display for FrameType {
             Self::Error => "Error",
             Self::WindowSize => "WindowSize",
             Self::ExitAck => "ExitAck",
+            Self::GroupInit => "GroupInit",
+            Self::GroupShutdown => "GroupShutdown",
         })
     }
 }
@@ -249,6 +261,12 @@ pub enum Frame {
     /// Host → guest. The host has consumed `WorkloadExit`; the
     /// guest may close the connection and exit.
     ExitAck,
+
+    /// Host → guest. Enter sandbox-group supervisor mode.
+    GroupInit,
+
+    /// Host → guest. Stop the sandbox-group supervisor.
+    GroupShutdown,
 }
 
 impl Frame {
@@ -265,6 +283,8 @@ impl Frame {
             Self::Error(_) => FrameType::Error,
             Self::WindowSize { .. } => FrameType::WindowSize,
             Self::ExitAck => FrameType::ExitAck,
+            Self::GroupInit => FrameType::GroupInit,
+            Self::GroupShutdown => FrameType::GroupShutdown,
         }
     }
 
@@ -312,7 +332,7 @@ impl Frame {
                 buf.freeze()
             }
             Self::WorkloadStdout(b) | Self::WorkloadStderr(b) | Self::WorkloadStdin(b) => b.clone(),
-            Self::StdinEof | Self::ExitAck => Bytes::new(),
+            Self::StdinEof | Self::ExitAck | Self::GroupInit | Self::GroupShutdown => Bytes::new(),
             Self::WorkloadExit { exit_code, signal } => {
                 let mut buf = BytesMut::new();
                 // Bitfield: bit 0 = has_exit_code, bit 1 = has_signal.
@@ -478,6 +498,8 @@ impl Frame {
                 Self::Error(msg)
             }
             FrameType::ExitAck => Self::ExitAck,
+            FrameType::GroupInit => Self::GroupInit,
+            FrameType::GroupShutdown => Self::GroupShutdown,
             FrameType::WindowSize => {
                 if cur.remaining() < 4 {
                     return Err(ProtocolError::Truncated {
@@ -738,6 +760,12 @@ mod tests {
             exit_code: Some(1),
             signal: Some(15),
         });
+    }
+
+    #[test]
+    fn roundtrip_group_frames() {
+        roundtrip(&Frame::GroupInit);
+        roundtrip(&Frame::GroupShutdown);
     }
 
     #[test]
