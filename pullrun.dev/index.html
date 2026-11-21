@@ -707,14 +707,15 @@
             <div class="inner">
                 <div class="left">
                     <h1>Every agent task. <span class="tagline">Its own sandbox. 400 ms.</span></h1>
-                    <p class="sub">Pullrun is the <strong>AI agent sandbox runtime</strong>. The same OCI image boots as a microVM, container, or Apple Silicon VM — with native <strong>MCP</strong> for opencode, Claude Code, and Cursor. <strong>No daemon. No overlayfs.</strong></p>
+                    <p class="sub">Pullrun is the <strong>AI agent sandbox runtime</strong>. The same OCI image boots as a microVM, container, Apple Silicon VM, or a <strong>sandbox group</strong> — with native <strong>MCP</strong> for opencode, Claude Code, and Cursor. <strong>No daemon. No overlayfs in the image store.</strong></p>
                     <div class="tags">
                         <span class="tag">🤖 Agent Sandboxes</span>
                         <span class="tag">🔥 MicroVM per task</span>
                         <span class="tag">🔌 MCP Native</span>
                         <span class="tag">🧬 DAG Store</span>
                         <span class="tag">🌐 P2P Sync</span>
-                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.7.9 — CRI v4 streaming · per-pod subnets</span>
+                        <span class="tag">👥 Sandbox Groups</span>
+                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.7.10 — signatures · confined extraction · groups</span>
                     </div>
                     <div class="buttons">
                         <a href="#install" class="btn btn-primary" onclick="track('hero_cta_click')">⚡ Install Now</a>
@@ -797,7 +798,7 @@
                         <text x="200" y="355" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="11" letter-spacing="2" text-transform="uppercase" opacity=".5">One image · Any sandbox</text>
                         <line x1="40" y1="373" x2="360" y2="373" stroke="var(--accent)" stroke-width="1" opacity=".1"/>
 
-                        <text x="80" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">12 MB</text>
+                        <text x="80" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">14 MB</text>
                         <text x="80" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">BINARY</text>
                         <text x="200" y="400" text-anchor="middle" fill="var(--text)" font-family="Inter,sans-serif" font-size="22" font-weight="800" opacity=".9">400 ms</text>
                         <text x="200" y="416" text-anchor="middle" fill="var(--text-muted)" font-family="Inter,sans-serif" font-size="10" letter-spacing="1" opacity=".6">SANDBOX BOOT</text>
@@ -857,12 +858,17 @@
                 <div class="feature-card featured">
                     <div class="icon">🤖</div>
                     <h3>AI Agent Sandboxes</h3>
-                    <p>MicroVM per task — booted from any OCI image in ~400 ms, kernel-level isolation for untrusted agent code, cross-turn state via <code>commit</code>/snapshot, and a native MCP server agents drive directly.</p>
+                    <p>MicroVM per task — booted from any OCI image in ~400 ms, kernel-level isolation for untrusted agent code, cross-turn state via <code>commit</code> (filesystem; guest-memory snapshots on the roadmap), and a native MCP server agents drive directly.</p>
+                </div>
+                <div class="feature-card featured">
+                    <div class="icon">👥</div>
+                    <h3>Sandbox Groups</h3>
+                    <p>One VM, many concurrent sandboxes. Each gets a private tmpfs overlay over the read-only image base; all share the guest kernel and page cache. Measured: 10 sandboxes in ~185 ms, image cache warmed once.</p>
                 </div>
                 <div class="feature-card featured">
                     <div class="icon">🧬</div>
                     <h3>Content-Addressed DAG Store</h3>
-                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash — 1,000 sandboxes share one copy of the image. Mark-and-sweep GC reclaims unreachable blobs. No overlayfs, no layer duplication, no escape CVEs.</p>
+                    <p>Zero-copy reads via rkyv + mmap. Layers stored once by content hash; per-task VMs share physical blocks through reflink clones, and group sandboxes share one read-only base plus the guest page cache (measured in docs/GROUPS.md). Mark-and-sweep GC reclaims unreachable blobs. No overlayfs in the store.</p>
                 </div>
                 <div class="feature-card featured">
                     <div class="icon">🔄</div>
@@ -882,7 +888,7 @@
                 <div class="feature-card">
                     <div class="icon">🔐</div>
                     <h3>Policy Engine</h3>
-                    <p>Cosign signature verification, SBOM evaluation, seccomp profiles, read-only rootfs — gate workloads before they run. Defense-in-depth as code.</p>
+                    <p>ed25519 image signatures (Pullrun-defined payload; no Sigstore/Rekor dependency), SBOM evaluation, seccomp profiles, read-only rootfs — gate workloads before they run. Defense-in-depth as code.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">🔌</div>
@@ -1008,13 +1014,13 @@
         <div class="container">
             <span class="section-label">Why Pullrun?</span>
             <h2>Built different from the ground up</h2>
-            <p>No overlayfs. No daemon tax. No separate VM images. A platform, not just a runtime.</p>
+            <p>No overlayfs in the image store. No daemon tax. No separate VM images. A platform, not just a runtime.</p>
             <div class="why-grid">
                 <div class="why-card"><div class="big">400 ms</div><div class="label">Task sandbox boot</div><div class="sub">MicroVM cold boot ~500 ms, warm pool ~200 ms</div></div>
-                <div class="why-card"><div class="big">1</div><div class="label">Image per fleet</div><div class="sub">DAG dedup — 1,000 sandboxes, one copy</div></div>
+                <div class="why-card"><div class="big">1</div><div class="label">Image per fleet</div><div class="sub">Base stored once; reflink clones share blocks</div></div>
                 <div class="why-card"><div class="big">🛡️</div><div class="label">MicroVM isolation</div><div class="sub">Kernel-per-task for untrusted agent code</div></div>
                 <div class="why-card"><div class="big">🔌</div><div class="label">MCP native</div><div class="sub">opencode, Claude Code, Cursor drive it</div></div>
-                <div class="why-card"><div class="big">💾</div><div class="label">State that persists</div><div class="sub">commit / snapshot — next run boots from it</div></div>
+                <div class="why-card"><div class="big">💾</div><div class="label">Filesystem state</div><div class="sub">commit captures the rootfs; memory snapshots on roadmap</div></div>
                 <div class="why-card"><div class="big">0</div><div class="label">Daemon tax</div><div class="sub">Rootless, no sudo, no dockerd</div></div>
             </div>
         </div>
@@ -1037,8 +1043,10 @@
                         <tr><td data-label="">Container run latency</td><td class="center" data-label="Pullrun"><strong id="b-run">~400 ms</strong></td><td class="center" data-label="Docker">~800 ms</td></tr>
                         <tr><td data-label="">Apple Silicon VM boot</td><td class="center" data-label="Pullrun"><strong id="b-vm">~160 ms</strong></td><td class="center" data-label="Docker">N/A</td></tr>
                         <tr><td data-label="">Agent sandbox (Firecracker VM)</td><td class="center" data-label="Pullrun"><strong>~500 ms</strong></td><td class="center" data-label="Docker"><span class="cross">N/A</span></td></tr>
+                        <tr><td data-label="">Sandbox group boot (one VM)</td><td class="center" data-label="Pullrun"><strong>~450 ms</strong></td><td class="center" data-label="Docker"><span class="cross">N/A</span></td></tr>
+                        <tr><td data-label="">10 sandboxes in one group</td><td class="center" data-label="Pullrun"><strong>~185 ms</strong></td><td class="center" data-label="Docker"><span class="cross">N/A</span></td></tr>
                         <tr><td data-label="">Idle daemon RSS</td><td class="center" data-label="Pullrun"><strong id="b-rss">24.6 MiB</strong></td><td class="center" data-label="Docker">~90 MiB</td></tr>
-                        <tr><td data-label="">Binary size</td><td class="center" data-label="Pullrun"><strong id="b-size">12 MB</strong></td><td class="center" data-label="Docker">~75 MB</td></tr>
+                        <tr><td data-label="">CLI + runtime size</td><td class="center" data-label="Pullrun"><strong id="b-size">~20 MB</strong></td><td class="center" data-label="Docker">~75 MB</td></tr>
                         <tr><td data-label="">Rootless by default</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                         <tr><td data-label="">Containers + VMs from same image</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
                         <tr><td data-label="">P2P image sync</td><td class="center" data-label="Pullrun"><span class="check">✅</span></td><td class="center" data-label="Docker"><span class="cross">❌</span></td></tr>
@@ -1061,11 +1069,15 @@
             <div class="faq-list">
                 <details class="faq-item">
                     <summary>How does Pullrun work with AI agents?</summary>
-                    <div class="answer">Pullrun exposes a native MCP server (<code>pullrun mcp</code>). Flow: Agent → MCP → Pullrun → Container/VM. Agents pull images, boot per-task microVM sandboxes in ~400 ms, exec, snapshot state with <code>commit</code>, and push builds — through 15 tools (run, exec, logs, statatch, build, push…) in stdio or SSE mode. Because sandboxes share one content-addressed image copy, a fleet of agents costs about the same storage as one.</div>
+                    <div class="answer">Pullrun exposes a native MCP server (<code>pullrun mcp</code>). Flow: Agent → MCP → Pullrun → Container/VM. Agents pull images, boot per-task microVM sandboxes in ~400 ms, exec, commit filesystem state, and push builds — through 15 tools (run, exec, logs, stats, build, push…) in stdio or SSE mode. Per-task VMs share image blocks through reflink; group sandboxes share one base and the guest page cache, so a fleet costs about the same storage as one image.</div>
+                </details>
+                <details class="faq-item">
+                    <summary>What are sandbox groups?</summary>
+                    <div class="answer">A group is one VM that hosts many concurrent sandboxes. Every sandbox gets a private tmpfs overlay over the same read-only image base and shares the guest kernel page cache, so tasks from the same image start fast and cheap. Use <code>pullrun group create</code>, <code>group run</code>, <code>group ls</code>, <code>group rm</code>. Groups are macOS-only for now; sandboxes are network-isolated and writes are discarded on exit. Measured with <code>hack/group-bench.sh</code>: 10 trivial sandboxes in ~185 ms, image cache warmed once.</div>
                 </details>
                 <details class="faq-item">
                     <summary>How is this different from Podman?</summary>
-                    <div class="answer">Podman is daemonless but does not support running the same OCI image as a VM, lacks built-in P2P image distribution, and has no native MCP AI integration. Pullrun gives you containers <em>and</em> Firecracker/Apple VMs from the same image, P2P block sync for cluster-wide pulls, and a native MCP server for AI agent control — all in a single 12 MB binary.</div>
+                    <div class="answer">Podman is daemonless but does not support running the same OCI image as a VM, lacks built-in P2P image distribution, and has no native MCP AI integration. Pullrun gives you containers <em>and</em> Firecracker/Apple VMs from the same image, P2P block sync for cluster-wide pulls, and a native MCP server for AI agent control — all in a ~14 MB CLI + ~6 MB runtime.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Can I use my existing Docker Compose files?</summary>
@@ -1073,7 +1085,7 @@
                 </details>
                 <details class="faq-item">
                     <summary>Is this production-ready?</summary>
-                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 247 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are feature-complete but evolving. v0.7.9 adds CRI v4 streaming handshake, per-pod bridge subnets, and robust detached-stop cleanup.</div>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 272 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are available but evolving; sandbox groups are macOS-only and concurrent. v0.7.10 adds policy attestations, confined OCI extraction, real VM/container exit codes, and immutable image bases.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Does it require root or a daemon?</summary>
@@ -1100,7 +1112,7 @@
                 <table class="ecosystem-table">
                     <thead><tr><th>If you use</th><th>Pullrun gives you</th></tr></thead>
                     <tbody>
-                        <tr><td data-label="If you use">AI agents (opencode, Claude Code, Cursor)</td><td data-label="Pullrun gives you">Native MCP server + per-task microVM sandboxes + DAG dedup for fleets + cross-turn state via commit/snapshot</td></tr>
+                        <tr><td data-label="If you use">AI agents (opencode, Claude Code, Cursor)</td><td data-label="Pullrun gives you">Native MCP server + per-task microVM sandboxes + sandbox groups for dense fleets + cross-turn state via commit (filesystem)</td></tr>
                         <tr><td data-label="If you use">Docker</td><td data-label="Pullrun gives you">Daemonless runtime + native VM execution from the same image + P2P distribution + CRI shim</td></tr>
                         <tr><td data-label="If you use">Podman</td><td data-label="Pullrun gives you">Kubernetes CRI support + Firecracker/Apple VM backends + MCP AI agent protocol + P2P block sync</td></tr>
                         <tr><td data-label="If you use">containerd</td><td data-label="Pullrun gives you">Integrated content-addressed DAG store + P2P distribution + Compose + secrets in a single binary</td></tr>
@@ -1122,7 +1134,7 @@
                 <div class="feature-card">
                     <div class="icon">🛡️</div>
                     <h3>Security Policy Engine</h3>
-                    <p>Deny-by-default image gate: cosign signature verification, CycloneDX SBOM checks (CVSS cap, license deny-list), evaluated at pull <em>and</em> run. Per-workload hardening: seccomp allowlists, read-only rootfs, no-new-privileges.</p>
+                    <p>Deny-by-default image gate: ed25519 image-signature verification, CycloneDX SBOM checks (CVSS cap, license deny-list), evaluated at pull <em>and</em> run. Per-workload hardening: seccomp allowlists, read-only rootfs, no-new-privileges.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">📊</div>
@@ -1160,12 +1172,12 @@
                 <div class="feature-card">
                     <div class="icon">💰</div>
                     <h3>Fleet Economics</h3>
-                    <p>Content-addressed DAG storage: <strong>1,000 concurrent sandboxes share one copy</strong> of each image, mmap'd from the same host pages (idle daemon RSS 24.6 MiB). Sandbox cost stays flat as the fleet grows — the N-th sandbox is essentially free.</p>
+                    <p>Content-addressed DAG storage plus copy-on-write: per-task VMs share image blocks via reflink, and group sandboxes share one base and guest page cache (measured: cache warms once, zero per extra reader). Sandbox cost stays flat as the fleet grows.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">🔒</div>
                     <h3>Isolation &amp; Guardrails</h3>
-                    <p>Kernel-per-task microVMs for untrusted agent code — no shared-kernel escapes. Deny-by-default image policy, seccomp profiles, read-only rootfs, no-new-privileges; every policy decision emitted as an audit event.</p>
+                    <p>Kernel-per-task microVMs for untrusted agent code. Deny-by-default image policy, seccomp profiles, read-only rootfs, no-new-privileges; every policy decision emitted as an audit event.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">☁️</div>
