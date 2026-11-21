@@ -297,6 +297,21 @@ mod tests {
     use crate::network::{VmNetwork, BRIDGE_NAME, GATEWAY_IP, NETMASK};
     use std::net::Ipv4Addr;
 
+    #[test]
+    fn config_without_network_has_no_nic_or_ip_arg() {
+        let cfg = firecracker_config(
+            "vm-test",
+            Path::new("/tmp/vmlinux"),
+            Path::new("/tmp/rootfs.ext4"),
+            None,
+            1,
+            256,
+        );
+        assert_eq!(cfg["network-interfaces"].as_array().unwrap().len(), 0);
+        let boot = cfg["boot-source"]["boot_args"].as_str().unwrap();
+        assert!(!boot.contains("ip="), "unexpected network boot arg: {boot}");
+    }
+
     fn sample_net(tap: &str, ip: Ipv4Addr) -> VmNetwork {
         VmNetwork {
             tap_name: tap.to_string(),

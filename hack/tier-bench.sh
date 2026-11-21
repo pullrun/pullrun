@@ -65,9 +65,14 @@ echo "- sandboxes per run: $N"
 echo "- host: $(uname -sm)"
 echo
 
-# daemon
+# daemon (extra VM flags via PULLRUN_DAEMON_ARGS, e.g.
+# "--vm-firecracker ~/.local/bin/firecracker --vm-kernel ~/.pullrun/kernels/vmlinux")
+daemon_args=()
+if [[ -n "${PULLRUN_DAEMON_ARGS:-}" ]]; then
+  read -r -a daemon_args <<<"$PULLRUN_DAEMON_ARGS"
+fi
 "$PULLRUN_RUNTIME" daemon --socket "$SOCK" --store-root "$STORE" \
-  >"$WORKDIR/daemon.log" 2>&1 &
+  "${daemon_args[@]}" >"$WORKDIR/daemon.log" 2>&1 &
 DAEMON_PID=$!
 for _ in $(seq 1 100); do [[ -S "$SOCK" ]] && break; sleep 0.1; done
 [[ -S "$SOCK" ]] || { echo "runtime did not start" >&2; cat "$WORKDIR/daemon.log" >&2; exit 1; }
