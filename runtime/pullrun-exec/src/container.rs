@@ -510,6 +510,12 @@ impl Executor for LinuxContainerExecutor {
         let runc_path_for_cleanup = runc_path.clone();
         let id_for_cleanup = id.clone();
 
+        // Remove stale runc state from a previous workload with the
+        // same id (e.g. after a daemon crash).
+        let _ = SyncCommand::new(&runc_path_for_cleanup)
+            .args(["delete", "--force", &id_for_cleanup])
+            .output();
+
         let mut child = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawning foreground runc run -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
@@ -531,8 +537,8 @@ impl Executor for LinuxContainerExecutor {
         if let Some(status) = early {
             let started = std::process::Command::new(&runc_path_for_cleanup)
                 .args(["state", &id_for_cleanup])
-                .status()
-                .map(|s| s.success())
+                .output()
+                .map(|o| o.status.success())
                 .unwrap_or(false);
             if !started && !status.success() {
                 let cleanup_runc = runc_path_for_cleanup.clone();
@@ -1071,6 +1077,14 @@ impl Executor for RootlessContainerExecutor {
             join_netns_in_config(&bundle_dir, &netns)?;
             info!(id = %handle.id, target = %target, netns = %netns, "rootless container joining network namespace");
         }
+
+        // Clear stale runc state for this id before (re)starting.
+        let _ = std::process::Command::new(&self.config.runc_path)
+            .arg("--root")
+            .arg(&self.config.state_root)
+            .args(["delete", "--force"])
+            .arg(&handle.id)
+            .output();
 
         let mut cmd = crate::rootless::rootless_runc_command(&self.config, &handle.id, &bundle_dir);
         cmd.stdin(Stdio::null())
