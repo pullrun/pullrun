@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod container;
+pub mod oci_spec;
 pub mod rootless;
 pub mod seccomp;
 pub mod types;

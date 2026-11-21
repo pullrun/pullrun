@@ -76,9 +76,13 @@ pub fn rootless_oci_config(uid: u32) -> serde_json::Value {
     serde_json::json!({
         "ociVersion": "1.0.2",
         "process": {
+            // Inside the user namespace, container uid 0 maps to the
+            // invoking host user (see uidMappings below). Asking for
+            // the host uid here would be an unmapped id and runc
+            // rejects it.
             "user": {
-                "uid": uid,
-                "gid": uid
+                "uid": 0,
+                "gid": 0
             },
             "rlimits": [
                 {"type": "RLIMIT_NOFILE", "hard": 1024, "soft": 1024}
@@ -341,7 +345,8 @@ mod tests {
     #[test]
     fn test_rootless_oci_config_shape() {
         let cfg = rootless_oci_config(1000);
-        assert_eq!(cfg["process"]["user"]["uid"], 1000);
+        assert_eq!(cfg["process"]["user"]["uid"], 0);
+        assert_eq!(cfg["process"]["user"]["gid"], 0);
         assert!(cfg["linux"]["uidMappings"].is_array());
         assert!(cfg["linux"]["namespaces"].is_array());
     }

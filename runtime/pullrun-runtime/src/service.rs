@@ -507,11 +507,14 @@ impl RuntimeCommand {
         let rootless = if !is_running_as_root() {
             let uid = current_euid();
             info!("enabling rootless container backend (euid={})", uid);
-            Some(Arc::new(RootlessContainerExecutor::new(
-                MmapStore::new(self.config.store_root.clone()),
-                self.config.bundle_root.clone(),
-                uid,
-            )))
+            Some(Arc::new(
+                RootlessContainerExecutor::new(
+                    MmapStore::new(self.config.store_root.clone()),
+                    self.config.bundle_root.clone(),
+                    uid,
+                )
+                .with_base_store(base_store.clone()),
+            ))
         } else {
             info!("rootless container backend disabled (running as root)");
             None

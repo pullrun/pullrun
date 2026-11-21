@@ -24,7 +24,7 @@ pub use dockerfile::{
     build_dag_from_directory, build_dag_from_directory_with_platform, BuildStage, DagDirectory,
     Dockerfile, Instruction,
 };
-pub use materializer::OciMaterializer;
+pub use materializer::{MaterializedBundle, OciMaterializer};
 pub use puller::{
     current_arch, empty_json_descriptor, parse_platform, CompressionFormat, OciAuth, OciDescriptor,
     OciError, OciImageConfig, OciImageIndex, OciManifest, OciPuller, PulledImage, PulledImageList,

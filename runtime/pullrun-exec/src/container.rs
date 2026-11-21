@@ -1,7 +1,7 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -369,25 +369,6 @@ impl Executor for LinuxContainerExecutor {
             materializer.materialize_bundle(&spec.image_root, &bundle_dir)?
         };
 
-        // Fix args composition: ENTRYPOINT is always prepended, CMD/spec.command
-        // is the default args. OCI spec: process.args = entrypoint + command.
-        let mut args = if !bundle.entrypoint.is_empty() {
-            let cmd = if !spec.command.is_empty() {
-                &spec.command
-            } else {
-                &bundle.cmd
-            };
-            [bundle.entrypoint.as_slice(), cmd.as_slice()].concat()
-        } else if !spec.command.is_empty() {
-            spec.command.clone()
-        } else {
-            bundle.cmd
-        };
-
-        if args.is_empty() {
-            args = vec!["/bin/sh".to_string()];
-        }
-
         // Allocate IP for bridge networking before spec.env is consumed
         let mut internal_ip: Option<Ipv4Addr> = None;
         let mut gateway: Option<Ipv4Addr> = None;
@@ -420,209 +401,7 @@ impl Executor for LinuxContainerExecutor {
             }
         }
 
-        let mut env_vars: Vec<String> = bundle.env.clone();
-        {
-            let spec_env: HashMap<String, String> = spec.env.into_iter().collect();
-            for kv in env_vars.iter_mut() {
-                if let Some((key, _)) = kv.split_once('=') {
-                    if let Some(val) = spec_env.get(key) {
-                        *kv = format!("{}={}", key, val);
-                    }
-                }
-            }
-            let existing_keys: HashSet<String> = env_vars
-                .iter()
-                .filter_map(|kv| kv.split_once('=').map(|(k, _)| k.to_string()))
-                .collect();
-            for (k, v) in spec_env.iter() {
-                if !existing_keys.contains(k.as_str()) {
-                    env_vars.push(format!("{k}={v}"));
-                }
-            }
-        }
-
-        let mut linux = serde_json::json!({
-            "namespaces": [
-                {"type": "pid"},
-                {"type": "network"},
-                {"type": "ipc"},
-                {"type": "uts"},
-                {"type": "mount"}
-            ],
-            "maskedPaths": [
-                "/proc/acpi",
-                "/proc/asound",
-                "/proc/kcore",
-                "/proc/keys",
-                "/proc/latency_stats",
-                "/proc/timer_list",
-                "/proc/timer_stats",
-                "/proc/sched_debug",
-                "/proc/scsi",
-                "/sys/firmware"
-            ],
-            "readonlyPaths": [
-                "/proc/asound",
-                "/proc/bus",
-                "/proc/fs",
-                "/proc/irq",
-                "/proc/sys",
-                "/proc/sysrq-trigger"
-            ]
-        });
-
-        if spec.cpu_millicores.is_some() || spec.memory_bytes.is_some() {
-            let mut resources = serde_json::Map::new();
-            if let Some(cpu_millicores) = spec.cpu_millicores {
-                resources.insert(
-                    "cpu".to_string(),
-                    serde_json::json!({
-                        "shares": cpu_millicores * 1024 / 1000,
-                        "quota": (cpu_millicores * 100) as i64,
-                        "period": 100000
-                    }),
-                );
-            }
-            if let Some(mem_bytes) = spec.memory_bytes {
-                resources.insert(
-                    "memory".to_string(),
-                    serde_json::json!({
-                        "limit": mem_bytes as i64,
-                        "swap": mem_bytes as i64
-                    }),
-                );
-            }
-            if let Some(obj) = linux.as_object_mut() {
-                obj.insert(
-                    "resources".to_string(),
-                    serde_json::Value::Object(resources),
-                );
-            }
-        }
-
-        let mut mounts = vec![
-            serde_json::json!({"destination": "/proc", "type": "proc", "source": "proc"}),
-            serde_json::json!({"destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]}),
-            serde_json::json!({"destination": "/dev/pts", "type": "devpts", "source": "devpts"}),
-            serde_json::json!({"destination": "/dev/mqueue", "type": "mqueue", "source": "mqueue"}),
-            serde_json::json!({"destination": "/sys", "type": "sysfs", "source": "sysfs", "options": ["nosuid", "nodev", "noexec", "ro"]}),
-            serde_json::json!({"destination": "/tmp", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}),
-            serde_json::json!({"destination": "/dev/shm", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "nodev", "mode=1777"]}),
-        ];
-        for m in &spec.mounts {
-            let mut mount = serde_json::Map::new();
-            mount.insert(
-                "destination".to_string(),
-                serde_json::Value::String(m.destination.clone()),
-            );
-            mount.insert(
-                "type".to_string(),
-                serde_json::Value::String(m.type_.clone()),
-            );
-            mount.insert(
-                "source".to_string(),
-                serde_json::Value::String(m.source.clone()),
-            );
-            // Bind mounts always need rbind + rprivate for runc to work.
-            let mut opts: Vec<String> = Vec::new();
-            if m.type_ == "bind" {
-                opts.push("rbind".to_string());
-                opts.push("rprivate".to_string());
-            }
-            for o in &m.options {
-                if !opts.contains(o) {
-                    opts.push(o.clone());
-                }
-            }
-            if !opts.is_empty() {
-                mount.insert(
-                    "options".to_string(),
-                    serde_json::Value::Array(
-                        opts.iter()
-                            .map(|o| serde_json::Value::String(o.clone()))
-                            .collect(),
-                    ),
-                );
-            }
-            mounts.push(serde_json::Value::Object(mount));
-        }
-
-        let mut process = serde_json::json!({
-            "terminal": false,
-            "user": {
-                "uid": 0,
-                "gid": 0
-            },
-            "capabilities": if spec.privileged {
-                serde_json::json!({
-                    "bounding": ["ALL"],
-                    "effective": ["ALL"],
-                    "permitted": ["ALL"]
-                })
-            } else {
-                serde_json::json!({
-                    "bounding": [
-                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                    ],
-                    "effective": [
-                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                    ],
-                    "permitted": [
-                        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER",
-                        "CAP_MKNOD", "CAP_NET_RAW", "CAP_SETGID", "CAP_SETUID",
-                        "CAP_SETFCAP", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE",
-                        "CAP_SYS_CHROOT", "CAP_KILL", "CAP_AUDIT_WRITE"
-                    ]
-                })
-            },
-            "args": args,
-            "env": env_vars,
-            "cwd": bundle.working_dir.unwrap_or_else(|| "/".to_string()),
-        });
-        if spec.no_new_privileges && !spec.privileged {
-            if let Some(obj) = process.as_object_mut() {
-                obj.insert("noNewPrivileges".to_string(), serde_json::Value::Bool(true));
-            }
-        }
-
-        // Seccomp: fail closed on an invalid profile instead of silently
-        // running the workload unconfined. Privileged containers skip
-        // seccomp entirely.
-        if !spec.privileged {
-            let seccomp = crate::seccomp::build_seccomp(
-                spec.seccomp_profile.as_deref(),
-                &spec.allowed_syscalls,
-            )
-            .map_err(|e| ExecError::ExecutionFailed(format!("seccomp: {e}")))?;
-            if let Some(seccomp) = seccomp {
-                if let Some(obj) = linux.as_object_mut() {
-                    obj.insert("seccomp".to_string(), seccomp);
-                }
-            }
-        }
-
-        let oci_spec = serde_json::json!({
-            "ociVersion": "1.1.0",
-            "process": process,
-            "root": {
-                "path": bundle.rootfs_path.to_string_lossy(),
-                "readonly": spec.readonly_rootfs && !spec.privileged
-            },
-            "mounts": serde_json::Value::Array(mounts),
-            "linux": linux
-        });
-
-        std::fs::write(
-            &bundle.config_path,
-            serde_json::to_string_pretty(&oci_spec)
-                .expect("oci_spec serialization should never fail"),
-        )?;
+        crate::oci_spec::write_oci_config(&spec, &bundle, false)?;
 
         // Write /etc/hosts and /etc/resolv.conf into the rootfs so
         // entrypoint scripts that expect these files don't fail.
@@ -1104,6 +883,7 @@ pub struct RootlessContainerExecutor {
     use_pasta: bool,
     net_handles: Mutex<HashMap<String, crate::rootless::NetworkHandle>>,
     children: Mutex<HashMap<String, std::process::Child>>,
+    base_store: Option<Arc<BaseStore>>,
 }
 
 impl RootlessContainerExecutor {
@@ -1118,7 +898,13 @@ impl RootlessContainerExecutor {
             use_pasta: true,
             net_handles: Mutex::new(HashMap::new()),
             children: Mutex::new(HashMap::new()),
+            base_store: None,
         }
+    }
+
+    pub fn with_base_store(mut self, base_store: Arc<BaseStore>) -> Self {
+        self.base_store = Some(base_store);
+        self
     }
 
     pub fn with_pasta(mut self, use_pasta: bool) -> Self {
@@ -1147,10 +933,36 @@ impl Executor for RootlessContainerExecutor {
             std::fs::remove_dir_all(&bundle_dir)?;
         }
 
-        let materializer = OciMaterializer::new(&self.store);
-        let bundle = materializer.materialize_bundle(&spec.image_root, &bundle_dir)?;
+        let bundle = if let Some(base_store) = &self.base_store {
+            let base = base_store
+                .ensure_base(&spec.image_root)
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
+            let (bundle, stats) = prepare_bundle_from_base(
+                &self.store,
+                &base,
+                &spec.image_root,
+                &bundle_dir,
+            )
+            .await
+            .map_err(|e| ExecError::ExecutionFailed(format!("clone image base: {e}")))?;
+            debug!(
+                id = %spec.id,
+                cloned = stats.cloned,
+                copied = stats.copied,
+                "rootless rootfs cloned from base"
+            );
+            bundle
+        } else {
+            let materializer = OciMaterializer::new(&self.store);
+            materializer.materialize_bundle(&spec.image_root, &bundle_dir)?
+        };
 
-        // Apply rootless patch (adds user namespace, sets noNewPrivileges, etc.)
+        // Build the full OCI config from the request (command, env,
+        // mounts, security), then apply the rootless user-namespace
+        // patch. Previously this path used only the image config, so
+        // `--cmd`, `-e`, `-v`, and limits were silently ignored.
+        crate::oci_spec::write_oci_config(&spec, &bundle, true)?;
         crate::rootless::apply_rootless_config(&bundle_dir, self.uid)?;
 
         let network_join = match &spec.network_mode {
