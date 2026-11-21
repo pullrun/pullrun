@@ -448,13 +448,15 @@ impl RuntimeCommand {
             pullrun_vm::BRIDGE_NAME
         );
 
+        let base_store = Arc::new(pullrun_oci::BaseStore::from_store(store.clone()));
         let container = Arc::new(
             LinuxContainerExecutor::new(
                 MmapStore::new(self.config.store_root.clone()),
                 None,
                 self.config.bundle_root.clone(),
             )
-            .with_network(ipam.clone(), proxy.clone()),
+            .with_network(ipam.clone(), proxy.clone())
+            .with_base_store(base_store.clone()),
         );
 
         let vm = self.config.vm_backend.as_ref().map(|cfg| {
@@ -929,6 +931,7 @@ impl RuntimeCommand {
             event_bus: event_bus.clone(),
             kernel_cache: Arc::new(RwLock::new(HashMap::new())),
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
+            base_store,
             config: Arc::new(self.config.clone()),
             start_time: AtomicI64::new(start_time),
             #[cfg(target_os = "macos")]
@@ -1723,6 +1726,8 @@ pub struct RuntimeService {
     /// via `Arc` so background tasks and gRPC handlers can
     /// read it without taking a service-level lock.
     pub config: Arc<ServiceConfig>,
+    /// Immutable per-digest image bases plus CoW clone helpers.
+    pub base_store: Arc<pullrun_oci::BaseStore>,
     /// Unix timestamp (seconds) when the service started.
     pub start_time: AtomicI64,
     /// Persistent Apple Virt VM sessions keyed by workload id.
@@ -2421,14 +2426,22 @@ impl Runtime for RuntimeService {
             // avoid 2x DAG walk + 2x disk space.
             #[cfg(target_os = "macos")]
             {
-                let store_for_rootfs = self.store.clone();
-                let root_digest_for_rootfs = req.root_digest.clone();
-                let rootfs_path = tokio::task::spawn_blocking(move || {
-                    materialize_rootfs(&store_for_rootfs, &root_digest_for_rootfs)
+                let digest = pullrun_store::Digest::from_hex(&req.root_digest)
+                    .map_err(|e| tonic::Status::internal(format!("invalid digest: {e}")))?;
+                let base = self
+                    .base_store
+                    .ensure_base(&digest)
+                    .await
+                    .map_err(|e| tonic::Status::internal(format!("prepare image base: {e}")))?;
+                let rootfs_path = self.store.root_dir().join("rootfs").join(&req.id);
+                let base_path = base.path.clone();
+                let dest = rootfs_path.clone();
+                tokio::task::spawn_blocking(move || {
+                    pullrun_oci::cow::clone_tree(&base_path, &dest)
                 })
                 .await
-                .map_err(|e| tonic::Status::internal(format!("materialize rootfs join: {e}")))?
-                .map_err(|e| tonic::Status::internal(format!("materialize rootfs: {e}")))?;
+                .map_err(|e| tonic::Status::internal(format!("clone rootfs join: {e}")))?
+                .map_err(|e| tonic::Status::internal(format!("clone rootfs: {e}")))?;
                 self.rootfs_cache
                     .write()
                     .await
@@ -6192,44 +6205,6 @@ fn stage_kernel_image(
         &insecure_registries,
     ))?;
     Ok(staged)
-}
-
-/// Materialize the workload's OCI image to a temp directory.
-///
-/// `manifest_digest` is the rkyv DAG root digest stored in
-/// the runtime's `MmapStore`. The materializer walks the DAG
-/// and unpacks it into `target_dir`.
-///
-/// This is a blocking helper. Callers should run it via
-/// `tokio::task::spawn_blocking`. The returned `PathBuf` is
-/// owned by the caller; cleaning it up is the caller's
-/// responsibility (the runtime inserts the path into
-/// `RuntimeService::rootfs_cache` and removes it when the
-/// workload is stopped).
-#[cfg(target_os = "macos")]
-fn materialize_rootfs(
-    store: &MmapStore,
-    manifest_digest: &str,
-) -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    use pullrun_store::Digest;
-    let target = store
-        .root_dir()
-        .join("rootfs")
-        .join(manifest_digest.replace([':', '/'], "_"));
-    if target.exists() {
-        // Already materialized (e.g. the workload was run
-        // before). Reuse.
-        return Ok(target);
-    }
-    std::fs::create_dir_all(&target)?;
-    let digest: Digest = manifest_digest
-        .parse()
-        .map_err(|e| format!("parse manifest digest {manifest_digest}: {e}"))?;
-    let rt = tokio::runtime::Handle::try_current()
-        .map_err(|e| format!("no tokio runtime in materialize_rootfs: {e}"))?;
-    let materializer = OciMaterializer::new(store);
-    rt.block_on(materializer.materialize_into(&digest, &target))?;
-    Ok(target)
 }
 
 /// Try to find a locally installed kernel for Apple Virt VMs.

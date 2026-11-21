@@ -310,12 +310,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_network_with_inbound_rule() {
+        // Pick a free ephemeral port instead of hardcoding 8080, which
+        // is routinely occupied on shared CI/remote hosts.
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
         let net = ProxyNetwork::new().unwrap();
-        let rules = vec![NetworkRule::inbound(8080)];
+        let rules = vec![NetworkRule::inbound(port)];
         let endpoint = net.setup("test-wl", &rules).await.unwrap();
 
         assert_eq!(endpoint.host_port_mappings.len(), 1);
-        assert_eq!(endpoint.host_port_mappings[0], (8080, 8080));
+        assert_eq!(endpoint.host_port_mappings[0], (port, port));
 
         net.teardown("test-wl", &endpoint).await.unwrap();
     }

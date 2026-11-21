@@ -13,7 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, info, warn};
 
 use pullrun_net::{Direction, IpRange, Ipam, NetworkManager, NetworkRule, ProxyNetwork};
-use pullrun_oci::OciMaterializer;
+use pullrun_oci::{prepare_bundle_from_base, BaseStore, OciMaterializer};
 use pullrun_store::MmapStore;
 
 use crate::types::{
@@ -29,6 +29,9 @@ pub struct LinuxContainerExecutor {
     bundle_root: PathBuf,
     ipam: Option<Arc<Ipam>>,
     proxy: Option<Arc<ProxyNetwork>>,
+    /// Immutable per-digest bases; when set, container rootfs comes
+    /// from a CoW clone instead of a fresh per-workload extraction.
+    base_store: Option<Arc<BaseStore>>,
 }
 
 impl LinuxContainerExecutor {
@@ -41,7 +44,13 @@ impl LinuxContainerExecutor {
             bundle_root,
             ipam: None,
             proxy: None,
+            base_store: None,
         }
+    }
+
+    pub fn with_base_store(mut self, base_store: Arc<BaseStore>) -> Self {
+        self.base_store = Some(base_store);
+        self
     }
 
     pub fn with_network(mut self, ipam: Arc<Ipam>, proxy: Arc<ProxyNetwork>) -> Self {
@@ -336,8 +345,29 @@ impl Executor for LinuxContainerExecutor {
             std::fs::remove_dir_all(&bundle_dir)?;
         }
 
-        let materializer = OciMaterializer::new(&self.store);
-        let bundle = materializer.materialize_bundle(&spec.image_root, &bundle_dir)?;
+        let bundle = if let Some(base_store) = &self.base_store {
+            let digest = spec.image_root;
+            let base = base_store
+                .ensure_base(&digest)
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
+            let (bundle, stats) =
+                prepare_bundle_from_base(&self.store, &base, &digest, &bundle_dir)
+                    .await
+                    .map_err(|e| {
+                        ExecError::ExecutionFailed(format!("clone image base: {e}"))
+                    })?;
+            debug!(
+                id = %spec.id,
+                cloned = stats.cloned,
+                copied = stats.copied,
+                "container rootfs cloned from base"
+            );
+            bundle
+        } else {
+            let materializer = OciMaterializer::new(&self.store);
+            materializer.materialize_bundle(&spec.image_root, &bundle_dir)?
+        };
 
         // Fix args composition: ENTRYPOINT is always prepended, CMD/spec.command
         // is the default args. OCI spec: process.args = entrypoint + command.
