@@ -1964,7 +1964,6 @@ dependencies = [
 name = "pullrun-oci"
 version = "0.7.10"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "bytes",
  "filetime",
