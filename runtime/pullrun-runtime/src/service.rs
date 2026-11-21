@@ -3253,10 +3253,33 @@ impl Runtime for RuntimeService {
         request: tonic::Request<GetWorkloadRequest>,
     ) -> Result<tonic::Response<WorkloadStatus>, tonic::Status> {
         let req = request.into_inner();
-        let workloads = self.workloads.read().await;
-        let state = workloads
-            .get(&req.id)
-            .ok_or_else(|| tonic::Status::not_found(format!("workload {} not found", req.id)))?;
+        let mut state = {
+            let workloads = self.workloads.read().await;
+            workloads
+                .get(&req.id)
+                .cloned()
+                .ok_or_else(|| tonic::Status::not_found(format!("workload {} not found", req.id)))?
+        };
+
+        // Containers are reaped by the 5s background watcher, which makes
+        // `run --attach` (which polls GetWorkload) feel slow. Ask the
+        // executor directly while the workload is still marked running.
+        if state.status == "running"
+            && (state.backend == "container" || state.backend == "rootless")
+        {
+            if let Ok(live) = self.executor.status(&req.id).await {
+                if live.starts_with("exited(") {
+                    state.status = "exited".to_string();
+                    state.exit_code = parse_exit_code(&live).or(state.exit_code);
+                    if state.exit_time == 0 {
+                        state.exit_time = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                    }
+                }
+            }
+        }
 
         use crate::proto::RestartPolicy;
         let restart_proto = match state.restart_policy {
@@ -3274,7 +3297,7 @@ impl Runtime for RuntimeService {
             exit_code: state.exit_code.unwrap_or(0),
             start_time: state.start_time,
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
-            network_isolated: is_network_isolated(state),
+            network_isolated: is_network_isolated(&state),
             health: state.health.clone(),
             restart_policy: restart_proto.into(),
             restart_count: state.restart_count,
