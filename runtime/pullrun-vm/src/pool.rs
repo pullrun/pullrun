@@ -193,6 +193,7 @@ impl VmPool {
             vm_net: vm_net.clone(),
             endpoint: endpoint.clone(),
             tap_name: tap_name.clone(),
+            network_disabled: false,
         };
         let sidecar_path = vm_dir.join("network.json");
         let sidecar_json = serde_json::to_string_pretty(&sidecar)

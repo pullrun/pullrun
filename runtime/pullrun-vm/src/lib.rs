@@ -59,6 +59,9 @@ pub struct VmSidecar {
     pub vm_net: VmNetwork,
     pub endpoint: NetworkEndpoint,
     pub tap_name: String,
+    /// True for `--net none`: no IP, tap, bridge, or network device.
+    #[serde(default)]
+    pub network_disabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -309,6 +312,7 @@ impl FirecrackerExecutor {
             vm_net: pooled.vm_net().clone(),
             endpoint: pooled.endpoint().clone(),
             tap_name: pooled.tap_name().to_string(),
+            network_disabled: false,
         };
         let sidecar_path = vm_dir.join("network.json");
         let sidecar_json = serde_json::to_string_pretty(&sidecar)
@@ -391,14 +395,21 @@ impl Executor for FirecrackerExecutor {
         }
         self.check_firecracker().await?;
 
-        info!(id = %spec.id, "creating Firecracker VM");
+        // `Loopback` is Pullrun's isolated/none mode for VMs: no external
+        // network device, no IP, no tap/bridge.
+        let no_network = matches!(spec.network_mode, NetworkMode::Loopback);
+        info!(id = %spec.id, no_network, "creating Firecracker VM");
 
         // Try warm pool first (fast path: pre-booted VM, hot-swap rootfs).
-        if let Some(pool) = &self.pool {
-            if let Some(pooled) = pool.acquire() {
-                return self.create_from_pool(spec, pooled).await;
+        // Pool VMs have networking pre-configured, so `--net none` must
+        // take the cold path.
+        if !no_network {
+            if let Some(pool) = &self.pool {
+                if let Some(pooled) = pool.acquire() {
+                    return self.create_from_pool(spec, pooled).await;
+                }
+                info!("warm pool exhausted, falling back to cold boot");
             }
-            info!("warm pool exhausted, falling back to cold boot");
         }
 
         // 1. Allocate an IP. Use a per-project IPAM if bridge_name
@@ -428,7 +439,20 @@ impl Executor for FirecrackerExecutor {
         // 2. Plumb the host-side network: bridge + tap, or slirp4netns.
         let tap_name = self.tap_name_for(&spec.id);
         let use_slirp = matches!(spec.network_mode, NetworkMode::Slirp);
-        let (vm_net, tap_fd, slirp_child) = if use_slirp {
+        let (vm_net, tap_fd, slirp_child) = if no_network {
+            (
+                VmNetwork {
+                    tap_name: String::new(),
+                    bridge_name: String::new(),
+                    guest_ip,
+                    guest_mac: String::new(),
+                    netmask: Ipv4Addr::UNSPECIFIED,
+                    gateway: Ipv4Addr::UNSPECIFIED,
+                },
+                None,
+                None,
+            )
+        } else if use_slirp {
             let (vm_net, child) =
                 crate::network::create_slirp_tap(&tap_name, guest_ip, _netmask, _gateway)
                     .map_err(|e| ExecError::ExecutionFailed(format!("slirp network setup: {e}")))?;
@@ -464,11 +488,18 @@ impl Executor for FirecrackerExecutor {
         //    the VM over the bridge. The VM does not need any extra
         //    configuration: the kernel `ip=` boot arg already set the
         //    guest's IP and gateway.
-        let endpoint = self
-            .proxy
-            .register_endpoint(&spec.id, guest_ip.to_string(), &spec.network_rules)
-            .await
-            .map_err(|e| ExecError::ExecutionFailed(format!("proxy register: {e}")))?;
+        let endpoint = if no_network {
+            NetworkEndpoint {
+                internal_ip: String::new(),
+                host_port_mappings: vec![],
+                namespace_path: None,
+            }
+        } else {
+            self.proxy
+                .register_endpoint(&spec.id, guest_ip.to_string(), &spec.network_rules)
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("proxy register: {e}")))?
+        };
 
         let vm_dir = self.vm_dir(&spec.id);
         std::fs::create_dir_all(&vm_dir)?;
@@ -492,6 +523,7 @@ impl Executor for FirecrackerExecutor {
             vm_net: vm_net.clone(),
             endpoint: endpoint.clone(),
             tap_name: tap_name.clone(),
+            network_disabled: no_network,
         };
         let sidecar_path = vm_dir.join("network.json");
         let sidecar_json = serde_json::to_string_pretty(&sidecar)
@@ -501,7 +533,11 @@ impl Executor for FirecrackerExecutor {
         let handle = ProcessHandle {
             id: spec.id.clone(),
             pid: None,
-            internal_ip: Some(guest_ip.to_string()),
+            internal_ip: if no_network {
+                None
+            } else {
+                Some(guest_ip.to_string())
+            },
             host_ports: endpoint.host_port_mappings.to_vec(),
             gateway: None,
             backend: "vm".to_string(),
@@ -559,11 +595,16 @@ impl Executor for FirecrackerExecutor {
             self.config.kernel_path.clone()
         };
 
+        let vm_net = if sidecar.network_disabled {
+            None
+        } else {
+            Some(&sidecar.vm_net)
+        };
         let config = firecracker_config(
             &handle.id,
             &kernel_path,
             &ext4_path,
-            Some(&sidecar.vm_net),
+            vm_net,
             self.config.vcpus,
             self.config.mem_mib,
         );
@@ -680,8 +721,10 @@ impl Executor for FirecrackerExecutor {
                     .lock()
                     .expect("tap_fds lock poisoned")
                     .remove(id);
-                if let Err(e) = teardown_tap(&sidecar.tap_name, tap_fd) {
-                    warn!(tap = %sidecar.tap_name, "tap teardown warning: {e}");
+                if !sidecar.network_disabled {
+                    if let Err(e) = teardown_tap(&sidecar.tap_name, tap_fd) {
+                        warn!(tap = %sidecar.tap_name, "tap teardown warning: {e}");
+                    }
                 }
                 // Inbound listeners for this workload id are owned by
                 // the proxy; ask it to release them. The endpoint
