@@ -516,6 +516,11 @@ impl Executor for LinuxContainerExecutor {
             .args(["delete", "--force", &id_for_cleanup])
             .output();
 
+        let stderr_path = bdir.join("runc.stderr.log");
+        let stderr_file = std::fs::File::create(&stderr_path).ok();
+        let stderr_for_cmd = stderr_file
+            .as_ref()
+            .and_then(|f| f.try_clone().ok());
         let mut child = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawning foreground runc run -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
@@ -524,9 +529,12 @@ impl Executor for LinuxContainerExecutor {
             // only reliable way to observe the exit code.
             cmd.arg("run").arg("-b").arg(&bdir).arg(&id);
             cmd.stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::inherit())
-                .spawn()
+                .stdout(std::process::Stdio::null());
+            match stderr_for_cmd {
+                Some(f) => cmd.stderr(std::process::Stdio::from(f)),
+                None => cmd.stderr(std::process::Stdio::null()),
+            };
+            cmd.spawn()
         })
         .await
         .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking failed: {e}")))?
@@ -535,23 +543,21 @@ impl Executor for LinuxContainerExecutor {
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         let early = child.try_wait().ok().flatten();
         if let Some(status) = early {
-            let started = std::process::Command::new(&runc_path_for_cleanup)
-                .args(["state", &id_for_cleanup])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if !started && !status.success() {
-                let cleanup_runc = runc_path_for_cleanup.clone();
-                let cleanup_id = id_for_cleanup.clone();
-                tokio::task::spawn_blocking(move || {
-                    let mut del = SyncCommand::new(&cleanup_runc);
-                    del.args(["delete", "--force"]).arg(&cleanup_id);
-                    let _ = del.output();
-                });
-                return Err(ExecError::ExecutionFailed(format!(
-                    "runc run failed for {} (check runc logs)",
-                    handle.id
-                )));
+            if !status.success() {
+                if let Some(err) = runc_startup_error(&stderr_path) {
+                    let cleanup_runc = runc_path_for_cleanup.clone();
+                    let cleanup_id = id_for_cleanup.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let mut del = SyncCommand::new(&cleanup_runc);
+                        del.args(["delete", "--force"]).arg(&cleanup_id);
+                        let _ = del.output();
+                    });
+                    return Err(ExecError::ExecutionFailed(format!(
+                        "runc run failed for {}: {}",
+                        handle.id,
+                        err.lines().last().unwrap_or("unknown error")
+                    )));
+                }
             }
             tracing::info!(
                 id = %handle.id,
@@ -851,6 +857,25 @@ impl Executor for LinuxContainerExecutor {
 /// workload can join it (pod model). The pid is only known to runc at
 /// runtime, so this queries `runc state` and maps the container init
 /// pid to `/proc/<pid>/ns/net`.
+/// Detect a runc startup failure from its captured stderr. Container
+/// workloads have their stdio redirected to /dev/null, so anything on
+/// runc's own stderr is an error (bad config, cgroup, namespaces, ...).
+fn runc_startup_error(stderr_path: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(stderr_path).ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.contains("level=error")
+        || trimmed.contains("runc:")
+        || trimmed.contains("failed to")
+    {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
 /// Read the container PID from `runc state`.
 fn rootless_state_pid(
     runc_path: &std::path::Path,
@@ -1086,10 +1111,18 @@ impl Executor for RootlessContainerExecutor {
             .arg(&handle.id)
             .output();
 
+        let stderr_path = bundle_dir.join("runc.stderr.log");
+        let stderr_file = std::fs::File::create(&stderr_path).ok();
         let mut cmd = crate::rootless::rootless_runc_command(&self.config, &handle.id, &bundle_dir);
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit());
+        cmd.stdin(Stdio::null()).stdout(Stdio::null());
+        match stderr_file {
+            Some(f) => {
+                cmd.stderr(Stdio::from(f));
+            }
+            None => {
+                cmd.stderr(Stdio::null());
+            }
+        }
 
         let mut child = cmd.spawn().map_err(|e| {
             ExecError::ExecutionFailed(format!("rootless runc spawn failed for {}: {e}", handle.id))
@@ -1123,25 +1156,20 @@ impl Executor for RootlessContainerExecutor {
             // The process exited. If runc created a container, the
             // exit code is the workload's (including non-zero); if it
             // did not, this was a startup failure.
-            let started = container_pid.is_some()
-                || rootless_state_pid(
-                    &self.config.runc_path,
-                    &self.config.state_root,
-                    &handle.id,
-                )
-                .is_some();
-            if !started && !status.success() {
-                let mut del = std::process::Command::new(&self.config.runc_path);
-                del.arg("--root")
-                    .arg(&self.config.state_root)
-                    .args(["delete", "--force"])
-                    .arg(&handle.id);
-                let _ = del.output();
-                return Err(ExecError::ExecutionFailed(format!(
-                    "rootless runc start failed for {} (exit: {:?})",
-                    handle.id,
-                    status.code()
-                )));
+            if !status.success() {
+                if let Some(err) = runc_startup_error(&stderr_path) {
+                    let mut del = std::process::Command::new(&self.config.runc_path);
+                    del.arg("--root")
+                        .arg(&self.config.state_root)
+                        .args(["delete", "--force"])
+                        .arg(&handle.id);
+                    let _ = del.output();
+                    return Err(ExecError::ExecutionFailed(format!(
+                        "rootless runc start failed for {}: {}",
+                        handle.id,
+                        err.lines().last().unwrap_or("unknown error")
+                    )));
+                }
             }
             info!(
                 id = %handle.id,
