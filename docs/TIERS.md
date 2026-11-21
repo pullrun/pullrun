@@ -27,7 +27,7 @@ execute `/bin/sh -c true`.
 | tier | sequential | concurrent |
 |---|---:|---:|
 | container (rootless runc) | 3,592 ms | **914 ms** |
-| per-task Firecracker VM | boot smoke **1.15 s**; tier timing pending | — |
+| per-task Firecracker VM | boots & executes in ~1 s; attach pending | — |
 | group | not implemented on Linux | — |
 
 Interpretation:
@@ -37,12 +37,18 @@ Interpretation:
 - On Linux, five rootless containers complete concurrently in ~0.9 s.
   The measurement includes rootfs clone, `runc` startup, and exit
   detection; it is a debug runtime.
-- Firecracker boot smoke passed in **1.15 s** (serial marker) once
-  `/dev/kvm` was made accessible. The tier timing above was not
-  completed: the Linux test host went fully offline during the
-  daemon/CLI VM run. Re-run `hack/tier-bench.sh` on Linux with
-  `/dev/kvm`, `PULLRUN_FC_BIN`, and `PULLRUN_FC_VMLINUX` set to fill
-  the row.
+- Firecracker boots and executes workloads: the daemon started a
+  Firecracker VM with `--net none`, the guest ran
+  `/bin/sh -c 'echo fc-user-ok; exit 7'`, printed
+  `PULLRUN_EXIT=7`, and powered off (`sysrq: Power Off`,
+  `reboot: Power down`). Isolated VMs create no tap/bridge/NIC.
+- Remaining gap: `run --attach` does not yet return on VM poweroff
+  (`[pullrun] detached` then hang), and the CLI does not propagate the
+  guest exit code. `status()` parses `PULLRUN_EXIT=` and kills the
+  Firecracker VMM, but the attach lifecycle needs the exit frame.
+- Re-run `hack/tier-bench.sh` on Linux with `/dev/kvm`,
+  `PULLRUN_FC_BIN`, and `PULLRUN_FC_VMLINUX` once attach returns to
+  fill the tier row.
 - The boot test now builds its rootfs with `mkfs.ext4 -d` instead of a
   loop mount, so it runs as an unprivileged user with KVM access.
 
