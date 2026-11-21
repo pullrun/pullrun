@@ -106,6 +106,8 @@ pub struct ServiceConfig {
     pub bloom_cache: Option<PeerBloomCache>,
     /// Secret/config store for docker --secret/--config equivalent.
     pub secrets_store: crate::secrets::SecretStore,
+    /// Use overlayfs lowerdirs for container rootfs (requires root).
+    pub rootfs_overlay: bool,
 }
 
 impl ServiceConfig {
@@ -123,7 +125,13 @@ impl ServiceConfig {
             insecure_registries: std::collections::HashSet::new(),
             bloom_cache: None,
             secrets_store: crate::secrets::SecretStore::new(ss),
+            rootfs_overlay: false,
         }
+    }
+
+    pub fn with_rootfs_overlay(mut self, enabled: bool) -> Self {
+        self.rootfs_overlay = enabled;
+        self
     }
 
     pub fn with_bloom_cache(mut self, cache: PeerBloomCache) -> Self {
@@ -456,7 +464,12 @@ impl RuntimeCommand {
                 self.config.bundle_root.clone(),
             )
             .with_network(ipam.clone(), proxy.clone())
-            .with_base_store(base_store.clone()),
+            .with_base_store(base_store.clone())
+            .with_rootfs_mode(if self.config.rootfs_overlay {
+                pullrun_exec::types::RootfsMode::Overlay
+            } else {
+                pullrun_exec::types::RootfsMode::Clone
+            }),
         );
 
         let vm = self.config.vm_backend.as_ref().map(|cfg| {

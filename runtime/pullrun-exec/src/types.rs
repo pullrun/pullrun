@@ -56,6 +56,16 @@ pub struct DnsConfig {
     pub options: Vec<String>,
 }
 
+/// How a container rootfs is prepared from an immutable image base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RootfsMode {
+    /// Reflink clone (APFS/FICLONE) or full copy on ext4.
+    #[default]
+    Clone,
+    /// overlayfs with the base as a read-only lower layer.
+    Overlay,
+}
+
 #[derive(Debug, Clone, Default)]
 pub enum NetworkMode {
     #[default]

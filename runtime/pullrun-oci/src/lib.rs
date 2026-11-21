@@ -13,7 +13,7 @@ pub mod oci_layout;
 pub mod puller;
 pub mod push;
 
-pub use base::{prepare_bundle_from_base, BaseStore, BaseTree};
+pub use base::{bundle_from_manifest, prepare_bundle_from_base, BaseStore, BaseTree};
 pub use confinement::{ConfineError, RelPath, RootDir};
 pub use cow::{CloneStats, CowMode};
 pub use converter::{DirectoryEntry, ManifestData, OciToDagConverter};

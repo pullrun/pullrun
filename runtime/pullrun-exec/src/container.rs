@@ -1,7 +1,7 @@
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -13,11 +13,15 @@ use tokio::process::Command;
 use tracing::{debug, info, warn};
 
 use pullrun_net::{Direction, IpRange, Ipam, NetworkManager, NetworkRule, ProxyNetwork};
-use pullrun_oci::{prepare_bundle_from_base, BaseStore, OciMaterializer};
+use pullrun_oci::{
+    bundle_from_manifest, prepare_bundle_from_base, BaseStore, OciMaterializer,
+};
 use pullrun_store::MmapStore;
 
+use crate::overlay::{mount_overlay, unmount_overlay};
 use crate::types::{
-    ExecError, ExecOutput, Executor, ExitStatus, ProcessHandle, WorkloadSpec, WorkloadStats,
+    ExecError, ExecOutput, Executor, ExitStatus, ProcessHandle, RootfsMode, WorkloadSpec,
+    WorkloadStats,
 };
 
 const DEFAULT_BRIDGE_NAME: &str = "pullrun-br0";
@@ -35,6 +39,10 @@ pub struct LinuxContainerExecutor {
     /// Foreground `runc run` children, keyed by workload id, so
     /// `status()` can report the workload's real exit code.
     children: Mutex<HashMap<String, std::process::Child>>,
+    /// Rootfs preparation strategy for containers.
+    rootfs_mode: RootfsMode,
+    /// Workloads whose rootfs is an overlay mount (for unmount on stop).
+    overlay_mounts: Mutex<HashSet<String>>,
 }
 
 impl LinuxContainerExecutor {
@@ -49,11 +57,18 @@ impl LinuxContainerExecutor {
             proxy: None,
             base_store: None,
             children: Mutex::new(HashMap::new()),
+            rootfs_mode: RootfsMode::Clone,
+            overlay_mounts: Mutex::new(HashSet::new()),
         }
     }
 
     pub fn with_base_store(mut self, base_store: Arc<BaseStore>) -> Self {
         self.base_store = Some(base_store);
+        self
+    }
+
+    pub fn with_rootfs_mode(mut self, mode: RootfsMode) -> Self {
+        self.rootfs_mode = mode;
         self
     }
 
@@ -332,6 +347,81 @@ impl LinuxContainerExecutor {
         debug!(runc_version = %stdout.trim(), "runc found");
         Ok(())
     }
+    /// Clone the prebuilt base (or fall back to per-workload extraction).
+    async fn clone_or_materialize(
+        &self,
+        spec: &WorkloadSpec,
+        bundle_dir: &std::path::Path,
+    ) -> Result<pullrun_oci::MaterializedBundle, ExecError> {
+        if let Some(base_store) = &self.base_store {
+            let digest = spec.image_root;
+            let base = base_store
+                .ensure_base(&digest)
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
+            let (bundle, stats) =
+                prepare_bundle_from_base(&self.store, &base, &digest, bundle_dir)
+                    .await
+                    .map_err(|e| {
+                        ExecError::ExecutionFailed(format!("clone image base: {e}"))
+                    })?;
+            debug!(
+                id = %spec.id,
+                cloned = stats.cloned,
+                copied = stats.copied,
+                "container rootfs cloned from base"
+            );
+            Ok(bundle)
+        } else {
+            let materializer = OciMaterializer::new(&self.store);
+            Ok(materializer.materialize_bundle(&spec.image_root, bundle_dir)?)
+        }
+    }
+
+    /// base (read-only lower) + per-workload upper/work/merged.
+    async fn create_overlay_bundle(
+        &self,
+        spec: &WorkloadSpec,
+        bundle_dir: &std::path::Path,
+    ) -> Result<pullrun_oci::MaterializedBundle, ExecError> {
+        let base_store = self
+            .base_store
+            .as_ref()
+            .ok_or_else(|| ExecError::ExecutionFailed("overlay rootfs needs a base store".into()))?;
+        let digest = spec.image_root;
+        let base = base_store
+            .ensure_base(&digest)
+            .await
+            .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
+
+        std::fs::create_dir_all(bundle_dir)?;
+        let upper = bundle_dir.join("upper");
+        let work = bundle_dir.join("work");
+        let merged = bundle_dir.join("merged");
+        mount_overlay(&base.path, &upper, &work, &merged).map_err(|e| {
+            ExecError::ExecutionFailed(format!(
+                "mount overlay ({}): {e}",
+                merged.display()
+            ))
+        })?;
+
+        match bundle_from_manifest(&self.store, &digest, bundle_dir, &merged) {
+            Ok(bundle) => {
+                self.overlay_mounts
+                    .lock()
+                    .expect("overlay_mounts lock poisoned")
+                    .insert(spec.id.clone());
+                Ok(bundle)
+            }
+            Err(e) => {
+                let _ = unmount_overlay(&merged);
+                Err(ExecError::ExecutionFailed(format!(
+                    "overlay manifest: {e}"
+                )))
+            }
+        }
+    }
+
 }
 
 #[async_trait]
@@ -349,28 +439,36 @@ impl Executor for LinuxContainerExecutor {
             std::fs::remove_dir_all(&bundle_dir)?;
         }
 
-        let bundle = if let Some(base_store) = &self.base_store {
-            let digest = spec.image_root;
-            let base = base_store
-                .ensure_base(&digest)
-                .await
-                .map_err(|e| ExecError::ExecutionFailed(format!("prepare image base: {e}")))?;
-            let (bundle, stats) =
-                prepare_bundle_from_base(&self.store, &base, &digest, &bundle_dir)
-                    .await
-                    .map_err(|e| {
-                        ExecError::ExecutionFailed(format!("clone image base: {e}"))
-                    })?;
-            debug!(
+        // overlayfs needs CAP_SYS_ADMIN and a writable rootfs.
+        let overlay_capable = self.rootfs_mode == RootfsMode::Overlay
+            && self.base_store.is_some()
+            && !spec.readonly_rootfs
+            && unsafe { libc::geteuid() } == 0;
+
+        let bundle = if overlay_capable {
+            match self.create_overlay_bundle(&spec, &bundle_dir).await {
+                Ok(bundle) => {
+                    info!(id = %spec.id, "container rootfs uses overlay lowerdir");
+                    bundle
+                }
+                Err(e) => {
+                    warn!(
+                        id = %spec.id,
+                        error = %e,
+                        "overlay rootfs failed; falling back to a clone"
+                    );
+                    let _ = std::fs::remove_dir_all(&bundle_dir);
+                    self.clone_or_materialize(&spec, &bundle_dir).await?
+                }
+            }
+        } else if self.rootfs_mode == RootfsMode::Overlay && unsafe { libc::geteuid() } != 0 {
+            warn!(
                 id = %spec.id,
-                cloned = stats.cloned,
-                copied = stats.copied,
-                "container rootfs cloned from base"
+                "overlay rootfs requested but the runtime is not root; using a clone"
             );
-            bundle
+            self.clone_or_materialize(&spec, &bundle_dir).await?
         } else {
-            let materializer = OciMaterializer::new(&self.store);
-            materializer.materialize_bundle(&spec.image_root, &bundle_dir)?
+            self.clone_or_materialize(&spec, &bundle_dir).await?
         };
 
         // Allocate IP for bridge networking before spec.env is consumed
@@ -592,6 +690,19 @@ impl Executor for LinuxContainerExecutor {
 
     async fn stop(&self, id: &str) -> Result<(), ExecError> {
         info!(%id, "stopping container");
+
+        // Overlay rootfs must be unmounted before the bundle is removed.
+        if self
+            .overlay_mounts
+            .lock()
+            .expect("overlay_mounts lock poisoned")
+            .remove(id)
+        {
+            let merged = self.bundle_dir(id).join("merged");
+            if let Err(e) = unmount_overlay(&merged) {
+                warn!(%id, error = %e, "failed to unmount overlay rootfs");
+            }
+        }
 
         // Release proxy listeners (inbound port forwards) for this
         // workload. Container stop is the only place these are torn

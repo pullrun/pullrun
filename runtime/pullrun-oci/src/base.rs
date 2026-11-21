@@ -199,6 +199,25 @@ impl BaseStore {
     }
 }
 
+/// Build a bundle handle from a prebuilt rootfs path without cloning
+/// (used by overlayfs, where the base is the lower layer).
+pub fn bundle_from_manifest(
+    store: &MmapStore,
+    manifest_digest: &Digest,
+    bundle_dir: &Path,
+    rootfs_path: &Path,
+) -> Result<MaterializedBundle, OciError> {
+    let manifest_data = OciMaterializer::new(store).materialize_manifest(manifest_digest)?;
+    Ok(MaterializedBundle {
+        rootfs_path: rootfs_path.to_path_buf(),
+        config_path: bundle_dir.join("config.json"),
+        entrypoint: manifest_data.entrypoint,
+        cmd: manifest_data.cmd,
+        env: manifest_data.env,
+        working_dir: manifest_data.working_dir,
+    })
+}
+
 /// Materialize a workload bundle from a prebuilt base.
 ///
 /// The returned bundle has the same shape as

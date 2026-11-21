@@ -107,6 +107,11 @@ enum Commands {
             help = "Number of pre-booted VMs in the warm pool (0 = disabled)"
         )]
         vm_warm_pool_size: usize,
+        #[arg(
+            long,
+            help = "Use overlayfs lowerdirs for container rootfs (requires root)"
+        )]
+        rootfs_overlay: bool,
 
         // OCI pull configuration.
         #[arg(
@@ -450,6 +455,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_mem_mib,
         vm_size_mb,
         vm_warm_pool_size,
+        rootfs_overlay,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -477,6 +483,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_mem_mib,
         vm_size_mb,
         vm_warm_pool_size,
+        rootfs_overlay,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -610,6 +617,7 @@ async fn run_daemon(
     vm_mem_mib: u32,
     vm_size_mb: u64,
     vm_warm_pool_size: usize,
+    rootfs_overlay: bool,
     insecure_registry: Vec<String>,
     sync_addr: SocketAddr,
     registrar_addr: Option<SocketAddr>,
@@ -625,6 +633,9 @@ async fn run_daemon(
     );
     let keys = parse_trusted_keys(&trusted_key);
     let mut config = ServiceConfig::new(store_root).trusted_keys(keys);
+    if rootfs_overlay {
+        config = config.with_rootfs_overlay(true);
+    }
     if let Some(p) = policy {
         config = config.with_policy(p);
     }
