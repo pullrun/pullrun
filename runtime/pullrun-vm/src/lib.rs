@@ -781,7 +781,29 @@ impl Executor for FirecrackerExecutor {
     }
 
     async fn status(&self, id: &str) -> Result<String, ExecError> {
-        let pid_file = self.vm_dir(id).join("firecracker.pid");
+        let vm_dir = self.vm_dir(id);
+        // The guest writes PULLRUN_EXIT=<code> to ttyS0 and powers off.
+        // Firecracker itself stays alive after the guest halts, so use
+        // the marker as the authoritative exit and reap the VMM.
+        if let Ok(console) = std::fs::read_to_string(vm_dir.join("console.log")) {
+            if let Some(pos) = console.rfind("PULLRUN_EXIT=") {
+                let digits: String = console[pos + "PULLRUN_EXIT=".len()..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '-')
+                    .collect();
+                if let Ok(code) = digits.parse::<i32>() {
+                    if let Ok(pid_str) = std::fs::read_to_string(vm_dir.join("firecracker.pid")) {
+                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                            unsafe {
+                                libc::kill(pid, libc::SIGKILL);
+                            }
+                        }
+                    }
+                    return Ok(format!("exited({code})"));
+                }
+            }
+        }
+        let pid_file = vm_dir.join("firecracker.pid");
         if pid_file.exists() {
             if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
                 if let Ok(pid) = pid_str.trim().parse::<i32>() {
