@@ -8,6 +8,8 @@
   cancellation, and kills the timed-out process via the runc pid-file.
   Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
+- Per-pod bridge falls back to the shared bridge when no /24 subnet can
+  be allocated, avoiding a gateway route conflict.
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
@@ -304,6 +306,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   cancellation, and kills the timed-out process via the runc pid-file.
   Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
+- Per-pod bridge falls back to the shared bridge when no /24 subnet can
+  be allocated, avoiding a gateway route conflict.
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
