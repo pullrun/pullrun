@@ -393,6 +393,24 @@ impl FirecrackerExecutor {
     }
 }
 
+/// Copy a VM disk image, preserving holes where the platform supports it.
+fn copy_image_file(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let ok = std::process::Command::new("cp")
+            .arg("--sparse=always")
+            .arg(src)
+            .arg(dst)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            return Ok(());
+        }
+    }
+    std::fs::copy(src, dst).map(|_| ())
+}
+
 #[async_trait]
 impl Executor for FirecrackerExecutor {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError> {
@@ -865,7 +883,12 @@ impl Executor for FirecrackerExecutor {
         }
         let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
         let rootfs_path = out_dir.join("rootfs.ext4");
-        if let Err(e) = tokio::fs::copy(&ext4_path, &rootfs_path).await {
+        let copy_src = ext4_path.clone();
+        let copy_dst = rootfs_path.clone();
+        let copied = tokio::task::spawn_blocking(move || copy_image_file(&copy_src, &copy_dst))
+            .await
+            .map_err(|e| ExecError::ExecutionFailed(format!("copy join: {e}")))?;
+        if let Err(e) = copied {
             let _ = api.resume().await;
             return Err(ExecError::ExecutionFailed(format!(
                 "copy snapshot rootfs {}: {e}",
@@ -895,7 +918,7 @@ impl Executor for FirecrackerExecutor {
         if let Some(parent) = drive_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(rootfs_path, drive_path).map_err(|e| {
+        copy_image_file(rootfs_path, drive_path).map_err(|e| {
             ExecError::ExecutionFailed(format!(
                 "restore rootfs {} -> {}: {e}",
                 rootfs_path.display(),
