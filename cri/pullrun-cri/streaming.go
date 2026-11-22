@@ -37,6 +37,7 @@ type execSession struct {
 	env        map[string]string
 	workingDir string
 	attach     bool
+	tty        bool
 	createdAt  time.Time
 }
 
@@ -114,7 +115,7 @@ func newStreamingServer(runtimeClient pullrunruntime.RuntimeClient) (*streamingS
 	return s, nil
 }
 
-func (s *streamingServer) newSession(workloadID string, command []string, env map[string]string, workingDir string, attach bool) (string, string) {
+func (s *streamingServer) newSession(workloadID string, command []string, env map[string]string, workingDir string, attach bool, tty bool) (string, string) {
 	token := generateToken()
 	s.sessions.Store(token, &execSession{
 		workloadID: workloadID,
@@ -122,6 +123,7 @@ func (s *streamingServer) newSession(workloadID string, command []string, env ma
 		env:        env,
 		workingDir: workingDir,
 		attach:     attach,
+		tty:        tty,
 		createdAt:  time.Now(),
 	})
 
@@ -171,7 +173,11 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 		if portStr == "" {
 			portStr = fmt.Sprintf("%d", session.port)
 		}
-		targetAddr := net.JoinHostPort(session.targetIP, portStr)
+		targetIP := session.targetIP
+		if targetIP == "" || targetIP == "loopback" {
+			targetIP = "127.0.0.1"
+		}
+		targetAddr := net.JoinHostPort(targetIP, portStr)
 		tcpConn, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
 		if err != nil {
 			log.Printf("port-forward dial %s: %v", targetAddr, err)
@@ -227,6 +233,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 				Command:    session.command,
 				Env:        session.env,
 				WorkingDir: session.workingDir,
+				Tty:        session.tty,
 			},
 		},
 	}); err != nil {

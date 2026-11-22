@@ -395,7 +395,11 @@ func (c *criServer) PortForward(ctx context.Context, req *runtimeapi.PortForward
 		port = req.Port[0]
 	}
 
-	_, url := c.streaming.newPortForwardSession(sandbox.pullrunID, sandbox.internalIP, port)
+	targetIP := sandbox.internalIP
+	if sandbox.hostNetwork || targetIP == "" || targetIP == "loopback" {
+		targetIP = "127.0.0.1"
+	}
+	_, url := c.streaming.newPortForwardSession(sandbox.pullrunID, targetIP, port)
 	log.Printf("PortForward sandbox=%s ip=%s port=%d url=%s", req.PodSandboxId, sandbox.internalIP, port, url)
 	return &runtimeapi.PortForwardResponse{Url: url}, nil
 }
@@ -429,7 +433,7 @@ func (c *criServer) Exec(ctx context.Context, req *runtimeapi.ExecRequest) (*run
 		return nil, fmt.Errorf("Exec: container %q not found", req.ContainerId)
 	}
 
-	_, url := c.streaming.newSession(rec.pullrunID, req.Cmd, nil, "", false)
+	_, url := c.streaming.newSession(rec.pullrunID, req.Cmd, nil, "", false, req.Tty)
 	log.Printf("Exec id=%s cmd=%v url=%s", req.ContainerId, req.Cmd, url)
 	return &runtimeapi.ExecResponse{Url: url}, nil
 }
@@ -440,7 +444,7 @@ func (c *criServer) Attach(ctx context.Context, req *runtimeapi.AttachRequest) (
 		return nil, fmt.Errorf("Attach: container %q not found", req.ContainerId)
 	}
 
-	_, url := c.streaming.newSession(rec.pullrunID, nil, nil, "", true)
+	_, url := c.streaming.newSession(rec.pullrunID, nil, nil, "", true, req.Tty)
 	log.Printf("Attach id=%s url=%s", req.ContainerId, url)
 	return &runtimeapi.AttachResponse{Url: url}, nil
 }
