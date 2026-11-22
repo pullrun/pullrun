@@ -4505,10 +4505,38 @@ impl Runtime for RuntimeService {
         &self,
         request: tonic::Request<HasImageRequest>,
     ) -> Result<tonic::Response<HasImageResponse>, tonic::Status> {
-        let _ = request;
-        Err(tonic::Status::unimplemented(
-            "has_image not yet implemented",
-        ))
+        let image_ref = request.into_inner().image_ref;
+        let normalized = image_ref
+            .strip_prefix("docker.io/")
+            .map(|s| s.strip_prefix("library/").unwrap_or(s))
+            .unwrap_or(image_ref.as_str())
+            .to_string();
+        let digest = image_ref.strip_prefix("sha256:").unwrap_or(&image_ref);
+        if let Ok(d) = Digest::from_hex(digest) {
+            if self.store.get(d).is_ok() {
+                return Ok(tonic::Response::new(HasImageResponse {
+                    exists: true,
+                    root_digest: d.to_hex(),
+                }));
+            }
+        }
+        let tags = self.image_tags.read().await;
+        for (root_digest, tag) in tags.iter() {
+            let tag_norm = tag
+                .strip_prefix("docker.io/")
+                .map(|s| s.strip_prefix("library/").unwrap_or(s))
+                .unwrap_or(tag.as_str());
+            if tag == &image_ref || tag_norm == normalized {
+                return Ok(tonic::Response::new(HasImageResponse {
+                    exists: true,
+                    root_digest: root_digest.clone(),
+                }));
+            }
+        }
+        Ok(tonic::Response::new(HasImageResponse {
+            exists: false,
+            root_digest: String::new(),
+        }))
     }
 
     async fn gc(
