@@ -230,6 +230,7 @@ func (c *criServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateC
 		labels:      req.Config.Labels,
 		annotations: req.Config.Annotations,
 		attempt:     req.Config.Metadata.Attempt,
+		mounts:      req.Config.Mounts,
 	}
 	c.sandboxStore.putContainer(rec)
 
@@ -335,6 +336,7 @@ func (c *criServer) ContainerStatus(ctx context.Context, req *runtimeapi.Contain
 		Image:       &runtimeapi.ImageSpec{Image: rec.image},
 		ImageRef:    rec.imageRef,
 		ImageId:     rec.imageRef,
+		Mounts:      rec.mounts,
 	}
 	if startedAt > 0 {
 		status.StartedAt = startedAt

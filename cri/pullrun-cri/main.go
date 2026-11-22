@@ -91,6 +91,7 @@ type containerRecord struct {
 	labels      map[string]string
 	annotations map[string]string
 	attempt     uint32
+	mounts      []*runtimeapi.Mount
 }
 
 func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilter) bool {
