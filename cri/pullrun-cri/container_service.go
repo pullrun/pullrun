@@ -132,7 +132,14 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 	// hostPath/EmptyDir dirs itself), so every mount is a bind mount.
 	mounts := make([]*pullrunruntime.Mount, 0, len(cfg.Mounts))
 	for _, m := range cfg.Mounts {
-		opts := []string{"rbind", "rprivate"}
+		propagation := "rprivate"
+		switch m.Propagation {
+		case runtimeapi.MountPropagation_PROPAGATION_BIDIRECTIONAL:
+			propagation = "rshared"
+		case runtimeapi.MountPropagation_PROPAGATION_HOST_TO_CONTAINER:
+			propagation = "rslave"
+		}
+		opts := []string{"rbind", propagation}
 		if m.Readonly {
 			opts = append(opts, "ro")
 		}
@@ -253,7 +260,8 @@ func (c *criServer) StartContainer(ctx context.Context, req *runtimeapi.StartCon
 func (c *criServer) StopContainer(ctx context.Context, req *runtimeapi.StopContainerRequest) (*runtimeapi.StopContainerResponse, error) {
 	rec, ok := c.sandboxStore.getContainer(req.ContainerId)
 	if !ok {
-		return nil, fmt.Errorf("StopContainer: container %q not found", req.ContainerId)
+		// CRI idempotence: stopping a missing container succeeds.
+		return &runtimeapi.StopContainerResponse{}, nil
 	}
 	if rec.state == runtimeapi.ContainerState_CONTAINER_EXITED || rec.state == runtimeapi.ContainerState_CONTAINER_UNKNOWN {
 		// Idempotent: already stopped.
@@ -330,6 +338,9 @@ func (c *criServer) ContainerStatus(ctx context.Context, req *runtimeapi.Contain
 	}
 	if startedAt > 0 {
 		status.StartedAt = startedAt
+	}
+	if state == runtimeapi.ContainerState_CONTAINER_EXITED && exitCode == 137 {
+		status.Reason = "OOMKilled"
 	}
 	if state == runtimeapi.ContainerState_CONTAINER_EXITED {
 		status.ExitCode = exitCode
