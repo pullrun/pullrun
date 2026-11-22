@@ -50,7 +50,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container | in progress — log tests 2/2 pass; full suite rerun still in progress |
-| Image Manager (core) | **11/15 pass**; remaining: digest-ref status, all-reference status, image Uid/Username from config, identifier consistency |
+| Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
 | Image volumes | feature-gated, not implemented |
 | Streaming / Stats | not yet run |
 
@@ -66,8 +66,9 @@ as **in progress**, not complete.
 - User namespaces, image volumes, and checkpoint/restore CRI features
   are not implemented.
 - Image volumes (`Feature:ImageVolume`) are not implemented.
-- `repo@sha256:...` refs are parsed and pullable; ImageStatus for a
-  manifest digest does not yet map to the DAG root (the registry
-  manifest digest is not preserved).
+- The puller now computes and persists the registry manifest digest,
+  but CRI image IDs intentionally remain the DAG root. Using the
+  manifest digest as the CRI ID regressed conformance (11/15 → 7/15),
+  so the mapping needs a consistent design before switching.
 - Image IDs use the DAG root digest; registry manifest digests are not
   preserved separately.

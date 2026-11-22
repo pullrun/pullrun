@@ -13,6 +13,8 @@
   pulls no longer build `repo@sha256` as the repository name.
 - ImageStatus canonicalizes untagged refs to `:latest` and reports no
   RepoTags for digest references.
+- The puller computes and persists the registry manifest digest;
+  ListImages only exposes tagged refs (digest aliases are internal).
 - OCI puller: use `/v2/token` for non-Docker registries. gcr.io
   redirects `/token` to an HTML page, which broke all gcr.io pulls.
 - Upgrade to Kubernetes 1.37 CRI API (`k8s.io/cri-api v0.37.2`).
@@ -289,6 +291,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   pulls no longer build `repo@sha256` as the repository name.
 - ImageStatus canonicalizes untagged refs to `:latest` and reports no
   RepoTags for digest references.
+- The puller computes and persists the registry manifest digest;
+  ListImages only exposes tagged refs (digest aliases are internal).
 - OCI puller: use `/v2/token` for non-Docker registries. gcr.io
   redirects `/token` to an HTML page, which broke all gcr.io pulls. shim: real pod/container runtime
 - **Pod network namespace sharing** (exec/container.rs, exec/rootless.rs). The
