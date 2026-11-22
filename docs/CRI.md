@@ -58,7 +58,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container (basic operations) | **14/14 pass** |
-| Container (full) | **22/31 before mount fixes**; mount specs now 2/4 (rprivate + readonly pass; rshared/rslave still fail), so ~24/31 expected |
+| Container (full) | **22/31 before mount fixes**; mount specs now 2/4 (rprivate + readonly pass; rshared/rslave fail). Multi-container network fails with "no route to host" to the per-pod bridge IP |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
