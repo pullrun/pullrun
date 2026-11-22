@@ -1204,6 +1204,7 @@ async fn run_exec_with_timeout(
             }
             if let Some(path) = &pid_file {
                 if let Ok(contents) = std::fs::read_to_string(path) {
+                    tracing::info!(pid_file = %path.display(), contents = %contents.trim(), "exec timeout pid file");
                     if let Ok(pid) = contents.trim().parse::<i32>() {
                         unsafe {
                             libc::kill(pid, libc::SIGKILL);
@@ -1218,7 +1219,8 @@ async fn run_exec_with_timeout(
                         kill.arg(&cleanup.id)
                             .args(["/bin/sh", "-c"])
                             .arg(format!("kill -9 {pid}"));
-                        let _ = kill.output();
+                        let out = kill.output();
+                        tracing::info!(?out, "exec timeout in-container kill");
                     }
                 }
                 let _ = std::fs::remove_file(path);
