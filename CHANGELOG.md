@@ -3,9 +3,10 @@
 ## Unreleased
 
 ### CRI
-- Container labels/annotations/attempt preserved; ExecSync honors the
-  requested timeout and kills the host-side exec process group/pid-file
-  PID, but the in-container command can survive.
+- Container labels/annotations/attempt preserved; ExecSync now
+  propagates the timeout to the runtime, detaches the exec from client
+  cancellation, and kills the timed-out process via the runc pid-file.
+  Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
@@ -292,9 +293,10 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 ## 0.7.8 — 2026-07-31
 
 ### CRI
-- Container labels/annotations/attempt preserved; ExecSync honors the
-  requested timeout and kills the host-side exec process group/pid-file
-  PID, but the in-container command can survive.
+- Container labels/annotations/attempt preserved; ExecSync now
+  propagates the timeout to the runtime, detaches the exec from client
+  cancellation, and kills the timed-out process via the runc pid-file.
+  Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
