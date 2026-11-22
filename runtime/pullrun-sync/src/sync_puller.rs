@@ -89,8 +89,13 @@ impl SyncPuller {
             .map_err(|e| pullrun_oci::OciError::Other(format!("invalid config digest: {e}")))?;
 
         info!(image_ref, layers = layer_blobs.len(), "all layers synced");
+        let manifest_digest = Digest::compute(
+            &serde_json::to_vec(&manifest)
+                .map_err(|e| pullrun_oci::OciError::Other(format!("manifest encode: {e}")))?,
+        );
         Ok(PulledImage {
             manifest,
+            manifest_digest,
             config,
             config_digest: cd,
             layer_blobs,

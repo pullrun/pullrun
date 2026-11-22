@@ -703,6 +703,16 @@ impl RuntimeCommand {
                 Arc::new(RwLock::new(HashMap::new()))
             }
         };
+        let image_manifests: Arc<RwLock<HashMap<String, String>>> = {
+            let path = self.config.store_root.join("image_manifests.json");
+            if let Ok(file) = std::fs::File::open(&path) {
+                Arc::new(RwLock::new(
+                    serde_json::from_reader(file).unwrap_or_default(),
+                ))
+            } else {
+                Arc::new(RwLock::new(HashMap::new()))
+            }
+        };
         let image_tags: Arc<RwLock<HashMap<String, String>>> = {
             let tags_path = self.config.store_root.join("image_tags.json");
             let map = if let Ok(file) = std::fs::File::open(&tags_path) {
@@ -1056,6 +1066,7 @@ impl RuntimeCommand {
             executor,
             image_tags,
             image_refs,
+            image_manifests,
             event_bus: event_bus.clone(),
             kernel_cache: Arc::new(RwLock::new(HashMap::new())),
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -1886,6 +1897,8 @@ pub struct RuntimeService {
     /// image_ref -> root_digest. Unlike `image_tags` (root -> last ref),
     /// this keeps every tag pointing at the same content.
     pub image_refs: Arc<RwLock<HashMap<String, String>>>,
+    /// root_digest -> registry manifest digest.
+    pub image_manifests: Arc<RwLock<HashMap<String, String>>>,
     /// Process-wide event bus. Service emitters call `.emit()`;
     /// subscribers (CLI follow sessions, future audit daemons) call
     /// `.subscribe()`. The watcher task also subscribes to its own
@@ -2320,10 +2333,18 @@ impl Runtime for RuntimeService {
             for (digest, tag) in tags.iter() {
                 if *tag == image_ref {
                     debug!(%image_ref, %digest, "local image tag hit");
+                    let manifest = self
+                        .image_manifests
+                        .read()
+                        .await
+                        .get(digest)
+                        .cloned()
+                        .unwrap_or_default();
                     return Ok(tonic::Response::new(PullImageResponse {
                         root_digest: digest.clone(),
                         bytes_stored: 0,
                         bytes_deduplicated: 0,
+                        manifest_digest: manifest,
                     }));
                 }
             }
@@ -2390,6 +2411,7 @@ impl Runtime for RuntimeService {
             .map_err(|e| tonic::Status::internal(format!("op lock: {e}")))?;
 
         let converter = OciToDagConverter::new(self.store.clone());
+        let manifest_hex = pulled.manifest_digest.as_hex();
         let root_digest = match converter.convert(&pulled).await {
             Ok(d) => d,
             Err(e) => {
@@ -2432,6 +2454,11 @@ impl Runtime for RuntimeService {
             }
             if let Ok(json) = serde_json::to_string(&*refs) {
                 let _ = std::fs::write(self.config.store_root.join("image_refs.json"), json);
+            }
+            let mut manifests = self.image_manifests.write().await;
+            manifests.insert(root_digest.as_hex().to_string(), manifest_hex.clone());
+            if let Ok(json) = serde_json::to_string(&*manifests) {
+                let _ = std::fs::write(self.config.store_root.join("image_manifests.json"), json);
             }
         }
         let _ = self.store.increment_refcount(&root_digest);
@@ -2484,6 +2511,7 @@ impl Runtime for RuntimeService {
             root_digest: root_digest.as_hex(),
             bytes_stored,
             bytes_deduplicated: 0,
+            manifest_digest: manifest_hex,
         }))
     }
 
@@ -4573,10 +4601,19 @@ impl Runtime for RuntimeService {
         let digest = image_ref.strip_prefix("sha256:").unwrap_or(&image_ref);
         if let Ok(d) = Digest::from_hex(digest) {
             if self.store.get(&d).is_ok() {
+                let hex = d.as_hex().to_string();
+                let manifest = self
+                    .image_manifests
+                    .read()
+                    .await
+                    .get(&hex)
+                    .cloned()
+                    .unwrap_or_default();
                 return Ok(tonic::Response::new(HasImageResponse {
                     exists: true,
                     size_bytes: self.store.compute_image_size(&d) as i64,
-                    root_digest: d.as_hex().to_string(),
+                    root_digest: hex,
+                    manifest_digest: manifest,
                 }));
             }
         }
@@ -4591,10 +4628,18 @@ impl Runtime for RuntimeService {
                 let size_bytes = Digest::from_hex(root_digest)
                     .map(|d| self.store.compute_image_size(&d) as i64)
                     .unwrap_or(0);
+                let manifest = self
+                    .image_manifests
+                    .read()
+                    .await
+                    .get(root_digest)
+                    .cloned()
+                    .unwrap_or_default();
                 return Ok(tonic::Response::new(HasImageResponse {
                     exists: true,
                     size_bytes,
                     root_digest: root_digest.clone(),
+                    manifest_digest: manifest,
                 }));
             }
         }
@@ -4608,10 +4653,18 @@ impl Runtime for RuntimeService {
                 let size_bytes = Digest::from_hex(root_digest)
                     .map(|d| self.store.compute_image_size(&d) as i64)
                     .unwrap_or(0);
+                let manifest = self
+                    .image_manifests
+                    .read()
+                    .await
+                    .get(root_digest)
+                    .cloned()
+                    .unwrap_or_default();
                 return Ok(tonic::Response::new(HasImageResponse {
                     exists: true,
                     size_bytes,
                     root_digest: root_digest.clone(),
+                    manifest_digest: manifest,
                 }));
             }
         }
@@ -4619,6 +4672,7 @@ impl Runtime for RuntimeService {
             exists: false,
             size_bytes: 0,
             root_digest: String::new(),
+            manifest_digest: String::new(),
         }))
     }
 
@@ -4677,6 +4731,7 @@ impl Runtime for RuntimeService {
         &self,
         _request: tonic::Request<ListImagesRequest>,
     ) -> Result<tonic::Response<ListImagesResponse>, tonic::Status> {
+        let manifest_map = self.image_manifests.read().await.clone();
         let refs = self.image_refs.read().await;
         if !refs.is_empty() {
             let mut images = Vec::with_capacity(refs.len());
@@ -4696,6 +4751,7 @@ impl Runtime for RuntimeService {
                     root_digest: root_digest.clone(),
                     size_bytes,
                     created_at,
+                    manifest_digest: manifest_map.get(root_digest).cloned().unwrap_or_default(),
                 });
             }
             return Ok(tonic::Response::new(ListImagesResponse { images }));
@@ -4719,6 +4775,7 @@ impl Runtime for RuntimeService {
                 root_digest: root_digest.clone(),
                 size_bytes,
                 created_at,
+                manifest_digest: manifest_map.get(root_digest).cloned().unwrap_or_default(),
             });
         }
         Ok(tonic::Response::new(ListImagesResponse { images }))
@@ -4786,6 +4843,11 @@ impl Runtime for RuntimeService {
             refs.retain(|_, v| v != &root_digest);
             if let Ok(json) = serde_json::to_string(&*refs) {
                 let _ = std::fs::write(self.config.store_root.join("image_refs.json"), json);
+            }
+            let mut manifests = self.image_manifests.write().await;
+            manifests.remove(&root_digest);
+            if let Ok(json) = serde_json::to_string(&*manifests) {
+                let _ = std::fs::write(self.config.store_root.join("image_manifests.json"), json);
             }
         }
         // Now remove the tag entries. If we crashed before this point,

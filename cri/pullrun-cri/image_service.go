@@ -45,8 +45,12 @@ func (c *criServer) PullImage(ctx context.Context, req *runtimeapi.PullImageRequ
 		return nil, fmt.Errorf("pull %s: %w", req.Image.Image, err)
 	}
 
+	imageID := resp.ManifestDigest
+	if imageID == "" {
+		imageID = resp.RootDigest
+	}
 	return &runtimeapi.PullImageResponse{
-		ImageRef: resp.RootDigest,
+		ImageRef: imageID,
 	}, nil
 }
 
@@ -94,7 +98,7 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 	uid := &runtimeapi.Int64Value{Value: 0}
 	return &runtimeapi.ImageStatusResponse{
 		Image: &runtimeapi.Image{
-			Id:       resp.RootDigest,
+			Id:       chooseID(resp.ManifestDigest, resp.RootDigest),
 			RepoTags: repoTags,
 			Size:     uint64(resp.SizeBytes),
 			Uid:      uid,
@@ -102,6 +106,13 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 			Spec:     &runtimeapi.ImageSpec{Image: req.Image.Image},
 		},
 	}, nil
+}
+
+func chooseID(manifest, root string) string {
+	if manifest != "" {
+		return manifest
+	}
+	return root
 }
 
 func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRequest) (*runtimeapi.ListImagesResponse, error) {
@@ -121,20 +132,24 @@ func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRe
 		if img.SizeBytes > 0 {
 			size = uint64(img.SizeBytes)
 		}
-		if existing, ok := byID[img.RootDigest]; ok {
+		id := img.ManifestDigest
+		if id == "" {
+			id = img.RootDigest
+		}
+		if existing, ok := byID[id]; ok {
 			existing.RepoTags = append(existing.RepoTags, img.ImageRef)
 			continue
 		}
 		uid := &runtimeapi.Int64Value{Value: 0}
-		byID[img.RootDigest] = &runtimeapi.Image{
-			Id:       img.RootDigest,
+		byID[id] = &runtimeapi.Image{
+			Id:       id,
 			RepoTags: []string{img.ImageRef},
 			Size:     size,
 			Uid:      uid,
 			Username: "root",
 			Spec:     &runtimeapi.ImageSpec{Image: img.ImageRef},
 		}
-		order = append(order, img.RootDigest)
+		order = append(order, id)
 	}
 	images := make([]*runtimeapi.Image, 0, len(byID))
 	for _, id := range order {

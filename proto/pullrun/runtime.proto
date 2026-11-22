@@ -246,6 +246,7 @@ message PullImageResponse {
     string root_digest = 1;
     int64 bytes_stored = 2;
     int64 bytes_deduplicated = 3;
+    string manifest_digest = 4;
 }
 
 message RunRequest {
@@ -517,6 +518,7 @@ message HasImageResponse {
     bool exists = 1;
     string root_digest = 2;
     int64 size_bytes = 3;
+    string manifest_digest = 4;
 }
 
 message ListImagesRequest {}
@@ -527,6 +529,7 @@ message ListImagesResponse {
 
 message ImageInfo {
     string image_ref = 1;
+    string manifest_digest = 5;
     string root_digest = 2;
     int64 size_bytes = 3;
     int64 created_at = 4;  // unix seconds

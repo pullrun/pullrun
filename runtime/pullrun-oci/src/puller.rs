@@ -348,6 +348,7 @@ pub struct OciAuth {
 #[derive(Debug)]
 pub struct PulledImage {
     pub manifest: OciManifest,
+    pub manifest_digest: Digest,
     pub config: OciImageConfig,
     pub config_digest: Digest,
     pub layer_blobs: Vec<(Digest, Vec<u8>, String)>,
@@ -608,7 +609,7 @@ impl OciPuller {
 
         info!(image_ref, %registry, %repository, %tag, platform = ?platform, "pulling OCI image");
 
-        let manifest = self
+        let (manifest, manifest_digest) = self
             .fetch_manifest_with_platform(&registry, &repository, &tag, token.as_deref(), platform)
             .await?;
         let config = self
@@ -643,6 +644,7 @@ impl OciPuller {
 
         Ok(PulledImage {
             manifest,
+            manifest_digest,
             config,
             config_digest,
             layer_blobs,
@@ -673,7 +675,7 @@ impl OciPuller {
                 platform = ?child.platform,
                 "pulling child manifest"
             );
-            let manifest = self
+            let (manifest, manifest_digest) = self
                 .fetch_manifest_with_platform(
                     &registry,
                     &repository,
@@ -705,6 +707,7 @@ impl OciPuller {
 
             images.push(PulledImage {
                 manifest,
+                manifest_digest,
                 config,
                 config_digest,
                 layer_blobs,
@@ -814,7 +817,7 @@ impl OciPuller {
         token: Option<&'a str>,
         platform: Option<&'a str>,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<OciManifest, OciError>> + Send + 'a>,
+        Box<dyn std::future::Future<Output = Result<(OciManifest, Digest), OciError>> + Send + 'a>,
     > {
         Box::pin(async move {
             let url = manifest_url(self, registry, repository, reference);
@@ -950,7 +953,7 @@ impl OciPuller {
 
             let manifest: OciManifest = serde_json::from_slice(&bytes)
                 .map_err(|e| OciError::InvalidManifest(format!("manifest parse: {e}")))?;
-            Ok(manifest)
+            Ok((manifest, Digest::compute(&bytes)))
         })
     }
 
@@ -1043,7 +1046,7 @@ impl OciPuller {
         let (repository, tag) = self.image_parts(image_ref, &registry);
         let token = self.get_token(&registry, &repository).await?;
 
-        let manifest = self
+        let (manifest, _manifest_digest) = self
             .fetch_manifest_with_platform(&registry, &repository, &tag, token.as_deref(), platform)
             .await?;
         let config = self
