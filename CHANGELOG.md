@@ -9,6 +9,10 @@
   root, and is idempotent when the image is absent.
 - ImageStatus/ListImages expose Uid/Username and group RepoTags by
   image ID; ContainerStatus reports ImageId.
+- OCI puller: split `repo@sha256:...` before the tag colon; digest
+  pulls no longer build `repo@sha256` as the repository name.
+- ImageStatus canonicalizes untagged refs to `:latest` and reports no
+  RepoTags for digest references.
 - OCI puller: use `/v2/token` for non-Docker registries. gcr.io
   redirects `/token` to an HTML page, which broke all gcr.io pulls.
 - Upgrade to Kubernetes 1.37 CRI API (`k8s.io/cri-api v0.37.2`).
@@ -281,6 +285,10 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   root, and is idempotent when the image is absent.
 - ImageStatus/ListImages expose Uid/Username and group RepoTags by
   image ID; ContainerStatus reports ImageId.
+- OCI puller: split `repo@sha256:...` before the tag colon; digest
+  pulls no longer build `repo@sha256` as the repository name.
+- ImageStatus canonicalizes untagged refs to `:latest` and reports no
+  RepoTags for digest references.
 - OCI puller: use `/v2/token` for non-Docker registries. gcr.io
   redirects `/token` to an HTML page, which broke all gcr.io pulls. shim: real pod/container runtime
 - **Pod network namespace sharing** (exec/container.rs, exec/rootless.rs). The

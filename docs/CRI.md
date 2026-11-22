@@ -50,7 +50,8 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container | in progress — log tests 2/2 pass; full suite rerun still in progress |
-| Image Manager | in progress — pulls work; 10/20 pass before the 300s cap. Remaining: image volumes (feature-gated) and some ref/removal cases |
+| Image Manager (core) | **11/15 pass**; remaining: digest-ref status, all-reference status, image Uid/Username from config, identifier consistency |
+| Image volumes | feature-gated, not implemented |
 | Streaming / Stats | not yet run |
 
 A full 142-spec run is not yet green: an earlier run wedged in
@@ -65,5 +66,8 @@ as **in progress**, not complete.
 - User namespaces, image volumes, and checkpoint/restore CRI features
   are not implemented.
 - Image volumes (`Feature:ImageVolume`) are not implemented.
+- `repo@sha256:...` refs are parsed and pullable; ImageStatus for a
+  manifest digest does not yet map to the DAG root (the registry
+  manifest digest is not preserved).
 - Image IDs use the DAG root digest; registry manifest digests are not
   preserved separately.
