@@ -4,6 +4,8 @@
 
 ### CRI
 - Container stats now honor the CRI label selector (`5/5` stats specs).
+- Streaming: exec/attach basics pass 2/5; port-forward and exec with
+  tty+stdin still fail.
 - Image refs are indexed per tag (ref → root) instead of root → last
   ref, so multiple tags of one image remain addressable.
 - RemoveImage resolves tags through HasImage, removes all refs for the
@@ -283,6 +285,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 
 ### CRI
 - Container stats now honor the CRI label selector (`5/5` stats specs).
+- Streaming: exec/attach basics pass 2/5; port-forward and exec with
+  tty+stdin still fail.
 - Image refs are indexed per tag (ref → root) instead of root → last
   ref, so multiple tags of one image remain addressable.
 - RemoveImage resolves tags through HasImage, removes all refs for the

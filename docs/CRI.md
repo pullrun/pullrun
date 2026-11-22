@@ -53,7 +53,7 @@ Current status on the Linux KVM host:
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
 | Image volumes | feature-gated, not implemented |
 | Stats | **5/5 pass** |
-| Streaming | pending — dominated by slow gcr image pulls; needs pre-pulled test images |
+| Streaming | **2/5 pass**; remaining: port-forward (host and pod network) and exec with tty+stdin |
 
 A full 142-spec run is not yet green: an earlier run wedged in
 `StopPodSandbox` before the idempotence fix, and the complete suite has
