@@ -8,6 +8,7 @@ pub mod ext4;
 pub mod network;
 pub mod oci_kernel;
 pub mod pool;
+pub mod snapshot;
 
 #[cfg(target_os = "macos")]
 pub mod apple;
