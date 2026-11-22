@@ -30,6 +30,7 @@ type sandboxCheckpoint struct {
 	PullrunID    string    `json:"pullrun_id"`
 	Namespace    string    `json:"namespace"`
 	Name         string    `json:"name"`
+	Attempt      uint32    `json:"attempt,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	State        int32     `json:"state"`
 	InternalIP   string    `json:"internal_ip"`
@@ -38,6 +39,7 @@ type sandboxCheckpoint struct {
 	HostNetwork  bool              `json:"host_network,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
+	Sysctls      map[string]string `json:"sysctls,omitempty"`
 	DNSServers   []string          `json:"dns_servers,omitempty"`
 	DNSSearches  []string  `json:"dns_searches,omitempty"`
 	DNSOptions   []string  `json:"dns_options,omitempty"`
@@ -95,6 +97,7 @@ func (s *fileStore) loadAll() {
 				pullrunID:    cp.PullrunID,
 				namespace:    cp.Namespace,
 				name:         cp.Name,
+				attempt:      cp.Attempt,
 				createdAt:    cp.CreatedAt,
 				state:        runtimeapi.PodSandboxState(cp.State),
 				internalIP:   cp.InternalIP,
@@ -103,6 +106,7 @@ func (s *fileStore) loadAll() {
 				hostNetwork:  cp.HostNetwork,
 				labels:       cp.Labels,
 				annotations:  cp.Annotations,
+				sysctls:      cp.Sysctls,
 				dns: &pullrunruntime.DnsConfig{
 					Nameservers: cp.DNSServers,
 					Searches:    cp.DNSSearches,
@@ -262,6 +266,7 @@ func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 		PullrunID:    rec.pullrunID,
 		Namespace:    rec.namespace,
 		Name:         rec.name,
+		Attempt:      rec.attempt,
 		CreatedAt:    rec.createdAt,
 		State:        int32(rec.state),
 		InternalIP:   rec.internalIP,
@@ -270,6 +275,7 @@ func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 		HostNetwork:  rec.hostNetwork,
 		Labels:       rec.labels,
 		Annotations:  rec.annotations,
+		Sysctls:      rec.sysctls,
 	}
 	if rec.dns != nil {
 		cp.DNSServers = rec.dns.Nameservers

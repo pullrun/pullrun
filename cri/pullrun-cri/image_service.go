@@ -70,6 +70,7 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 		Image: &runtimeapi.Image{
 			Id:       resp.RootDigest,
 			RepoTags: []string{req.Image.Image},
+			Size:     uint64(resp.SizeBytes),
 		},
 	}, nil
 }

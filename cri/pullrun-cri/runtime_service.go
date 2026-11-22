@@ -152,6 +152,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		pullrunID:    runResp.Id,
 		namespace:    req.Config.Metadata.Namespace,
 		name:         req.Config.Metadata.Name,
+		attempt:      req.Config.Metadata.Attempt,
 		createdAt:    time.Now(),
 		state:        runtimeapi.PodSandboxState_SANDBOX_READY,
 		internalIP:   runResp.InternalIp,
@@ -160,6 +161,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		hostNetwork:  hostNetwork,
 		labels:       req.Config.Labels,
 		annotations:  req.Config.Annotations,
+		sysctls:      req.Config.GetLinux().GetSysctls(),
 		dns:          dns,
 	}
 	c.sandboxStore.putSandbox(rec)
@@ -288,7 +290,7 @@ func (c *criServer) PodSandboxStatus(ctx context.Context, req *runtimeapi.PodSan
 		Network:   &runtimeapi.PodSandboxNetworkStatus{Ip: internalIP},
 	}
 	if hasLocal {
-		status.Metadata = &runtimeapi.PodSandboxMetadata{Name: rec.name, Namespace: rec.namespace, Uid: rec.id}
+		status.Metadata = &runtimeapi.PodSandboxMetadata{Name: rec.name, Namespace: rec.namespace, Uid: rec.id, Attempt: rec.attempt}
 		status.RuntimeHandler = rec.runtimeClass
 		status.Labels = rec.labels
 		status.Annotations = rec.annotations

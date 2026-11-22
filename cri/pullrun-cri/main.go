@@ -62,6 +62,7 @@ type sandboxRecord struct {
 	pullrunID    string
 	namespace    string
 	name         string
+	attempt      uint32
 	createdAt    time.Time
 	state        runtimeapi.PodSandboxState
 	internalIP   string
@@ -70,6 +71,7 @@ type sandboxRecord struct {
 	hostNetwork  bool
 	labels       map[string]string
 	annotations  map[string]string
+	sysctls      map[string]string
 	dns          *pullrunruntime.DnsConfig
 }
 
@@ -105,7 +107,7 @@ func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilte
 func sandboxToAPI(rec *sandboxRecord) *runtimeapi.PodSandbox {
 	return &runtimeapi.PodSandbox{
 		Id:             rec.id,
-		Metadata:       &runtimeapi.PodSandboxMetadata{Name: rec.name, Namespace: rec.namespace, Uid: rec.id},
+		Metadata:       &runtimeapi.PodSandboxMetadata{Name: rec.name, Namespace: rec.namespace, Uid: rec.id, Attempt: rec.attempt},
 		State:          rec.state,
 		CreatedAt:      rec.createdAt.UnixNano(),
 		RuntimeHandler: rec.runtimeClass,

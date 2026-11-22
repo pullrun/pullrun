@@ -2493,6 +2493,7 @@ type HasImageResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Exists        bool                   `protobuf:"varint,1,opt,name=exists,proto3" json:"exists,omitempty"`
 	RootDigest    string                 `protobuf:"bytes,2,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2539,6 +2540,13 @@ func (x *HasImageResponse) GetRootDigest() string {
 		return x.RootDigest
 	}
 	return ""
+}
+
+func (x *HasImageResponse) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
 }
 
 type ListImagesRequest struct {
@@ -8674,11 +8682,13 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x04rows\x18\x01 \x01(\rR\x04rows\x12\x12\n" +
 	"\x04cols\x18\x02 \x01(\rR\x04cols\".\n" +
 	"\x0fHasImageRequest\x12\x1b\n" +
-	"\timage_ref\x18\x01 \x01(\tR\bimageRef\"K\n" +
+	"\timage_ref\x18\x01 \x01(\tR\bimageRef\"j\n" +
 	"\x10HasImageResponse\x12\x16\n" +
 	"\x06exists\x18\x01 \x01(\bR\x06exists\x12\x1f\n" +
 	"\vroot_digest\x18\x02 \x01(\tR\n" +
-	"rootDigest\"\x13\n" +
+	"rootDigest\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\"\x13\n" +
 	"\x11ListImagesRequest\"H\n" +
 	"\x12ListImagesResponse\x122\n" +
 	"\x06images\x18\x01 \x03(\v2\x1a.pullrun.runtime.ImageInfoR\x06images\"\x87\x01\n" +

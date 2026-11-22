@@ -4519,6 +4519,7 @@ impl Runtime for RuntimeService {
             if self.store.get(&d).is_ok() {
                 return Ok(tonic::Response::new(HasImageResponse {
                     exists: true,
+                    size_bytes: self.store.compute_image_size(&d) as i64,
                     root_digest: d.as_hex().to_string(),
                 }));
             }
@@ -4530,14 +4531,19 @@ impl Runtime for RuntimeService {
                 .map(|s| s.strip_prefix("library/").unwrap_or(s))
                 .unwrap_or(tag.as_str());
             if tag == &image_ref || tag_norm == normalized {
+                let size_bytes = Digest::from_hex(root_digest)
+                    .map(|d| self.store.compute_image_size(&d) as i64)
+                    .unwrap_or(0);
                 return Ok(tonic::Response::new(HasImageResponse {
                     exists: true,
+                    size_bytes,
                     root_digest: root_digest.clone(),
                 }));
             }
         }
         Ok(tonic::Response::new(HasImageResponse {
             exists: false,
+            size_bytes: 0,
             root_digest: String::new(),
         }))
     }

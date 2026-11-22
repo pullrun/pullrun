@@ -510,6 +510,7 @@ message HasImageRequest {
 message HasImageResponse {
     bool exists = 1;
     string root_digest = 2;
+    int64 size_bytes = 3;
 }
 
 message ListImagesRequest {}
