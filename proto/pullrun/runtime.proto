@@ -50,6 +50,7 @@ service Runtime {
     rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
     rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
     rpc RemoveSnapshot(RemoveSnapshotRequest) returns (RemoveSnapshotResponse);
+    rpc RestoreSnapshot(RestoreSnapshotRequest) returns (RestoreSnapshotResponse);
 
     // --- Image build/push/save/load (Phase D) ---
 
@@ -1044,4 +1045,13 @@ message RemoveSnapshotRequest {
 
 message RemoveSnapshotResponse {
     bool removed = 1;
+}
+
+message RestoreSnapshotRequest {
+    string snapshot_id = 1;
+}
+
+message RestoreSnapshotResponse {
+    string workload_id = 1;
+    string backend = 2;
 }

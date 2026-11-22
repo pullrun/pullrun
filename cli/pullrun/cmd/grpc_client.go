@@ -347,6 +347,11 @@ func (c *GRPCClient) ListSnapshots(ctx context.Context) (*runtimepb.ListSnapshot
 	return c.client.ListSnapshots(ctx, &runtimepb.ListSnapshotsRequest{})
 }
 
+// RestoreSnapshot resumes a snapshot into a new workload.
+func (c *GRPCClient) RestoreSnapshot(ctx context.Context, snapshotID string) (*runtimepb.RestoreSnapshotResponse, error) {
+	return c.client.RestoreSnapshot(ctx, &runtimepb.RestoreSnapshotRequest{SnapshotId: snapshotID})
+}
+
 // RemoveSnapshot deletes a snapshot directory.
 func (c *GRPCClient) RemoveSnapshot(ctx context.Context, snapshotID string) (*runtimepb.RemoveSnapshotResponse, error) {
 	return c.client.RemoveSnapshot(ctx, &runtimepb.RemoveSnapshotRequest{SnapshotId: snapshotID})

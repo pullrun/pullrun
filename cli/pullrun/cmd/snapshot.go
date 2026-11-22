@@ -89,6 +89,25 @@ the VM is stopped after the snapshot is written.`,
 		},
 	}
 
-	cmd.AddCommand(create, ls, rm)
+	restore := &cobra.Command{
+		Use:   "restore SNAPSHOT_ID",
+		Short: "Resume a snapshot into a new workload",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, closeFn, err := ensureGRPCClient(opts)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			resp, err := client.RestoreSnapshot(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Restored %s as workload %s (backend %s)\n", args[0], resp.WorkloadId, resp.Backend)
+			return nil
+		},
+	}
+
+	cmd.AddCommand(create, ls, rm, restore)
 	return cmd
 }

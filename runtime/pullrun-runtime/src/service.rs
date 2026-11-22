@@ -66,10 +66,10 @@ use crate::proto::{
     RemoveConfigRequest, RemoveConfigResponse, RemoveGroupRequest, RemoveGroupResponse,
     RemoveImageRequest, RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse,
     RemoveSecretRequest, RemoveSecretResponse, RemoveSnapshotRequest, RemoveSnapshotResponse,
-    RunComposeRequest, RunComposeResponse, RunGroupSandboxRequest, RunGroupSandboxResponse,
-    RunRequest, RunResponse, SnapshotInfo, StopRequest, StopResponse, StreamEventsRequest,
-    StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
-    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    RestoreSnapshotRequest, RestoreSnapshotResponse, RunComposeRequest, RunComposeResponse,
+    RunGroupSandboxRequest, RunGroupSandboxResponse, RunRequest, RunResponse, SnapshotInfo,
+    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
+    UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -330,6 +330,25 @@ impl Executor for ExecutorRouter {
         Err(ExecError::BackendNotAvailable(
             "snapshots are only supported by the Firecracker VM backend".into(),
         ))
+    }
+
+    async fn restore_snapshot(
+        &self,
+        id: &str,
+        state_path: &std::path::Path,
+        mem_path: &std::path::Path,
+        rootfs_path: &std::path::Path,
+        drive_path: &std::path::Path,
+    ) -> Result<ProcessHandle, ExecError> {
+        match &self.vm {
+            Some(vm) => {
+                vm.restore_snapshot(id, state_path, mem_path, rootfs_path, drive_path)
+                    .await
+            }
+            None => Err(ExecError::BackendNotAvailable(
+                "VM backend not configured".into(),
+            )),
+        }
     }
 
     async fn update(
@@ -1719,6 +1738,14 @@ pub struct GroupState {
     pub created_at: i64,
     #[cfg(target_os = "macos")]
     pub vm: Arc<pullrun_vm::VmPersistentHandle>,
+}
+
+fn new_workload_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("wl-restored-{nanos:x}")
 }
 
 fn new_snapshot_id() -> String {
@@ -4832,6 +4859,7 @@ impl Runtime for RuntimeService {
             state_path: info.state_path.clone(),
             mem_path: info.mem_path.clone(),
             rootfs_path: info.rootfs_path.clone(),
+            drive_path: info.drive_path.clone(),
             created_at,
             mem_bytes: info.mem_bytes,
         };
@@ -4926,6 +4954,123 @@ impl Runtime for RuntimeService {
             false
         };
         Ok(tonic::Response::new(RemoveSnapshotResponse { removed }))
+    }
+
+    async fn restore_snapshot(
+        &self,
+        request: tonic::Request<RestoreSnapshotRequest>,
+    ) -> Result<tonic::Response<RestoreSnapshotResponse>, tonic::Status> {
+        use pullrun_vm::snapshot::SnapshotMeta;
+        let snapshot_id = request.into_inner().snapshot_id;
+        if snapshot_id.is_empty()
+            || !snapshot_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(tonic::Status::invalid_argument("invalid snapshot id"));
+        }
+        let dir = self.config.snapshots_dir.join(&snapshot_id);
+        let meta: SnapshotMeta = serde_json::from_slice(
+            &std::fs::read(dir.join("meta.json"))
+                .map_err(|_| tonic::Status::not_found("snapshot not found"))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("parse snapshot meta: {e}")))?;
+        for (label, path) in [
+            ("state", &meta.state_path),
+            ("memory", &meta.mem_path),
+            ("rootfs", &meta.rootfs_path),
+        ] {
+            if !path.exists() {
+                return Err(tonic::Status::failed_precondition(format!(
+                    "snapshot {label} file missing: {}",
+                    path.display()
+                )));
+            }
+        }
+        if meta.drive_path.as_os_str().is_empty() {
+            return Err(tonic::Status::failed_precondition(
+                "snapshot has no recorded drive path",
+            ));
+        }
+
+        let workload_id = new_workload_id();
+        let handle = self
+            .executor
+            .restore_snapshot(
+                &workload_id,
+                &meta.state_path,
+                &meta.mem_path,
+                &meta.rootfs_path,
+                &meta.drive_path,
+            )
+            .await
+            .map_err(|e| tonic::Status::internal(format!("restore failed: {e}")))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let vm_root = meta
+            .drive_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
+        let console_log_path = vm_root.join(&workload_id).join("console.log");
+        let state = WorkloadState {
+            status: "running".to_string(),
+            start_time: now,
+            exit_time: 0,
+            exit_code: None,
+            backend: "vm".to_string(),
+            internal_ip: None,
+            pid: handle.pid.unwrap_or(0),
+            image_root: format!("snapshot:{snapshot_id}"),
+            command: Vec::new(),
+            network_rules: Vec::new(),
+            policy_decisions: HashMap::new(),
+            kernel_image_ref: String::new(),
+            kernel_image_digest: String::new(),
+            working_dir: "/".to_string(),
+            rootfs_dir: Some(vm_root),
+            health_check: None,
+            health: String::new(),
+            health_failures: 0,
+            health_last_success: 0,
+            restart_policy: pullrun_exec::types::RestartPolicy::No,
+            restart_count: 0,
+            env: HashMap::new(),
+            cpu_millicores: None,
+            memory_bytes: None,
+            bridge_name: None,
+            network_mode: "isolated".to_string(),
+            mounts: Vec::new(),
+            privileged: false,
+            readonly_rootfs: false,
+            no_new_privileges: false,
+            seccomp_profile: None,
+            allowed_syscalls: Vec::new(),
+            dns: Default::default(),
+            console_log_path: Some(console_log_path),
+        };
+        {
+            let mut workloads = self.workloads.write().await;
+            workloads.insert(workload_id.clone(), state);
+        }
+        {
+            let workloads = self.workloads.read().await;
+            if let Some(st) = workloads.get(&workload_id) {
+                write_workload_checkpoint(&self.config.checkpoints_dir, &workload_id, st);
+            }
+        }
+        self.event_bus.emit(
+            Event::new(&workload_id, EventKind::WorkloadStarted)
+                .with_metadata("backend", "vm")
+                .with_metadata("outcome", "restored")
+                .with_metadata("snapshot_id", &snapshot_id),
+        );
+        Ok(tonic::Response::new(RestoreSnapshotResponse {
+            workload_id,
+            backend: "vm".to_string(),
+        }))
     }
 
     // ------------------------------------------------------------------

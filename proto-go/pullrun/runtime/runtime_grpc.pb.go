@@ -46,6 +46,7 @@ const (
 	Runtime_CreateSnapshot_FullMethodName   = "/pullrun.runtime.Runtime/CreateSnapshot"
 	Runtime_ListSnapshots_FullMethodName    = "/pullrun.runtime.Runtime/ListSnapshots"
 	Runtime_RemoveSnapshot_FullMethodName   = "/pullrun.runtime.Runtime/RemoveSnapshot"
+	Runtime_RestoreSnapshot_FullMethodName  = "/pullrun.runtime.Runtime/RestoreSnapshot"
 	Runtime_BuildImage_FullMethodName       = "/pullrun.runtime.Runtime/BuildImage"
 	Runtime_PushImage_FullMethodName        = "/pullrun.runtime.Runtime/PushImage"
 	Runtime_ExportImage_FullMethodName      = "/pullrun.runtime.Runtime/ExportImage"
@@ -113,6 +114,7 @@ type RuntimeClient interface {
 	CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotResponse, error)
 	ListSnapshots(ctx context.Context, in *ListSnapshotsRequest, opts ...grpc.CallOption) (*ListSnapshotsResponse, error)
 	RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotResponse, error)
+	RestoreSnapshot(ctx context.Context, in *RestoreSnapshotRequest, opts ...grpc.CallOption) (*RestoreSnapshotResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error)
@@ -461,6 +463,16 @@ func (c *runtimeClient) RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRe
 	return out, nil
 }
 
+func (c *runtimeClient) RestoreSnapshot(ctx context.Context, in *RestoreSnapshotRequest, opts ...grpc.CallOption) (*RestoreSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestoreSnapshotResponse)
+	err := c.cc.Invoke(ctx, Runtime_RestoreSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BuildImageResponse)
@@ -763,6 +775,7 @@ type RuntimeServer interface {
 	CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error)
 	ListSnapshots(context.Context, *ListSnapshotsRequest) (*ListSnapshotsResponse, error)
 	RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotResponse, error)
+	RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error)
@@ -912,6 +925,9 @@ func (UnimplementedRuntimeServer) ListSnapshots(context.Context, *ListSnapshotsR
 }
 func (UnimplementedRuntimeServer) RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveSnapshot not implemented")
+}
+func (UnimplementedRuntimeServer) RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestoreSnapshot not implemented")
 }
 func (UnimplementedRuntimeServer) BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BuildImage not implemented")
@@ -1405,6 +1421,24 @@ func _Runtime_RemoveSnapshot_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).RemoveSnapshot(ctx, req.(*RemoveSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RestoreSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestoreSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RestoreSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RestoreSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RestoreSnapshot(ctx, req.(*RestoreSnapshotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1927,6 +1961,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveSnapshot",
 			Handler:    _Runtime_RemoveSnapshot_Handler,
+		},
+		{
+			MethodName: "RestoreSnapshot",
+			Handler:    _Runtime_RestoreSnapshot_Handler,
 		},
 		{
 			MethodName: "BuildImage",

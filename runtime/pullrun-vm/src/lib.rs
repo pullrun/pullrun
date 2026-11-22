@@ -877,7 +877,94 @@ impl Executor for FirecrackerExecutor {
             state_path,
             mem_path,
             rootfs_path,
+            drive_path: ext4_path,
             mem_bytes,
+        })
+    }
+
+    async fn restore_snapshot(
+        &self,
+        id: &str,
+        state_path: &std::path::Path,
+        mem_path: &std::path::Path,
+        rootfs_path: &std::path::Path,
+        drive_path: &std::path::Path,
+    ) -> Result<ProcessHandle, ExecError> {
+        let vm_dir = self.vm_dir(id);
+        std::fs::create_dir_all(&vm_dir)?;
+        if let Some(parent) = drive_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(rootfs_path, drive_path).map_err(|e| {
+            ExecError::ExecutionFailed(format!(
+                "restore rootfs {} -> {}: {e}",
+                rootfs_path.display(),
+                drive_path.display()
+            ))
+        })?;
+
+        let api_socket = vm_dir.join("firecracker.sock");
+        if api_socket.exists() {
+            std::fs::remove_file(&api_socket).ok();
+        }
+        let console_path = vm_dir.join("console.log");
+        let console_file = std::fs::File::create(&console_path)?;
+        let child = Command::new(&self.config.firecracker_path)
+            .arg("--api-sock")
+            .arg(&api_socket)
+            .stdout(console_file.try_clone()?)
+            .stderr(console_file)
+            .spawn()?;
+        let pid = child.id().unwrap_or(0);
+        std::fs::write(vm_dir.join("firecracker.pid"), pid.to_string())?;
+
+        crate::snapshot::wait_for_api(&api_socket, std::time::Duration::from_secs(10))
+            .await
+            .map_err(|e| ExecError::ExecutionFailed(format!("restore API: {e}")))?;
+        let api = FirecrackerApi::new(&api_socket);
+        if let Err(e) = api.load_snapshot(state_path, mem_path, true).await {
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+            return Err(ExecError::ExecutionFailed(format!("load snapshot: {e}")));
+        }
+        std::mem::forget(child);
+
+        // Restored snapshots are only supported for the net-less mode;
+        // record that so stop() does not try to tear down a tap.
+        let sidecar = VmSidecar {
+            vm_net: VmNetwork {
+                tap_name: String::new(),
+                bridge_name: String::new(),
+                guest_ip: Ipv4Addr::LOCALHOST,
+                guest_mac: String::new(),
+                netmask: Ipv4Addr::UNSPECIFIED,
+                gateway: Ipv4Addr::UNSPECIFIED,
+            },
+            endpoint: NetworkEndpoint {
+                internal_ip: String::new(),
+                host_port_mappings: vec![],
+                namespace_path: None,
+            },
+            tap_name: String::new(),
+            network_disabled: true,
+        };
+        std::fs::write(
+            vm_dir.join("network.json"),
+            serde_json::to_vec_pretty(&sidecar)
+                .map_err(|e| ExecError::ExecutionFailed(format!("serialize sidecar: {e}")))?,
+        )?;
+
+        info!(id = %id, pid, "restored Firecracker VM from snapshot");
+        Ok(ProcessHandle {
+            id: id.to_string(),
+            pid: Some(pid),
+            internal_ip: None,
+            host_ports: vec![],
+            gateway: None,
+            backend: "vm".to_string(),
+            bridge_name: None,
+            network_join: None,
         })
     }
 

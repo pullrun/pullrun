@@ -219,6 +219,9 @@ pub struct SnapshotMeta {
     pub mem_path: PathBuf,
     /// Rootfs image backing the snapshot (must remain at this path).
     pub rootfs_path: PathBuf,
+    /// Path the snapshot's drive expects on restore.
+    #[serde(default)]
+    pub drive_path: PathBuf,
     /// Unix seconds when the snapshot was created.
     pub created_at: i64,
     /// Size of the memory file in bytes.

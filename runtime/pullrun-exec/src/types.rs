@@ -349,6 +349,8 @@ pub struct SnapshotInfo {
     pub mem_path: std::path::PathBuf,
     /// Rootfs image backing the snapshot.
     pub rootfs_path: std::path::PathBuf,
+    /// Path the snapshot's drive expects on restore.
+    pub drive_path: std::path::PathBuf,
     /// Size of the memory file in bytes.
     pub mem_bytes: u64,
 }
@@ -441,6 +443,20 @@ pub trait Executor: Send + Sync {
     ) -> Result<SnapshotInfo, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "snapshots are only supported by the Firecracker VM backend".into(),
+        ))
+    }
+
+    /// Restore a snapshot into a new workload id.
+    async fn restore_snapshot(
+        &self,
+        _id: &str,
+        _state_path: &std::path::Path,
+        _mem_path: &std::path::Path,
+        _rootfs_path: &std::path::Path,
+        _drive_path: &std::path::Path,
+    ) -> Result<ProcessHandle, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "snapshot restore is only supported by the Firecracker VM backend".into(),
         ))
     }
 }
