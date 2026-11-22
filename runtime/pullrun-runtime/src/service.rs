@@ -2409,7 +2409,27 @@ impl Runtime for RuntimeService {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), image_ref.clone());
             let mut refs = self.image_refs.write().await;
-            refs.insert(image_ref.clone(), root_digest.as_hex().to_string());
+            let root_hex = root_digest.as_hex().to_string();
+            let mut aliases = vec![image_ref.clone()];
+            if let Some((repo, digest)) = image_ref.rsplit_once('@') {
+                if let Some(d) = digest.strip_prefix("sha256:") {
+                    aliases.push(digest.to_string());
+                    aliases.push(d.to_string());
+                }
+                if !repo.is_empty() {
+                    aliases.push(repo.to_string());
+                }
+            } else if !image_ref.contains(':')
+                || image_ref
+                    .rsplit_once(':')
+                    .map(|(_, t)| t.contains('/'))
+                    .unwrap_or(false)
+            {
+                aliases.push(format!("{image_ref}:latest"));
+            }
+            for alias in aliases {
+                refs.insert(alias, root_hex.clone());
+            }
             if let Ok(json) = serde_json::to_string(&*refs) {
                 let _ = std::fs::write(self.config.store_root.join("image_refs.json"), json);
             }
@@ -4562,7 +4582,12 @@ impl Runtime for RuntimeService {
         }
         {
             let refs = self.image_refs.read().await;
-            if let Some(root_digest) = refs.get(&image_ref).or_else(|| refs.get(&normalized)) {
+            let latest_alias = format!("{normalized}:latest");
+            if let Some(root_digest) = refs
+                .get(&image_ref)
+                .or_else(|| refs.get(&normalized))
+                .or_else(|| refs.get(&latest_alias))
+            {
                 let size_bytes = Digest::from_hex(root_digest)
                     .map(|d| self.store.compute_image_size(&d) as i64)
                     .unwrap_or(0);
