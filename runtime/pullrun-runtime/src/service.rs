@@ -317,6 +317,21 @@ impl Executor for ExecutorRouter {
         self.container.status(id).await
     }
 
+    async fn snapshot(
+        &self,
+        id: &str,
+        out_dir: &std::path::Path,
+    ) -> Result<pullrun_exec::types::SnapshotInfo, ExecError> {
+        if let Some(vm) = &self.vm {
+            if vm.sidecar_path_for(id).exists() {
+                return vm.snapshot(id, out_dir).await;
+            }
+        }
+        Err(ExecError::BackendNotAvailable(
+            "snapshots are only supported by the Firecracker VM backend".into(),
+        ))
+    }
+
     async fn update(
         &self,
         id: &str,
