@@ -693,6 +693,16 @@ impl RuntimeCommand {
         }
         let workloads: Arc<RwLock<HashMap<String, WorkloadState>>> =
             Arc::new(RwLock::new(recovered));
+        let image_refs: Arc<RwLock<HashMap<String, String>>> = {
+            let refs_path = self.config.store_root.join("image_refs.json");
+            if let Ok(file) = std::fs::File::open(&refs_path) {
+                Arc::new(RwLock::new(
+                    serde_json::from_reader(file).unwrap_or_default(),
+                ))
+            } else {
+                Arc::new(RwLock::new(HashMap::new()))
+            }
+        };
         let image_tags: Arc<RwLock<HashMap<String, String>>> = {
             let tags_path = self.config.store_root.join("image_tags.json");
             let map = if let Ok(file) = std::fs::File::open(&tags_path) {
@@ -1045,6 +1055,7 @@ impl RuntimeCommand {
             workloads,
             executor,
             image_tags,
+            image_refs,
             event_bus: event_bus.clone(),
             kernel_cache: Arc::new(RwLock::new(HashMap::new())),
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -1872,6 +1883,9 @@ pub struct RuntimeService {
     /// keyed on image_ref, SBOM on manifest_digest). Arc so the
     /// watcher can read it for `inspect` if needed.
     pub image_tags: Arc<RwLock<HashMap<String, String>>>,
+    /// image_ref -> root_digest. Unlike `image_tags` (root -> last ref),
+    /// this keeps every tag pointing at the same content.
+    pub image_refs: Arc<RwLock<HashMap<String, String>>>,
     /// Process-wide event bus. Service emitters call `.emit()`;
     /// subscribers (CLI follow sessions, future audit daemons) call
     /// `.subscribe()`. The watcher task also subscribes to its own
@@ -2394,6 +2408,11 @@ impl Runtime for RuntimeService {
         {
             let mut tags = self.image_tags.write().await;
             tags.insert(root_digest.as_hex(), image_ref.clone());
+            let mut refs = self.image_refs.write().await;
+            refs.insert(image_ref.clone(), root_digest.as_hex().to_string());
+            if let Ok(json) = serde_json::to_string(&*refs) {
+                let _ = std::fs::write(self.config.store_root.join("image_refs.json"), json);
+            }
         }
         let _ = self.store.increment_refcount(&root_digest);
         self.save_image_tags().await;
@@ -4541,6 +4560,19 @@ impl Runtime for RuntimeService {
                 }));
             }
         }
+        {
+            let refs = self.image_refs.read().await;
+            if let Some(root_digest) = refs.get(&image_ref).or_else(|| refs.get(&normalized)) {
+                let size_bytes = Digest::from_hex(root_digest)
+                    .map(|d| self.store.compute_image_size(&d) as i64)
+                    .unwrap_or(0);
+                return Ok(tonic::Response::new(HasImageResponse {
+                    exists: true,
+                    size_bytes,
+                    root_digest: root_digest.clone(),
+                }));
+            }
+        }
         let tags = self.image_tags.read().await;
         for (root_digest, tag) in tags.iter() {
             let tag_norm = tag
@@ -4620,6 +4652,29 @@ impl Runtime for RuntimeService {
         &self,
         _request: tonic::Request<ListImagesRequest>,
     ) -> Result<tonic::Response<ListImagesResponse>, tonic::Status> {
+        let refs = self.image_refs.read().await;
+        if !refs.is_empty() {
+            let mut images = Vec::with_capacity(refs.len());
+            for (image_ref, root_digest) in refs.iter() {
+                let size_bytes = Digest::from_hex(root_digest)
+                    .map(|d| self.store.compute_image_size(&d) as i64)
+                    .unwrap_or(0);
+                let created_at = Digest::from_hex(root_digest)
+                    .ok()
+                    .and_then(|d| std::fs::metadata(self.store.node_path(&d)).ok())
+                    .and_then(|m| m.created().or(m.modified()).ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                images.push(crate::proto::ImageInfo {
+                    image_ref: image_ref.clone(),
+                    root_digest: root_digest.clone(),
+                    size_bytes,
+                    created_at,
+                });
+            }
+            return Ok(tonic::Response::new(ListImagesResponse { images }));
+        }
         let tags = self.image_tags.read().await;
         let mut images = Vec::with_capacity(tags.len());
         for (root_digest, image_ref) in tags.iter() {
