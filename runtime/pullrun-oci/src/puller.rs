@@ -809,6 +809,7 @@ impl OciPuller {
         })
     }
 
+    #[allow(clippy::type_complexity)]
     fn fetch_manifest_with_platform<'a>(
         &'a self,
         registry: &'a str,
