@@ -715,7 +715,7 @@
                         <span class="tag">🧬 DAG Store</span>
                         <span class="tag">🌐 P2P Sync</span>
                         <span class="tag">👥 Sandbox Groups</span>
-                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.8.2 — Firecracker VM fixes</span>
+                        <span class="tag" style="background:rgba(74,222,128,.12);color:var(--green);border-color:rgba(74,222,128,.25)">✨ v0.9.0 — snapshots · actors · egress</span>
                     </div>
                     <div class="buttons">
                         <a href="#install" class="btn btn-primary" onclick="track('hero_cta_click')">⚡ Install Now</a>
@@ -1085,7 +1085,7 @@
                 </details>
                 <details class="faq-item">
                     <summary>Is this production-ready?</summary>
-                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 272 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are available but evolving; sandbox groups are macOS-only and concurrent. v0.8.2 fixes the Firecracker VM backend, adds net-less VM execution, serial output and live exit codes, and keeps the 0.8.0 security/storage work.</div>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 272 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are available but evolving; sandbox groups are macOS-only and concurrent. v0.9.0 adds Firecracker memory snapshots, golden-template actors with suspend/resume, fail-closed egress, and snapshot/actor metrics.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Does it require root or a daemon?</summary>

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.9.0 — 2026-11-22
+
+Stateful-agent layer: Firecracker memory snapshots, golden-template
+actors with suspend/resume, fail-closed egress (opt-in), and
+snapshot/actor metrics.
+
+### Snapshots
+- `pullrun snapshot create|ls|rm|restore` for Firecracker VMs.
+- MEMORY fidelity: guest RAM + device state + rootfs; source VM stops.
+- ROOTFS fidelity: disk-only, source VM keeps running, restore cold-boots.
+- Restore latency: 63 / 84 / 119 ms (best/avg/worst) after sparse
+  rootfs copies; capture ~3.8 s for a 512 MiB guest.
+- Snapshot metadata records fidelity, kernel, vcpus, memory, drive path.
+
+### Actors and templates
+- `pullrun template create --from-workload`, `actor create|ls|resume|suspend|run|rm`.
+- Golden template = memory snapshot; actors start suspended.
+- Resume restores memory in 99–110 ms; suspend writes a new snapshot.
+- Per-actor mutex serializes transitions (request parking).
+- Restored VMs track their actual drive path (fixes suspend after resume).
+
+### Fail-closed egress (opt-in)
+- `--egress-deny` per workload or daemon; rootful containers get an
+  nftables drop-by-default output chain with DNS + `--allow-outbound`
+  allowlist. VM/rootless reject the flag.
+- Mechanism verified in a netns; full traffic path still pending due a
+  rootful container veth/network issue on the test host.
+
+### Observability and docs
+- Snapshot capture/restore and actor resume/suspend Prometheus metrics.
+- `docs/SNAPSHOTS.md`, `docs/ACTORS.md`, `docs/EGRESS.md`, and
+  `docs/SECURITY_STATUS.md` (honest Met/Partial/Future matrix).
+
+### Known limitations
+- Credential injection / zero ambient credentials: not implemented.
+- VOLUMES fidelity: unsupported.
+- Egress end-to-end traffic: unverified; VM egress denied is rejected.
+- Snapshot files unencrypted; no automatic GC/retention.
+- Actors single-node; no HTTP ingress queue.
+
 ## 0.8.2 — 2026-11-22
 
 Firecracker VM backend repair. The 0.8.0 Linux VM path never started:
