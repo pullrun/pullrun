@@ -117,16 +117,11 @@ pub struct CredentialProxy {
     ca: Arc<Ca>,
     rules: Arc<Vec<CredentialRule>>,
     secrets: SecretProvider,
-    auth: String,
     server_config: Arc<rustls::ServerConfig>,
 }
 
 impl CredentialProxy {
-    pub fn new(
-        rules: Vec<CredentialRule>,
-        secrets: SecretProvider,
-        auth: String,
-    ) -> Result<Self, String> {
+    pub fn new(rules: Vec<CredentialRule>, secrets: SecretProvider) -> Result<Self, String> {
         let ca = Arc::new(Ca::generate()?);
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let server_config = rustls::ServerConfig::builder_with_provider(provider)
@@ -140,7 +135,6 @@ impl CredentialProxy {
             ca,
             rules: Arc::new(rules),
             secrets,
-            auth,
             server_config: Arc::new(server_config),
         })
     }
@@ -156,6 +150,10 @@ impl CredentialProxy {
     pub async fn serve(self, listener: TcpListener) -> std::io::Result<()> {
         loop {
             let (stream, peer) = listener.accept().await?;
+            if !(peer.ip().is_loopback() || is_private_ip(peer.ip())) {
+                tracing::warn!(%peer, "egress proxy: rejecting non-private client");
+                continue;
+            }
             let proxy = self.clone();
             tokio::spawn(async move {
                 if let Err(e) = proxy.handle(stream).await {
@@ -183,25 +181,6 @@ impl CredentialProxy {
                 break;
             }
             headers.push(line.trim_end().to_string());
-        }
-
-        let expected = format!(
-            "Basic {}",
-            base64(format!("pullrun:{}", self.auth).as_bytes())
-        );
-        let authorized = headers.iter().any(|h| {
-            h.to_ascii_lowercase()
-                .strip_prefix("proxy-authorization:")
-                .map(|v| v.trim() == expected)
-                .unwrap_or(false)
-        });
-        if !authorized {
-            let _ = stream
-                .write_all(
-                    b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"pullrun\"\r\nConnection: close\r\n\r\n",
-                )
-                .await;
-            return Ok(());
         }
 
         let parts: Vec<&str> = request_line.split_whitespace().collect();
@@ -359,29 +338,14 @@ impl CredentialProxy {
     }
 }
 
-fn base64(data: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in data.chunks(3) {
-        let b = [
-            chunk[0],
-            *chunk.get(1).unwrap_or(&0),
-            *chunk.get(2).unwrap_or(&0),
-        ];
-        out.push(T[(b[0] >> 2) as usize] as char);
-        out.push(T[(((b[0] & 0x03) << 4) | (b[1] >> 4)) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            T[(((b[1] & 0x0f) << 2) | (b[2] >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            T[(b[2] & 0x3f) as usize] as char
-        } else {
-            '='
-        });
+fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168)
+        }
+        std::net::IpAddr::V6(v6) => v6.is_loopback(),
     }
-    out
 }
 
 /// Bind a credential proxy listener.

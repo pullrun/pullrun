@@ -129,8 +129,6 @@ pub struct ServiceConfig {
     pub egress_proxy_addr: Option<std::net::SocketAddr>,
     /// CA certificate path mounted into sandboxes.
     pub egress_ca_path: Option<PathBuf>,
-    /// Proxy basic-auth token injected into the proxy URL.
-    pub egress_proxy_auth: Option<String>,
 }
 
 impl ServiceConfig {
@@ -157,7 +155,6 @@ impl ServiceConfig {
             egress_credentials: Vec::new(),
             egress_proxy_addr: None,
             egress_ca_path: None,
-            egress_proxy_auth: None,
         }
     }
 
@@ -176,12 +173,10 @@ impl ServiceConfig {
         rules: Vec<pullrun_net::egress_proxy::CredentialRule>,
         addr: std::net::SocketAddr,
         ca_path: PathBuf,
-        auth: String,
     ) -> Self {
         self.egress_credentials = rules;
         self.egress_proxy_addr = Some(addr);
         self.egress_ca_path = Some(ca_path);
-        self.egress_proxy_auth = Some(auth);
         self
     }
 
@@ -2838,10 +2833,7 @@ impl Runtime for RuntimeService {
                 self.config.egress_ca_path.as_ref(),
             ) {
                 if ca_path.exists() {
-                    let proxy_url = match self.config.egress_proxy_auth.as_deref() {
-                        Some(token) => format!("http://pullrun:{token}@{addr}"),
-                        None => format!("http://{addr}"),
-                    };
+                    let proxy_url = format!("http://{addr}");
                     for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
                         env.insert(key.to_string(), proxy_url.clone());
                     }
