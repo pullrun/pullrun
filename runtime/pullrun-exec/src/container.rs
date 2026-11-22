@@ -561,17 +561,28 @@ impl Executor for LinuxContainerExecutor {
         let mut internal_ip: Option<Ipv4Addr> = None;
         let mut gateway: Option<Ipv4Addr> = None;
         if self.should_setup_bridge(&spec) {
-            let bridge_name = spec.bridge_name.as_deref().unwrap_or(DEFAULT_BRIDGE_NAME);
+            let mut bridge_name = spec
+                .bridge_name
+                .as_deref()
+                .unwrap_or(DEFAULT_BRIDGE_NAME)
+                .to_string();
             // Per-pod bridges get their own /24 subnet (gateway .1);
             // the default bridge keeps the flat /16 (gateway 10.42.0.1).
-            let subnet = if bridge_name == DEFAULT_BRIDGE_NAME {
+            let mut subnet = if bridge_name.as_str() == DEFAULT_BRIDGE_NAME {
                 None
             } else {
                 self.ipam
                     .as_ref()
-                    .and_then(|ipam| ipam.subnet_for(bridge_name))
+                    .and_then(|ipam| ipam.subnet_for(&bridge_name))
             };
-            Self::ensure_bridge_exists(bridge_name, subnet.as_ref())?;
+            // If no /24 could be allocated, fall back to the shared
+            // bridge: putting the flat gateway on a per-pod bridge
+            // conflicts with the shared bridge's route.
+            if bridge_name.as_str() != DEFAULT_BRIDGE_NAME && subnet.is_none() {
+                warn!(id = %spec.id, bridge = %bridge_name, "no per-pod subnet; using shared bridge");
+                bridge_name = DEFAULT_BRIDGE_NAME.to_string();
+            }
+            Self::ensure_bridge_exists(&bridge_name, subnet.as_ref())?;
             if let Some(ref ipam) = self.ipam {
                 let ip = match &subnet {
                     Some(s) => ipam.allocate_in(s),
@@ -584,7 +595,7 @@ impl Executor for LinuxContainerExecutor {
                         None => DEFAULT_GATEWAY,
                     });
                     let ip = internal_ip.expect("just allocated above");
-                    info!(id = %spec.id, bridge = bridge_name, ip = %ip, "allocated bridge IP");
+                    info!(id = %spec.id, bridge = %bridge_name, ip = %ip, "allocated bridge IP");
                 }
             }
         }
