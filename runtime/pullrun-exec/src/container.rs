@@ -1020,15 +1020,9 @@ impl Executor for LinuxContainerExecutor {
     ) -> Result<ExecOutput, ExecError> {
         let mut args = vec!["exec".to_string(), id.to_string()];
         args.extend(command.iter().cloned());
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout_secs),
-            Command::new(&self.runc_path).args(&args).output(),
-        )
-        .await
-        .map_err(|_| {
-            ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s"))
-        })?
-        .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
+        let mut cmd = Command::new(&self.runc_path);
+        cmd.args(&args);
+        let output = run_exec_with_timeout(cmd, timeout_secs).await?;
         Ok(ExecOutput {
             exit_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
@@ -1152,6 +1146,37 @@ fn rootless_state_pid(
 }
 
 /// Allow the bridge to reach a host-side proxy port (UFW defaults to DROP).
+async fn run_exec_with_timeout(
+    mut cmd: Command,
+    timeout_secs: u64,
+) -> Result<std::process::Output, ExecError> {
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0);
+    let child = cmd
+        .spawn()
+        .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
+    let child_pid: u32 = child.id().unwrap_or(0);
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        child.wait_with_output(),
+    )
+    .await
+    {
+        Ok(res) => res.map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}"))),
+        Err(_) => {
+            // Kill the whole exec process group so a timed-out command
+            // does not keep running inside the container.
+            unsafe {
+                libc::kill(-(child_pid as i32), libc::SIGKILL);
+            }
+            Err(ExecError::ExecutionFailed(format!(
+                "runc exec timed out after {timeout_secs}s"
+            )))
+        }
+    }
+}
+
 fn spawn_cri_log_reader(read: std::os::unix::net::UnixStream, path: std::path::PathBuf) {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::fs::MetadataExt;
@@ -1860,15 +1885,9 @@ impl Executor for RootlessContainerExecutor {
             id.to_string(),
         ];
         args.extend(command.iter().cloned());
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout_secs),
-            Command::new(&self.config.runc_path).args(&args).output(),
-        )
-        .await
-        .map_err(|_| {
-            ExecError::ExecutionFailed(format!("runc exec timed out after {timeout_secs}s"))
-        })?
-        .map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))?;
+        let mut cmd = Command::new(&self.config.runc_path);
+        cmd.args(&args);
+        let output = run_exec_with_timeout(cmd, timeout_secs).await?;
         Ok(ExecOutput {
             exit_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
