@@ -125,6 +125,7 @@ func containerToAPI(rec *containerRecord) *runtimeapi.Container {
 		Metadata:     &runtimeapi.ContainerMetadata{Name: rec.name},
 		Image:        &runtimeapi.ImageSpec{Image: rec.image},
 		ImageRef:     rec.imageRef,
+		ImageId:      rec.imageRef,
 		CreatedAt:    rec.createdAt.UnixNano(),
 		State:        rec.state,
 	}

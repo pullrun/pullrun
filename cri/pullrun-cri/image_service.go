@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"time"
 
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -66,11 +69,15 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 		return &runtimeapi.ImageStatusResponse{}, nil
 	}
 
+	uid := &runtimeapi.Int64Value{Value: 0}
 	return &runtimeapi.ImageStatusResponse{
 		Image: &runtimeapi.Image{
 			Id:       resp.RootDigest,
 			RepoTags: []string{req.Image.Image},
 			Size:     uint64(resp.SizeBytes),
+			Uid:      uid,
+			Username: "root",
+			Spec:     &runtimeapi.ImageSpec{Image: req.Image.Image},
 		},
 	}, nil
 }
@@ -85,17 +92,31 @@ func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRe
 		return &runtimeapi.ListImagesResponse{}, nil
 	}
 
-	images := make([]*runtimeapi.Image, 0, len(resp.Images))
+	byID := make(map[string]*runtimeapi.Image)
+	order := make([]string, 0, len(resp.Images))
 	for _, img := range resp.Images {
 		var size uint64
 		if img.SizeBytes > 0 {
 			size = uint64(img.SizeBytes)
 		}
-		images = append(images, &runtimeapi.Image{
+		if existing, ok := byID[img.RootDigest]; ok {
+			existing.RepoTags = append(existing.RepoTags, img.ImageRef)
+			continue
+		}
+		uid := &runtimeapi.Int64Value{Value: 0}
+		byID[img.RootDigest] = &runtimeapi.Image{
 			Id:       img.RootDigest,
 			RepoTags: []string{img.ImageRef},
 			Size:     size,
-		})
+			Uid:      uid,
+			Username: "root",
+			Spec:     &runtimeapi.ImageSpec{Image: img.ImageRef},
+		}
+		order = append(order, img.RootDigest)
+	}
+	images := make([]*runtimeapi.Image, 0, len(byID))
+	for _, id := range order {
+		images = append(images, byID[id])
 	}
 	return &runtimeapi.ListImagesResponse{Images: images}, nil
 }
@@ -117,6 +138,9 @@ func (c *criServer) RemoveImage(ctx context.Context, req *runtimeapi.RemoveImage
 	cancel()
 
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return &runtimeapi.RemoveImageResponse{}, nil
+		}
 		log.Printf("RemoveImage image=%s (runtime error: %v)", req.Image.Image, err)
 		return nil, fmt.Errorf("remove %s: %w", req.Image.Image, err)
 	}
