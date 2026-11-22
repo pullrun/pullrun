@@ -41,6 +41,7 @@ the VM is stopped after the snapshot is written.`,
 			fmt.Printf("  memory:    %.1f MiB\n", float64(resp.MemBytes)/(1024*1024))
 			fmt.Printf("  state:     %s\n", resp.StatePath)
 			fmt.Printf("  rootfs:    %s\n", resp.RootfsPath)
+			fmt.Printf("  capture:   %d ms\n", resp.SnapshotMs)
 			return nil
 		},
 	}
@@ -103,7 +104,7 @@ the VM is stopped after the snapshot is written.`,
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Restored %s as workload %s (backend %s)\n", args[0], resp.WorkloadId, resp.Backend)
+			fmt.Printf("Restored %s as workload %s (backend %s, %d ms)\n", args[0], resp.WorkloadId, resp.Backend, resp.RestoreMs)
 			return nil
 		},
 	}

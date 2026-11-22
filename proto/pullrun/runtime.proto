@@ -1022,6 +1022,8 @@ message CreateSnapshotResponse {
     int64 created_at = 4;
     string state_path = 5;
     string rootfs_path = 6;
+    // Wall time spent capturing the snapshot (pause + write + copy).
+    uint64 snapshot_ms = 7;
 }
 
 message SnapshotInfo {
@@ -1054,4 +1056,6 @@ message RestoreSnapshotRequest {
 message RestoreSnapshotResponse {
     string workload_id = 1;
     string backend = 2;
+    // Wall time from restore request to a running workload.
+    uint64 restore_ms = 3;
 }

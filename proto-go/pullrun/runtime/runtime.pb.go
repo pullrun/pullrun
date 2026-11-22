@@ -7059,13 +7059,15 @@ func (x *CreateSnapshotRequest) GetWorkloadId() string {
 }
 
 type CreateSnapshotResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	WorkloadId    string                 `protobuf:"bytes,2,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
-	MemBytes      uint64                 `protobuf:"varint,3,opt,name=mem_bytes,json=memBytes,proto3" json:"mem_bytes,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	StatePath     string                 `protobuf:"bytes,5,opt,name=state_path,json=statePath,proto3" json:"state_path,omitempty"`
-	RootfsPath    string                 `protobuf:"bytes,6,opt,name=rootfs_path,json=rootfsPath,proto3" json:"rootfs_path,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	WorkloadId string                 `protobuf:"bytes,2,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	MemBytes   uint64                 `protobuf:"varint,3,opt,name=mem_bytes,json=memBytes,proto3" json:"mem_bytes,omitempty"`
+	CreatedAt  int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	StatePath  string                 `protobuf:"bytes,5,opt,name=state_path,json=statePath,proto3" json:"state_path,omitempty"`
+	RootfsPath string                 `protobuf:"bytes,6,opt,name=rootfs_path,json=rootfsPath,proto3" json:"rootfs_path,omitempty"`
+	// Wall time spent capturing the snapshot (pause + write + copy).
+	SnapshotMs    uint64 `protobuf:"varint,7,opt,name=snapshot_ms,json=snapshotMs,proto3" json:"snapshot_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7140,6 +7142,13 @@ func (x *CreateSnapshotResponse) GetRootfsPath() string {
 		return x.RootfsPath
 	}
 	return ""
+}
+
+func (x *CreateSnapshotResponse) GetSnapshotMs() uint64 {
+	if x != nil {
+		return x.SnapshotMs
+	}
+	return 0
 }
 
 type SnapshotInfo struct {
@@ -7439,9 +7448,11 @@ func (x *RestoreSnapshotRequest) GetSnapshotId() string {
 }
 
 type RestoreSnapshotResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
-	Backend       string                 `protobuf:"bytes,2,opt,name=backend,proto3" json:"backend,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	WorkloadId string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	Backend    string                 `protobuf:"bytes,2,opt,name=backend,proto3" json:"backend,omitempty"`
+	// Wall time from restore request to a running workload.
+	RestoreMs     uint64 `protobuf:"varint,3,opt,name=restore_ms,json=restoreMs,proto3" json:"restore_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7488,6 +7499,13 @@ func (x *RestoreSnapshotResponse) GetBackend() string {
 		return x.Backend
 	}
 	return ""
+}
+
+func (x *RestoreSnapshotResponse) GetRestoreMs() uint64 {
+	if x != nil {
+		return x.RestoreMs
+	}
+	return 0
 }
 
 var File_pullrun_runtime_proto protoreflect.FileDescriptor
@@ -8041,7 +8059,7 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x06stderr\x18\x03 \x01(\fR\x06stderr\"8\n" +
 	"\x15CreateSnapshotRequest\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
-	"workloadId\"\xd6\x01\n" +
+	"workloadId\"\xf7\x01\n" +
 	"\x16CreateSnapshotResponse\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
@@ -8053,7 +8071,9 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\n" +
 	"state_path\x18\x05 \x01(\tR\tstatePath\x12\x1f\n" +
 	"\vrootfs_path\x18\x06 \x01(\tR\n" +
-	"rootfsPath\"\xcc\x01\n" +
+	"rootfsPath\x12\x1f\n" +
+	"\vsnapshot_ms\x18\a \x01(\x04R\n" +
+	"snapshotMs\"\xcc\x01\n" +
 	"\fSnapshotInfo\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
@@ -8076,11 +8096,13 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\aremoved\x18\x01 \x01(\bR\aremoved\"9\n" +
 	"\x16RestoreSnapshotRequest\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
-	"snapshotId\"T\n" +
+	"snapshotId\"s\n" +
 	"\x17RestoreSnapshotResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x18\n" +
-	"\abackend\x18\x02 \x01(\tR\abackend*\x80\x01\n" +
+	"\abackend\x18\x02 \x01(\tR\abackend\x12\x1d\n" +
+	"\n" +
+	"restore_ms\x18\x03 \x01(\x04R\trestoreMs*\x80\x01\n" +
 	"\rRestartPolicy\x12\x17\n" +
 	"\x13RESTART_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +

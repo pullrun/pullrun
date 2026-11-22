@@ -4845,11 +4845,13 @@ impl Runtime for RuntimeService {
         let dir = self.config.snapshots_dir.join(&snapshot_id);
         std::fs::create_dir_all(&dir)
             .map_err(|e| tonic::Status::internal(format!("create snapshot dir: {e}")))?;
+        let snapshot_start = std::time::Instant::now();
         let info = self
             .executor
             .snapshot(&req.workload_id, &dir)
             .await
             .map_err(|e| tonic::Status::internal(format!("snapshot failed: {e}")))?;
+        let snapshot_ms = snapshot_start.elapsed().as_millis() as u64;
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -4898,6 +4900,7 @@ impl Runtime for RuntimeService {
             created_at,
             state_path: info.state_path.to_string_lossy().to_string(),
             rootfs_path: info.rootfs_path.to_string_lossy().to_string(),
+            snapshot_ms,
         }))
     }
 
@@ -4994,6 +4997,7 @@ impl Runtime for RuntimeService {
         }
 
         let workload_id = new_workload_id();
+        let restore_start = std::time::Instant::now();
         let handle = self
             .executor
             .restore_snapshot(
@@ -5070,6 +5074,7 @@ impl Runtime for RuntimeService {
         Ok(tonic::Response::new(RestoreSnapshotResponse {
             workload_id,
             backend: "vm".to_string(),
+            restore_ms: restore_start.elapsed().as_millis() as u64,
         }))
     }
 
