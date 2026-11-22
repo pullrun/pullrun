@@ -280,8 +280,9 @@ reproduction script; [docs/TIERS.md](docs/TIERS.md) compares group,
 per-task VM, and container latency on macOS and Linux, and
 [docs/SNAPSHOTS.md](docs/SNAPSHOTS.md) covers VM memory snapshots, and
 [docs/ACTORS.md](docs/ACTORS.md) covers stateful actors and golden
-templates, and [docs/EGRESS.md](docs/EGRESS.md) covers fail-closed
-egress.
+templates, [docs/EGRESS.md](docs/EGRESS.md) covers fail-closed egress,
+and [docs/SECURITY_STATUS.md](docs/SECURITY_STATUS.md) tracks verified
+security properties.
 
 ---
 

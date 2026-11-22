@@ -68,6 +68,13 @@ pub mod names {
     pub const STORE_BYTES: &str = "pullrun_store_bytes";
     pub const BUILD_INFO: &str = "pullrun_build_info";
     pub const SYNC_PEER_COUNT: &str = "pullrun_sync_peer_count";
+    pub const SNAPSHOT_CAPTURE_DURATION_SECONDS: &str = "pullrun_snapshot_capture_duration_seconds";
+    pub const SNAPSHOT_RESTORE_DURATION_SECONDS: &str = "pullrun_snapshot_restore_duration_seconds";
+    pub const SNAPSHOTS_CREATED_TOTAL: &str = "pullrun_snapshots_created_total";
+    pub const SNAPSHOTS_RESTORED_TOTAL: &str = "pullrun_snapshots_restored_total";
+    pub const ACTOR_RESUME_DURATION_SECONDS: &str = "pullrun_actor_resume_duration_seconds";
+    pub const ACTORS_RESUMED_TOTAL: &str = "pullrun_actors_resumed_total";
+    pub const ACTORS_SUSPENDED_TOTAL: &str = "pullrun_actors_suspended_total";
 }
 
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -98,6 +105,12 @@ pub fn install_recorder() -> PrometheusHandle {
                     b.set_buckets_for_metric(
                         Matcher::Full(names::WORKLOAD_START_DURATION_SECONDS.to_string()),
                         &[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+                    )
+                })
+                .and_then(|b| {
+                    b.set_buckets_for_metric(
+                        Matcher::Full(names::ACTOR_RESUME_DURATION_SECONDS.to_string()),
+                        &[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
                     )
                 });
 
@@ -164,6 +177,37 @@ pub fn describe_metrics() {
     describe_gauge!(
         names::SYNC_PEER_COUNT,
         "Current number of block sync peers known via mDNS / bloom gossip"
+    );
+    describe_histogram!(
+        names::SNAPSHOT_CAPTURE_DURATION_SECONDS,
+        metrics::Unit::Seconds,
+        "Wall time to capture a VM snapshot"
+    );
+    describe_histogram!(
+        names::SNAPSHOT_RESTORE_DURATION_SECONDS,
+        metrics::Unit::Seconds,
+        "Wall time from snapshot restore request to a running workload"
+    );
+    describe_counter!(
+        names::SNAPSHOTS_CREATED_TOTAL,
+        "Snapshots created, labeled by fidelity (memory/rootfs)"
+    );
+    describe_counter!(
+        names::SNAPSHOTS_RESTORED_TOTAL,
+        "Snapshots restored into a new workload"
+    );
+    describe_histogram!(
+        names::ACTOR_RESUME_DURATION_SECONDS,
+        metrics::Unit::Seconds,
+        "Wall time to resume a suspended actor"
+    );
+    describe_counter!(
+        names::ACTORS_RESUMED_TOTAL,
+        "Actor resume calls, labeled by whether a restore was needed"
+    );
+    describe_counter!(
+        names::ACTORS_SUSPENDED_TOTAL,
+        "Actors suspended to a snapshot"
     );
 
     // Set the static build-info gauge once. Operators use this for
@@ -391,4 +435,31 @@ mod tests {
         let h = install_recorder();
         let _r = router(h);
     }
+}
+
+/// Record a snapshot capture and its fidelity.
+pub fn record_snapshot_created(fidelity: &str, millis: u64) {
+    histogram!(names::SNAPSHOT_CAPTURE_DURATION_SECONDS).record(millis as f64 / 1000.0);
+    counter!(names::SNAPSHOTS_CREATED_TOTAL, "fidelity" => fidelity.to_string()).increment(1);
+}
+
+/// Record a snapshot restore.
+pub fn record_snapshot_restored(millis: u64) {
+    histogram!(names::SNAPSHOT_RESTORE_DURATION_SECONDS).record(millis as f64 / 1000.0);
+    counter!(names::SNAPSHOTS_RESTORED_TOTAL).increment(1);
+}
+
+/// Record an actor resume (whether it restored or was already running).
+pub fn record_actor_resume(millis: u64, resumed: bool) {
+    histogram!(names::ACTOR_RESUME_DURATION_SECONDS).record(millis as f64 / 1000.0);
+    counter!(
+        names::ACTORS_RESUMED_TOTAL,
+        "resumed" => if resumed { "true" } else { "false" }.to_string(),
+    )
+    .increment(1);
+}
+
+/// Record an actor suspend.
+pub fn record_actor_suspended() {
+    counter!(names::ACTORS_SUSPENDED_TOTAL).increment(1);
 }

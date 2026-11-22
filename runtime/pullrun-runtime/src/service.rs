@@ -4993,6 +4993,7 @@ impl Runtime for RuntimeService {
                 .with_metadata("snapshot_id", &snapshot_id),
         );
 
+        crate::metrics::record_snapshot_created(fidelity.as_str(), snapshot_ms);
         Ok(tonic::Response::new(CreateSnapshotResponse {
             snapshot_id,
             workload_id: req.workload_id,
@@ -5199,10 +5200,12 @@ impl Runtime for RuntimeService {
                 .with_metadata("outcome", "restored")
                 .with_metadata("snapshot_id", &snapshot_id),
         );
+        let restore_ms = restore_start.elapsed().as_millis() as u64;
+        crate::metrics::record_snapshot_restored(restore_ms);
         Ok(tonic::Response::new(RestoreSnapshotResponse {
             workload_id,
             backend: "vm".to_string(),
-            restore_ms: restore_start.elapsed().as_millis() as u64,
+            restore_ms,
         }))
     }
 
@@ -5411,6 +5414,7 @@ impl Runtime for RuntimeService {
                     .unwrap_or(false)
             };
             if exists {
+                crate::metrics::record_actor_resume(0, false);
                 return Ok(tonic::Response::new(ResumeActorResponse {
                     workload_id: actor.workload_id,
                     resumed: false,
@@ -5437,10 +5441,12 @@ impl Runtime for RuntimeService {
                 .map_err(|e| tonic::Status::internal(format!("serialize actor: {e}")))?,
         )
         .map_err(|e| tonic::Status::internal(format!("write actor: {e}")))?;
+        let resume_ms = started.elapsed().as_millis() as u64;
+        crate::metrics::record_actor_resume(resume_ms, true);
         Ok(tonic::Response::new(ResumeActorResponse {
             workload_id: restored.workload_id,
             resumed: true,
-            resume_ms: started.elapsed().as_millis() as u64,
+            resume_ms,
         }))
     }
 
@@ -5481,6 +5487,7 @@ impl Runtime for RuntimeService {
                 .map_err(|e| tonic::Status::internal(format!("serialize actor: {e}")))?,
         )
         .map_err(|e| tonic::Status::internal(format!("write actor: {e}")))?;
+        crate::metrics::record_actor_suspended();
         Ok(tonic::Response::new(SuspendActorResponse {
             snapshot_id: snap.snapshot_id,
         }))
