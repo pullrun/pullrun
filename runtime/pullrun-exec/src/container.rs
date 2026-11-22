@@ -1154,6 +1154,7 @@ fn rootless_state_pid(
 /// Allow the bridge to reach a host-side proxy port (UFW defaults to DROP).
 fn spawn_cri_log_reader(read: std::os::unix::net::UnixStream, path: std::path::PathBuf) {
     use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::fs::MetadataExt;
     std::thread::spawn(move || {
         let mut file = match std::fs::OpenOptions::new()
             .create(true)
@@ -1170,6 +1171,17 @@ fn spawn_cri_log_reader(read: std::os::unix::net::UnixStream, path: std::path::P
             match reader.read_line(&mut line) {
                 Ok(0) => break,
                 Ok(_) => {
+                    let target_ino = std::fs::metadata(&path).map(|m| m.ino()).ok();
+                    let current_ino = file.metadata().map(|m| m.ino()).ok();
+                    if target_ino != current_ino {
+                        if let Ok(f) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                        {
+                            file = f;
+                        }
+                    }
                     let text = line.trim_end_matches(['\r', '\n']);
                     let ts = time::OffsetDateTime::now_utc()
                         .format(&time::format_description::well_known::Rfc3339)
