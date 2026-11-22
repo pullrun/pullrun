@@ -1097,6 +1097,15 @@ async fn apply_container_egress_policy(
     let pid = json["pid"]
         .as_i64()
         .ok_or_else(|| ExecError::ExecutionFailed("no pid for egress policy".into()))?;
+    apply_egress_rules(pid, gateway, cfg).await
+}
+
+async fn apply_egress_rules(
+    pid: i64,
+    gateway: std::net::Ipv4Addr,
+    cfg: &EgressConfig,
+) -> Result<(), ExecError> {
+    use std::process::Command as SyncCommand;
     let allow = resolve_egress_allow(cfg)?;
 
     let nft = |args: &[&str]| -> Result<(), ExecError> {
@@ -1187,7 +1196,11 @@ async fn apply_container_egress_policy(
             "accept",
         ])?;
     }
-    tracing::info!(%id, rules = cfg.allow.len(), "fail-closed egress policy applied");
+    tracing::info!(
+        workload_pid = pid,
+        rules = cfg.allow.len(),
+        "fail-closed egress policy applied"
+    );
     Ok(())
 }
 
@@ -1737,5 +1750,63 @@ impl Executor for RootlessContainerExecutor {
             network_rx_bytes: 0,
             network_tx_bytes: 0,
         })
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod egress_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires root, nft, and unshare to build a throwaway netns"]
+    async fn installs_drop_by_default_policy() {
+        if unsafe { libc::geteuid() } != 0 {
+            eprintln!("skip: not root");
+            return;
+        }
+        let nft = std::process::Command::new("nft").arg("--version").output();
+        if nft.map(|o| !o.status.success()).unwrap_or(true) {
+            eprintln!("skip: nft not available");
+            return;
+        }
+        let mut child = match std::process::Command::new("unshare")
+            .args(["-n", "sleep", "60"])
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("skip: unshare: {e}");
+                return;
+            }
+        };
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let pid = child.id() as i64;
+        let cfg = EgressConfig {
+            allow: vec![("1.1.1.1".to_string(), 80, "tcp".to_string())],
+            nameservers: vec![],
+        };
+        let applied = apply_egress_rules(pid, "10.42.0.1".parse().unwrap(), &cfg).await;
+        let output = std::process::Command::new("nsenter")
+            .args([
+                "-t",
+                &pid.to_string(),
+                "-n",
+                "--",
+                "nft",
+                "list",
+                "chain",
+                "inet",
+                "pullrun_egress",
+                "output",
+            ])
+            .output()
+            .expect("nft list");
+        let text = String::from_utf8_lossy(&output.stdout);
+        let _ = child.kill();
+        let _ = child.wait();
+        applied.expect("apply egress rules");
+        assert!(text.contains("policy drop"), "chain: {text}");
+        assert!(text.contains("1.1.1.1"), "allow rule missing: {text}");
+        assert!(text.contains("dport 80"), "allow port missing: {text}");
     }
 }
