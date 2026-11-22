@@ -55,7 +55,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container (basic operations) | **14/14 pass** |
-| Container (full) | **22/31 pass**; remaining: mount propagation/readonly (4), multi-container network/log (2), image volume (1) |
+| Container (full) | **22/31 pass**; remaining: mount propagation/readonly (4), multi-container network/log (2), image volume (1). ContainerStatus now returns mounts, but the mount re-run failed in harness setup |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
