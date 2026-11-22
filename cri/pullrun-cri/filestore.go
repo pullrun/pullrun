@@ -35,8 +35,10 @@ type sandboxCheckpoint struct {
 	InternalIP   string    `json:"internal_ip"`
 	RuntimeClass string    `json:"runtime_class"`
 	BridgeName   string    `json:"bridge_name,omitempty"`
-	HostNetwork  bool      `json:"host_network,omitempty"`
-	DNSServers   []string  `json:"dns_servers,omitempty"`
+	HostNetwork  bool              `json:"host_network,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	DNSServers   []string          `json:"dns_servers,omitempty"`
 	DNSSearches  []string  `json:"dns_searches,omitempty"`
 	DNSOptions   []string  `json:"dns_options,omitempty"`
 }
@@ -99,6 +101,8 @@ func (s *fileStore) loadAll() {
 				runtimeClass: cp.RuntimeClass,
 				bridgeName:   cp.BridgeName,
 				hostNetwork:  cp.HostNetwork,
+				labels:       cp.Labels,
+				annotations:  cp.Annotations,
 				dns: &pullrunruntime.DnsConfig{
 					Nameservers: cp.DNSServers,
 					Searches:    cp.DNSSearches,
@@ -264,6 +268,8 @@ func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 		RuntimeClass: rec.runtimeClass,
 		BridgeName:   rec.bridgeName,
 		HostNetwork:  rec.hostNetwork,
+		Labels:       rec.labels,
+		Annotations:  rec.annotations,
 	}
 	if rec.dns != nil {
 		cp.DNSServers = rec.dns.Nameservers

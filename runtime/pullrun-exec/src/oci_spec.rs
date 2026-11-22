@@ -244,6 +244,16 @@ pub fn build_oci_config(
         }
     }
 
+    if !spec.sysctls.is_empty() {
+        if let Some(obj) = linux.as_object_mut() {
+            obj.insert(
+                "sysctl".to_string(),
+                serde_json::to_value(&spec.sysctls)
+                    .map_err(|e| ExecError::ExecutionFailed(format!("sysctls: {e}")))?,
+            );
+        }
+    }
+
     Ok(serde_json::json!({
         "ociVersion": "1.1.0",
         "process": process,
@@ -321,6 +331,7 @@ mod tests {
             dns: crate::types::DnsConfig::default(),
             egress_deny: false,
             egress_proxy: None,
+            sysctls: Default::default(),
         }
     }
 

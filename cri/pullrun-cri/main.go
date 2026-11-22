@@ -68,6 +68,8 @@ type sandboxRecord struct {
 	runtimeClass string
 	bridgeName   string
 	hostNetwork  bool
+	labels       map[string]string
+	annotations  map[string]string
 	dns          *pullrunruntime.DnsConfig
 }
 
@@ -107,6 +109,8 @@ func sandboxToAPI(rec *sandboxRecord) *runtimeapi.PodSandbox {
 		State:          rec.state,
 		CreatedAt:      rec.createdAt.UnixNano(),
 		RuntimeHandler: rec.runtimeClass,
+		Labels:         rec.labels,
+		Annotations:   rec.annotations,
 	}
 }
 

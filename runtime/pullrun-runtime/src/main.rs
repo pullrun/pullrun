@@ -586,6 +586,7 @@ async fn run_workload(
         dns: Default::default(),
         egress_deny: false,
         egress_proxy: None,
+        sysctls: std::collections::HashMap::new(),
     };
 
     let mut handle = executor.create(spec).await?;

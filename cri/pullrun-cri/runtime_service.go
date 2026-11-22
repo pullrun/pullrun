@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	pullrunruntime "pullrun/protoapi/pullrun/runtime"
 )
@@ -137,6 +139,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		MemoryBytes:   mem,
 		BridgeName:    bridgeName,
 		Dns:           dns,
+		Sysctls:       req.Config.GetLinux().GetSysctls(),
 	})
 	cancel()
 	if err != nil {
@@ -155,6 +158,8 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		runtimeClass: req.RuntimeHandler,
 		bridgeName:   bridgeName,
 		hostNetwork:  hostNetwork,
+		labels:       req.Config.Labels,
+		annotations:  req.Config.Annotations,
 		dns:          dns,
 	}
 	c.sandboxStore.putSandbox(rec)
@@ -210,7 +215,7 @@ func (c *criServer) StopPodSandbox(ctx context.Context, req *runtimeapi.StopPodS
 	})
 	cancel()
 
-	if err != nil {
+	if err != nil && status.Code(err) != codes.NotFound {
 		return nil, fmt.Errorf("stop workload: %w", err)
 	}
 
@@ -285,6 +290,8 @@ func (c *criServer) PodSandboxStatus(ctx context.Context, req *runtimeapi.PodSan
 	if hasLocal {
 		status.Metadata = &runtimeapi.PodSandboxMetadata{Name: rec.name, Namespace: rec.namespace, Uid: rec.id}
 		status.RuntimeHandler = rec.runtimeClass
+		status.Labels = rec.labels
+		status.Annotations = rec.annotations
 	}
 
 	return &runtimeapi.PodSandboxStatusResponse{

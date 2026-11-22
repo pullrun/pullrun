@@ -11,6 +11,8 @@ import (
 	"log"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	pullrunruntime "pullrun/protoapi/pullrun/runtime"
 )
@@ -255,7 +257,7 @@ func (c *criServer) StopContainer(ctx context.Context, req *runtimeapi.StopConta
 	stopCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err := c.runtimeClient.StopWorkload(stopCtx, &pullrunruntime.StopRequest{Id: rec.pullrunID})
 	cancel()
-	if err != nil {
+	if err != nil && status.Code(err) != codes.NotFound {
 		return nil, fmt.Errorf("stop workload: %w", err)
 	}
 

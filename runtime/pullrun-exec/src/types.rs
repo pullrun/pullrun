@@ -162,6 +162,8 @@ pub struct WorkloadSpec {
     pub egress_deny: bool,
     /// When set, the only permitted egress is this HTTP(S) proxy.
     pub egress_proxy: Option<std::net::SocketAddr>,
+    /// Linux sysctls applied in the workload's network namespace.
+    pub sysctls: HashMap<String, String>,
 }
 
 impl WorkloadSpec {
@@ -189,6 +191,7 @@ impl WorkloadSpec {
             dns: DnsConfig::default(),
             egress_deny: false,
             egress_proxy: None,
+            sysctls: HashMap::new(),
         }
     }
 }
@@ -216,6 +219,7 @@ pub struct WorkloadSpecBuilder {
     dns: DnsConfig,
     egress_deny: bool,
     egress_proxy: Option<std::net::SocketAddr>,
+    sysctls: HashMap<String, String>,
 }
 
 impl WorkloadSpecBuilder {
@@ -231,6 +235,11 @@ impl WorkloadSpecBuilder {
 
     pub fn egress_proxy(mut self, proxy: Option<std::net::SocketAddr>) -> Self {
         self.egress_proxy = proxy;
+        self
+    }
+
+    pub fn sysctls(mut self, sysctls: HashMap<String, String>) -> Self {
+        self.sysctls = sysctls;
         self
     }
 
@@ -338,6 +347,7 @@ impl WorkloadSpecBuilder {
             dns: self.dns,
             egress_deny: self.egress_deny,
             egress_proxy: self.egress_proxy,
+            sysctls: self.sysctls,
         }
     }
 }

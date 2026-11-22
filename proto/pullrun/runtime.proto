@@ -320,6 +320,8 @@ message RunRequest {
     // Fail-closed egress: deny outbound traffic except the outbound
     // network_rules allowlist and gateway DNS.
     bool egress_deny = 24;
+    // Linux sysctls applied inside the container/pod network namespace.
+    map<string, string> sysctls = 25;
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.

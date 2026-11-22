@@ -1647,6 +1647,7 @@ async fn attempt_restart(
         dns,
         egress_deny: false,
         egress_proxy: None,
+        sysctls: std::collections::HashMap::new(),
     };
 
     match watcher_executor.create(spec).await {
@@ -2906,6 +2907,7 @@ impl Runtime for RuntimeService {
             dns: dns_from_req(req.dns.as_ref()),
             egress_deny: self.config.egress_deny || req.egress_deny,
             egress_proxy,
+            sysctls: req.sysctls.clone(),
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -3249,6 +3251,7 @@ impl Runtime for RuntimeService {
                 allowed_syscalls: Vec::new(),
                 dns: None,
                 egress_deny: self.config.egress_deny,
+                sysctls: Default::default(),
             });
 
             let run_resp = self.run_workload(run_req).await?;
