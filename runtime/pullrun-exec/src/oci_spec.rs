@@ -332,6 +332,7 @@ mod tests {
             egress_deny: false,
             egress_proxy: None,
             sysctls: Default::default(),
+            log_path: None,
         }
     }
 
