@@ -4,7 +4,8 @@
 
 ### CRI
 - Container labels/annotations/attempt preserved; ExecSync honors the
-  requested timeout and attempts to kill the timed-out process group.
+  requested timeout and kills the host-side exec process group/pid-file
+  PID, but the in-container command can survive.
 - Host networking no longer creates an OCI network namespace.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
@@ -292,7 +293,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 
 ### CRI
 - Container labels/annotations/attempt preserved; ExecSync honors the
-  requested timeout and attempts to kill the timed-out process group.
+  requested timeout and kills the host-side exec process group/pid-file
+  PID, but the in-container command can survive.
 - Host networking no longer creates an OCI network namespace.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).

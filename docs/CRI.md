@@ -52,7 +52,7 @@ Current status on the Linux KVM host:
 |---|---|
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
-| Container (basic operations) | **13/14 pass**; remaining: timed-out exec process cleanup |
+| Container (basic operations) | **13/14 pass**; remaining: timed-out exec process survives because the pid-file PID is in the container namespace |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
