@@ -929,9 +929,7 @@ impl Executor for FirecrackerExecutor {
                 ext4_path.display()
             )));
         }
-        let mem_bytes = std::fs::metadata(&rootfs_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let mem_bytes = 0;
         Ok(SnapshotInfo {
             state_path: std::path::PathBuf::new(),
             mem_path: std::path::PathBuf::new(),

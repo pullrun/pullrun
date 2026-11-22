@@ -5021,11 +5021,16 @@ impl Runtime for RuntimeService {
                 .map_err(|_| tonic::Status::not_found("snapshot not found"))?,
         )
         .map_err(|e| tonic::Status::internal(format!("parse snapshot meta: {e}")))?;
-        for (label, path) in [
-            ("state", &meta.state_path),
-            ("memory", &meta.mem_path),
-            ("rootfs", &meta.rootfs_path),
-        ] {
+        let required: Vec<(&str, &std::path::PathBuf)> = if meta.fidelity == "rootfs" {
+            vec![("rootfs", &meta.rootfs_path)]
+        } else {
+            vec![
+                ("state", &meta.state_path),
+                ("memory", &meta.mem_path),
+                ("rootfs", &meta.rootfs_path),
+            ]
+        };
+        for (label, path) in required {
             if !path.exists() {
                 return Err(tonic::Status::failed_precondition(format!(
                     "snapshot {label} file missing: {}",
