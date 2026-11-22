@@ -4731,7 +4731,9 @@ impl Runtime for RuntimeService {
         {
             let workloads = self.workloads.read().await;
             for (id, ws) in workloads.iter() {
-                if ws.image_root == root_digest {
+                if ws.image_root == root_digest
+                    && matches!(ws.status.as_str(), "running" | "created" | "scheduled")
+                {
                     return Err(Status::failed_precondition(format!(
                         "image is in use by workload {id}"
                     )));

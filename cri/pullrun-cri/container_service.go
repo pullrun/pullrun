@@ -321,6 +321,7 @@ func (c *criServer) ContainerStatus(ctx context.Context, req *runtimeapi.Contain
 		CreatedAt: rec.createdAt.UnixNano(),
 		Image:     &runtimeapi.ImageSpec{Image: rec.image},
 		ImageRef:  rec.imageRef,
+		ImageId:   rec.imageRef,
 	}
 	if startedAt > 0 {
 		status.StartedAt = startedAt
