@@ -44,18 +44,21 @@ clear error rather than silently allowing egress.
 
 - An ignored root test builds a throwaway netns, installs the policy,
   and asserts `policy drop`, the allow rule, and the allowed port.
-- The runtime logs `fail-closed egress policy applied` after the chain
-  is installed.
+- **Traffic test on the KVM host (rootful container):**
+  - `nc 1.1.1.1:80` (allowed) → **exit 0**
+  - `nc 93.184.216.34:80` (not allowed) → **exit 1**
+  - Both runs used `--egress-deny --allow-outbound tcp:1.1.1.1:80`.
+- Rootful container networking was also fixed: the bridge is brought
+  up, the default `10.42.0.0/16` gets MASQUERADE, and FORWARD accepts
+  traffic to/from the bridge (Docker sets FORWARD to DROP).
 
 ## Gaps
 
 - **No credential injection yet.** Sandboxes still hold any secrets
   mounted into them; zero-ambient-credential egress is not implemented.
-- The full workload traffic path is not yet verified: on the test host
-  rootful container veth setup failed with `Cannot find device`, so the
-  allowed/denied HTTP checks were inconclusive. This is a rootful
-  container networking bug, separate from the nft policy.
 - DNS names are resolved once at start; rotating IPs need a restart.
+- Only rootful containers are enforced; VMs and rootless containers
+  reject `--egress-deny`.
 - No egress audit events yet.
 - Host networking and `--net host` cannot be made fail-closed and are
   rejected when `--egress-deny` is set.

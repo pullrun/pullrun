@@ -18,7 +18,7 @@ is not proven; "Future" means not implemented.
 | Snapshot latency | **Met target** | capture 3.8 s; restore 63 / 84 / 119 ms (best/avg/worst, 512 MiB guest) |
 | Actor templates / suspend/resume | **Met** (single-node) | golden memory snapshot; resume 99–110 ms; suspend writes a new snapshot |
 | Request parking | **Partial** | per-actor mutex serializes resume/suspend; no HTTP ingress queue |
-| Fail-closed egress | **In Progress** | rootful container nftables `policy drop` + allowlist verified in a netns; real workload traffic path blocked by rootful veth setup bug; VM/rootless reject the flag |
+| Fail-closed egress | **Met** (rootful containers) | nftables `policy drop` + allowlist verified in a netns and with real traffic: allowed TCP connect exit 0, denied exit 1. VM/rootless reject the flag; no egress audit yet |
 | Credential injection | **Future** | no egress gateway / MITM / credential broker yet |
 | No ambient credentials | **Not met** | secrets are mounted into sandboxes; snapshot files contain guest memory (possibly secrets) |
 | Snapshot encryption / integrity | **Not met** | files are plaintext on the store; Firecracker state has a CRC, not authentication |

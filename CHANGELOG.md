@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Networking
+- Bring the `pullrun-br0` bridge up even when it already exists, add
+  MASQUERADE for the default `10.42.0.0/16`, and add FORWARD accept
+  rules (Docker sets FORWARD to DROP). Rootful containers now have
+  working egress.
+- Fail-closed egress is verified end to end: with
+  `--egress-deny --allow-outbound tcp:1.1.1.1:80`, a TCP connect to
+  `1.1.1.1:80` exits 0 and a connect to `93.184.216.34:80` exits 1.
+
 ## 0.9.0 — 2026-11-22
 
 Stateful-agent layer: Firecracker memory snapshots, golden-template
