@@ -319,6 +319,7 @@ mod tests {
             kernel_path: None,
             health_check: None,
             dns: crate::types::DnsConfig::default(),
+            egress_deny: false,
         }
     }
 
