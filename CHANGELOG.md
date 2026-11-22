@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Credential injection
+- `--egress-credential HOST:HEADER=SECRET` starts a per-daemon HTTPS
+  MITM proxy with a generated CA. Workloads get proxy env and a
+  read-only CA mount; the secret is injected by the proxy and never
+  placed in the sandbox.
+- Verified with `curlimages/curl`: response contained
+  `Authorization: Bearer test123`, with no `/run/secrets` mount and no
+  secret env var.
+- Proxy accepts connections only from loopback/private source
+  addresses.
+
 ## 0.9.1 — 2026-11-22
 
 Rootful container networking and verified fail-closed egress.

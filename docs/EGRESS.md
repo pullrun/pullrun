@@ -40,6 +40,39 @@ the policy aborts workload startup (fail closed).
 The **VM and rootless container** backends reject `--egress-deny` with a
 clear error rather than silently allowing egress.
 
+## Credential injection (HTTPS MITM)
+
+Start the daemon with one or more credential rules. The rule format is
+`HOST:HEADER=SECRET`; the secret is read from Pullrun's encrypted secret
+store and never mounted into the sandbox.
+
+```bash
+printf 'Bearer sk-...' | pullrun secret create OPENAI_KEY -
+pullrun-runtime daemon --socket /tmp/pullrun.sock   --egress-credential api.openai.com:authorization=OPENAI_KEY
+```
+
+Credential rules imply `--egress-deny`. Workloads receive:
+
+- `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` pointing at the proxy,
+- a read-only CA certificate at `/etc/pullrun-ca.pem`,
+- `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
+  `NODE_EXTRA_CA_CERTS` pointing at it.
+
+The proxy terminates CONNECT TLS with a per-host certificate signed by a
+per-daemon CA, injects the configured header, and re-originates TLS to
+the real host. Only hosts with a credential rule are allowed. Connections
+from non-private source addresses are rejected before parsing.
+
+Verified on the KVM host with `curlimages/curl`:
+
+```
+Authorization: Bearer test123
+```
+
+with a container that had no `/run/secrets/TEST_SECRET` and no
+`TEST_SECRET` environment variable. The host-side proxy test also
+returned 200.
+
 ## Verified
 
 - An ignored root test builds a throwaway netns, installs the policy,
@@ -54,8 +87,13 @@ clear error rather than silently allowing egress.
 
 ## Gaps
 
-- **No credential injection yet.** Sandboxes still hold any secrets
-  mounted into them; zero-ambient-credential egress is not implemented.
+- **Explicit `--secret` mounts are still supported** (docker-style);
+  they place credentials inside the sandbox. Use egress credentials
+  instead for zero-ambient-credential workloads.
+- The MITM proxy handles HTTP/1.1 CONNECT requests; HTTP/2-only
+  upstreams and non-TLS protocols are not covered.
+- The CA private key lives in the daemon process; the public CA cert is
+  written to `<store>/egress/ca.pem`. There is no CA rotation API yet.
 - DNS names are resolved once at start; rotating IPs need a restart.
 - Only rootful containers are enforced; VMs and rootless containers
   reject `--egress-deny`.

@@ -19,8 +19,8 @@ is not proven; "Future" means not implemented.
 | Actor templates / suspend/resume | **Met** (single-node) | golden memory snapshot; resume 99–110 ms; suspend writes a new snapshot |
 | Request parking | **Partial** | per-actor mutex serializes resume/suspend; no HTTP ingress queue |
 | Fail-closed egress | **Met** (rootful containers) | nftables `policy drop` + allowlist verified in a netns and with real traffic: allowed TCP connect exit 0, denied exit 1. VM/rootless reject the flag; no egress audit yet |
-| Credential injection | **Future** | no egress gateway / MITM / credential broker yet |
-| No ambient credentials | **Not met** | secrets are mounted into sandboxes; snapshot files contain guest memory (possibly secrets) |
+| Credential injection | **Met** (rootful containers) | HTTPS MITM proxy injects headers from the secret store; verified `Authorization: Bearer …` with no sandbox secret |
+| No ambient credentials | **Partial** | egress-credential workloads hold no secret; explicit `--secret` mounts still place secrets in the sandbox; snapshots contain guest memory |
 | Snapshot encryption / integrity | **Not met** | files are plaintext on the store; Firecracker state has a CRC, not authentication |
 | Workload identity | **Future** | no SPIFFE/JWT issuance |
 | Egress audit events | **Future** | policy is enforced by nftables; no per-flow audit stream |
