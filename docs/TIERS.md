@@ -27,7 +27,7 @@ execute `/bin/sh -c true`.
 | tier | sequential | concurrent |
 |---|---:|---:|
 | container (rootless runc) | 3,592 ms | **914 ms** |
-| per-task Firecracker VM | boots & executes in ~1 s; attach pending | — |
+| per-task Firecracker VM | boots & executes in ~1 s; stdout+exit verified | — |
 | group | not implemented on Linux | — |
 
 Interpretation:
@@ -45,9 +45,10 @@ Interpretation:
 - `run --attach` now returns on VM poweroff with the guest exit code
   (`exit 3`/`exit 7` verified): `status()` parses `PULLRUN_EXIT=`,
   kills the VMM, and the CLI polls GetWorkload while attached.
-- Remaining gap: the VM's serial stdout is not forwarded to the attach
-  client yet (it is present in the daemon-side `console.log`), so
-  `run --attach` returns the right code with empty stdout.
+- Serial stdout is forwarded to the attach client (verified with
+  `FC_DEBUG` in client output) and `run --attach` returns the guest exit
+  code (`exit 3`/`exit 7` verified). The CLI drains queued output until
+  idle so fast exits do not lose it.
 - Re-run `hack/tier-bench.sh` on Linux with `/dev/kvm`,
   `PULLRUN_FC_BIN`, and `PULLRUN_FC_VMLINUX` once attach returns to
   fill the tier row.

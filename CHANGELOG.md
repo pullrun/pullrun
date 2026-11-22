@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.2 — 2026-11-22
+
+Firecracker VM backend repair. The 0.8.0 Linux VM path never started:
+Firecracker rejected the config flag, then exited on metrics
+initialization. This release makes `run --backend vm` boot, execute the
+requested command, power off, and return the guest exit code.
+
+### Firecracker
+- Use Firecracker's `--config-file` (not `--config-path`).
+- Drop `--metrics-path`; Firecracker expects an existing FIFO and
+  otherwise exits with `MetricsInitialization(ENOENT)`.
+- Isolated/`--net none` VMs no longer create a tap, bridge, or virtio
+  NIC; the sidecar records `network_disabled` and start/stop skip
+  network plumbing.
+- Execute the workload command from `/init` instead of always running
+  the OCI ENTRYPOINT/CMD; print `PULLRUN_EXIT=<code>` on ttyS0 and
+  power off (`/proc` is mounted so sysrq works).
+- `status()` treats the marker as the VM exit and reaps the Firecracker
+  process; the CLI polls workload state while attached and returns the
+  exit code.
+- The boot smoke test builds its ext4 rootfs with `mkfs.ext4 -d` (no
+  loop mount), so it runs unprivileged with `/dev/kvm`.
+
+### Runtime / CLI
+- `GetWorkload` returns live container exit codes instead of waiting
+  up to 5 s for the background watcher (including `container-rootless`).
+- Attach drains queued output briefly after `exited`.
+
+### Known limitations
+- Firecracker tier timing is still pending (`docs/TIERS.md`).
+- Linux sandbox groups are not implemented.
+
 ## 0.8.0 — 2026-11-21
 
 Security and correctness release. Fixes host-filesystem escapes in OCI
