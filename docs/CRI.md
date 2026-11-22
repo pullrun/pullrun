@@ -49,10 +49,11 @@ Current status on the Linux KVM host:
 |---|---|
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
-| Container | in progress — log tests 2/2 pass; full suite rerun still in progress |
+| Container | log tests **2/2 pass**; container stats filter **5/5 pass**; full suite pending |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
 | Image volumes | feature-gated, not implemented |
-| Streaming / Stats | not yet run |
+| Stats | **5/5 pass** |
+| Streaming | pending — dominated by slow gcr image pulls; needs pre-pulled test images |
 
 A full 142-spec run is not yet green: an earlier run wedged in
 `StopPodSandbox` before the idempotence fix, and the complete suite has

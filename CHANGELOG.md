@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### CRI
+- Container stats now honor the CRI label selector (`5/5` stats specs).
 - Image refs are indexed per tag (ref → root) instead of root → last
   ref, so multiple tags of one image remain addressable.
 - RemoveImage resolves tags through HasImage, removes all refs for the
@@ -281,6 +282,7 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 ## 0.7.8 — 2026-07-31
 
 ### CRI
+- Container stats now honor the CRI label selector (`5/5` stats specs).
 - Image refs are indexed per tag (ref → root) instead of root → last
   ref, so multiple tags of one image remain addressable.
 - RemoveImage resolves tags through HasImage, removes all refs for the
