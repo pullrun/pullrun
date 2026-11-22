@@ -47,6 +47,14 @@ const (
 	Runtime_ListSnapshots_FullMethodName    = "/pullrun.runtime.Runtime/ListSnapshots"
 	Runtime_RemoveSnapshot_FullMethodName   = "/pullrun.runtime.Runtime/RemoveSnapshot"
 	Runtime_RestoreSnapshot_FullMethodName  = "/pullrun.runtime.Runtime/RestoreSnapshot"
+	Runtime_CreateTemplate_FullMethodName   = "/pullrun.runtime.Runtime/CreateTemplate"
+	Runtime_ListTemplates_FullMethodName    = "/pullrun.runtime.Runtime/ListTemplates"
+	Runtime_RemoveTemplate_FullMethodName   = "/pullrun.runtime.Runtime/RemoveTemplate"
+	Runtime_CreateActor_FullMethodName      = "/pullrun.runtime.Runtime/CreateActor"
+	Runtime_ListActors_FullMethodName       = "/pullrun.runtime.Runtime/ListActors"
+	Runtime_ResumeActor_FullMethodName      = "/pullrun.runtime.Runtime/ResumeActor"
+	Runtime_SuspendActor_FullMethodName     = "/pullrun.runtime.Runtime/SuspendActor"
+	Runtime_RemoveActor_FullMethodName      = "/pullrun.runtime.Runtime/RemoveActor"
 	Runtime_BuildImage_FullMethodName       = "/pullrun.runtime.Runtime/BuildImage"
 	Runtime_PushImage_FullMethodName        = "/pullrun.runtime.Runtime/PushImage"
 	Runtime_ExportImage_FullMethodName      = "/pullrun.runtime.Runtime/ExportImage"
@@ -115,6 +123,15 @@ type RuntimeClient interface {
 	ListSnapshots(ctx context.Context, in *ListSnapshotsRequest, opts ...grpc.CallOption) (*ListSnapshotsResponse, error)
 	RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotResponse, error)
 	RestoreSnapshot(ctx context.Context, in *RestoreSnapshotRequest, opts ...grpc.CallOption) (*RestoreSnapshotResponse, error)
+	// --- Actor templates (golden snapshots) and actors ---
+	CreateTemplate(ctx context.Context, in *CreateTemplateRequest, opts ...grpc.CallOption) (*CreateTemplateResponse, error)
+	ListTemplates(ctx context.Context, in *ListTemplatesRequest, opts ...grpc.CallOption) (*ListTemplatesResponse, error)
+	RemoveTemplate(ctx context.Context, in *RemoveTemplateRequest, opts ...grpc.CallOption) (*RemoveTemplateResponse, error)
+	CreateActor(ctx context.Context, in *CreateActorRequest, opts ...grpc.CallOption) (*CreateActorResponse, error)
+	ListActors(ctx context.Context, in *ListActorsRequest, opts ...grpc.CallOption) (*ListActorsResponse, error)
+	ResumeActor(ctx context.Context, in *ResumeActorRequest, opts ...grpc.CallOption) (*ResumeActorResponse, error)
+	SuspendActor(ctx context.Context, in *SuspendActorRequest, opts ...grpc.CallOption) (*SuspendActorResponse, error)
+	RemoveActor(ctx context.Context, in *RemoveActorRequest, opts ...grpc.CallOption) (*RemoveActorResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error)
@@ -473,6 +490,86 @@ func (c *runtimeClient) RestoreSnapshot(ctx context.Context, in *RestoreSnapshot
 	return out, nil
 }
 
+func (c *runtimeClient) CreateTemplate(ctx context.Context, in *CreateTemplateRequest, opts ...grpc.CallOption) (*CreateTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateTemplateResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListTemplates(ctx context.Context, in *ListTemplatesRequest, opts ...grpc.CallOption) (*ListTemplatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTemplatesResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListTemplates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveTemplate(ctx context.Context, in *RemoveTemplateRequest, opts ...grpc.CallOption) (*RemoveTemplateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveTemplateResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) CreateActor(ctx context.Context, in *CreateActorRequest, opts ...grpc.CallOption) (*CreateActorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateActorResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateActor_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListActors(ctx context.Context, in *ListActorsRequest, opts ...grpc.CallOption) (*ListActorsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListActorsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListActors_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ResumeActor(ctx context.Context, in *ResumeActorRequest, opts ...grpc.CallOption) (*ResumeActorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResumeActorResponse)
+	err := c.cc.Invoke(ctx, Runtime_ResumeActor_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) SuspendActor(ctx context.Context, in *SuspendActorRequest, opts ...grpc.CallOption) (*SuspendActorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SuspendActorResponse)
+	err := c.cc.Invoke(ctx, Runtime_SuspendActor_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveActor(ctx context.Context, in *RemoveActorRequest, opts ...grpc.CallOption) (*RemoveActorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveActorResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveActor_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BuildImageResponse)
@@ -776,6 +873,15 @@ type RuntimeServer interface {
 	ListSnapshots(context.Context, *ListSnapshotsRequest) (*ListSnapshotsResponse, error)
 	RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotResponse, error)
 	RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error)
+	// --- Actor templates (golden snapshots) and actors ---
+	CreateTemplate(context.Context, *CreateTemplateRequest) (*CreateTemplateResponse, error)
+	ListTemplates(context.Context, *ListTemplatesRequest) (*ListTemplatesResponse, error)
+	RemoveTemplate(context.Context, *RemoveTemplateRequest) (*RemoveTemplateResponse, error)
+	CreateActor(context.Context, *CreateActorRequest) (*CreateActorResponse, error)
+	ListActors(context.Context, *ListActorsRequest) (*ListActorsResponse, error)
+	ResumeActor(context.Context, *ResumeActorRequest) (*ResumeActorResponse, error)
+	SuspendActor(context.Context, *SuspendActorRequest) (*SuspendActorResponse, error)
+	RemoveActor(context.Context, *RemoveActorRequest) (*RemoveActorResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error)
@@ -928,6 +1034,30 @@ func (UnimplementedRuntimeServer) RemoveSnapshot(context.Context, *RemoveSnapsho
 }
 func (UnimplementedRuntimeServer) RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestoreSnapshot not implemented")
+}
+func (UnimplementedRuntimeServer) CreateTemplate(context.Context, *CreateTemplateRequest) (*CreateTemplateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateTemplate not implemented")
+}
+func (UnimplementedRuntimeServer) ListTemplates(context.Context, *ListTemplatesRequest) (*ListTemplatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTemplates not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveTemplate(context.Context, *RemoveTemplateRequest) (*RemoveTemplateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveTemplate not implemented")
+}
+func (UnimplementedRuntimeServer) CreateActor(context.Context, *CreateActorRequest) (*CreateActorResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateActor not implemented")
+}
+func (UnimplementedRuntimeServer) ListActors(context.Context, *ListActorsRequest) (*ListActorsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListActors not implemented")
+}
+func (UnimplementedRuntimeServer) ResumeActor(context.Context, *ResumeActorRequest) (*ResumeActorResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResumeActor not implemented")
+}
+func (UnimplementedRuntimeServer) SuspendActor(context.Context, *SuspendActorRequest) (*SuspendActorResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SuspendActor not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveActor(context.Context, *RemoveActorRequest) (*RemoveActorResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveActor not implemented")
 }
 func (UnimplementedRuntimeServer) BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BuildImage not implemented")
@@ -1439,6 +1569,150 @@ func _Runtime_RestoreSnapshot_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).RestoreSnapshot(ctx, req.(*RestoreSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_CreateTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateTemplate(ctx, req.(*CreateTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTemplatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListTemplates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListTemplates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListTemplates(ctx, req.(*ListTemplatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveTemplate(ctx, req.(*RemoveTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_CreateActor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateActorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateActor(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateActor_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateActor(ctx, req.(*CreateActorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListActors_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListActorsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListActors(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListActors_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListActors(ctx, req.(*ListActorsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ResumeActor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResumeActorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ResumeActor(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ResumeActor_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ResumeActor(ctx, req.(*ResumeActorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_SuspendActor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SuspendActorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).SuspendActor(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_SuspendActor_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).SuspendActor(ctx, req.(*SuspendActorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveActor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveActorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveActor(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveActor_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveActor(ctx, req.(*RemoveActorRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1965,6 +2239,38 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RestoreSnapshot",
 			Handler:    _Runtime_RestoreSnapshot_Handler,
+		},
+		{
+			MethodName: "CreateTemplate",
+			Handler:    _Runtime_CreateTemplate_Handler,
+		},
+		{
+			MethodName: "ListTemplates",
+			Handler:    _Runtime_ListTemplates_Handler,
+		},
+		{
+			MethodName: "RemoveTemplate",
+			Handler:    _Runtime_RemoveTemplate_Handler,
+		},
+		{
+			MethodName: "CreateActor",
+			Handler:    _Runtime_CreateActor_Handler,
+		},
+		{
+			MethodName: "ListActors",
+			Handler:    _Runtime_ListActors_Handler,
+		},
+		{
+			MethodName: "ResumeActor",
+			Handler:    _Runtime_ResumeActor_Handler,
+		},
+		{
+			MethodName: "SuspendActor",
+			Handler:    _Runtime_SuspendActor_Handler,
+		},
+		{
+			MethodName: "RemoveActor",
+			Handler:    _Runtime_RemoveActor_Handler,
 		},
 		{
 			MethodName: "BuildImage",

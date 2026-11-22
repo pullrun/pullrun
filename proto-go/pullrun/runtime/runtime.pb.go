@@ -7533,6 +7533,912 @@ func (x *RestoreSnapshotResponse) GetRestoreMs() uint64 {
 	return 0
 }
 
+type CreateTemplateRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Running workload whose memory snapshot becomes the golden template.
+	WorkloadId    string `protobuf:"bytes,2,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateTemplateRequest) Reset() {
+	*x = CreateTemplateRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[122]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTemplateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTemplateRequest) ProtoMessage() {}
+
+func (x *CreateTemplateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[122]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTemplateRequest.ProtoReflect.Descriptor instead.
+func (*CreateTemplateRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{122}
+}
+
+func (x *CreateTemplateRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateTemplateRequest) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
+
+type CreateTemplateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SnapshotId    string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateTemplateResponse) Reset() {
+	*x = CreateTemplateResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[123]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTemplateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTemplateResponse) ProtoMessage() {}
+
+func (x *CreateTemplateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[123]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTemplateResponse.ProtoReflect.Descriptor instead.
+func (*CreateTemplateResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{123}
+}
+
+func (x *CreateTemplateResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateTemplateResponse) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+type TemplateInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SnapshotId    string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	ImageRoot     string                 `protobuf:"bytes,3,opt,name=image_root,json=imageRoot,proto3" json:"image_root,omitempty"`
+	Command       []string               `protobuf:"bytes,4,rep,name=command,proto3" json:"command,omitempty"`
+	CreatedAt     int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TemplateInfo) Reset() {
+	*x = TemplateInfo{}
+	mi := &file_pullrun_runtime_proto_msgTypes[124]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TemplateInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TemplateInfo) ProtoMessage() {}
+
+func (x *TemplateInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[124]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TemplateInfo.ProtoReflect.Descriptor instead.
+func (*TemplateInfo) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{124}
+}
+
+func (x *TemplateInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetImageRoot() string {
+	if x != nil {
+		return x.ImageRoot
+	}
+	return ""
+}
+
+func (x *TemplateInfo) GetCommand() []string {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+func (x *TemplateInfo) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type ListTemplatesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTemplatesRequest) Reset() {
+	*x = ListTemplatesRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[125]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTemplatesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTemplatesRequest) ProtoMessage() {}
+
+func (x *ListTemplatesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[125]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTemplatesRequest.ProtoReflect.Descriptor instead.
+func (*ListTemplatesRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{125}
+}
+
+type ListTemplatesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Templates     []*TemplateInfo        `protobuf:"bytes,1,rep,name=templates,proto3" json:"templates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTemplatesResponse) Reset() {
+	*x = ListTemplatesResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTemplatesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTemplatesResponse) ProtoMessage() {}
+
+func (x *ListTemplatesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTemplatesResponse.ProtoReflect.Descriptor instead.
+func (*ListTemplatesResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{126}
+}
+
+func (x *ListTemplatesResponse) GetTemplates() []*TemplateInfo {
+	if x != nil {
+		return x.Templates
+	}
+	return nil
+}
+
+type RemoveTemplateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveTemplateRequest) Reset() {
+	*x = RemoveTemplateRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[127]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveTemplateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveTemplateRequest) ProtoMessage() {}
+
+func (x *RemoveTemplateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[127]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveTemplateRequest.ProtoReflect.Descriptor instead.
+func (*RemoveTemplateRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{127}
+}
+
+func (x *RemoveTemplateRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type RemoveTemplateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Removed       bool                   `protobuf:"varint,1,opt,name=removed,proto3" json:"removed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveTemplateResponse) Reset() {
+	*x = RemoveTemplateResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[128]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveTemplateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveTemplateResponse) ProtoMessage() {}
+
+func (x *RemoveTemplateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[128]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveTemplateResponse.ProtoReflect.Descriptor instead.
+func (*RemoveTemplateResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{128}
+}
+
+func (x *RemoveTemplateResponse) GetRemoved() bool {
+	if x != nil {
+		return x.Removed
+	}
+	return false
+}
+
+type CreateActorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Template      string                 `protobuf:"bytes,2,opt,name=template,proto3" json:"template,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateActorRequest) Reset() {
+	*x = CreateActorRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[129]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateActorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateActorRequest) ProtoMessage() {}
+
+func (x *CreateActorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[129]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateActorRequest.ProtoReflect.Descriptor instead.
+func (*CreateActorRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{129}
+}
+
+func (x *CreateActorRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateActorRequest) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+type CreateActorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateActorResponse) Reset() {
+	*x = CreateActorResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[130]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateActorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateActorResponse) ProtoMessage() {}
+
+func (x *CreateActorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[130]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateActorResponse.ProtoReflect.Descriptor instead.
+func (*CreateActorResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{130}
+}
+
+func (x *CreateActorResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateActorResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+type ActorInfo struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Template string                 `protobuf:"bytes,2,opt,name=template,proto3" json:"template,omitempty"`
+	// "suspended" | "running"
+	State         string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	SnapshotId    string `protobuf:"bytes,4,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	WorkloadId    string `protobuf:"bytes,5,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	CreatedAt     int64  `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastUsed      int64  `protobuf:"varint,7,opt,name=last_used,json=lastUsed,proto3" json:"last_used,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActorInfo) Reset() {
+	*x = ActorInfo{}
+	mi := &file_pullrun_runtime_proto_msgTypes[131]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorInfo) ProtoMessage() {}
+
+func (x *ActorInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[131]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorInfo.ProtoReflect.Descriptor instead.
+func (*ActorInfo) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{131}
+}
+
+func (x *ActorInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ActorInfo) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+func (x *ActorInfo) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ActorInfo) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+func (x *ActorInfo) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
+
+func (x *ActorInfo) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+func (x *ActorInfo) GetLastUsed() int64 {
+	if x != nil {
+		return x.LastUsed
+	}
+	return 0
+}
+
+type ListActorsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActorsRequest) Reset() {
+	*x = ListActorsRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[132]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActorsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActorsRequest) ProtoMessage() {}
+
+func (x *ListActorsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[132]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActorsRequest.ProtoReflect.Descriptor instead.
+func (*ListActorsRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{132}
+}
+
+type ListActorsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Actors        []*ActorInfo           `protobuf:"bytes,1,rep,name=actors,proto3" json:"actors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActorsResponse) Reset() {
+	*x = ListActorsResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[133]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActorsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActorsResponse) ProtoMessage() {}
+
+func (x *ListActorsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[133]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActorsResponse.ProtoReflect.Descriptor instead.
+func (*ListActorsResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{133}
+}
+
+func (x *ListActorsResponse) GetActors() []*ActorInfo {
+	if x != nil {
+		return x.Actors
+	}
+	return nil
+}
+
+type ResumeActorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResumeActorRequest) Reset() {
+	*x = ResumeActorRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[134]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResumeActorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResumeActorRequest) ProtoMessage() {}
+
+func (x *ResumeActorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[134]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResumeActorRequest.ProtoReflect.Descriptor instead.
+func (*ResumeActorRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{134}
+}
+
+func (x *ResumeActorRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ResumeActorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	Resumed       bool                   `protobuf:"varint,2,opt,name=resumed,proto3" json:"resumed,omitempty"`
+	ResumeMs      uint64                 `protobuf:"varint,3,opt,name=resume_ms,json=resumeMs,proto3" json:"resume_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResumeActorResponse) Reset() {
+	*x = ResumeActorResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[135]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResumeActorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResumeActorResponse) ProtoMessage() {}
+
+func (x *ResumeActorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[135]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResumeActorResponse.ProtoReflect.Descriptor instead.
+func (*ResumeActorResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{135}
+}
+
+func (x *ResumeActorResponse) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
+
+func (x *ResumeActorResponse) GetResumed() bool {
+	if x != nil {
+		return x.Resumed
+	}
+	return false
+}
+
+func (x *ResumeActorResponse) GetResumeMs() uint64 {
+	if x != nil {
+		return x.ResumeMs
+	}
+	return 0
+}
+
+type SuspendActorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuspendActorRequest) Reset() {
+	*x = SuspendActorRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[136]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuspendActorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuspendActorRequest) ProtoMessage() {}
+
+func (x *SuspendActorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[136]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuspendActorRequest.ProtoReflect.Descriptor instead.
+func (*SuspendActorRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{136}
+}
+
+func (x *SuspendActorRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type SuspendActorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuspendActorResponse) Reset() {
+	*x = SuspendActorResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[137]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuspendActorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuspendActorResponse) ProtoMessage() {}
+
+func (x *SuspendActorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[137]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuspendActorResponse.ProtoReflect.Descriptor instead.
+func (*SuspendActorResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{137}
+}
+
+func (x *SuspendActorResponse) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+type RemoveActorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveActorRequest) Reset() {
+	*x = RemoveActorRequest{}
+	mi := &file_pullrun_runtime_proto_msgTypes[138]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveActorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveActorRequest) ProtoMessage() {}
+
+func (x *RemoveActorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[138]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveActorRequest.ProtoReflect.Descriptor instead.
+func (*RemoveActorRequest) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{138}
+}
+
+func (x *RemoveActorRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type RemoveActorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Removed       bool                   `protobuf:"varint,1,opt,name=removed,proto3" json:"removed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveActorResponse) Reset() {
+	*x = RemoveActorResponse{}
+	mi := &file_pullrun_runtime_proto_msgTypes[139]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveActorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveActorResponse) ProtoMessage() {}
+
+func (x *RemoveActorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[139]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveActorResponse.ProtoReflect.Descriptor instead.
+func (*RemoveActorResponse) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{139}
+}
+
+func (x *RemoveActorResponse) GetRemoved() bool {
+	if x != nil {
+		return x.Removed
+	}
+	return false
+}
+
 var File_pullrun_runtime_proto protoreflect.FileDescriptor
 
 const file_pullrun_runtime_proto_rawDesc = "" +
@@ -8130,14 +9036,74 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"workloadId\x12\x18\n" +
 	"\abackend\x18\x02 \x01(\tR\abackend\x12\x1d\n" +
 	"\n" +
-	"restore_ms\x18\x03 \x01(\x04R\trestoreMs*\x80\x01\n" +
+	"restore_ms\x18\x03 \x01(\x04R\trestoreMs\"L\n" +
+	"\x15CreateTemplateRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\vworkload_id\x18\x02 \x01(\tR\n" +
+	"workloadId\"M\n" +
+	"\x16CreateTemplateResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
+	"snapshotId\"\x9b\x01\n" +
+	"\fTemplateInfo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
+	"snapshotId\x12\x1d\n" +
+	"\n" +
+	"image_root\x18\x03 \x01(\tR\timageRoot\x12\x18\n" +
+	"\acommand\x18\x04 \x03(\tR\acommand\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\x03R\tcreatedAt\"\x16\n" +
+	"\x14ListTemplatesRequest\"T\n" +
+	"\x15ListTemplatesResponse\x12;\n" +
+	"\ttemplates\x18\x01 \x03(\v2\x1d.pullrun.runtime.TemplateInfoR\ttemplates\"+\n" +
+	"\x15RemoveTemplateRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"2\n" +
+	"\x16RemoveTemplateResponse\x12\x18\n" +
+	"\aremoved\x18\x01 \x01(\bR\aremoved\"D\n" +
+	"\x12CreateActorRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\btemplate\x18\x02 \x01(\tR\btemplate\"?\n" +
+	"\x13CreateActorResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\"\xcf\x01\n" +
+	"\tActorInfo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\btemplate\x18\x02 \x01(\tR\btemplate\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x1f\n" +
+	"\vsnapshot_id\x18\x04 \x01(\tR\n" +
+	"snapshotId\x12\x1f\n" +
+	"\vworkload_id\x18\x05 \x01(\tR\n" +
+	"workloadId\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\x12\x1b\n" +
+	"\tlast_used\x18\a \x01(\x03R\blastUsed\"\x13\n" +
+	"\x11ListActorsRequest\"H\n" +
+	"\x12ListActorsResponse\x122\n" +
+	"\x06actors\x18\x01 \x03(\v2\x1a.pullrun.runtime.ActorInfoR\x06actors\"(\n" +
+	"\x12ResumeActorRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"m\n" +
+	"\x13ResumeActorResponse\x12\x1f\n" +
+	"\vworkload_id\x18\x01 \x01(\tR\n" +
+	"workloadId\x12\x18\n" +
+	"\aresumed\x18\x02 \x01(\bR\aresumed\x12\x1b\n" +
+	"\tresume_ms\x18\x03 \x01(\x04R\bresumeMs\")\n" +
+	"\x13SuspendActorRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"7\n" +
+	"\x14SuspendActorResponse\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\"(\n" +
+	"\x12RemoveActorRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"/\n" +
+	"\x13RemoveActorResponse\x12\x18\n" +
+	"\aremoved\x18\x01 \x01(\bR\aremoved*\x80\x01\n" +
 	"\rRestartPolicy\x12\x17\n" +
 	"\x13RESTART_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"RESTART_NO\x10\x01\x12\x16\n" +
 	"\x12RESTART_ON_FAILURE\x10\x02\x12\x12\n" +
 	"\x0eRESTART_ALWAYS\x10\x03\x12\x1a\n" +
-	"\x16RESTART_UNLESS_STOPPED\x10\x042\xe0\"\n" +
+	"\x16RESTART_UNLESS_STOPPED\x10\x042\xc8(\n" +
 	"\aRuntime\x12R\n" +
 	"\tPullImage\x12!.pullrun.runtime.PullImageRequest\x1a\".pullrun.runtime.PullImageResponse\x12H\n" +
 	"\vRunWorkload\x12\x1b.pullrun.runtime.RunRequest\x1a\x1c.pullrun.runtime.RunResponse\x12K\n" +
@@ -8166,7 +9132,16 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x0eCreateSnapshot\x12&.pullrun.runtime.CreateSnapshotRequest\x1a'.pullrun.runtime.CreateSnapshotResponse\x12^\n" +
 	"\rListSnapshots\x12%.pullrun.runtime.ListSnapshotsRequest\x1a&.pullrun.runtime.ListSnapshotsResponse\x12a\n" +
 	"\x0eRemoveSnapshot\x12&.pullrun.runtime.RemoveSnapshotRequest\x1a'.pullrun.runtime.RemoveSnapshotResponse\x12d\n" +
-	"\x0fRestoreSnapshot\x12'.pullrun.runtime.RestoreSnapshotRequest\x1a(.pullrun.runtime.RestoreSnapshotResponse\x12U\n" +
+	"\x0fRestoreSnapshot\x12'.pullrun.runtime.RestoreSnapshotRequest\x1a(.pullrun.runtime.RestoreSnapshotResponse\x12a\n" +
+	"\x0eCreateTemplate\x12&.pullrun.runtime.CreateTemplateRequest\x1a'.pullrun.runtime.CreateTemplateResponse\x12^\n" +
+	"\rListTemplates\x12%.pullrun.runtime.ListTemplatesRequest\x1a&.pullrun.runtime.ListTemplatesResponse\x12a\n" +
+	"\x0eRemoveTemplate\x12&.pullrun.runtime.RemoveTemplateRequest\x1a'.pullrun.runtime.RemoveTemplateResponse\x12X\n" +
+	"\vCreateActor\x12#.pullrun.runtime.CreateActorRequest\x1a$.pullrun.runtime.CreateActorResponse\x12U\n" +
+	"\n" +
+	"ListActors\x12\".pullrun.runtime.ListActorsRequest\x1a#.pullrun.runtime.ListActorsResponse\x12X\n" +
+	"\vResumeActor\x12#.pullrun.runtime.ResumeActorRequest\x1a$.pullrun.runtime.ResumeActorResponse\x12[\n" +
+	"\fSuspendActor\x12$.pullrun.runtime.SuspendActorRequest\x1a%.pullrun.runtime.SuspendActorResponse\x12X\n" +
+	"\vRemoveActor\x12#.pullrun.runtime.RemoveActorRequest\x1a$.pullrun.runtime.RemoveActorResponse\x12U\n" +
 	"\n" +
 	"BuildImage\x12\".pullrun.runtime.BuildImageRequest\x1a#.pullrun.runtime.BuildImageResponse\x12R\n" +
 	"\tPushImage\x12!.pullrun.runtime.PushImageRequest\x1a\".pullrun.runtime.PushImageResponse\x12W\n" +
@@ -8209,7 +9184,7 @@ func file_pullrun_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_pullrun_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 130)
+var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 148)
 var file_pullrun_runtime_proto_goTypes = []any{
 	(RestartPolicy)(0),              // 0: pullrun.runtime.RestartPolicy
 	(*Mount)(nil),                   // 1: pullrun.runtime.Mount
@@ -8334,24 +9309,42 @@ var file_pullrun_runtime_proto_goTypes = []any{
 	(*RemoveSnapshotResponse)(nil),  // 120: pullrun.runtime.RemoveSnapshotResponse
 	(*RestoreSnapshotRequest)(nil),  // 121: pullrun.runtime.RestoreSnapshotRequest
 	(*RestoreSnapshotResponse)(nil), // 122: pullrun.runtime.RestoreSnapshotResponse
-	nil,                             // 123: pullrun.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 124: pullrun.runtime.ComposeService.LabelsEntry
-	nil,                             // 125: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 126: pullrun.runtime.RunRequest.EnvEntry
-	nil,                             // 127: pullrun.runtime.Event.MetadataEntry
-	nil,                             // 128: pullrun.runtime.AttachOpen.EnvEntry
-	nil,                             // 129: pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 130: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	(*CreateTemplateRequest)(nil),   // 123: pullrun.runtime.CreateTemplateRequest
+	(*CreateTemplateResponse)(nil),  // 124: pullrun.runtime.CreateTemplateResponse
+	(*TemplateInfo)(nil),            // 125: pullrun.runtime.TemplateInfo
+	(*ListTemplatesRequest)(nil),    // 126: pullrun.runtime.ListTemplatesRequest
+	(*ListTemplatesResponse)(nil),   // 127: pullrun.runtime.ListTemplatesResponse
+	(*RemoveTemplateRequest)(nil),   // 128: pullrun.runtime.RemoveTemplateRequest
+	(*RemoveTemplateResponse)(nil),  // 129: pullrun.runtime.RemoveTemplateResponse
+	(*CreateActorRequest)(nil),      // 130: pullrun.runtime.CreateActorRequest
+	(*CreateActorResponse)(nil),     // 131: pullrun.runtime.CreateActorResponse
+	(*ActorInfo)(nil),               // 132: pullrun.runtime.ActorInfo
+	(*ListActorsRequest)(nil),       // 133: pullrun.runtime.ListActorsRequest
+	(*ListActorsResponse)(nil),      // 134: pullrun.runtime.ListActorsResponse
+	(*ResumeActorRequest)(nil),      // 135: pullrun.runtime.ResumeActorRequest
+	(*ResumeActorResponse)(nil),     // 136: pullrun.runtime.ResumeActorResponse
+	(*SuspendActorRequest)(nil),     // 137: pullrun.runtime.SuspendActorRequest
+	(*SuspendActorResponse)(nil),    // 138: pullrun.runtime.SuspendActorResponse
+	(*RemoveActorRequest)(nil),      // 139: pullrun.runtime.RemoveActorRequest
+	(*RemoveActorResponse)(nil),     // 140: pullrun.runtime.RemoveActorResponse
+	nil,                             // 141: pullrun.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 142: pullrun.runtime.ComposeService.LabelsEntry
+	nil,                             // 143: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 144: pullrun.runtime.RunRequest.EnvEntry
+	nil,                             // 145: pullrun.runtime.Event.MetadataEntry
+	nil,                             // 146: pullrun.runtime.AttachOpen.EnvEntry
+	nil,                             // 147: pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 148: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_pullrun_runtime_proto_depIdxs = []int32{
-	123, // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
+	141, // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
 	3,   // 1: pullrun.runtime.ComposeService.ports:type_name -> pullrun.runtime.ComposePort
-	124, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
+	142, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
 	1,   // 3: pullrun.runtime.ComposeService.mounts:type_name -> pullrun.runtime.Mount
 	44,  // 4: pullrun.runtime.ComposeService.health_check:type_name -> pullrun.runtime.HealthCheck
 	2,   // 5: pullrun.runtime.RunComposeRequest.services:type_name -> pullrun.runtime.ComposeService
-	125, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	126, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
+	143, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	144, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
 	10,  // 8: pullrun.runtime.RunRequest.network_rules:type_name -> pullrun.runtime.NetworkRule
 	1,   // 9: pullrun.runtime.RunRequest.mounts:type_name -> pullrun.runtime.Mount
 	44,  // 10: pullrun.runtime.RunRequest.health_check:type_name -> pullrun.runtime.HealthCheck
@@ -8361,7 +9354,7 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	9,   // 14: pullrun.runtime.RunRequest.dns:type_name -> pullrun.runtime.DnsConfig
 	0,   // 15: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
 	15,  // 16: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
-	127, // 17: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
+	145, // 17: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
 	25,  // 18: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
 	26,  // 19: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
 	27,  // 20: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
@@ -8370,12 +9363,12 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	30,  // 23: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
 	31,  // 24: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
 	32,  // 25: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
-	128, // 26: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
+	146, // 26: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
 	37,  // 27: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
-	129, // 28: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	147, // 28: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
 	10,  // 29: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
 	58,  // 30: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
-	130, // 31: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	148, // 31: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 	0,   // 32: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
 	69,  // 33: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
 	79,  // 34: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
@@ -8384,111 +9377,129 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	88,  // 37: pullrun.runtime.InspectConfigResponse.config:type_name -> pullrun.runtime.ConfigInfo
 	108, // 38: pullrun.runtime.ListGroupsResponse.groups:type_name -> pullrun.runtime.GroupInfo
 	116, // 39: pullrun.runtime.ListSnapshotsResponse.snapshots:type_name -> pullrun.runtime.SnapshotInfo
-	6,   // 40: pullrun.runtime.Runtime.PullImage:input_type -> pullrun.runtime.PullImageRequest
-	8,   // 41: pullrun.runtime.Runtime.RunWorkload:input_type -> pullrun.runtime.RunRequest
-	12,  // 42: pullrun.runtime.Runtime.StopWorkload:input_type -> pullrun.runtime.StopRequest
-	14,  // 43: pullrun.runtime.Runtime.GetWorkload:input_type -> pullrun.runtime.GetWorkloadRequest
-	16,  // 44: pullrun.runtime.Runtime.ListWorkloads:input_type -> pullrun.runtime.ListWorkloadsRequest
-	18,  // 45: pullrun.runtime.Runtime.StreamLogs:input_type -> pullrun.runtime.StreamLogsRequest
-	20,  // 46: pullrun.runtime.Runtime.StreamEvents:input_type -> pullrun.runtime.StreamEventsRequest
-	22,  // 47: pullrun.runtime.Runtime.ExecInWorkload:input_type -> pullrun.runtime.ExecRequest
-	57,  // 48: pullrun.runtime.Runtime.InspectWorkload:input_type -> pullrun.runtime.InspectRequest
-	24,  // 49: pullrun.runtime.Runtime.AttachWorkload:input_type -> pullrun.runtime.AttachMessage
-	33,  // 50: pullrun.runtime.Runtime.HasImage:input_type -> pullrun.runtime.HasImageRequest
-	35,  // 51: pullrun.runtime.Runtime.ListImages:input_type -> pullrun.runtime.ListImagesRequest
-	38,  // 52: pullrun.runtime.Runtime.RemoveImage:input_type -> pullrun.runtime.RemoveImageRequest
-	40,  // 53: pullrun.runtime.Runtime.DagStoreInfo:input_type -> pullrun.runtime.DagStoreInfoRequest
-	42,  // 54: pullrun.runtime.Runtime.PortForward:input_type -> pullrun.runtime.PortForwardRequest
-	45,  // 55: pullrun.runtime.Runtime.UpdateWorkload:input_type -> pullrun.runtime.UpdateWorkloadRequest
-	47,  // 56: pullrun.runtime.Runtime.GetWorkloadStats:input_type -> pullrun.runtime.GetWorkloadStatsRequest
-	105, // 57: pullrun.runtime.Runtime.CreateGroup:input_type -> pullrun.runtime.CreateGroupRequest
-	107, // 58: pullrun.runtime.Runtime.ListGroups:input_type -> pullrun.runtime.ListGroupsRequest
-	110, // 59: pullrun.runtime.Runtime.RemoveGroup:input_type -> pullrun.runtime.RemoveGroupRequest
-	112, // 60: pullrun.runtime.Runtime.RunGroupSandbox:input_type -> pullrun.runtime.RunGroupSandboxRequest
-	114, // 61: pullrun.runtime.Runtime.CreateSnapshot:input_type -> pullrun.runtime.CreateSnapshotRequest
-	117, // 62: pullrun.runtime.Runtime.ListSnapshots:input_type -> pullrun.runtime.ListSnapshotsRequest
-	119, // 63: pullrun.runtime.Runtime.RemoveSnapshot:input_type -> pullrun.runtime.RemoveSnapshotRequest
-	121, // 64: pullrun.runtime.Runtime.RestoreSnapshot:input_type -> pullrun.runtime.RestoreSnapshotRequest
-	49,  // 65: pullrun.runtime.Runtime.BuildImage:input_type -> pullrun.runtime.BuildImageRequest
-	51,  // 66: pullrun.runtime.Runtime.PushImage:input_type -> pullrun.runtime.PushImageRequest
-	53,  // 67: pullrun.runtime.Runtime.ExportImage:input_type -> pullrun.runtime.ExportImageRequest
-	55,  // 68: pullrun.runtime.Runtime.ImportImage:input_type -> pullrun.runtime.ImportImageChunk
-	4,   // 69: pullrun.runtime.Runtime.RunCompose:input_type -> pullrun.runtime.RunComposeRequest
-	60,  // 70: pullrun.runtime.Runtime.CopyFile:input_type -> pullrun.runtime.CopyFileRequest
-	62,  // 71: pullrun.runtime.Runtime.CommitImage:input_type -> pullrun.runtime.CommitImageRequest
-	75,  // 72: pullrun.runtime.Runtime.DiffWorkload:input_type -> pullrun.runtime.DiffRequest
-	71,  // 73: pullrun.runtime.Runtime.RuntimeInfo:input_type -> pullrun.runtime.InfoRequest
-	64,  // 74: pullrun.runtime.Runtime.CreateNetwork:input_type -> pullrun.runtime.CreateNetworkRequest
-	66,  // 75: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
-	68,  // 76: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
-	73,  // 77: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
-	97,  // 78: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
-	80,  // 79: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
-	82,  // 80: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
-	84,  // 81: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
-	86,  // 82: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
-	89,  // 83: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
-	91,  // 84: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
-	93,  // 85: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
-	95,  // 86: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
-	99,  // 87: pullrun.runtime.Runtime.AttachSignature:input_type -> pullrun.runtime.AttachSignatureRequest
-	101, // 88: pullrun.runtime.Runtime.AttachSbom:input_type -> pullrun.runtime.AttachSbomRequest
-	103, // 89: pullrun.runtime.Runtime.GetAttestations:input_type -> pullrun.runtime.GetAttestationsRequest
-	7,   // 90: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
-	11,  // 91: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
-	13,  // 92: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
-	15,  // 93: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
-	17,  // 94: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
-	19,  // 95: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
-	21,  // 96: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
-	23,  // 97: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
-	59,  // 98: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
-	24,  // 99: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
-	34,  // 100: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
-	36,  // 101: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
-	39,  // 102: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
-	41,  // 103: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
-	43,  // 104: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
-	46,  // 105: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
-	48,  // 106: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
-	106, // 107: pullrun.runtime.Runtime.CreateGroup:output_type -> pullrun.runtime.CreateGroupResponse
-	109, // 108: pullrun.runtime.Runtime.ListGroups:output_type -> pullrun.runtime.ListGroupsResponse
-	111, // 109: pullrun.runtime.Runtime.RemoveGroup:output_type -> pullrun.runtime.RemoveGroupResponse
-	113, // 110: pullrun.runtime.Runtime.RunGroupSandbox:output_type -> pullrun.runtime.RunGroupSandboxResponse
-	115, // 111: pullrun.runtime.Runtime.CreateSnapshot:output_type -> pullrun.runtime.CreateSnapshotResponse
-	118, // 112: pullrun.runtime.Runtime.ListSnapshots:output_type -> pullrun.runtime.ListSnapshotsResponse
-	120, // 113: pullrun.runtime.Runtime.RemoveSnapshot:output_type -> pullrun.runtime.RemoveSnapshotResponse
-	122, // 114: pullrun.runtime.Runtime.RestoreSnapshot:output_type -> pullrun.runtime.RestoreSnapshotResponse
-	50,  // 115: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
-	52,  // 116: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
-	54,  // 117: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
-	56,  // 118: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
-	5,   // 119: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
-	61,  // 120: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
-	63,  // 121: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
-	76,  // 122: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
-	72,  // 123: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
-	65,  // 124: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
-	67,  // 125: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
-	70,  // 126: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
-	74,  // 127: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
-	98,  // 128: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
-	81,  // 129: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
-	83,  // 130: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
-	85,  // 131: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
-	87,  // 132: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
-	90,  // 133: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
-	92,  // 134: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
-	94,  // 135: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
-	96,  // 136: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
-	100, // 137: pullrun.runtime.Runtime.AttachSignature:output_type -> pullrun.runtime.AttachSignatureResponse
-	102, // 138: pullrun.runtime.Runtime.AttachSbom:output_type -> pullrun.runtime.AttachSbomResponse
-	104, // 139: pullrun.runtime.Runtime.GetAttestations:output_type -> pullrun.runtime.GetAttestationsResponse
-	90,  // [90:140] is the sub-list for method output_type
-	40,  // [40:90] is the sub-list for method input_type
-	40,  // [40:40] is the sub-list for extension type_name
-	40,  // [40:40] is the sub-list for extension extendee
-	0,   // [0:40] is the sub-list for field type_name
+	125, // 40: pullrun.runtime.ListTemplatesResponse.templates:type_name -> pullrun.runtime.TemplateInfo
+	132, // 41: pullrun.runtime.ListActorsResponse.actors:type_name -> pullrun.runtime.ActorInfo
+	6,   // 42: pullrun.runtime.Runtime.PullImage:input_type -> pullrun.runtime.PullImageRequest
+	8,   // 43: pullrun.runtime.Runtime.RunWorkload:input_type -> pullrun.runtime.RunRequest
+	12,  // 44: pullrun.runtime.Runtime.StopWorkload:input_type -> pullrun.runtime.StopRequest
+	14,  // 45: pullrun.runtime.Runtime.GetWorkload:input_type -> pullrun.runtime.GetWorkloadRequest
+	16,  // 46: pullrun.runtime.Runtime.ListWorkloads:input_type -> pullrun.runtime.ListWorkloadsRequest
+	18,  // 47: pullrun.runtime.Runtime.StreamLogs:input_type -> pullrun.runtime.StreamLogsRequest
+	20,  // 48: pullrun.runtime.Runtime.StreamEvents:input_type -> pullrun.runtime.StreamEventsRequest
+	22,  // 49: pullrun.runtime.Runtime.ExecInWorkload:input_type -> pullrun.runtime.ExecRequest
+	57,  // 50: pullrun.runtime.Runtime.InspectWorkload:input_type -> pullrun.runtime.InspectRequest
+	24,  // 51: pullrun.runtime.Runtime.AttachWorkload:input_type -> pullrun.runtime.AttachMessage
+	33,  // 52: pullrun.runtime.Runtime.HasImage:input_type -> pullrun.runtime.HasImageRequest
+	35,  // 53: pullrun.runtime.Runtime.ListImages:input_type -> pullrun.runtime.ListImagesRequest
+	38,  // 54: pullrun.runtime.Runtime.RemoveImage:input_type -> pullrun.runtime.RemoveImageRequest
+	40,  // 55: pullrun.runtime.Runtime.DagStoreInfo:input_type -> pullrun.runtime.DagStoreInfoRequest
+	42,  // 56: pullrun.runtime.Runtime.PortForward:input_type -> pullrun.runtime.PortForwardRequest
+	45,  // 57: pullrun.runtime.Runtime.UpdateWorkload:input_type -> pullrun.runtime.UpdateWorkloadRequest
+	47,  // 58: pullrun.runtime.Runtime.GetWorkloadStats:input_type -> pullrun.runtime.GetWorkloadStatsRequest
+	105, // 59: pullrun.runtime.Runtime.CreateGroup:input_type -> pullrun.runtime.CreateGroupRequest
+	107, // 60: pullrun.runtime.Runtime.ListGroups:input_type -> pullrun.runtime.ListGroupsRequest
+	110, // 61: pullrun.runtime.Runtime.RemoveGroup:input_type -> pullrun.runtime.RemoveGroupRequest
+	112, // 62: pullrun.runtime.Runtime.RunGroupSandbox:input_type -> pullrun.runtime.RunGroupSandboxRequest
+	114, // 63: pullrun.runtime.Runtime.CreateSnapshot:input_type -> pullrun.runtime.CreateSnapshotRequest
+	117, // 64: pullrun.runtime.Runtime.ListSnapshots:input_type -> pullrun.runtime.ListSnapshotsRequest
+	119, // 65: pullrun.runtime.Runtime.RemoveSnapshot:input_type -> pullrun.runtime.RemoveSnapshotRequest
+	121, // 66: pullrun.runtime.Runtime.RestoreSnapshot:input_type -> pullrun.runtime.RestoreSnapshotRequest
+	123, // 67: pullrun.runtime.Runtime.CreateTemplate:input_type -> pullrun.runtime.CreateTemplateRequest
+	126, // 68: pullrun.runtime.Runtime.ListTemplates:input_type -> pullrun.runtime.ListTemplatesRequest
+	128, // 69: pullrun.runtime.Runtime.RemoveTemplate:input_type -> pullrun.runtime.RemoveTemplateRequest
+	130, // 70: pullrun.runtime.Runtime.CreateActor:input_type -> pullrun.runtime.CreateActorRequest
+	133, // 71: pullrun.runtime.Runtime.ListActors:input_type -> pullrun.runtime.ListActorsRequest
+	135, // 72: pullrun.runtime.Runtime.ResumeActor:input_type -> pullrun.runtime.ResumeActorRequest
+	137, // 73: pullrun.runtime.Runtime.SuspendActor:input_type -> pullrun.runtime.SuspendActorRequest
+	139, // 74: pullrun.runtime.Runtime.RemoveActor:input_type -> pullrun.runtime.RemoveActorRequest
+	49,  // 75: pullrun.runtime.Runtime.BuildImage:input_type -> pullrun.runtime.BuildImageRequest
+	51,  // 76: pullrun.runtime.Runtime.PushImage:input_type -> pullrun.runtime.PushImageRequest
+	53,  // 77: pullrun.runtime.Runtime.ExportImage:input_type -> pullrun.runtime.ExportImageRequest
+	55,  // 78: pullrun.runtime.Runtime.ImportImage:input_type -> pullrun.runtime.ImportImageChunk
+	4,   // 79: pullrun.runtime.Runtime.RunCompose:input_type -> pullrun.runtime.RunComposeRequest
+	60,  // 80: pullrun.runtime.Runtime.CopyFile:input_type -> pullrun.runtime.CopyFileRequest
+	62,  // 81: pullrun.runtime.Runtime.CommitImage:input_type -> pullrun.runtime.CommitImageRequest
+	75,  // 82: pullrun.runtime.Runtime.DiffWorkload:input_type -> pullrun.runtime.DiffRequest
+	71,  // 83: pullrun.runtime.Runtime.RuntimeInfo:input_type -> pullrun.runtime.InfoRequest
+	64,  // 84: pullrun.runtime.Runtime.CreateNetwork:input_type -> pullrun.runtime.CreateNetworkRequest
+	66,  // 85: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
+	68,  // 86: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
+	73,  // 87: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
+	97,  // 88: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
+	80,  // 89: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
+	82,  // 90: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
+	84,  // 91: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
+	86,  // 92: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
+	89,  // 93: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
+	91,  // 94: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
+	93,  // 95: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
+	95,  // 96: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
+	99,  // 97: pullrun.runtime.Runtime.AttachSignature:input_type -> pullrun.runtime.AttachSignatureRequest
+	101, // 98: pullrun.runtime.Runtime.AttachSbom:input_type -> pullrun.runtime.AttachSbomRequest
+	103, // 99: pullrun.runtime.Runtime.GetAttestations:input_type -> pullrun.runtime.GetAttestationsRequest
+	7,   // 100: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
+	11,  // 101: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
+	13,  // 102: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
+	15,  // 103: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
+	17,  // 104: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
+	19,  // 105: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
+	21,  // 106: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
+	23,  // 107: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
+	59,  // 108: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
+	24,  // 109: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
+	34,  // 110: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
+	36,  // 111: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
+	39,  // 112: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
+	41,  // 113: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
+	43,  // 114: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
+	46,  // 115: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
+	48,  // 116: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
+	106, // 117: pullrun.runtime.Runtime.CreateGroup:output_type -> pullrun.runtime.CreateGroupResponse
+	109, // 118: pullrun.runtime.Runtime.ListGroups:output_type -> pullrun.runtime.ListGroupsResponse
+	111, // 119: pullrun.runtime.Runtime.RemoveGroup:output_type -> pullrun.runtime.RemoveGroupResponse
+	113, // 120: pullrun.runtime.Runtime.RunGroupSandbox:output_type -> pullrun.runtime.RunGroupSandboxResponse
+	115, // 121: pullrun.runtime.Runtime.CreateSnapshot:output_type -> pullrun.runtime.CreateSnapshotResponse
+	118, // 122: pullrun.runtime.Runtime.ListSnapshots:output_type -> pullrun.runtime.ListSnapshotsResponse
+	120, // 123: pullrun.runtime.Runtime.RemoveSnapshot:output_type -> pullrun.runtime.RemoveSnapshotResponse
+	122, // 124: pullrun.runtime.Runtime.RestoreSnapshot:output_type -> pullrun.runtime.RestoreSnapshotResponse
+	124, // 125: pullrun.runtime.Runtime.CreateTemplate:output_type -> pullrun.runtime.CreateTemplateResponse
+	127, // 126: pullrun.runtime.Runtime.ListTemplates:output_type -> pullrun.runtime.ListTemplatesResponse
+	129, // 127: pullrun.runtime.Runtime.RemoveTemplate:output_type -> pullrun.runtime.RemoveTemplateResponse
+	131, // 128: pullrun.runtime.Runtime.CreateActor:output_type -> pullrun.runtime.CreateActorResponse
+	134, // 129: pullrun.runtime.Runtime.ListActors:output_type -> pullrun.runtime.ListActorsResponse
+	136, // 130: pullrun.runtime.Runtime.ResumeActor:output_type -> pullrun.runtime.ResumeActorResponse
+	138, // 131: pullrun.runtime.Runtime.SuspendActor:output_type -> pullrun.runtime.SuspendActorResponse
+	140, // 132: pullrun.runtime.Runtime.RemoveActor:output_type -> pullrun.runtime.RemoveActorResponse
+	50,  // 133: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
+	52,  // 134: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
+	54,  // 135: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
+	56,  // 136: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
+	5,   // 137: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
+	61,  // 138: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
+	63,  // 139: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
+	76,  // 140: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
+	72,  // 141: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
+	65,  // 142: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
+	67,  // 143: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
+	70,  // 144: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
+	74,  // 145: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
+	98,  // 146: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
+	81,  // 147: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
+	83,  // 148: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
+	85,  // 149: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
+	87,  // 150: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
+	90,  // 151: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
+	92,  // 152: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
+	94,  // 153: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
+	96,  // 154: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
+	100, // 155: pullrun.runtime.Runtime.AttachSignature:output_type -> pullrun.runtime.AttachSignatureResponse
+	102, // 156: pullrun.runtime.Runtime.AttachSbom:output_type -> pullrun.runtime.AttachSbomResponse
+	104, // 157: pullrun.runtime.Runtime.GetAttestations:output_type -> pullrun.runtime.GetAttestationsResponse
+	100, // [100:158] is the sub-list for method output_type
+	42,  // [42:100] is the sub-list for method input_type
+	42,  // [42:42] is the sub-list for extension type_name
+	42,  // [42:42] is the sub-list for extension extendee
+	0,   // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_pullrun_runtime_proto_init() }
@@ -8512,7 +9523,7 @@ func file_pullrun_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pullrun_runtime_proto_rawDesc), len(file_pullrun_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   130,
+			NumMessages:   148,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

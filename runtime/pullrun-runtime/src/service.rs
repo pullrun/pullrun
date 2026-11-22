@@ -46,30 +46,35 @@ const LOCAL_KERNEL_CACHE_KEY: &str = "__local";
 use crate::events::{Event, EventBus, EventKind};
 use crate::proto::runtime_server::Runtime;
 use crate::proto::{
-    AttachMessage, AttachSbomRequest, AttachSbomResponse, AttachSignatureRequest,
+    ActorInfo, AttachMessage, AttachSbomRequest, AttachSbomResponse, AttachSignatureRequest,
     AttachSignatureResponse, BuildImageRequest, BuildImageResponse, CommitImageRequest,
-    CommitImageResponse, CopyFileRequest, CopyFileResponse, CreateConfigRequest,
-    CreateConfigResponse, CreateGroupRequest, CreateGroupResponse, CreateNetworkRequest,
-    CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse, CreateSnapshotRequest,
-    CreateSnapshotResponse, DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest,
+    CommitImageResponse, CopyFileRequest, CopyFileResponse, CreateActorRequest,
+    CreateActorResponse, CreateConfigRequest, CreateConfigResponse, CreateGroupRequest,
+    CreateGroupResponse, CreateNetworkRequest, CreateNetworkResponse, CreateSecretRequest,
+    CreateSecretResponse, CreateSnapshotRequest, CreateSnapshotResponse, CreateTemplateRequest,
+    CreateTemplateResponse, DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest,
     DiffResponse, Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk,
     ExportImageRequest, GcRequest, GcResponse, GetAttestationsRequest, GetAttestationsResponse,
     GetWorkloadRequest, GetWorkloadStatsRequest, GroupInfo, HasImageRequest, HasImageResponse,
     ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
     InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
-    InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListGroupsRequest,
-    ListGroupsResponse, ListImagesRequest, ListImagesResponse, ListNetworksRequest,
-    ListNetworksResponse, ListSecretsRequest, ListSecretsResponse, ListSnapshotsRequest,
-    ListSnapshotsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
+    InspectSecretResponse, ListActorsRequest, ListActorsResponse, ListConfigsRequest,
+    ListConfigsResponse, ListGroupsRequest, ListGroupsResponse, ListImagesRequest,
+    ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
+    ListSecretsResponse, ListSnapshotsRequest, ListSnapshotsResponse, ListTemplatesRequest,
+    ListTemplatesResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
     NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
     PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
-    RemoveConfigRequest, RemoveConfigResponse, RemoveGroupRequest, RemoveGroupResponse,
-    RemoveImageRequest, RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse,
-    RemoveSecretRequest, RemoveSecretResponse, RemoveSnapshotRequest, RemoveSnapshotResponse,
-    RestoreSnapshotRequest, RestoreSnapshotResponse, RunComposeRequest, RunComposeResponse,
-    RunGroupSandboxRequest, RunGroupSandboxResponse, RunRequest, RunResponse, SnapshotInfo,
-    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
-    UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    RemoveActorRequest, RemoveActorResponse, RemoveConfigRequest, RemoveConfigResponse,
+    RemoveGroupRequest, RemoveGroupResponse, RemoveImageRequest, RemoveImageResponse,
+    RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest, RemoveSecretResponse,
+    RemoveSnapshotRequest, RemoveSnapshotResponse, RemoveTemplateRequest, RemoveTemplateResponse,
+    RestoreSnapshotRequest, RestoreSnapshotResponse, ResumeActorRequest, ResumeActorResponse,
+    RunComposeRequest, RunComposeResponse, RunGroupSandboxRequest, RunGroupSandboxResponse,
+    RunRequest, RunResponse, SnapshotInfo, StopRequest, StopResponse, StreamEventsRequest,
+    StreamLogsRequest, SuspendActorRequest, SuspendActorResponse, TemplateInfo,
+    UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats,
+    WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -101,6 +106,8 @@ pub struct ServiceConfig {
     pub checkpoints_dir: PathBuf,
     /// Snapshot artifacts (`<id>/state`, `mem`, `rootfs.ext4`, `meta.json`).
     pub snapshots_dir: PathBuf,
+    /// Actor templates and instances (JSON records).
+    pub actors_dir: PathBuf,
     pub policy: Option<Policy>,
     pub trusted_keys: Vec<TrustedKey>,
     pub vm_backend: Option<VmBackendConfig>,
@@ -121,12 +128,14 @@ impl ServiceConfig {
         let bundle_root = store_root.join("bundles");
         let checkpoints_dir = store_root.join("checkpoints");
         let snapshots_dir = store_root.join("snapshots");
+        let actors_dir = store_root.join("actors");
         let ss = store_root.clone();
         Self {
             store_root,
             bundle_root,
             checkpoints_dir,
             snapshots_dir,
+            actors_dir,
             policy: None,
             trusted_keys: Vec::new(),
             vm_backend: None,
@@ -1012,6 +1021,7 @@ impl RuntimeCommand {
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
             base_store,
             groups: Arc::new(RwLock::new(HashMap::new())),
+            actor_locks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             config: Arc::new(self.config.clone()),
             start_time: AtomicI64::new(start_time),
             #[cfg(target_os = "macos")]
@@ -1750,6 +1760,27 @@ pub struct WorkloadState {
     pub console_log_path: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ActorTemplateRecord {
+    name: String,
+    snapshot_id: String,
+    image_root: String,
+    command: Vec<String>,
+    created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ActorInstance {
+    name: String,
+    template: String,
+    state: String,
+    snapshot_id: String,
+    #[serde(default)]
+    workload_id: String,
+    created_at: i64,
+    last_used: i64,
+}
+
 /// One sandbox-group VM. Sandboxes run inside it in sequence and
 /// share the guest kernel page cache.
 pub struct GroupState {
@@ -1853,6 +1884,9 @@ pub struct RuntimeService {
     pub base_store: Arc<pullrun_oci::BaseStore>,
     /// Sandbox groups: one VM hosting multiple sandboxes.
     pub groups: Arc<RwLock<HashMap<String, Arc<GroupState>>>>,
+    /// Per-actor mutex: concurrent resume/suspend requests wait instead
+    /// of racing (request parking).
+    pub actor_locks: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     /// Unix timestamp (seconds) when the service started.
     pub start_time: AtomicI64,
     /// Persistent Apple Virt VM sessions keyed by workload id.
@@ -2196,6 +2230,24 @@ impl RuntimeService {
             GcError::Io(e) => tonic::Status::internal(format!("I/O error: {e}")),
             GcError::Store(e) => tonic::Status::internal(format!("store error: {e}")),
         }
+    }
+}
+
+impl RuntimeService {
+    fn actor_record_path(&self, kind: &str, name: &str) -> std::path::PathBuf {
+        self.config
+            .actors_dir
+            .join(kind)
+            .join(format!("{name}.json"))
+    }
+
+    async fn actor_lock(&self, name: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.actor_locks.lock().await;
+        Arc::clone(
+            locks
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        )
     }
 }
 
@@ -5141,6 +5193,309 @@ impl Runtime for RuntimeService {
             backend: "vm".to_string(),
             restore_ms: restore_start.elapsed().as_millis() as u64,
         }))
+    }
+
+    async fn create_template(
+        &self,
+        request: tonic::Request<CreateTemplateRequest>,
+    ) -> Result<tonic::Response<CreateTemplateResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.name.is_empty()
+            || !req
+                .name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(tonic::Status::invalid_argument("invalid template name"));
+        }
+        let (image_root, command) = {
+            let workloads = self.workloads.read().await;
+            let st = workloads
+                .get(&req.workload_id)
+                .ok_or_else(|| tonic::Status::not_found("workload not found"))?;
+            (st.image_root.clone(), st.command.clone())
+        };
+        let snap = self
+            .create_snapshot(tonic::Request::new(CreateSnapshotRequest {
+                workload_id: req.workload_id.clone(),
+                fidelity: "memory".to_string(),
+            }))
+            .await?
+            .into_inner();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let template = ActorTemplateRecord {
+            name: req.name.clone(),
+            snapshot_id: snap.snapshot_id,
+            image_root,
+            command,
+            created_at: now,
+        };
+        let path = self.actor_record_path("templates", &req.name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| tonic::Status::internal(format!("create actors dir: {e}")))?;
+        }
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&template)
+                .map_err(|e| tonic::Status::internal(format!("serialize template: {e}")))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("write template: {e}")))?;
+        Ok(tonic::Response::new(CreateTemplateResponse {
+            name: template.name,
+            snapshot_id: template.snapshot_id,
+        }))
+    }
+
+    async fn list_templates(
+        &self,
+        _request: tonic::Request<ListTemplatesRequest>,
+    ) -> Result<tonic::Response<ListTemplatesResponse>, tonic::Status> {
+        let mut templates = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(self.config.actors_dir.join("templates")) {
+            for entry in entries.flatten() {
+                if let Ok(bytes) = std::fs::read(entry.path()) {
+                    if let Ok(t) = serde_json::from_slice::<ActorTemplateRecord>(&bytes) {
+                        templates.push(TemplateInfo {
+                            name: t.name,
+                            snapshot_id: t.snapshot_id,
+                            image_root: t.image_root,
+                            command: t.command,
+                            created_at: t.created_at,
+                        });
+                    }
+                }
+            }
+        }
+        templates.sort_by_key(|t| std::cmp::Reverse(t.created_at));
+        Ok(tonic::Response::new(ListTemplatesResponse { templates }))
+    }
+
+    async fn remove_template(
+        &self,
+        request: tonic::Request<RemoveTemplateRequest>,
+    ) -> Result<tonic::Response<RemoveTemplateResponse>, tonic::Status> {
+        let name = request.into_inner().name;
+        if let Ok(entries) = std::fs::read_dir(self.config.actors_dir.join("instances")) {
+            for entry in entries.flatten() {
+                if let Ok(bytes) = std::fs::read(entry.path()) {
+                    if let Ok(actor) = serde_json::from_slice::<ActorInstance>(&bytes) {
+                        if actor.template == name {
+                            return Err(tonic::Status::failed_precondition(
+                                "template is still used by an actor",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        let path = self.actor_record_path("templates", &name);
+        let removed = path.exists();
+        if removed {
+            std::fs::remove_file(&path)
+                .map_err(|e| tonic::Status::internal(format!("remove template: {e}")))?;
+        }
+        Ok(tonic::Response::new(RemoveTemplateResponse { removed }))
+    }
+
+    async fn create_actor(
+        &self,
+        request: tonic::Request<CreateActorRequest>,
+    ) -> Result<tonic::Response<CreateActorResponse>, tonic::Status> {
+        let req = request.into_inner();
+        if req.name.is_empty()
+            || !req
+                .name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(tonic::Status::invalid_argument("invalid actor name"));
+        }
+        let template_path = self.actor_record_path("templates", &req.template);
+        let template: ActorTemplateRecord = serde_json::from_slice(
+            &std::fs::read(&template_path)
+                .map_err(|_| tonic::Status::not_found("template not found"))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("parse template: {e}")))?;
+        let path = self.actor_record_path("instances", &req.name);
+        if path.exists() {
+            return Err(tonic::Status::already_exists("actor already exists"));
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| tonic::Status::internal(format!("create actors dir: {e}")))?;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let actor = ActorInstance {
+            name: req.name.clone(),
+            template: req.template,
+            state: "suspended".to_string(),
+            snapshot_id: template.snapshot_id,
+            workload_id: String::new(),
+            created_at: now,
+            last_used: now,
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&actor)
+                .map_err(|e| tonic::Status::internal(format!("serialize actor: {e}")))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("write actor: {e}")))?;
+        Ok(tonic::Response::new(CreateActorResponse {
+            name: actor.name,
+            state: actor.state,
+        }))
+    }
+
+    async fn list_actors(
+        &self,
+        _request: tonic::Request<ListActorsRequest>,
+    ) -> Result<tonic::Response<ListActorsResponse>, tonic::Status> {
+        let mut actors = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(self.config.actors_dir.join("instances")) {
+            for entry in entries.flatten() {
+                if let Ok(bytes) = std::fs::read(entry.path()) {
+                    if let Ok(a) = serde_json::from_slice::<ActorInstance>(&bytes) {
+                        actors.push(ActorInfo {
+                            name: a.name,
+                            template: a.template,
+                            state: a.state,
+                            snapshot_id: a.snapshot_id,
+                            workload_id: a.workload_id,
+                            created_at: a.created_at,
+                            last_used: a.last_used,
+                        });
+                    }
+                }
+            }
+        }
+        actors.sort_by_key(|a| std::cmp::Reverse(a.last_used));
+        Ok(tonic::Response::new(ListActorsResponse { actors }))
+    }
+
+    async fn resume_actor(
+        &self,
+        request: tonic::Request<ResumeActorRequest>,
+    ) -> Result<tonic::Response<ResumeActorResponse>, tonic::Status> {
+        let name = request.into_inner().name;
+        let lock = self.actor_lock(&name).await;
+        let _guard = lock.lock().await;
+        let path = self.actor_record_path("instances", &name);
+        let mut actor: ActorInstance = serde_json::from_slice(
+            &std::fs::read(&path).map_err(|_| tonic::Status::not_found("actor not found"))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("parse actor: {e}")))?;
+        if actor.state == "running" {
+            let exists = {
+                let workloads = self.workloads.read().await;
+                workloads
+                    .get(&actor.workload_id)
+                    .map(|w| w.status == "running")
+                    .unwrap_or(false)
+            };
+            if exists {
+                return Ok(tonic::Response::new(ResumeActorResponse {
+                    workload_id: actor.workload_id,
+                    resumed: false,
+                    resume_ms: 0,
+                }));
+            }
+        }
+        let started = std::time::Instant::now();
+        let restored = self
+            .restore_snapshot(tonic::Request::new(RestoreSnapshotRequest {
+                snapshot_id: actor.snapshot_id.clone(),
+            }))
+            .await?
+            .into_inner();
+        actor.state = "running".to_string();
+        actor.workload_id = restored.workload_id.clone();
+        actor.last_used = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&actor)
+                .map_err(|e| tonic::Status::internal(format!("serialize actor: {e}")))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("write actor: {e}")))?;
+        Ok(tonic::Response::new(ResumeActorResponse {
+            workload_id: restored.workload_id,
+            resumed: true,
+            resume_ms: started.elapsed().as_millis() as u64,
+        }))
+    }
+
+    async fn suspend_actor(
+        &self,
+        request: tonic::Request<SuspendActorRequest>,
+    ) -> Result<tonic::Response<SuspendActorResponse>, tonic::Status> {
+        let name = request.into_inner().name;
+        let lock = self.actor_lock(&name).await;
+        let _guard = lock.lock().await;
+        let path = self.actor_record_path("instances", &name);
+        let mut actor: ActorInstance = serde_json::from_slice(
+            &std::fs::read(&path).map_err(|_| tonic::Status::not_found("actor not found"))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("parse actor: {e}")))?;
+        if actor.state != "running" {
+            return Ok(tonic::Response::new(SuspendActorResponse {
+                snapshot_id: actor.snapshot_id,
+            }));
+        }
+        let snap = self
+            .create_snapshot(tonic::Request::new(CreateSnapshotRequest {
+                workload_id: actor.workload_id.clone(),
+                fidelity: "memory".to_string(),
+            }))
+            .await?
+            .into_inner();
+        actor.state = "suspended".to_string();
+        actor.snapshot_id = snap.snapshot_id.clone();
+        actor.workload_id = String::new();
+        actor.last_used = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&actor)
+                .map_err(|e| tonic::Status::internal(format!("serialize actor: {e}")))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("write actor: {e}")))?;
+        Ok(tonic::Response::new(SuspendActorResponse {
+            snapshot_id: snap.snapshot_id,
+        }))
+    }
+
+    async fn remove_actor(
+        &self,
+        request: tonic::Request<RemoveActorRequest>,
+    ) -> Result<tonic::Response<RemoveActorResponse>, tonic::Status> {
+        let name = request.into_inner().name;
+        let lock = self.actor_lock(&name).await;
+        let _guard = lock.lock().await;
+        let path = self.actor_record_path("instances", &name);
+        if !path.exists() {
+            return Ok(tonic::Response::new(RemoveActorResponse { removed: false }));
+        }
+        if let Ok(bytes) = std::fs::read(&path) {
+            if let Ok(actor) = serde_json::from_slice::<ActorInstance>(&bytes) {
+                if actor.state == "running" && !actor.workload_id.is_empty() {
+                    let _ = self.executor.stop(&actor.workload_id).await;
+                }
+            }
+        }
+        std::fs::remove_file(&path)
+            .map_err(|e| tonic::Status::internal(format!("remove actor: {e}")))?;
+        Ok(tonic::Response::new(RemoveActorResponse { removed: true }))
     }
 
     // ------------------------------------------------------------------

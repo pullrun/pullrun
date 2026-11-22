@@ -337,6 +337,46 @@ func (c *GRPCClient) RemoveGroup(ctx context.Context, groupID string, force bool
 	})
 }
 
+// CreateTemplate snapshots a workload into a named golden template.
+func (c *GRPCClient) CreateTemplate(ctx context.Context, name, workloadID string) (*runtimepb.CreateTemplateResponse, error) {
+	return c.client.CreateTemplate(ctx, &runtimepb.CreateTemplateRequest{Name: name, WorkloadId: workloadID})
+}
+
+// ListTemplates returns golden templates.
+func (c *GRPCClient) ListTemplates(ctx context.Context) (*runtimepb.ListTemplatesResponse, error) {
+	return c.client.ListTemplates(ctx, &runtimepb.ListTemplatesRequest{})
+}
+
+// RemoveTemplate deletes a template.
+func (c *GRPCClient) RemoveTemplate(ctx context.Context, name string) (*runtimepb.RemoveTemplateResponse, error) {
+	return c.client.RemoveTemplate(ctx, &runtimepb.RemoveTemplateRequest{Name: name})
+}
+
+// CreateActor registers a suspended actor from a template.
+func (c *GRPCClient) CreateActor(ctx context.Context, name, template string) (*runtimepb.CreateActorResponse, error) {
+	return c.client.CreateActor(ctx, &runtimepb.CreateActorRequest{Name: name, Template: template})
+}
+
+// ListActors returns actors.
+func (c *GRPCClient) ListActors(ctx context.Context) (*runtimepb.ListActorsResponse, error) {
+	return c.client.ListActors(ctx, &runtimepb.ListActorsRequest{})
+}
+
+// ResumeActor restores a suspended actor into a running workload.
+func (c *GRPCClient) ResumeActor(ctx context.Context, name string) (*runtimepb.ResumeActorResponse, error) {
+	return c.client.ResumeActor(ctx, &runtimepb.ResumeActorRequest{Name: name})
+}
+
+// SuspendActor snapshots a running actor and stops its workload.
+func (c *GRPCClient) SuspendActor(ctx context.Context, name string) (*runtimepb.SuspendActorResponse, error) {
+	return c.client.SuspendActor(ctx, &runtimepb.SuspendActorRequest{Name: name})
+}
+
+// RemoveActor deletes an actor.
+func (c *GRPCClient) RemoveActor(ctx context.Context, name string) (*runtimepb.RemoveActorResponse, error) {
+	return c.client.RemoveActor(ctx, &runtimepb.RemoveActorRequest{Name: name})
+}
+
 // CreateSnapshot captures a VM memory+disk snapshot.
 func (c *GRPCClient) CreateSnapshot(ctx context.Context, workloadID, fidelity string) (*runtimepb.CreateSnapshotResponse, error) {
 	return c.client.CreateSnapshot(ctx, &runtimepb.CreateSnapshotRequest{WorkloadId: workloadID, Fidelity: fidelity})

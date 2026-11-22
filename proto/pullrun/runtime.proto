@@ -52,6 +52,16 @@ service Runtime {
     rpc RemoveSnapshot(RemoveSnapshotRequest) returns (RemoveSnapshotResponse);
     rpc RestoreSnapshot(RestoreSnapshotRequest) returns (RestoreSnapshotResponse);
 
+    // --- Actor templates (golden snapshots) and actors ---
+    rpc CreateTemplate(CreateTemplateRequest) returns (CreateTemplateResponse);
+    rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+    rpc RemoveTemplate(RemoveTemplateRequest) returns (RemoveTemplateResponse);
+    rpc CreateActor(CreateActorRequest) returns (CreateActorResponse);
+    rpc ListActors(ListActorsRequest) returns (ListActorsResponse);
+    rpc ResumeActor(ResumeActorRequest) returns (ResumeActorResponse);
+    rpc SuspendActor(SuspendActorRequest) returns (SuspendActorResponse);
+    rpc RemoveActor(RemoveActorRequest) returns (RemoveActorResponse);
+
     // --- Image build/push/save/load (Phase D) ---
 
     // Build an OCI image from a Dockerfile and import into the
@@ -1063,3 +1073,72 @@ message RestoreSnapshotResponse {
     // Wall time from restore request to a running workload.
     uint64 restore_ms = 3;
 }
+
+// --- Actor templates and actors ---
+
+message CreateTemplateRequest {
+    string name = 1;
+    // Running workload whose memory snapshot becomes the golden template.
+    string workload_id = 2;
+}
+
+message CreateTemplateResponse {
+    string name = 1;
+    string snapshot_id = 2;
+}
+
+message TemplateInfo {
+    string name = 1;
+    string snapshot_id = 2;
+    string image_root = 3;
+    repeated string command = 4;
+    int64 created_at = 5;
+}
+
+message ListTemplatesRequest {}
+message ListTemplatesResponse {
+    repeated TemplateInfo templates = 1;
+}
+message RemoveTemplateRequest { string name = 1; }
+message RemoveTemplateResponse { bool removed = 1; }
+
+message CreateActorRequest {
+    string name = 1;
+    string template = 2;
+}
+
+message CreateActorResponse {
+    string name = 1;
+    string state = 2;
+}
+
+message ActorInfo {
+    string name = 1;
+    string template = 2;
+    // "suspended" | "running"
+    string state = 3;
+    string snapshot_id = 4;
+    string workload_id = 5;
+    int64 created_at = 6;
+    int64 last_used = 7;
+}
+
+message ListActorsRequest {}
+message ListActorsResponse {
+    repeated ActorInfo actors = 1;
+}
+
+message ResumeActorRequest { string name = 1; }
+message ResumeActorResponse {
+    string workload_id = 1;
+    bool resumed = 2;
+    uint64 resume_ms = 3;
+}
+
+message SuspendActorRequest { string name = 1; }
+message SuspendActorResponse {
+    string snapshot_id = 1;
+}
+
+message RemoveActorRequest { string name = 1; }
+message RemoveActorResponse { bool removed = 1; }

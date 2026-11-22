@@ -44,6 +44,8 @@ over a Unix domain socket.`,
 	cmd.AddCommand(NewKernelCommand(opts))
 	cmd.AddCommand(NewGroupCommand(opts))
 	cmd.AddCommand(NewSnapshotCommand(opts))
+	cmd.AddCommand(NewTemplateCommand(opts))
+	cmd.AddCommand(NewActorCommand(opts))
 	cmd.AddCommand(NewBuildCommand(opts))
 	cmd.AddCommand(NewPushCommand(opts))
 	cmd.AddCommand(NewSaveCommand(opts))
