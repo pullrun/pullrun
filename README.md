@@ -281,8 +281,9 @@ per-task VM, and container latency on macOS and Linux, and
 [docs/SNAPSHOTS.md](docs/SNAPSHOTS.md) covers VM memory snapshots, and
 [docs/ACTORS.md](docs/ACTORS.md) covers stateful actors and golden
 templates, [docs/EGRESS.md](docs/EGRESS.md) covers fail-closed egress,
-and [docs/SECURITY_STATUS.md](docs/SECURITY_STATUS.md) tracks verified
-security properties.
+[docs/SECURITY_STATUS.md](docs/SECURITY_STATUS.md) tracks verified
+security properties, and [docs/CRI.md](docs/CRI.md) documents the
+Kubernetes 1.37 CRI shim and conformance status.
 
 ---
 

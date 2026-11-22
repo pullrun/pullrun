@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### CRI
+- Upgrade to Kubernetes 1.37 CRI API (`k8s.io/cri-api v0.37.2`).
+- Implement `HasImage` with image size; `ImageStatus` works.
+- Preserve PodSandbox metadata attempt, labels, annotations.
+- Propagate Linux pod sysctls to the sandbox and every container.
+- Idempotent StopPodSandbox/StopContainer for missing workloads.
+- critest v1.37: Runtime info 2/2, PodSandbox 9/9. Container, image,
+  streaming and stats suites still in progress.
+
+## Unreleased
+
 ### MCP
 - Upgrade mcp-go to v1.6.0 (protocol 2026-07-28, 2025-11-25 and older).
 - Add Streamable HTTP transport: `pullrun mcp --http ADDR`, endpoint
