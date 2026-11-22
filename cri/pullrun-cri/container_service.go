@@ -220,6 +220,7 @@ func (c *criServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateC
 		createdAt: time.Now(),
 		state:     runtimeapi.ContainerState_CONTAINER_CREATED,
 		logPath:   logPath,
+		labels:    req.Config.Labels,
 	}
 	c.sandboxStore.putContainer(rec)
 

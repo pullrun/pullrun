@@ -82,6 +82,18 @@ func (c *criServer) ListContainerStats(ctx context.Context, req *runtimeapi.List
 		if filter != nil && filter.PodSandboxId != "" && rec.sandboxID != filter.PodSandboxId {
 			continue
 		}
+		if filter.GetLabelSelector() != nil {
+			match := true
+			for k, v := range filter.GetLabelSelector() {
+				if rec.labels[k] != v {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
 		recs = append(recs, rec)
 	}
 	c.sandboxStore.mu.RUnlock()

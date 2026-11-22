@@ -88,6 +88,7 @@ type containerRecord struct {
 	state     runtimeapi.ContainerState
 	exitCode  int32
 	logPath   string
+	labels    map[string]string
 }
 
 func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilter) bool {
