@@ -7856,6 +7856,8 @@ mod tests {
             dns: Default::default(),
             egress_deny: false,
             sysctls: Default::default(),
+            create_only: false,
+            log_path: String::new(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::NotFound);
@@ -7938,6 +7940,8 @@ mod tests {
             dns: Default::default(),
             egress_deny: false,
             sysctls: Default::default(),
+            create_only: false,
+            log_path: String::new(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -7980,6 +7984,8 @@ mod tests {
             dns: Default::default(),
             egress_deny: false,
             sysctls: Default::default(),
+            create_only: false,
+            log_path: String::new(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
