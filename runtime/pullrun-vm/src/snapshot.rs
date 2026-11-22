@@ -207,12 +207,28 @@ pub async fn wait_for_api(socket: &Path, timeout: Duration) -> Result<(), String
     }
 }
 
+fn default_fidelity() -> String {
+    "memory".to_string()
+}
+
 /// Metadata persisted next to a snapshot.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotMeta {
     /// Workload the snapshot was taken from.
     #[serde(default)]
     pub workload_id: String,
+    /// "memory", "rootfs", or "volumes".
+    #[serde(default = "default_fidelity")]
+    pub fidelity: String,
+    /// Kernel used by the snapshot's VM (for ROOTFS cold boot).
+    #[serde(default)]
+    pub kernel_path: PathBuf,
+    /// vCPU count of the snapshot's VM.
+    #[serde(default)]
+    pub vcpus: u8,
+    /// Guest memory size in MiB.
+    #[serde(default)]
+    pub mem_mib: u32,
     /// Path to the Firecracker VM state file.
     pub state_path: PathBuf,
     /// Path to the guest memory file.

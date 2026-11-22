@@ -22,9 +22,10 @@ delete existing snapshots. A snapshot is a terminal state for the source VM:
 the VM is stopped after the snapshot is written.`,
 	}
 
+	var fidelity string
 	create := &cobra.Command{
 		Use:   "create WORKLOAD_ID",
-		Short: "Snapshot a running VM and stop it",
+		Short: "Snapshot a running VM (memory or rootfs)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, closeFn, err := ensureGRPCClient(opts)
@@ -32,11 +33,11 @@ the VM is stopped after the snapshot is written.`,
 				return err
 			}
 			defer closeFn()
-			resp, err := client.CreateSnapshot(context.Background(), args[0])
+			resp, err := client.CreateSnapshot(context.Background(), args[0], fidelity)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Snapshot created: %s\n", resp.SnapshotId)
+			fmt.Printf("Snapshot created: %s (%s)\n", resp.SnapshotId, resp.Fidelity)
 			fmt.Printf("  workload:  %s\n", resp.WorkloadId)
 			fmt.Printf("  memory:    %.1f MiB\n", float64(resp.MemBytes)/(1024*1024))
 			fmt.Printf("  state:     %s\n", resp.StatePath)
@@ -60,9 +61,9 @@ the VM is stopped after the snapshot is written.`,
 				return err
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "SNAPSHOT\tWORKLOAD\tMEMORY\tCREATED")
+			fmt.Fprintln(w, "SNAPSHOT\tFIDELITY\tWORKLOAD\tMEMORY\tCREATED")
 			for _, s := range resp.Snapshots {
-				fmt.Fprintf(w, "%s\t%s\t%.1f MiB\t%d\n", s.SnapshotId, s.WorkloadId, float64(s.MemBytes)/(1024*1024), s.CreatedAt)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%.1f MiB\t%d\n", s.SnapshotId, s.Fidelity, s.WorkloadId, float64(s.MemBytes)/(1024*1024), s.CreatedAt)
 			}
 			return w.Flush()
 		},
@@ -109,6 +110,7 @@ the VM is stopped after the snapshot is written.`,
 		},
 	}
 
+	create.Flags().StringVar(&fidelity, "fidelity", "memory", "memory (RAM + disk, stops the VM), rootfs (disk only), or volumes")
 	cmd.AddCommand(create, ls, rm, restore)
 	return cmd
 }

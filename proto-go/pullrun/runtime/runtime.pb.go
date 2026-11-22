@@ -7015,8 +7015,10 @@ func (x *RunGroupSandboxResponse) GetStderr() []byte {
 }
 
 type CreateSnapshotRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	WorkloadId string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	// "memory" (default), "rootfs", or "volumes".
+	Fidelity      string `protobuf:"bytes,2,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7058,6 +7060,13 @@ func (x *CreateSnapshotRequest) GetWorkloadId() string {
 	return ""
 }
 
+func (x *CreateSnapshotRequest) GetFidelity() string {
+	if x != nil {
+		return x.Fidelity
+	}
+	return ""
+}
+
 type CreateSnapshotResponse struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
@@ -7068,6 +7077,7 @@ type CreateSnapshotResponse struct {
 	RootfsPath string                 `protobuf:"bytes,6,opt,name=rootfs_path,json=rootfsPath,proto3" json:"rootfs_path,omitempty"`
 	// Wall time spent capturing the snapshot (pause + write + copy).
 	SnapshotMs    uint64 `protobuf:"varint,7,opt,name=snapshot_ms,json=snapshotMs,proto3" json:"snapshot_ms,omitempty"`
+	Fidelity      string `protobuf:"bytes,8,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7151,6 +7161,13 @@ func (x *CreateSnapshotResponse) GetSnapshotMs() uint64 {
 	return 0
 }
 
+func (x *CreateSnapshotResponse) GetFidelity() string {
+	if x != nil {
+		return x.Fidelity
+	}
+	return ""
+}
+
 type SnapshotInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
@@ -7159,6 +7176,7 @@ type SnapshotInfo struct {
 	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	StatePath     string                 `protobuf:"bytes,5,opt,name=state_path,json=statePath,proto3" json:"state_path,omitempty"`
 	RootfsPath    string                 `protobuf:"bytes,6,opt,name=rootfs_path,json=rootfsPath,proto3" json:"rootfs_path,omitempty"`
+	Fidelity      string                 `protobuf:"bytes,7,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7231,6 +7249,13 @@ func (x *SnapshotInfo) GetStatePath() string {
 func (x *SnapshotInfo) GetRootfsPath() string {
 	if x != nil {
 		return x.RootfsPath
+	}
+	return ""
+}
+
+func (x *SnapshotInfo) GetFidelity() string {
+	if x != nil {
+		return x.Fidelity
 	}
 	return ""
 }
@@ -8056,10 +8081,11 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x17RunGroupSandboxResponse\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06stdout\x18\x02 \x01(\fR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x03 \x01(\fR\x06stderr\"8\n" +
+	"\x06stderr\x18\x03 \x01(\fR\x06stderr\"T\n" +
 	"\x15CreateSnapshotRequest\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
-	"workloadId\"\xf7\x01\n" +
+	"workloadId\x12\x1a\n" +
+	"\bfidelity\x18\x02 \x01(\tR\bfidelity\"\x93\x02\n" +
 	"\x16CreateSnapshotResponse\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
@@ -8073,7 +8099,8 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\vrootfs_path\x18\x06 \x01(\tR\n" +
 	"rootfsPath\x12\x1f\n" +
 	"\vsnapshot_ms\x18\a \x01(\x04R\n" +
-	"snapshotMs\"\xcc\x01\n" +
+	"snapshotMs\x12\x1a\n" +
+	"\bfidelity\x18\b \x01(\tR\bfidelity\"\xe8\x01\n" +
 	"\fSnapshotInfo\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
@@ -8085,7 +8112,8 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\n" +
 	"state_path\x18\x05 \x01(\tR\tstatePath\x12\x1f\n" +
 	"\vrootfs_path\x18\x06 \x01(\tR\n" +
-	"rootfsPath\"\x16\n" +
+	"rootfsPath\x12\x1a\n" +
+	"\bfidelity\x18\a \x01(\tR\bfidelity\"\x16\n" +
 	"\x14ListSnapshotsRequest\"T\n" +
 	"\x15ListSnapshotsResponse\x12;\n" +
 	"\tsnapshots\x18\x01 \x03(\v2\x1d.pullrun.runtime.SnapshotInfoR\tsnapshots\"8\n" +

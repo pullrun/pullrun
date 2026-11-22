@@ -321,10 +321,11 @@ impl Executor for ExecutorRouter {
         &self,
         id: &str,
         out_dir: &std::path::Path,
+        fidelity: pullrun_exec::types::SnapshotFidelity,
     ) -> Result<pullrun_exec::types::SnapshotInfo, ExecError> {
         if let Some(vm) = &self.vm {
             if vm.sidecar_path_for(id).exists() {
-                return vm.snapshot(id, out_dir).await;
+                return vm.snapshot(id, out_dir, fidelity).await;
             }
         }
         Err(ExecError::BackendNotAvailable(
@@ -343,6 +344,26 @@ impl Executor for ExecutorRouter {
         match &self.vm {
             Some(vm) => {
                 vm.restore_snapshot(id, state_path, mem_path, rootfs_path, drive_path)
+                    .await
+            }
+            None => Err(ExecError::BackendNotAvailable(
+                "VM backend not configured".into(),
+            )),
+        }
+    }
+
+    async fn restore_rootfs(
+        &self,
+        id: &str,
+        rootfs_path: &std::path::Path,
+        drive_path: &std::path::Path,
+        kernel_path: &std::path::Path,
+        vcpus: u8,
+        mem_mib: u32,
+    ) -> Result<ProcessHandle, ExecError> {
+        match &self.vm {
+            Some(vm) => {
+                vm.restore_rootfs(id, rootfs_path, drive_path, kernel_path, vcpus, mem_mib)
                     .await
             }
             None => Err(ExecError::BackendNotAvailable(
@@ -4841,6 +4862,10 @@ impl Runtime for RuntimeService {
             )));
         }
 
+        let fidelity =
+            pullrun_exec::types::SnapshotFidelity::parse(&req.fidelity).ok_or_else(|| {
+                tonic::Status::invalid_argument("fidelity must be memory, rootfs, or volumes")
+            })?;
         let snapshot_id = new_snapshot_id();
         let dir = self.config.snapshots_dir.join(&snapshot_id);
         std::fs::create_dir_all(&dir)
@@ -4848,7 +4873,7 @@ impl Runtime for RuntimeService {
         let snapshot_start = std::time::Instant::now();
         let info = self
             .executor
-            .snapshot(&req.workload_id, &dir)
+            .snapshot(&req.workload_id, &dir, fidelity)
             .await
             .map_err(|e| tonic::Status::internal(format!("snapshot failed: {e}")))?;
         let snapshot_ms = snapshot_start.elapsed().as_millis() as u64;
@@ -4856,8 +4881,18 @@ impl Runtime for RuntimeService {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
+        let (vcpus, mem_mib, kernel_path) = self
+            .config
+            .vm_backend
+            .as_ref()
+            .map(|c| (c.vcpus, c.mem_mib, c.kernel_path.clone()))
+            .unwrap_or((1, 512, std::path::PathBuf::new()));
         let meta = SnapshotMeta {
             workload_id: req.workload_id.clone(),
+            fidelity: fidelity.as_str().to_string(),
+            kernel_path,
+            vcpus,
+            mem_mib,
             state_path: info.state_path.clone(),
             mem_path: info.mem_path.clone(),
             rootfs_path: info.rootfs_path.clone(),
@@ -4872,24 +4907,26 @@ impl Runtime for RuntimeService {
         )
         .map_err(|e| tonic::Status::internal(format!("write meta: {e}")))?;
 
-        // A snapshot is a terminal state for the source VM (secure usage:
-        // the original must not resume after the snapshot).
-        let stop_result = self.executor.stop(&req.workload_id).await;
-        {
-            let mut workloads = self.workloads.write().await;
-            if let Some(st) = workloads.get_mut(&req.workload_id) {
-                st.status = "exited".to_string();
-                st.exit_code = Some(0);
-                st.exit_time = created_at;
-                write_workload_checkpoint(&self.config.checkpoints_dir, &req.workload_id, st);
+        // MEMORY snapshots are terminal for the source VM (secure
+        // single-resume). ROOTFS snapshots leave the source running.
+        if fidelity == pullrun_exec::types::SnapshotFidelity::Memory {
+            let stop_result = self.executor.stop(&req.workload_id).await;
+            {
+                let mut workloads = self.workloads.write().await;
+                if let Some(st) = workloads.get_mut(&req.workload_id) {
+                    st.status = "exited".to_string();
+                    st.exit_code = Some(0);
+                    st.exit_time = created_at;
+                    write_workload_checkpoint(&self.config.checkpoints_dir, &req.workload_id, st);
+                }
             }
-        }
-        if let Err(e) = stop_result {
-            tracing::warn!(workload_id = %req.workload_id, error = %e, "snapshot stop failed");
+            if let Err(e) = stop_result {
+                tracing::warn!(workload_id = %req.workload_id, error = %e, "snapshot stop failed");
+            }
         }
         self.event_bus.emit(
             Event::new(&req.workload_id, EventKind::WorkloadExited)
-                .with_metadata("outcome", "snapshot")
+                .with_metadata("outcome", fidelity.as_str())
                 .with_metadata("snapshot_id", &snapshot_id),
         );
 
@@ -4901,6 +4938,7 @@ impl Runtime for RuntimeService {
             state_path: info.state_path.to_string_lossy().to_string(),
             rootfs_path: info.rootfs_path.to_string_lossy().to_string(),
             snapshot_ms,
+            fidelity: fidelity.as_str().to_string(),
         }))
     }
 
@@ -4930,6 +4968,11 @@ impl Runtime for RuntimeService {
                 created_at: meta.created_at,
                 state_path: meta.state_path.to_string_lossy().to_string(),
                 rootfs_path: meta.rootfs_path.to_string_lossy().to_string(),
+                fidelity: if meta.fidelity.is_empty() {
+                    "memory".to_string()
+                } else {
+                    meta.fidelity.clone()
+                },
             });
         }
         snapshots.sort_by_key(|s| std::cmp::Reverse(s.created_at));
@@ -4998,17 +5041,34 @@ impl Runtime for RuntimeService {
 
         let workload_id = new_workload_id();
         let restore_start = std::time::Instant::now();
-        let handle = self
-            .executor
-            .restore_snapshot(
-                &workload_id,
-                &meta.state_path,
-                &meta.mem_path,
-                &meta.rootfs_path,
-                &meta.drive_path,
-            )
-            .await
-            .map_err(|e| tonic::Status::internal(format!("restore failed: {e}")))?;
+        let handle = if meta.fidelity == "rootfs" {
+            if meta.kernel_path.as_os_str().is_empty() || !meta.kernel_path.exists() {
+                return Err(tonic::Status::failed_precondition(
+                    "snapshot has no usable kernel path for a ROOTFS restore",
+                ));
+            }
+            self.executor
+                .restore_rootfs(
+                    &workload_id,
+                    &meta.rootfs_path,
+                    &meta.drive_path,
+                    &meta.kernel_path,
+                    meta.vcpus.max(1),
+                    meta.mem_mib.max(64),
+                )
+                .await
+        } else {
+            self.executor
+                .restore_snapshot(
+                    &workload_id,
+                    &meta.state_path,
+                    &meta.mem_path,
+                    &meta.rootfs_path,
+                    &meta.drive_path,
+                )
+                .await
+        }
+        .map_err(|e| tonic::Status::internal(format!("restore failed: {e}")))?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)

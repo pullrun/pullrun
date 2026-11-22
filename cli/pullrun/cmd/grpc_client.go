@@ -338,8 +338,8 @@ func (c *GRPCClient) RemoveGroup(ctx context.Context, groupID string, force bool
 }
 
 // CreateSnapshot captures a VM memory+disk snapshot.
-func (c *GRPCClient) CreateSnapshot(ctx context.Context, workloadID string) (*runtimepb.CreateSnapshotResponse, error) {
-	return c.client.CreateSnapshot(ctx, &runtimepb.CreateSnapshotRequest{WorkloadId: workloadID})
+func (c *GRPCClient) CreateSnapshot(ctx context.Context, workloadID, fidelity string) (*runtimepb.CreateSnapshotResponse, error) {
+	return c.client.CreateSnapshot(ctx, &runtimepb.CreateSnapshotRequest{WorkloadId: workloadID, Fidelity: fidelity})
 }
 
 // ListSnapshots returns the VM snapshots known to the runtime.

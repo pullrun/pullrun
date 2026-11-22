@@ -340,6 +340,36 @@ pub struct ProcessHandle {
     pub network_join: Option<String>,
 }
 
+/// How much state a snapshot captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotFidelity {
+    /// Volumes only (not implemented for VMs yet).
+    Volumes,
+    /// Disk/rootfs only; the source VM keeps running.
+    Rootfs,
+    /// Disk + guest memory + process state; the source VM is stopped.
+    Memory,
+}
+
+impl SnapshotFidelity {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "" | "memory" => Some(Self::Memory),
+            "rootfs" => Some(Self::Rootfs),
+            "volumes" => Some(Self::Volumes),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Volumes => "volumes",
+            Self::Rootfs => "rootfs",
+            Self::Memory => "memory",
+        }
+    }
+}
+
 /// Files produced by an executor snapshot.
 #[derive(Debug, Clone)]
 pub struct SnapshotInfo {
@@ -440,6 +470,7 @@ pub trait Executor: Send + Sync {
         &self,
         _id: &str,
         _out_dir: &std::path::Path,
+        _fidelity: SnapshotFidelity,
     ) -> Result<SnapshotInfo, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "snapshots are only supported by the Firecracker VM backend".into(),
@@ -457,6 +488,21 @@ pub trait Executor: Send + Sync {
     ) -> Result<ProcessHandle, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "snapshot restore is only supported by the Firecracker VM backend".into(),
+        ))
+    }
+
+    /// Cold-boot a VM from a ROOTFS-fidelity snapshot.
+    async fn restore_rootfs(
+        &self,
+        _id: &str,
+        _rootfs_path: &std::path::Path,
+        _drive_path: &std::path::Path,
+        _kernel_path: &std::path::Path,
+        _vcpus: u8,
+        _mem_mib: u32,
+    ) -> Result<ProcessHandle, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "rootfs restore is only supported by the Firecracker VM backend".into(),
         ))
     }
 }

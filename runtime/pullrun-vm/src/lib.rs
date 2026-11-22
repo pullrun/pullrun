@@ -41,7 +41,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use pullrun_exec::types::{
-    Backend, ExecOutput, ExitStatus, SnapshotInfo, WorkloadSpec, WorkloadStats,
+    Backend, ExecOutput, ExitStatus, SnapshotFidelity, SnapshotInfo, WorkloadSpec, WorkloadStats,
 };
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
@@ -868,37 +868,73 @@ impl Executor for FirecrackerExecutor {
         &self,
         id: &str,
         out_dir: &std::path::Path,
+        fidelity: SnapshotFidelity,
     ) -> Result<SnapshotInfo, ExecError> {
         let vm_dir = self.vm_dir(id);
         let api = FirecrackerApi::new(vm_dir.join("firecracker.sock"));
         tokio::fs::create_dir_all(out_dir).await?;
+        let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
+        let rootfs_path = out_dir.join("rootfs.ext4");
+
+        if matches!(fidelity, SnapshotFidelity::Volumes) {
+            return Err(ExecError::BackendNotAvailable(
+                "VOLUMES fidelity is not implemented for Firecracker snapshots yet".into(),
+            ));
+        }
+
         api.pause()
             .await
             .map_err(|e| ExecError::ExecutionFailed(format!("pause VM: {e}")))?;
-        let state_path = out_dir.join("state");
-        let mem_path = out_dir.join("mem");
-        if let Err(e) = api.create_full_snapshot(&state_path, &mem_path).await {
-            let _ = api.resume().await;
-            return Err(ExecError::ExecutionFailed(format!("create snapshot: {e}")));
+
+        if matches!(fidelity, SnapshotFidelity::Memory) {
+            let state_path = out_dir.join("state");
+            let mem_path = out_dir.join("mem");
+            if let Err(e) = api.create_full_snapshot(&state_path, &mem_path).await {
+                let _ = api.resume().await;
+                return Err(ExecError::ExecutionFailed(format!("create snapshot: {e}")));
+            }
+            let copy_src = ext4_path.clone();
+            let copy_dst = rootfs_path.clone();
+            let copied = tokio::task::spawn_blocking(move || copy_image_file(&copy_src, &copy_dst))
+                .await
+                .map_err(|e| ExecError::ExecutionFailed(format!("copy join: {e}")))?;
+            if let Err(e) = copied {
+                let _ = api.resume().await;
+                return Err(ExecError::ExecutionFailed(format!(
+                    "copy snapshot rootfs {}: {e}",
+                    ext4_path.display()
+                )));
+            }
+            let mem_bytes = std::fs::metadata(&mem_path).map(|m| m.len()).unwrap_or(0);
+            return Ok(SnapshotInfo {
+                state_path,
+                mem_path,
+                rootfs_path,
+                drive_path: ext4_path,
+                mem_bytes,
+            });
         }
-        let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
-        let rootfs_path = out_dir.join("rootfs.ext4");
+
+        // ROOTFS fidelity: copy the disk while paused, then let the
+        // source VM keep running.
         let copy_src = ext4_path.clone();
         let copy_dst = rootfs_path.clone();
         let copied = tokio::task::spawn_blocking(move || copy_image_file(&copy_src, &copy_dst))
             .await
             .map_err(|e| ExecError::ExecutionFailed(format!("copy join: {e}")))?;
+        let _ = api.resume().await;
         if let Err(e) = copied {
-            let _ = api.resume().await;
             return Err(ExecError::ExecutionFailed(format!(
-                "copy snapshot rootfs {}: {e}",
+                "copy rootfs snapshot {}: {e}",
                 ext4_path.display()
             )));
         }
-        let mem_bytes = std::fs::metadata(&mem_path).map(|m| m.len()).unwrap_or(0);
+        let mem_bytes = std::fs::metadata(&rootfs_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         Ok(SnapshotInfo {
-            state_path,
-            mem_path,
+            state_path: std::path::PathBuf::new(),
+            mem_path: std::path::PathBuf::new(),
             rootfs_path,
             drive_path: ext4_path,
             mem_bytes,
@@ -979,6 +1015,82 @@ impl Executor for FirecrackerExecutor {
         )?;
 
         info!(id = %id, pid, "restored Firecracker VM from snapshot");
+        Ok(ProcessHandle {
+            id: id.to_string(),
+            pid: Some(pid),
+            internal_ip: None,
+            host_ports: vec![],
+            gateway: None,
+            backend: "vm".to_string(),
+            bridge_name: None,
+            network_join: None,
+        })
+    }
+
+    async fn restore_rootfs(
+        &self,
+        id: &str,
+        rootfs_path: &std::path::Path,
+        drive_path: &std::path::Path,
+        kernel_path: &std::path::Path,
+        vcpus: u8,
+        mem_mib: u32,
+    ) -> Result<ProcessHandle, ExecError> {
+        let vm_dir = self.vm_dir(id);
+        std::fs::create_dir_all(&vm_dir)?;
+        if let Some(parent) = drive_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        copy_image_file(rootfs_path, drive_path).map_err(|e| {
+            ExecError::ExecutionFailed(format!(
+                "restore rootfs {} -> {}: {e}",
+                rootfs_path.display(),
+                drive_path.display()
+            ))
+        })?;
+        let config = firecracker_config(id, kernel_path, drive_path, None, vcpus, mem_mib);
+        let config_path = vm_dir.join("vm-config.json");
+        std::fs::write(
+            &config_path,
+            serde_json::to_vec_pretty(&config)
+                .map_err(|e| ExecError::ExecutionFailed(format!("serialize config: {e}")))?,
+        )?;
+        let console_path = vm_dir.join("console.log");
+        let console_file = std::fs::File::create(&console_path)?;
+        let child = Command::new(&self.config.firecracker_path)
+            .arg("--api-sock")
+            .arg(vm_dir.join("firecracker.sock"))
+            .arg("--config-file")
+            .arg(&config_path)
+            .stdout(console_file.try_clone()?)
+            .stderr(console_file)
+            .spawn()?;
+        let pid = child.id().unwrap_or(0);
+        std::fs::write(vm_dir.join("firecracker.pid"), pid.to_string())?;
+        let sidecar = VmSidecar {
+            vm_net: VmNetwork {
+                tap_name: String::new(),
+                bridge_name: String::new(),
+                guest_ip: Ipv4Addr::LOCALHOST,
+                guest_mac: String::new(),
+                netmask: Ipv4Addr::UNSPECIFIED,
+                gateway: Ipv4Addr::UNSPECIFIED,
+            },
+            endpoint: NetworkEndpoint {
+                internal_ip: String::new(),
+                host_port_mappings: vec![],
+                namespace_path: None,
+            },
+            tap_name: String::new(),
+            network_disabled: true,
+        };
+        std::fs::write(
+            vm_dir.join("network.json"),
+            serde_json::to_vec_pretty(&sidecar)
+                .map_err(|e| ExecError::ExecutionFailed(format!("serialize sidecar: {e}")))?,
+        )?;
+        std::mem::forget(child);
+        info!(id = %id, pid, "cold-booted VM from ROOTFS snapshot");
         Ok(ProcessHandle {
             id: id.to_string(),
             pid: Some(pid),
