@@ -12,8 +12,10 @@ their compute released, and resumed later from memory.
 pullrun run alpine:3.18 --backend vm --net none \
   --cmd /bin/sh --cmd -c --cmd 'while true; do date; sleep 1; done'
 
-# Snapshot it. This stops the source VM (single-resume, secure usage).
+# MEMORY fidelity (default): guest RAM + disk; stops the source VM.
 pullrun snapshot create <workload-id>
+# ROOTFS fidelity: disk only; source keeps running, restore cold-boots.
+pullrun snapshot create <workload-id> --fidelity rootfs
 
 # Inspect / remove.
 pullrun snapshot ls
@@ -27,10 +29,18 @@ Snapshots live under `<store>/snapshots/<snapshot-id>/`:
 
 | file | contents |
 |---|---|
-| `state` | Firecracker VM state (devices, vCPUs) |
-| `mem` | guest memory |
+| `state` | Firecracker VM state (devices, vCPUs); MEMORY only |
+| `mem` | guest memory; MEMORY only |
 | `rootfs.ext4` | disk image at snapshot time |
 | `meta.json` | workload id, drive path, sizes, timestamp |
+
+Fidelity levels:
+
+| fidelity | capture | source VM | restore |
+|---|---|---|---|
+| `memory` | RAM + disk + device state | stopped (single-resume) | snapshot load, resumes in-memory process |
+| `rootfs` | disk only | keeps running | cold boot from the recorded kernel |
+| `volumes` | not implemented yet | — | — |
 
 ## Verified behaviour
 
@@ -44,6 +54,9 @@ On the Linux KVM host (Firecracker 1.10.1, x86_64, 512 MiB guest):
   `mem` (512 MiB) + `rootfs.ext4` (256 MiB), and `snapshot restore`
   registered a new running workload whose console continued the counter
   at `tick 64-66`.
+- With `--fidelity rootfs`, capture took **20 ms** (disk copy), the
+  source VM stayed running, and `snapshot restore` cold-booted a new VM
+  in **199 ms** whose guest restarted the counter from `tick 1`.
 
 ## Latency
 
@@ -79,8 +92,10 @@ averaged 1.6 s.
   and may contain secrets; protect the store accordingly.
 - **Firecracker-version bound.** State files are tied to the
   Firecracker snapshot format version.
-- **No fidelity levels yet.** `commit` remains filesystem-only;
-  `snapshot` is always MEMORY+ROOTFS.
+- **VOLUMES fidelity is not implemented.** `commit` remains
+  filesystem-only; `snapshot --fidelity volumes` returns a clear error.
+- **ROOTFS restore is a cold boot.** It does not preserve processes or
+  memory; guest startup scripts run again.
 
 ## Next
 
