@@ -27,6 +27,10 @@ sandbox network namespace with `network_mode=container:<sandbox-id>`.
   hostNetwork, per-pod bridge, Linux sysctls (applied to the sandbox and
   every pod container).
 - Idempotent StopPodSandbox/StopContainer for missing workloads.
+- CRI Created state: `CreateContainer` creates without starting
+  (`create_only`), `StartContainer` calls the new `StartWorkload` RPC.
+- Container stdout/stderr are written to `Config.LogPath`;
+  `ReopenContainerLog` recreates the file.
 
 ## Conformance
 
@@ -43,7 +47,8 @@ Current status on the Linux KVM host:
 |---|---|
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
-| Container / Image / Streaming / Stats | in progress |
+| Container | in progress — Created/Start semantics and log files fixed; suite rerun in progress |
+| Image / Streaming / Stats | not yet run |
 
 A full 142-spec run is not yet green: an earlier run wedged in
 `StopPodSandbox` before the idempotence fix, and the complete suite has

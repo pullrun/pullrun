@@ -8,8 +8,12 @@
 - Preserve PodSandbox metadata attempt, labels, annotations.
 - Propagate Linux pod sysctls to the sandbox and every container.
 - Idempotent StopPodSandbox/StopContainer for missing workloads.
-- critest v1.37: Runtime info 2/2, PodSandbox 9/9. Container, image,
-  streaming and stats suites still in progress.
+- CRI Created state: create-only workloads plus a StartWorkload RPC;
+  StartContainer no longer races a command that already ran.
+- Container logs are written to the CRI LogPath; ReopenContainerLog
+  recreates the file.
+- critest v1.37: Runtime info 2/2, PodSandbox 9/9. Container suite
+  rerun in progress; image/streaming/stats not yet run.
 
 ## Unreleased
 
