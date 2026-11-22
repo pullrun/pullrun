@@ -4740,6 +4740,9 @@ impl Runtime for RuntimeService {
         if !refs.is_empty() {
             let mut images = Vec::with_capacity(refs.len());
             for (image_ref, root_digest) in refs.iter() {
+                if !is_listable_image_ref(image_ref) {
+                    continue;
+                }
                 let size_bytes = Digest::from_hex(root_digest)
                     .map(|d| self.store.compute_image_size(&d) as i64)
                     .unwrap_or(0);
@@ -7938,6 +7941,18 @@ fn list_persisted_networks(store_root: &std::path::Path) -> Result<Vec<(String, 
     let mut result: Vec<(String, String)> = networks.into_iter().collect();
     result.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(result)
+}
+
+fn is_listable_image_ref(image_ref: &str) -> bool {
+    if image_ref.contains('@') || image_ref.starts_with("sha256:") {
+        return false;
+    }
+    let leaf = image_ref.rsplit('/').next().unwrap_or(image_ref);
+    if let Some((_, tag)) = leaf.rsplit_once(':') {
+        !(tag.len() == 64 && tag.chars().all(|c| c.is_ascii_hexdigit()))
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
