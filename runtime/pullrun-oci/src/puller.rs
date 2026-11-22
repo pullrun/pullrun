@@ -537,7 +537,7 @@ impl OciPuller {
             format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repository}:pull")
         } else {
             format!(
-                "{}//{registry}/token?scope=repository:{repository}:pull",
+                "{}//{registry}/v2/token?scope=repository:{repository}:pull",
                 self.scheme(registry)
             )
         };
