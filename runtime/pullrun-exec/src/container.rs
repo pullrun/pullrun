@@ -568,7 +568,7 @@ impl Executor for LinuxContainerExecutor {
                 .to_string();
             // Per-pod bridges get their own /24 subnet (gateway .1);
             // the default bridge keeps the flat /16 (gateway 10.42.0.1).
-            let mut subnet = if bridge_name.as_str() == DEFAULT_BRIDGE_NAME {
+            let subnet = if bridge_name.as_str() == DEFAULT_BRIDGE_NAME {
                 None
             } else {
                 self.ipam
