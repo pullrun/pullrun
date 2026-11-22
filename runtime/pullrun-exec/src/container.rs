@@ -1028,7 +1028,12 @@ impl Executor for LinuxContainerExecutor {
         args.extend(command.iter().cloned());
         let mut cmd = Command::new(&self.runc_path);
         cmd.args(&args);
-        let output = run_exec_with_timeout(cmd, timeout_secs, Some(pid_file)).await?;
+        let cleanup = ExecCleanup {
+            runc: self.runc_path.clone(),
+            root: None,
+            id: id.to_string(),
+        };
+        let output = run_exec_with_timeout(cmd, timeout_secs, Some(pid_file), cleanup).await?;
         Ok(ExecOutput {
             exit_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
@@ -1160,10 +1165,17 @@ fn exec_pid_file(id: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("pullrun-exec-{id}-{stamp}.pid"))
 }
 
+struct ExecCleanup {
+    runc: std::path::PathBuf,
+    root: Option<std::path::PathBuf>,
+    id: String,
+}
+
 async fn run_exec_with_timeout(
     mut cmd: Command,
     timeout_secs: u64,
     pid_file: Option<std::path::PathBuf>,
+    cleanup: ExecCleanup,
 ) -> Result<std::process::Output, ExecError> {
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1196,6 +1208,17 @@ async fn run_exec_with_timeout(
                         unsafe {
                             libc::kill(pid, libc::SIGKILL);
                         }
+                        // The pid-file PID is in the container's PID
+                        // namespace; kill it through runc exec.
+                        let mut kill = std::process::Command::new(&cleanup.runc);
+                        kill.arg("exec");
+                        if let Some(root) = &cleanup.root {
+                            kill.arg("--root").arg(root);
+                        }
+                        kill.arg(&cleanup.id)
+                            .args(["/bin/sh", "-c"])
+                            .arg(format!("kill -9 {pid}"));
+                        let _ = kill.output();
                     }
                 }
                 let _ = std::fs::remove_file(path);
@@ -1920,7 +1943,12 @@ impl Executor for RootlessContainerExecutor {
         args.extend(command.iter().cloned());
         let mut cmd = Command::new(&self.config.runc_path);
         cmd.args(&args);
-        let output = run_exec_with_timeout(cmd, timeout_secs, Some(pid_file)).await?;
+        let cleanup = ExecCleanup {
+            runc: self.config.runc_path.clone(),
+            root: Some(self.config.state_root.clone()),
+            id: id.to_string(),
+        };
+        let output = run_exec_with_timeout(cmd, timeout_secs, Some(pid_file), cleanup).await?;
         Ok(ExecOutput {
             exit_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
