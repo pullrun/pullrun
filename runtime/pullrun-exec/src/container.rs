@@ -1018,11 +1018,17 @@ impl Executor for LinuxContainerExecutor {
         command: &[String],
         timeout_secs: u64,
     ) -> Result<ExecOutput, ExecError> {
-        let mut args = vec!["exec".to_string(), id.to_string()];
+        let pid_file = exec_pid_file(id);
+        let mut args = vec![
+            "exec".to_string(),
+            "--pid-file".to_string(),
+            pid_file.to_string_lossy().to_string(),
+            id.to_string(),
+        ];
         args.extend(command.iter().cloned());
         let mut cmd = Command::new(&self.runc_path);
         cmd.args(&args);
-        let output = run_exec_with_timeout(cmd, timeout_secs).await?;
+        let output = run_exec_with_timeout(cmd, timeout_secs, Some(pid_file)).await?;
         Ok(ExecOutput {
             exit_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
@@ -1146,9 +1152,18 @@ fn rootless_state_pid(
 }
 
 /// Allow the bridge to reach a host-side proxy port (UFW defaults to DROP).
+fn exec_pid_file(id: &str) -> std::path::PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("pullrun-exec-{id}-{stamp}.pid"))
+}
+
 async fn run_exec_with_timeout(
     mut cmd: Command,
     timeout_secs: u64,
+    pid_file: Option<std::path::PathBuf>,
 ) -> Result<std::process::Output, ExecError> {
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1163,12 +1178,27 @@ async fn run_exec_with_timeout(
     )
     .await
     {
-        Ok(res) => res.map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}"))),
+        Ok(res) => {
+            if let Some(path) = &pid_file {
+                let _ = std::fs::remove_file(path);
+            }
+            res.map_err(|e| ExecError::ExecutionFailed(format!("runc exec failed: {e}")))
+        }
         Err(_) => {
             // Kill the whole exec process group so a timed-out command
             // does not keep running inside the container.
             unsafe {
                 libc::kill(-(child_pid as i32), libc::SIGKILL);
+            }
+            if let Some(path) = &pid_file {
+                if let Ok(contents) = std::fs::read_to_string(path) {
+                    if let Ok(pid) = contents.trim().parse::<i32>() {
+                        unsafe {
+                            libc::kill(pid, libc::SIGKILL);
+                        }
+                    }
+                }
+                let _ = std::fs::remove_file(path);
             }
             Err(ExecError::ExecutionFailed(format!(
                 "runc exec timed out after {timeout_secs}s"
@@ -1878,16 +1908,19 @@ impl Executor for RootlessContainerExecutor {
         command: &[String],
         timeout_secs: u64,
     ) -> Result<ExecOutput, ExecError> {
+        let pid_file = exec_pid_file(id);
         let mut args = vec![
             "exec".to_string(),
             "--root".to_string(),
             self.config.state_root.to_string_lossy().to_string(),
+            "--pid-file".to_string(),
+            pid_file.to_string_lossy().to_string(),
             id.to_string(),
         ];
         args.extend(command.iter().cloned());
         let mut cmd = Command::new(&self.config.runc_path);
         cmd.args(&args);
-        let output = run_exec_with_timeout(cmd, timeout_secs).await?;
+        let output = run_exec_with_timeout(cmd, timeout_secs, Some(pid_file)).await?;
         Ok(ExecOutput {
             exit_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
