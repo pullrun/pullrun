@@ -69,9 +69,9 @@ Verified on the KVM host with `curlimages/curl`:
 Authorization: Bearer test123
 ```
 
-with a container that had no `/run/secrets/TEST_SECRET` and no
-`TEST_SECRET` environment variable. The host-side proxy test also
-returned 200.
+with a container that had no `/run/secrets/TEST_SECRET`
+(`no_secret_file=0`) and no `TEST_SECRET` environment variable
+(`no_secret_env=0`). The host-side proxy test also returned 200.
 
 ## Verified
 
