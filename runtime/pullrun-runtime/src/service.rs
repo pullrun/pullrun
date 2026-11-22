@@ -7680,6 +7680,7 @@ mod tests {
             seccomp_profile: String::new(),
             allowed_syscalls: vec![],
             dns: Default::default(),
+            egress_deny: false,
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::NotFound);
@@ -7760,6 +7761,7 @@ mod tests {
             seccomp_profile: String::new(),
             allowed_syscalls: vec![],
             dns: Default::default(),
+            egress_deny: false,
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -7800,6 +7802,7 @@ mod tests {
             seccomp_profile: String::new(),
             allowed_syscalls: vec![],
             dns: Default::default(),
+            egress_deny: false,
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
