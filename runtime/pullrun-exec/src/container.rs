@@ -41,6 +41,16 @@ pub struct LinuxContainerExecutor {
     rootfs_mode: RootfsMode,
     /// Workloads whose rootfs is an overlay mount (for unmount on stop).
     overlay_mounts: Mutex<HashSet<String>>,
+    /// Fail-closed egress configs for workloads that requested it.
+    egress: Mutex<HashMap<String, EgressConfig>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct EgressConfig {
+    /// (host-or-ip, port, protocol)
+    allow: Vec<(String, u16, String)>,
+    /// DNS servers the workload may reach on port 53.
+    nameservers: Vec<std::net::IpAddr>,
 }
 
 impl LinuxContainerExecutor {
@@ -57,6 +67,7 @@ impl LinuxContainerExecutor {
             children: Mutex::new(HashMap::new()),
             rootfs_mode: RootfsMode::Clone,
             overlay_mounts: Mutex::new(HashSet::new()),
+            egress: Mutex::new(HashMap::new()),
         }
     }
 
@@ -420,6 +431,43 @@ impl Executor for LinuxContainerExecutor {
             e
         })?;
 
+        if spec.egress_deny && matches!(spec.network_mode, crate::types::NetworkMode::Host) {
+            return Err(ExecError::ExecutionFailed(
+                "fail-closed egress is not supported with --net host".into(),
+            ));
+        }
+        {
+            let mut egress = self.egress.lock().expect("egress lock poisoned");
+            if spec.egress_deny {
+                let allow = spec
+                    .network_rules
+                    .iter()
+                    .filter(|r| matches!(r.direction, pullrun_net::Direction::Outbound))
+                    .filter_map(|r| {
+                        r.to_host.clone().map(|h| {
+                            (
+                                h,
+                                r.port,
+                                match r.protocol {
+                                    pullrun_net::Protocol::Udp => "udp".to_string(),
+                                    _ => "tcp".to_string(),
+                                },
+                            )
+                        })
+                    })
+                    .collect();
+                let nameservers = spec
+                    .dns
+                    .nameservers
+                    .iter()
+                    .filter_map(|n| n.parse().ok())
+                    .collect();
+                egress.insert(spec.id.clone(), EgressConfig { allow, nameservers });
+            } else {
+                egress.remove(&spec.id);
+            }
+        }
+
         info!(id = %spec.id, image_root = %spec.image_root, "creating container");
 
         let bundle_dir = self.bundle_dir(&spec.id);
@@ -668,6 +716,20 @@ impl Executor for LinuxContainerExecutor {
                 .unwrap_or(DEFAULT_GATEWAY);
             self.setup_container_network(&handle.id, ip, &handle.host_ports, bridge, gateway)
                 .await?;
+        }
+        let egress_cfg = self
+            .egress
+            .lock()
+            .expect("egress lock poisoned")
+            .get(&handle.id)
+            .cloned();
+        if let Some(cfg) = egress_cfg {
+            let gateway = handle
+                .gateway
+                .as_deref()
+                .and_then(|g| g.parse().ok())
+                .unwrap_or(DEFAULT_GATEWAY);
+            apply_container_egress_policy(&self.runc_path, &handle.id, gateway, &cfg).await?;
         }
 
         info!(id = %handle.id, "container started");
@@ -991,6 +1053,144 @@ fn rootless_state_pid(
     value.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32)
 }
 
+/// Resolve the outbound allowlist to concrete socket addresses.
+fn resolve_egress_allow(
+    cfg: &EgressConfig,
+) -> Result<Vec<(std::net::IpAddr, u16, String)>, ExecError> {
+    use std::net::ToSocketAddrs;
+    let mut out = Vec::new();
+    for (host, port, proto) in &cfg.allow {
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            out.push((ip, *port, proto.clone()));
+            continue;
+        }
+        let addrs = (host.as_str(), *port)
+            .to_socket_addrs()
+            .map_err(|e| ExecError::ExecutionFailed(format!("resolve {host}:{port}: {e}")))?;
+        for a in addrs {
+            out.push((a.ip(), *port, proto.clone()));
+        }
+    }
+    Ok(out)
+}
+
+/// Install a fail-closed nftables output policy inside the container's
+/// network namespace. Any failure aborts startup (fail closed).
+async fn apply_container_egress_policy(
+    runc_path: &std::path::Path,
+    id: &str,
+    gateway: std::net::Ipv4Addr,
+    cfg: &EgressConfig,
+) -> Result<(), ExecError> {
+    use std::process::Command as SyncCommand;
+    let state = SyncCommand::new(runc_path)
+        .args(["state", id])
+        .output()
+        .map_err(|e| ExecError::ExecutionFailed(format!("runc state: {e}")))?;
+    if !state.status.success() {
+        return Err(ExecError::ExecutionFailed(
+            "runc state failed for egress policy".into(),
+        ));
+    }
+    let json: serde_json::Value = serde_json::from_slice(&state.stdout)
+        .map_err(|e| ExecError::ExecutionFailed(format!("parse runc state: {e}")))?;
+    let pid = json["pid"]
+        .as_i64()
+        .ok_or_else(|| ExecError::ExecutionFailed("no pid for egress policy".into()))?;
+    let allow = resolve_egress_allow(cfg)?;
+
+    let nft = |args: &[&str]| -> Result<(), ExecError> {
+        let out = SyncCommand::new("nsenter")
+            .args(["-t", &pid.to_string(), "-n", "--", "nft"])
+            .args(args)
+            .output()
+            .map_err(|e| ExecError::ExecutionFailed(format!("nsenter nft: {e}")))?;
+        if !out.status.success() {
+            return Err(ExecError::ExecutionFailed(format!(
+                "nft {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            )));
+        }
+        Ok(())
+    };
+
+    // Best-effort reset of a stale table, then a drop-by-default chain.
+    let _ = nft(&["delete", "table", "inet", "pullrun_egress"]);
+    nft(&["add", "table", "inet", "pullrun_egress"])?;
+    nft(&[
+        "add",
+        "chain",
+        "inet",
+        "pullrun_egress",
+        "output",
+        "{ type filter hook output priority 0 ; policy drop ; }",
+    ])?;
+    nft(&[
+        "add",
+        "rule",
+        "inet",
+        "pullrun_egress",
+        "output",
+        "oifname",
+        "lo",
+        "accept",
+    ])?;
+    nft(&[
+        "add",
+        "rule",
+        "inet",
+        "pullrun_egress",
+        "output",
+        "ct",
+        "state",
+        "established,related",
+        "accept",
+    ])?;
+    let mut dns_servers = cfg.nameservers.clone();
+    if !dns_servers.contains(&std::net::IpAddr::V4(gateway)) {
+        dns_servers.push(std::net::IpAddr::V4(gateway));
+    }
+    for ns in dns_servers {
+        for proto in ["udp", "tcp"] {
+            nft(&[
+                "add",
+                "rule",
+                "inet",
+                "pullrun_egress",
+                "output",
+                "ip",
+                "daddr",
+                &ns.to_string(),
+                proto,
+                "dport",
+                "53",
+                "accept",
+            ])?;
+        }
+    }
+    for (ip, port, proto) in allow {
+        let addr = ip.to_string();
+        let port = port.to_string();
+        nft(&[
+            "add",
+            "rule",
+            "inet",
+            "pullrun_egress",
+            "output",
+            "ip",
+            "daddr",
+            &addr,
+            &proto,
+            "dport",
+            &port,
+            "accept",
+        ])?;
+    }
+    tracing::info!(%id, rules = cfg.allow.len(), "fail-closed egress policy applied");
+    Ok(())
+}
+
 fn netns_path_of(
     runc_path: &std::path::Path,
     state_root: Option<&std::path::Path>,
@@ -1106,6 +1306,12 @@ impl RootlessContainerExecutor {
 #[async_trait]
 impl Executor for RootlessContainerExecutor {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError> {
+        if spec.egress_deny {
+            return Err(ExecError::ExecutionFailed(
+                "fail-closed egress requires rootful container networking".into(),
+            ));
+        }
+
         info!(id = %spec.id, uid = self.uid, "creating rootless container");
 
         let bundle_dir = self.bundle_dir(&spec.id);

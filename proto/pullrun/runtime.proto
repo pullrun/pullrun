@@ -317,6 +317,9 @@ message RunRequest {
     // backends write this file into the rootfs; the VM backend configures
     // DNS via DHCP and ignores this field.
     DnsConfig dns = 23;
+    // Fail-closed egress: deny outbound traffic except the outbound
+    // network_rules allowlist and gateway DNS.
+    bool egress_deny = 24;
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.

@@ -113,6 +113,12 @@ enum Commands {
         )]
         rootfs_overlay: bool,
 
+        #[arg(
+            long,
+            help = "Deny workload egress by default (allow only --allow-outbound rules and gateway DNS)"
+        )]
+        egress_deny: bool,
+
         // OCI pull configuration.
         #[arg(
             long = "insecure-registry",
@@ -456,6 +462,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_size_mb,
         vm_warm_pool_size,
         rootfs_overlay,
+        egress_deny,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -484,6 +491,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_size_mb,
         vm_warm_pool_size,
         rootfs_overlay,
+        egress_deny,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -568,6 +576,7 @@ async fn run_workload(
         allowed_syscalls: vec![],
         privileged: false,
         dns: Default::default(),
+        egress_deny: false,
     };
 
     let mut handle = executor.create(spec).await?;
@@ -618,6 +627,7 @@ async fn run_daemon(
     vm_size_mb: u64,
     vm_warm_pool_size: usize,
     rootfs_overlay: bool,
+    egress_deny: bool,
     insecure_registry: Vec<String>,
     sync_addr: SocketAddr,
     registrar_addr: Option<SocketAddr>,
@@ -635,6 +645,9 @@ async fn run_daemon(
     let mut config = ServiceConfig::new(store_root).trusted_keys(keys);
     if rootfs_overlay {
         config = config.with_rootfs_overlay(true);
+    }
+    if egress_deny {
+        config = config.with_egress_deny(true);
     }
     if let Some(p) = policy {
         config = config.with_policy(p);

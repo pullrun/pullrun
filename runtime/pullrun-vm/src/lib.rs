@@ -445,6 +445,11 @@ impl Executor for FirecrackerExecutor {
 
         // `Loopback` is Pullrun's isolated/none mode for VMs: no external
         // network device, no IP, no tap/bridge.
+        if spec.egress_deny {
+            return Err(ExecError::BackendNotAvailable(
+                "fail-closed egress is not implemented for Firecracker VMs yet".into(),
+            ));
+        }
         let no_network = matches!(spec.network_mode, NetworkMode::Loopback);
         info!(id = %spec.id, no_network, "creating Firecracker VM");
 

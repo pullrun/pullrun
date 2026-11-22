@@ -707,7 +707,10 @@ type RunRequest struct {
 	// DNS configuration for the workload's /etc/resolv.conf. Container
 	// backends write this file into the rootfs; the VM backend configures
 	// DNS via DHCP and ignores this field.
-	Dns           *DnsConfig `protobuf:"bytes,23,opt,name=dns,proto3" json:"dns,omitempty"`
+	Dns *DnsConfig `protobuf:"bytes,23,opt,name=dns,proto3" json:"dns,omitempty"`
+	// Fail-closed egress: deny outbound traffic except the outbound
+	// network_rules allowlist and gateway DNS.
+	EgressDeny    bool `protobuf:"varint,24,opt,name=egress_deny,json=egressDeny,proto3" json:"egress_deny,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -901,6 +904,13 @@ func (x *RunRequest) GetDns() *DnsConfig {
 		return x.Dns
 	}
 	return nil
+}
+
+func (x *RunRequest) GetEgressDeny() bool {
+	if x != nil {
+		return x.EgressDeny
+	}
+	return false
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.
@@ -8501,7 +8511,7 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
 	"\fbytes_stored\x18\x02 \x01(\x03R\vbytesStored\x12-\n" +
-	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\x91\b\n" +
+	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\"\xb2\b\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -8532,7 +8542,9 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x11no_new_privileges\x18\x14 \x01(\bR\x0fnoNewPrivileges\x12'\n" +
 	"\x0fseccomp_profile\x18\x15 \x01(\tR\x0eseccompProfile\x12)\n" +
 	"\x10allowed_syscalls\x18\x16 \x03(\tR\x0fallowedSyscalls\x12,\n" +
-	"\x03dns\x18\x17 \x01(\v2\x1a.pullrun.runtime.DnsConfigR\x03dns\x1a6\n" +
+	"\x03dns\x18\x17 \x01(\v2\x1a.pullrun.runtime.DnsConfigR\x03dns\x12\x1f\n" +
+	"\vegress_deny\x18\x18 \x01(\bR\n" +
+	"egressDeny\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"c\n" +

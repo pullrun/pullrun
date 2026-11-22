@@ -157,6 +157,9 @@ pub struct WorkloadSpec {
     pub privileged: bool,
     /// DNS configuration written to the workload's /etc/resolv.conf.
     pub dns: DnsConfig,
+    /// Fail-closed egress: deny all outbound traffic except the
+    /// outbound `network_rules` allowlist and gateway DNS.
+    pub egress_deny: bool,
 }
 
 impl WorkloadSpec {
@@ -182,6 +185,7 @@ impl WorkloadSpec {
             allowed_syscalls: vec![],
             privileged: false,
             dns: DnsConfig::default(),
+            egress_deny: false,
         }
     }
 }
@@ -207,11 +211,17 @@ pub struct WorkloadSpecBuilder {
     allowed_syscalls: Vec<String>,
     privileged: bool,
     dns: DnsConfig,
+    egress_deny: bool,
 }
 
 impl WorkloadSpecBuilder {
     pub fn backend(mut self, backend: Backend) -> Self {
         self.backend = backend;
+        self
+    }
+
+    pub fn egress_deny(mut self, deny: bool) -> Self {
+        self.egress_deny = deny;
         self
     }
 
@@ -317,6 +327,7 @@ impl WorkloadSpecBuilder {
             allowed_syscalls: self.allowed_syscalls,
             privileged: self.privileged,
             dns: self.dns,
+            egress_deny: self.egress_deny,
         }
     }
 }

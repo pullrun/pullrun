@@ -121,6 +121,8 @@ pub struct ServiceConfig {
     pub secrets_store: crate::secrets::SecretStore,
     /// Use overlayfs lowerdirs for container rootfs (requires root).
     pub rootfs_overlay: bool,
+    /// Deny egress by default for every workload.
+    pub egress_deny: bool,
 }
 
 impl ServiceConfig {
@@ -143,11 +145,17 @@ impl ServiceConfig {
             bloom_cache: None,
             secrets_store: crate::secrets::SecretStore::new(ss),
             rootfs_overlay: false,
+            egress_deny: false,
         }
     }
 
     pub fn with_rootfs_overlay(mut self, enabled: bool) -> Self {
         self.rootfs_overlay = enabled;
+        self
+    }
+
+    pub fn with_egress_deny(mut self, enabled: bool) -> Self {
+        self.egress_deny = enabled;
         self
     }
 
@@ -1616,6 +1624,7 @@ async fn attempt_restart(
         seccomp_profile,
         allowed_syscalls,
         dns,
+        egress_deny: false,
     };
 
     match watcher_executor.create(spec).await {
@@ -2835,6 +2844,7 @@ impl Runtime for RuntimeService {
             seccomp_profile,
             allowed_syscalls,
             dns: dns_from_req(req.dns.as_ref()),
+            egress_deny: self.config.egress_deny || req.egress_deny,
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -3177,6 +3187,7 @@ impl Runtime for RuntimeService {
                 seccomp_profile: String::new(),
                 allowed_syscalls: Vec::new(),
                 dns: None,
+                egress_deny: self.config.egress_deny,
             });
 
             let run_resp = self.run_workload(run_req).await?;
