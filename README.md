@@ -277,7 +277,8 @@ sandbox. Groups are macOS-only for now, sandboxes are network-isolated,
 and writes are discarded when a sandbox exits. See
 [docs/GROUPS.md](docs/GROUPS.md) for semantics, caveats, and the
 reproduction script; [docs/TIERS.md](docs/TIERS.md) compares group,
-per-task VM, and container latency on macOS and Linux.
+per-task VM, and container latency on macOS and Linux, and
+[docs/SNAPSHOTS.md](docs/SNAPSHOTS.md) covers VM memory snapshots.
 
 ---
 
