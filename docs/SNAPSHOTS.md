@@ -45,6 +45,27 @@ On the Linux KVM host (Firecracker 1.10.1, x86_64, 512 MiB guest):
   registered a new running workload whose console continued the counter
   at `tick 64-66`.
 
+## Latency
+
+`hack/snapshot-bench.sh` captures one snapshot, then restores it N times
+and reports the executor-side wall times (`snapshot_ms` / `restore_ms`).
+
+Linux KVM host, Firecracker 1.10.1, 512 MiB guest, 256 MiB rootfs
+(cold-ish page cache, debug runtime):
+
+| metric | measured |
+|---|---|
+| snapshot capture | 3,895 ms |
+| restore, best | **227 ms** |
+| restore, average | 1,619 ms |
+| restore, worst | 2,300 ms |
+
+The first restore met the <500 ms target; later restores were slower
+because each one rewrites the 256 MB rootfs copy before loading the
+memory file. Reducing that copy (reflink, overlay-backed rootfs, or
+snapshot-owned drive) is required to make resume consistently
+sub-500 ms.
+
 ## Limitations
 
 - **Firecracker / Linux only.** Apple Virtualization and containers are
