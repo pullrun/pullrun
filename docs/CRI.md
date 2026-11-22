@@ -28,7 +28,10 @@ sandbox network namespace with `network_mode=container:<sandbox-id>`.
   every pod container).
 - Idempotent StopPodSandbox/StopContainer for missing workloads.
 - OOM-killed containers report `OOMKilled`.
-- CRI mount propagation maps to rprivate/rslave/rshared.
+- CRI mount propagation maps to rprivate/rslave/rshared; ContainerStatus
+  returns the request mounts. rshared/rslave propagation still fails.
+- Privileged containers now get the full `CAP_*` capability set instead
+  of the invalid literal `ALL`.
 - Container labels/annotations/metadata attempt preserved.
 - Host networking omits the OCI network namespace (hostNetwork pods
   really share the host netns).
@@ -55,7 +58,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container (basic operations) | **14/14 pass** |
-| Container (full) | **22/31 pass**; remaining: mount propagation/readonly (4), multi-container network/log (2), image volume (1). ContainerStatus now returns mounts, but the mount re-run failed in harness setup |
+| Container (full) | **22/31 before mount fixes**; mount specs now 2/4 (rprivate + readonly pass; rshared/rslave still fail), so ~24/31 expected |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |

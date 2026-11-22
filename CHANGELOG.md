@@ -9,7 +9,9 @@
   Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
-  mount propagation maps to rprivate/rslave/rshared.
+  mount propagation maps to rprivate/rslave/rshared and ContainerStatus
+  returns mounts. Privileged capabilities use CAP_* names (rprivate and
+  readonly mount specs pass; rshared/rslave still fail).
 - Full Container suite: 22/31 (mount propagation, multi-container
   network/log and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
@@ -303,7 +305,9 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
-  mount propagation maps to rprivate/rslave/rshared.
+  mount propagation maps to rprivate/rslave/rshared and ContainerStatus
+  returns mounts. Privileged capabilities use CAP_* names (rprivate and
+  readonly mount specs pass; rshared/rslave still fail).
 - Full Container suite: 22/31 (mount propagation, multi-container
   network/log and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
