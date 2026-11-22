@@ -12,7 +12,6 @@ path = "src/lib.rs"
 bytes = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["io-util", "sync"] }
-tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "sync", "macros", "rt"] }
