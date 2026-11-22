@@ -37,6 +37,7 @@ type sandboxCheckpoint struct {
 	RuntimeClass string    `json:"runtime_class"`
 	BridgeName   string    `json:"bridge_name,omitempty"`
 	HostNetwork  bool              `json:"host_network,omitempty"`
+	LogDirectory string            `json:"log_directory,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
 	Sysctls      map[string]string `json:"sysctls,omitempty"`
@@ -105,6 +106,7 @@ func (s *fileStore) loadAll() {
 				runtimeClass: cp.RuntimeClass,
 				bridgeName:   cp.BridgeName,
 				hostNetwork:  cp.HostNetwork,
+				logDirectory: cp.LogDirectory,
 				labels:       cp.Labels,
 				annotations:  cp.Annotations,
 				sysctls:      cp.Sysctls,
@@ -275,6 +277,7 @@ func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 		RuntimeClass: rec.runtimeClass,
 		BridgeName:   rec.bridgeName,
 		HostNetwork:  rec.hostNetwork,
+		LogDirectory: rec.logDirectory,
 		Labels:       rec.labels,
 		Annotations:  rec.annotations,
 		Sysctls:      rec.sysctls,

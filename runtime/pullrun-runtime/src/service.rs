@@ -2810,6 +2810,9 @@ impl Runtime for RuntimeService {
         sanitize_mounts(&req.mounts, &self.config.store_root)
             .map_err(tonic::Status::invalid_argument)?;
 
+        if !req.log_path.is_empty() {
+            tracing::info!(id = %req.id, log_path = %req.log_path, "workload log path");
+        }
         let mut mounts: Vec<pullrun_exec::Mount> = req
             .mounts
             .iter()

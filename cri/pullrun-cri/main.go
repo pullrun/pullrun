@@ -69,6 +69,7 @@ type sandboxRecord struct {
 	runtimeClass string
 	bridgeName   string
 	hostNetwork  bool
+	logDirectory string
 	labels       map[string]string
 	annotations  map[string]string
 	sysctls      map[string]string

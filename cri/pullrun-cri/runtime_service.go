@@ -159,6 +159,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		runtimeClass: req.RuntimeHandler,
 		bridgeName:   bridgeName,
 		hostNetwork:  hostNetwork,
+		logDirectory: req.Config.LogDirectory,
 		labels:       req.Config.Labels,
 		annotations:  req.Config.Annotations,
 		sysctls:      req.Config.GetLinux().GetSysctls(),
