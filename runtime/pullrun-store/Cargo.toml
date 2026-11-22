@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+libc.workspace = true
 tokio = { workspace = true }
 serde.workspace = true
 thiserror.workspace = true

@@ -118,6 +118,33 @@ unsafe impl Sync for ArchivedNodeGuard {}
 /// dir metadata reaches disk can lose the file. This window is accepted:
 /// shard dirs are quickly reused, and `recover()` handles orphaned temps.
 /// Full shard pre-creation (256² = 65k dirs) was judged too expensive.
+static BULK_WRITES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Bulk imports (OCI conversion) can skip the per-node fsync and flush
+/// everything with `syncfs` at the end.
+pub fn set_bulk_writes(enabled: bool) {
+    BULK_WRITES.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Flush the whole store filesystem after a bulk import.
+#[cfg(target_os = "linux")]
+pub fn syncfs(root: &Path) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let dir = std::fs::File::open(root)?;
+    let rc = unsafe { libc::syncfs(dir.as_raw_fd()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn syncfs(root: &Path) -> std::io::Result<()> {
+    let _ = root;
+    std::process::Command::new("sync").status().map(|_| ())
+}
+
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
     let parent = path
         .parent()
@@ -139,14 +166,18 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
     let result = (|| -> Result<(), StoreError> {
         std::fs::write(&tmp_path, bytes)?;
 
-        let f = std::fs::File::open(&tmp_path)?;
-        f.sync_all()?;
-        drop(f);
+        if !BULK_WRITES.load(std::sync::atomic::Ordering::Relaxed) {
+            let f = std::fs::File::open(&tmp_path)?;
+            f.sync_all()?;
+            drop(f);
+        }
 
         std::fs::rename(&tmp_path, path)?;
 
-        let parent_f = std::fs::File::open(parent)?;
-        parent_f.sync_all()?;
+        if !BULK_WRITES.load(std::sync::atomic::Ordering::Relaxed) {
+            let parent_f = std::fs::File::open(parent)?;
+            parent_f.sync_all()?;
+        }
 
         Ok(())
     })();
@@ -159,6 +190,11 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
 }
 
 impl MmapStore {
+    /// Root directory of the store.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn new(root: PathBuf) -> Self {
         create_store_root(&root);
         Self {

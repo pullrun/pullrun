@@ -141,6 +141,14 @@ impl OciToDagConverter {
 
     pub async fn convert(&self, image: &PulledImage) -> Result<Digest, OciError> {
         info!("converting OCI image to DAG");
+        struct BulkGuard;
+        impl Drop for BulkGuard {
+            fn drop(&mut self) {
+                pullrun_store::set_bulk_writes(false);
+            }
+        }
+        let bulk_guard = BulkGuard;
+        pullrun_store::set_bulk_writes(true);
 
         let mut layer_digests = Vec::new();
 
@@ -158,6 +166,8 @@ impl OciToDagConverter {
             )
             .await?;
 
+        drop(bulk_guard);
+        let _ = pullrun_store::syncfs(self.store.root());
         info!(%manifest_digest, layers = layer_digests.len(), "DAG conversion complete");
         Ok(manifest_digest)
     }

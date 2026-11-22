@@ -2021,6 +2021,7 @@ version = "0.9.1"
 dependencies = [
  "dashmap",
  "hex",
+ "libc",
  "memmap2",
  "rand 0.8.6",
  "rkyv",
