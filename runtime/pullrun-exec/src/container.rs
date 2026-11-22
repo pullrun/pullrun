@@ -767,6 +767,12 @@ impl Executor for LinuxContainerExecutor {
                 .as_deref()
                 .and_then(|g| g.parse().ok())
                 .unwrap_or(DEFAULT_GATEWAY);
+            if let Some(proxy) = cfg.proxy {
+                ensure_input_accept(
+                    handle.bridge_name.as_deref().unwrap_or("pullrun-br0"),
+                    proxy.port(),
+                );
+            }
             apply_container_egress_policy(&self.runc_path, &handle.id, gateway, &cfg).await?;
         }
 
@@ -1089,6 +1095,28 @@ fn rootless_state_pid(
     }
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
     value.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32)
+}
+
+/// Allow the bridge to reach a host-side proxy port (UFW defaults to DROP).
+fn ensure_input_accept(bridge: &str, port: u16) {
+    use std::process::Command;
+    let port = port.to_string();
+    let check = Command::new("iptables")
+        .args([
+            "-C", "INPUT", "-i", bridge, "-p", "tcp", "--dport", &port, "-j", "ACCEPT",
+        ])
+        .status();
+    if check.map(|s| s.success()).unwrap_or(false) {
+        return;
+    }
+    let status = Command::new("iptables")
+        .args([
+            "-I", "INPUT", "1", "-i", bridge, "-p", "tcp", "--dport", &port, "-j", "ACCEPT",
+        ])
+        .status();
+    if !matches!(status, Ok(s) if s.success()) {
+        tracing::warn!(bridge, port = %port, "failed to add INPUT accept for proxy");
+    }
 }
 
 /// Resolve the outbound allowlist to concrete socket addresses.
