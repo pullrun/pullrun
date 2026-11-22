@@ -169,11 +169,15 @@ pub fn build_oci_config(
 
     let mut namespaces = vec![
         serde_json::json!({"type": "pid"}),
-        serde_json::json!({"type": "network"}),
         serde_json::json!({"type": "ipc"}),
         serde_json::json!({"type": "uts"}),
         serde_json::json!({"type": "mount"}),
     ];
+    // Host networking means sharing the host network namespace, which
+    // OCI expresses by not listing a network namespace at all.
+    if !matches!(spec.network_mode, crate::types::NetworkMode::Host) {
+        namespaces.insert(1, serde_json::json!({"type": "network"}));
+    }
     if rootless {
         namespaces.push(serde_json::json!({"type": "user"}));
     }
