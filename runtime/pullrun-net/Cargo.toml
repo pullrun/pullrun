@@ -15,10 +15,8 @@ serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
-rand.workspace = true
 libc.workspace = true
-nix.workspace = true
-ipnet = "2.9"
 bytes.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+

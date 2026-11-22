@@ -1908,7 +1908,6 @@ version = "0.9.1"
 dependencies = [
  "pullrun-store",
  "serde",
- "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "tracing",
@@ -1935,10 +1934,7 @@ version = "0.9.1"
 dependencies = [
  "async-trait",
  "bytes",
- "ipnet",
  "libc",
- "nix",
- "rand 0.8.6",
  "rcgen",
  "ring 0.17.14",
  "rustls",
@@ -2062,7 +2058,6 @@ dependencies = [
  "bytes",
  "futures",
  "hex",
- "metrics",
  "prost",
  "pullrun-oci",
  "pullrun-store",
@@ -2108,7 +2103,6 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "tonic",
  "tracing",
  "ureq",
 ]
