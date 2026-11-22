@@ -85,10 +85,12 @@ type containerRecord struct {
 	imageRef  string
 	createdAt time.Time
 	startedAt time.Time
-	state     runtimeapi.ContainerState
-	exitCode  int32
-	logPath   string
-	labels    map[string]string
+	state       runtimeapi.ContainerState
+	exitCode    int32
+	logPath     string
+	labels      map[string]string
+	annotations map[string]string
+	attempt     uint32
 }
 
 func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilter) bool {
@@ -123,12 +125,14 @@ func containerToAPI(rec *containerRecord) *runtimeapi.Container {
 	return &runtimeapi.Container{
 		Id:           rec.id,
 		PodSandboxId: rec.sandboxID,
-		Metadata:     &runtimeapi.ContainerMetadata{Name: rec.name},
+		Metadata:     &runtimeapi.ContainerMetadata{Name: rec.name, Attempt: rec.attempt},
 		Image:        &runtimeapi.ImageSpec{Image: rec.image},
 		ImageRef:     rec.imageRef,
 		ImageId:      rec.imageRef,
 		CreatedAt:    rec.createdAt.UnixNano(),
 		State:        rec.state,
+		Labels:       rec.labels,
+		Annotations:  rec.annotations,
 	}
 }
 

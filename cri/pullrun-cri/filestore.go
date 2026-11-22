@@ -57,7 +57,9 @@ type containerCheckpoint struct {
 	CreatedAt time.Time `json:"created_at"`
 	StartedAt time.Time `json:"started_at,omitempty"`
 	LogPath   string            `json:"log_path,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Attempt     uint32            `json:"attempt,omitempty"`
 	State     int32     `json:"state,omitempty"`
 	ExitCode  int32     `json:"exit_code,omitempty"`
 }
@@ -148,7 +150,9 @@ func (s *fileStore) loadAll() {
 				createdAt: cp.CreatedAt,
 				startedAt: cp.StartedAt,
 				logPath:   cp.LogPath,
-				labels:    cp.Labels,
+				labels:      cp.Labels,
+				annotations: cp.Annotations,
+				attempt:     cp.Attempt,
 				state:     runtimeapi.ContainerState(cp.State),
 				exitCode:  cp.ExitCode,
 			}
@@ -311,7 +315,9 @@ func (s *fileStore) writeContainer(rec *containerRecord) {
 		CreatedAt: rec.createdAt,
 		StartedAt: rec.startedAt,
 		LogPath:   rec.logPath,
-		Labels:    rec.labels,
+		Labels:      rec.labels,
+		Annotations: rec.annotations,
+		Attempt:     rec.attempt,
 		State:     int32(rec.state),
 		ExitCode:  rec.exitCode,
 	}

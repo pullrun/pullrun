@@ -220,7 +220,9 @@ func (c *criServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateC
 		createdAt: time.Now(),
 		state:     runtimeapi.ContainerState_CONTAINER_CREATED,
 		logPath:   logPath,
-		labels:    req.Config.Labels,
+		labels:      req.Config.Labels,
+		annotations: req.Config.Annotations,
+		attempt:     req.Config.Metadata.Attempt,
 	}
 	c.sandboxStore.putContainer(rec)
 
@@ -317,12 +319,14 @@ func (c *criServer) ContainerStatus(ctx context.Context, req *runtimeapi.Contain
 
 	status := &runtimeapi.ContainerStatus{
 		Id:        rec.id,
-		Metadata:  &runtimeapi.ContainerMetadata{Name: rec.name},
 		State:     state,
 		CreatedAt: rec.createdAt.UnixNano(),
-		Image:     &runtimeapi.ImageSpec{Image: rec.image},
-		ImageRef:  rec.imageRef,
-		ImageId:   rec.imageRef,
+		Metadata:    &runtimeapi.ContainerMetadata{Name: rec.name, Attempt: rec.attempt},
+		Labels:      rec.labels,
+		Annotations: rec.annotations,
+		Image:       &runtimeapi.ImageSpec{Image: rec.image},
+		ImageRef:    rec.imageRef,
+		ImageId:     rec.imageRef,
 	}
 	if startedAt > 0 {
 		status.StartedAt = startedAt
@@ -410,7 +414,11 @@ func (c *criServer) ExecSync(ctx context.Context, req *runtimeapi.ExecSyncReques
 		return nil, fmt.Errorf("ExecSync: container %q not found", req.ContainerId)
 	}
 
-	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	timeout := 60 * time.Second
+	if req.Timeout > 0 {
+		timeout = time.Duration(req.Timeout)*time.Second + 100*time.Millisecond
+	}
+	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	resp, err := c.runtimeClient.ExecInWorkload(execCtx, &pullrunruntime.ExecRequest{
 		Id:      rec.pullrunID,
 		Command: req.Cmd,
