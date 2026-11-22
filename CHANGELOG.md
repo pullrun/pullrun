@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### CRI
+- OCI puller: use `/v2/token` for non-Docker registries. gcr.io
+  redirects `/token` to an HTML page, which broke all gcr.io pulls.
 - Upgrade to Kubernetes 1.37 CRI API (`k8s.io/cri-api v0.37.2`).
 - Implement `HasImage` with image size; `ImageStatus` works.
 - Preserve PodSandbox metadata attempt, labels, annotations.
@@ -266,7 +268,9 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 
 ## 0.7.8 — 2026-07-31
 
-### CRI shim: real pod/container runtime
+### CRI
+- OCI puller: use `/v2/token` for non-Docker registries. gcr.io
+  redirects `/token` to an HTML page, which broke all gcr.io pulls. shim: real pod/container runtime
 - **Pod network namespace sharing** (exec/container.rs, exec/rootless.rs). The
   shim now runs a pause sandbox workload (`registry.k8s.io/pause:3.9`) that
   anchors the pod's network namespace; containers run their own image and join
