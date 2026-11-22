@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -69,11 +70,18 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 		return &runtimeapi.ImageStatusResponse{}, nil
 	}
 
+	ref := req.Image.Image
+	if !strings.Contains(ref, "@") {
+		last := ref[strings.LastIndex(ref, "/")+1:]
+		if !strings.Contains(last, ":") {
+			ref += ":latest"
+		}
+	}
 	uid := &runtimeapi.Int64Value{Value: 0}
 	return &runtimeapi.ImageStatusResponse{
 		Image: &runtimeapi.Image{
 			Id:       resp.RootDigest,
-			RepoTags: []string{req.Image.Image},
+			RepoTags: []string{ref},
 			Size:     uint64(resp.SizeBytes),
 			Uid:      uid,
 			Username: "root",

@@ -511,7 +511,11 @@ impl OciPuller {
             image_ref.to_string()
         };
 
-        let segments: Vec<&str> = after_registry.splitn(2, ':').collect();
+        let (name_part, digest) = match after_registry.split_once('@') {
+            Some((name, digest)) => (name, Some(digest)),
+            None => (after_registry.as_str(), None),
+        };
+        let segments: Vec<&str> = name_part.splitn(2, ':').collect();
         // The `library/` prefix is a docker.io convention (e.g. `alpine`
         // is `docker.io/library/alpine`). Other registries (registry.k8s.io,
         // ghcr.io, quay.io, ...) serve single-segment names as-is, and
@@ -524,7 +528,10 @@ impl OciPuller {
         } else {
             segments[0].to_string()
         };
-        let tag = segments.get(1).unwrap_or(&"latest").to_string();
+        let tag = match digest {
+            Some(d) => d.to_string(),
+            None => segments.get(1).unwrap_or(&"latest").to_string(),
+        };
         (name, tag)
     }
 
