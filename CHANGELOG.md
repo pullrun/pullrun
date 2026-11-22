@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### CRI
+- Container labels/annotations/attempt preserved; ExecSync honors the
+  requested timeout and attempts to kill the timed-out process group.
+- Host networking no longer creates an OCI network namespace.
+- Container basic operations: 13/14 (timed-out exec process cleanup
+  still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
 - Exec: `NetworkMode::Host` now omits the OCI network namespace, so
   hostNetwork pods actually share the host netns.
@@ -286,6 +291,11 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 ## 0.7.8 — 2026-07-31
 
 ### CRI
+- Container labels/annotations/attempt preserved; ExecSync honors the
+  requested timeout and attempts to kill the timed-out process group.
+- Host networking no longer creates an OCI network namespace.
+- Container basic operations: 13/14 (timed-out exec process cleanup
+  still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
 - Exec: `NetworkMode::Host` now omits the OCI network namespace, so
   hostNetwork pods actually share the host netns.

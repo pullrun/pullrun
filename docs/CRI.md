@@ -27,6 +27,9 @@ sandbox network namespace with `network_mode=container:<sandbox-id>`.
   hostNetwork, per-pod bridge, Linux sysctls (applied to the sandbox and
   every pod container).
 - Idempotent StopPodSandbox/StopContainer for missing workloads.
+- Container labels/annotations/metadata attempt preserved.
+- Host networking omits the OCI network namespace (hostNetwork pods
+  really share the host netns).
 - CRI Created state: `CreateContainer` creates without starting
   (`create_only`), `StartContainer` calls the new `StartWorkload` RPC.
 - Container stdout/stderr are written to `Config.LogPath` in CRI log
@@ -49,7 +52,9 @@ Current status on the Linux KVM host:
 |---|---|
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
-| Container | log tests **2/2 pass**; container stats filter **5/5 pass**; full suite pending |
+| Container (basic operations) | **13/14 pass**; remaining: timed-out exec process cleanup |
+| Container logs | **2/2 pass** |
+| Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
 | Image volumes | feature-gated, not implemented |
 | Stats | **5/5 pass** |
