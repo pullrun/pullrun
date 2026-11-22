@@ -951,11 +951,14 @@ func attachToWorkload(ctx context.Context, client *GRPCClient, workloadID string
 	// state as a backstop so attach returns with the real exit code.
 	pollTicker := time.NewTicker(500 * time.Millisecond)
 	defer pollTicker.Stop()
-	var drainTimer <-chan time.Time
+	var idleTimer, hardTimer <-chan time.Time
+	draining := false
 loop:
 	for {
 		select {
-		case <-drainTimer:
+		case <-idleTimer:
+			break loop
+		case <-hardTimer:
 			break loop
 		case <-pollTicker.C:
 			st, stErr := client.GetWorkload(ctx, workloadID)
@@ -963,10 +966,12 @@ loop:
 				if st.ExitCode != 0 {
 					exitCode = int(st.ExitCode)
 				}
-				// Let already-queued stdout/stderr frames drain
-				// before returning.
-				if drainTimer == nil {
-					drainTimer = time.After(750 * time.Millisecond)
+				// Let queued/stdout still-in-flight frames arrive.
+				// Stop after 400 ms of silence (or 2 s hard cap).
+				if !draining {
+					draining = true
+					idleTimer = time.After(400 * time.Millisecond)
+					hardTimer = time.After(2 * time.Second)
 				}
 			}
 		case result := <-recvCh:
@@ -984,6 +989,9 @@ loop:
 				if body.Stdout != nil {
 					if _, err := os.Stdout.Write(body.Stdout.Data); err != nil {
 						return fmt.Errorf("write stdout: %w", err)
+					}
+					if draining {
+						idleTimer = time.After(400 * time.Millisecond)
 					}
 				}
 			case *runtimepb.AttachMessage_Stderr:
