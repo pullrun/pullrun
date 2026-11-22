@@ -587,6 +587,7 @@ async fn run_workload(
         egress_deny: false,
         egress_proxy: None,
         sysctls: std::collections::HashMap::new(),
+        log_path: None,
     };
 
     let mut handle = executor.create(spec).await?;
