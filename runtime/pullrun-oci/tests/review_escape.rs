@@ -93,6 +93,7 @@ fn image_with_layers(layers: Vec<Vec<u8>>) -> (PulledImage, Vec<Digest>) {
     (
         PulledImage {
             manifest,
+            manifest_digest: Digest([1u8; 32]),
             config,
             config_digest: Digest([1u8; 32]),
             layer_blobs,
