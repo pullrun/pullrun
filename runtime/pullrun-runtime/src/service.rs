@@ -4513,10 +4513,10 @@ impl Runtime for RuntimeService {
             .to_string();
         let digest = image_ref.strip_prefix("sha256:").unwrap_or(&image_ref);
         if let Ok(d) = Digest::from_hex(digest) {
-            if self.store.get(d).is_ok() {
+            if self.store.get(&d).is_ok() {
                 return Ok(tonic::Response::new(HasImageResponse {
                     exists: true,
-                    root_digest: d.to_hex(),
+                    root_digest: d.as_hex().to_string(),
                 }));
             }
         }
