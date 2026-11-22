@@ -364,6 +364,33 @@ pub fn register_start_timer() -> StartTimer {
     StartTimer::start()
 }
 
+/// Record a snapshot capture and its fidelity.
+pub fn record_snapshot_created(fidelity: &str, millis: u64) {
+    histogram!(names::SNAPSHOT_CAPTURE_DURATION_SECONDS).record(millis as f64 / 1000.0);
+    counter!(names::SNAPSHOTS_CREATED_TOTAL, "fidelity" => fidelity.to_string()).increment(1);
+}
+
+/// Record a snapshot restore.
+pub fn record_snapshot_restored(millis: u64) {
+    histogram!(names::SNAPSHOT_RESTORE_DURATION_SECONDS).record(millis as f64 / 1000.0);
+    counter!(names::SNAPSHOTS_RESTORED_TOTAL).increment(1);
+}
+
+/// Record an actor resume (whether it restored or was already running).
+pub fn record_actor_resume(millis: u64, resumed: bool) {
+    histogram!(names::ACTOR_RESUME_DURATION_SECONDS).record(millis as f64 / 1000.0);
+    counter!(
+        names::ACTORS_RESUMED_TOTAL,
+        "resumed" => if resumed { "true" } else { "false" }.to_string(),
+    )
+    .increment(1);
+}
+
+/// Record an actor suspend.
+pub fn record_actor_suspended() {
+    counter!(names::ACTORS_SUSPENDED_TOTAL).increment(1);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,31 +462,4 @@ mod tests {
         let h = install_recorder();
         let _r = router(h);
     }
-}
-
-/// Record a snapshot capture and its fidelity.
-pub fn record_snapshot_created(fidelity: &str, millis: u64) {
-    histogram!(names::SNAPSHOT_CAPTURE_DURATION_SECONDS).record(millis as f64 / 1000.0);
-    counter!(names::SNAPSHOTS_CREATED_TOTAL, "fidelity" => fidelity.to_string()).increment(1);
-}
-
-/// Record a snapshot restore.
-pub fn record_snapshot_restored(millis: u64) {
-    histogram!(names::SNAPSHOT_RESTORE_DURATION_SECONDS).record(millis as f64 / 1000.0);
-    counter!(names::SNAPSHOTS_RESTORED_TOTAL).increment(1);
-}
-
-/// Record an actor resume (whether it restored or was already running).
-pub fn record_actor_resume(millis: u64, resumed: bool) {
-    histogram!(names::ACTOR_RESUME_DURATION_SECONDS).record(millis as f64 / 1000.0);
-    counter!(
-        names::ACTORS_RESUMED_TOTAL,
-        "resumed" => if resumed { "true" } else { "false" }.to_string(),
-    )
-    .increment(1);
-}
-
-/// Record an actor suspend.
-pub fn record_actor_suspended() {
-    counter!(names::ACTORS_SUSPENDED_TOTAL).increment(1);
 }
