@@ -202,9 +202,12 @@ impl OciToDagConverter {
         debug!(%layer_digest, size = blob.len(), "converting layer to DAG");
 
         // Decompress the blob based on its media type.
+        let decompress_started = std::time::Instant::now();
         let decompressed = decompress_layer(blob, media_type)?;
+        info!(%layer_digest, compressed = blob.len(), decompressed = decompressed.len(), ms = decompress_started.elapsed().as_millis(), "layer decompressed");
 
         let store = self.store.clone();
+        let extract_started = std::time::Instant::now();
 
         let (entries, dir_index, whiteout_digests) =
             tokio::task::spawn_blocking(move || -> Result<_, OciError> {
@@ -233,11 +236,14 @@ impl OciToDagConverter {
             .await
             .map_err(|e| OciError::Other(format!("join error: {e}")))??;
 
+        info!(%layer_digest, entries = entries.len(), whiteouts = whiteout_digests.len(), ms = extract_started.elapsed().as_millis(), "layer tar entries extracted");
+        let trees_started = std::time::Instant::now();
         // Build the tree structure for this layer.
         // `store_trees` returns a Layer node whose edges are Tree nodes.
         // Extend its edges with Whiteout/OpaqueDir nodes so the
         // materializer can find them.
         let layer_digest = Box::pin(self.store_trees(&dir_index, &entries, "")).await?;
+        info!(%layer_digest, ms = trees_started.elapsed().as_millis(), "layer tree stored");
 
         if !whiteout_digests.is_empty() {
             let mut layer_node = self.store.get_deserialized(&layer_digest)?;
