@@ -210,6 +210,9 @@ pub async fn wait_for_api(socket: &Path, timeout: Duration) -> Result<(), String
 /// Metadata persisted next to a snapshot.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotMeta {
+    /// Workload the snapshot was taken from.
+    #[serde(default)]
+    pub workload_id: String,
     /// Path to the Firecracker VM state file.
     pub state_path: PathBuf,
     /// Path to the guest memory file.

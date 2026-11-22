@@ -46,6 +46,11 @@ service Runtime {
     rpc RemoveGroup(RemoveGroupRequest) returns (RemoveGroupResponse);
     rpc RunGroupSandbox(RunGroupSandboxRequest) returns (RunGroupSandboxResponse);
 
+    // --- VM snapshots (Firecracker memory + disk) ---
+    rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
+    rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
+    rpc RemoveSnapshot(RemoveSnapshotRequest) returns (RemoveSnapshotResponse);
+
     // --- Image build/push/save/load (Phase D) ---
 
     // Build an OCI image from a Dockerfile and import into the
@@ -1001,4 +1006,42 @@ message RunGroupSandboxResponse {
     int32 exit_code = 1;
     bytes stdout = 2;
     bytes stderr = 3;
+}
+
+// --- VM snapshots ---
+
+message CreateSnapshotRequest {
+    string workload_id = 1;
+}
+
+message CreateSnapshotResponse {
+    string snapshot_id = 1;
+    string workload_id = 2;
+    uint64 mem_bytes = 3;
+    int64 created_at = 4;
+    string state_path = 5;
+    string rootfs_path = 6;
+}
+
+message SnapshotInfo {
+    string snapshot_id = 1;
+    string workload_id = 2;
+    uint64 mem_bytes = 3;
+    int64 created_at = 4;
+    string state_path = 5;
+    string rootfs_path = 6;
+}
+
+message ListSnapshotsRequest {}
+
+message ListSnapshotsResponse {
+    repeated SnapshotInfo snapshots = 1;
+}
+
+message RemoveSnapshotRequest {
+    string snapshot_id = 1;
+}
+
+message RemoveSnapshotResponse {
+    bool removed = 1;
 }

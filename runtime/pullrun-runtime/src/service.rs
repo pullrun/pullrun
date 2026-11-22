@@ -50,24 +50,26 @@ use crate::proto::{
     AttachSignatureResponse, BuildImageRequest, BuildImageResponse, CommitImageRequest,
     CommitImageResponse, CopyFileRequest, CopyFileResponse, CreateConfigRequest,
     CreateConfigResponse, CreateGroupRequest, CreateGroupResponse, CreateNetworkRequest,
-    CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse, DagNode, DagStoreInfoRequest,
-    DagStoreInfoResponse, DiffRequest, DiffResponse, Event as ProtoEvent, ExecRequest,
-    ExecResponse, ExportImageChunk, ExportImageRequest, GcRequest, GcResponse,
-    GetAttestationsRequest, GetAttestationsResponse, GetWorkloadRequest, GetWorkloadStatsRequest,
-    GroupInfo, HasImageRequest, HasImageResponse, ImportImageChunk, ImportImageResponse,
-    InfoRequest, InfoResponse, InspectConfigRequest, InspectConfigResponse, InspectRequest,
-    InspectResponse, InspectSecretRequest, InspectSecretResponse, ListConfigsRequest,
-    ListConfigsResponse, ListGroupsRequest, ListGroupsResponse, ListImagesRequest,
-    ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
-    ListSecretsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
+    CreateNetworkResponse, CreateSecretRequest, CreateSecretResponse, CreateSnapshotRequest,
+    CreateSnapshotResponse, DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest,
+    DiffResponse, Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk,
+    ExportImageRequest, GcRequest, GcResponse, GetAttestationsRequest, GetAttestationsResponse,
+    GetWorkloadRequest, GetWorkloadStatsRequest, GroupInfo, HasImageRequest, HasImageResponse,
+    ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
+    InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
+    InspectSecretResponse, ListConfigsRequest, ListConfigsResponse, ListGroupsRequest,
+    ListGroupsResponse, ListImagesRequest, ListImagesResponse, ListNetworksRequest,
+    ListNetworksResponse, ListSecretsRequest, ListSecretsResponse, ListSnapshotsRequest,
+    ListSnapshotsResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
     NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
     PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
     RemoveConfigRequest, RemoveConfigResponse, RemoveGroupRequest, RemoveGroupResponse,
     RemoveImageRequest, RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse,
-    RemoveSecretRequest, RemoveSecretResponse, RunComposeRequest, RunComposeResponse,
-    RunGroupSandboxRequest, RunGroupSandboxResponse, RunRequest, RunResponse, StopRequest,
-    StopResponse, StreamEventsRequest, StreamLogsRequest, UpdateWorkloadRequest,
-    UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    RemoveSecretRequest, RemoveSecretResponse, RemoveSnapshotRequest, RemoveSnapshotResponse,
+    RunComposeRequest, RunComposeResponse, RunGroupSandboxRequest, RunGroupSandboxResponse,
+    RunRequest, RunResponse, SnapshotInfo, StopRequest, StopResponse, StreamEventsRequest,
+    StreamLogsRequest, UpdateWorkloadRequest, UpdateWorkloadResponse,
+    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -97,6 +99,8 @@ pub struct ServiceConfig {
     pub store_root: PathBuf,
     pub bundle_root: PathBuf,
     pub checkpoints_dir: PathBuf,
+    /// Snapshot artifacts (`<id>/state`, `mem`, `rootfs.ext4`, `meta.json`).
+    pub snapshots_dir: PathBuf,
     pub policy: Option<Policy>,
     pub trusted_keys: Vec<TrustedKey>,
     pub vm_backend: Option<VmBackendConfig>,
@@ -116,11 +120,13 @@ impl ServiceConfig {
     pub fn new(store_root: PathBuf) -> Self {
         let bundle_root = store_root.join("bundles");
         let checkpoints_dir = store_root.join("checkpoints");
+        let snapshots_dir = store_root.join("snapshots");
         let ss = store_root.clone();
         Self {
             store_root,
             bundle_root,
             checkpoints_dir,
+            snapshots_dir,
             policy: None,
             trusted_keys: Vec::new(),
             vm_backend: None,
@@ -1698,6 +1704,16 @@ pub struct GroupState {
     pub created_at: i64,
     #[cfg(target_os = "macos")]
     pub vm: Arc<pullrun_vm::VmPersistentHandle>,
+}
+
+fn new_snapshot_id() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("snap-{nanos:x}{n:x}")
 }
 
 #[cfg(target_os = "macos")]
@@ -4755,6 +4771,146 @@ impl Runtime for RuntimeService {
                 "sandbox groups require macOS Apple Virtualization in this build",
             ))
         }
+    }
+
+    async fn create_snapshot(
+        &self,
+        request: tonic::Request<CreateSnapshotRequest>,
+    ) -> Result<tonic::Response<CreateSnapshotResponse>, tonic::Status> {
+        use pullrun_vm::snapshot::SnapshotMeta;
+        let req = request.into_inner();
+        validate_workload_id(&req.workload_id).map_err(tonic::Status::invalid_argument)?;
+        let state = {
+            let workloads = self.workloads.read().await;
+            workloads
+                .get(&req.workload_id)
+                .cloned()
+                .ok_or_else(|| tonic::Status::not_found("workload not found"))?
+        };
+        if state.backend != "vm" {
+            return Err(tonic::Status::failed_precondition(
+                "snapshots are only supported for VM workloads",
+            ));
+        }
+        if state.status != "running" {
+            return Err(tonic::Status::failed_precondition(format!(
+                "workload is {}, expected running",
+                state.status
+            )));
+        }
+
+        let snapshot_id = new_snapshot_id();
+        let dir = self.config.snapshots_dir.join(&snapshot_id);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| tonic::Status::internal(format!("create snapshot dir: {e}")))?;
+        let info = self
+            .executor
+            .snapshot(&req.workload_id, &dir)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("snapshot failed: {e}")))?;
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let meta = SnapshotMeta {
+            workload_id: req.workload_id.clone(),
+            state_path: info.state_path.clone(),
+            mem_path: info.mem_path.clone(),
+            rootfs_path: info.rootfs_path.clone(),
+            created_at,
+            mem_bytes: info.mem_bytes,
+        };
+        std::fs::write(
+            dir.join("meta.json"),
+            serde_json::to_vec_pretty(&meta)
+                .map_err(|e| tonic::Status::internal(format!("serialize meta: {e}")))?,
+        )
+        .map_err(|e| tonic::Status::internal(format!("write meta: {e}")))?;
+
+        // A snapshot is a terminal state for the source VM (secure usage:
+        // the original must not resume after the snapshot).
+        let stop_result = self.executor.stop(&req.workload_id).await;
+        {
+            let mut workloads = self.workloads.write().await;
+            if let Some(st) = workloads.get_mut(&req.workload_id) {
+                st.status = "exited".to_string();
+                st.exit_code = Some(0);
+                st.exit_time = created_at;
+                write_workload_checkpoint(&self.config.checkpoints_dir, &req.workload_id, st);
+            }
+        }
+        if let Err(e) = stop_result {
+            tracing::warn!(workload_id = %req.workload_id, error = %e, "snapshot stop failed");
+        }
+        self.event_bus.emit(
+            Event::new(&req.workload_id, EventKind::WorkloadExited)
+                .with_metadata("outcome", "snapshot")
+                .with_metadata("snapshot_id", &snapshot_id),
+        );
+
+        Ok(tonic::Response::new(CreateSnapshotResponse {
+            snapshot_id,
+            workload_id: req.workload_id,
+            mem_bytes: info.mem_bytes,
+            created_at,
+            state_path: info.state_path.to_string_lossy().to_string(),
+            rootfs_path: info.rootfs_path.to_string_lossy().to_string(),
+        }))
+    }
+
+    async fn list_snapshots(
+        &self,
+        _request: tonic::Request<ListSnapshotsRequest>,
+    ) -> Result<tonic::Response<ListSnapshotsResponse>, tonic::Status> {
+        use pullrun_vm::snapshot::SnapshotMeta;
+        let mut snapshots = Vec::new();
+        let entries = match std::fs::read_dir(&self.config.snapshots_dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(tonic::Response::new(ListSnapshotsResponse { snapshots })),
+        };
+        for entry in entries.flatten() {
+            let id = entry.file_name().to_string_lossy().to_string();
+            let meta_path = entry.path().join("meta.json");
+            let Ok(bytes) = std::fs::read(&meta_path) else {
+                continue;
+            };
+            let Ok(meta) = serde_json::from_slice::<SnapshotMeta>(&bytes) else {
+                continue;
+            };
+            snapshots.push(SnapshotInfo {
+                snapshot_id: id,
+                workload_id: meta.workload_id,
+                mem_bytes: meta.mem_bytes,
+                created_at: meta.created_at,
+                state_path: meta.state_path.to_string_lossy().to_string(),
+                rootfs_path: meta.rootfs_path.to_string_lossy().to_string(),
+            });
+        }
+        snapshots.sort_by_key(|s| std::cmp::Reverse(s.created_at));
+        Ok(tonic::Response::new(ListSnapshotsResponse { snapshots }))
+    }
+
+    async fn remove_snapshot(
+        &self,
+        request: tonic::Request<RemoveSnapshotRequest>,
+    ) -> Result<tonic::Response<RemoveSnapshotResponse>, tonic::Status> {
+        let id = request.into_inner().snapshot_id;
+        if id.is_empty()
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(tonic::Status::invalid_argument("invalid snapshot id"));
+        }
+        let dir = self.config.snapshots_dir.join(&id);
+        let removed = if dir.exists() {
+            std::fs::remove_dir_all(&dir)
+                .map_err(|e| tonic::Status::internal(format!("remove snapshot: {e}")))?;
+            true
+        } else {
+            false
+        };
+        Ok(tonic::Response::new(RemoveSnapshotResponse { removed }))
     }
 
     // ------------------------------------------------------------------

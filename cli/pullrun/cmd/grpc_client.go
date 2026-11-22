@@ -337,6 +337,21 @@ func (c *GRPCClient) RemoveGroup(ctx context.Context, groupID string, force bool
 	})
 }
 
+// CreateSnapshot captures a VM memory+disk snapshot.
+func (c *GRPCClient) CreateSnapshot(ctx context.Context, workloadID string) (*runtimepb.CreateSnapshotResponse, error) {
+	return c.client.CreateSnapshot(ctx, &runtimepb.CreateSnapshotRequest{WorkloadId: workloadID})
+}
+
+// ListSnapshots returns the VM snapshots known to the runtime.
+func (c *GRPCClient) ListSnapshots(ctx context.Context) (*runtimepb.ListSnapshotsResponse, error) {
+	return c.client.ListSnapshots(ctx, &runtimepb.ListSnapshotsRequest{})
+}
+
+// RemoveSnapshot deletes a snapshot directory.
+func (c *GRPCClient) RemoveSnapshot(ctx context.Context, snapshotID string) (*runtimepb.RemoveSnapshotResponse, error) {
+	return c.client.RemoveSnapshot(ctx, &runtimepb.RemoveSnapshotRequest{SnapshotId: snapshotID})
+}
+
 // RunGroupSandbox runs one sandbox inside an existing group VM.
 func (c *GRPCClient) RunGroupSandbox(ctx context.Context, req *runtimepb.RunGroupSandboxRequest) (*runtimepb.RunGroupSandboxResponse, error) {
 	return c.client.RunGroupSandbox(ctx, req)

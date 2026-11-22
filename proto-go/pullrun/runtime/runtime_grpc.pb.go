@@ -43,6 +43,9 @@ const (
 	Runtime_ListGroups_FullMethodName       = "/pullrun.runtime.Runtime/ListGroups"
 	Runtime_RemoveGroup_FullMethodName      = "/pullrun.runtime.Runtime/RemoveGroup"
 	Runtime_RunGroupSandbox_FullMethodName  = "/pullrun.runtime.Runtime/RunGroupSandbox"
+	Runtime_CreateSnapshot_FullMethodName   = "/pullrun.runtime.Runtime/CreateSnapshot"
+	Runtime_ListSnapshots_FullMethodName    = "/pullrun.runtime.Runtime/ListSnapshots"
+	Runtime_RemoveSnapshot_FullMethodName   = "/pullrun.runtime.Runtime/RemoveSnapshot"
 	Runtime_BuildImage_FullMethodName       = "/pullrun.runtime.Runtime/BuildImage"
 	Runtime_PushImage_FullMethodName        = "/pullrun.runtime.Runtime/PushImage"
 	Runtime_ExportImage_FullMethodName      = "/pullrun.runtime.Runtime/ExportImage"
@@ -106,6 +109,10 @@ type RuntimeClient interface {
 	ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error)
 	RemoveGroup(ctx context.Context, in *RemoveGroupRequest, opts ...grpc.CallOption) (*RemoveGroupResponse, error)
 	RunGroupSandbox(ctx context.Context, in *RunGroupSandboxRequest, opts ...grpc.CallOption) (*RunGroupSandboxResponse, error)
+	// --- VM snapshots (Firecracker memory + disk) ---
+	CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotResponse, error)
+	ListSnapshots(ctx context.Context, in *ListSnapshotsRequest, opts ...grpc.CallOption) (*ListSnapshotsResponse, error)
+	RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error)
@@ -424,6 +431,36 @@ func (c *runtimeClient) RunGroupSandbox(ctx context.Context, in *RunGroupSandbox
 	return out, nil
 }
 
+func (c *runtimeClient) CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSnapshotResponse)
+	err := c.cc.Invoke(ctx, Runtime_CreateSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) ListSnapshots(ctx context.Context, in *ListSnapshotsRequest, opts ...grpc.CallOption) (*ListSnapshotsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSnapshotsResponse)
+	err := c.cc.Invoke(ctx, Runtime_ListSnapshots_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveSnapshotResponse)
+	err := c.cc.Invoke(ctx, Runtime_RemoveSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *runtimeClient) BuildImage(ctx context.Context, in *BuildImageRequest, opts ...grpc.CallOption) (*BuildImageResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BuildImageResponse)
@@ -722,6 +759,10 @@ type RuntimeServer interface {
 	ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error)
 	RemoveGroup(context.Context, *RemoveGroupRequest) (*RemoveGroupResponse, error)
 	RunGroupSandbox(context.Context, *RunGroupSandboxRequest) (*RunGroupSandboxResponse, error)
+	// --- VM snapshots (Firecracker memory + disk) ---
+	CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error)
+	ListSnapshots(context.Context, *ListSnapshotsRequest) (*ListSnapshotsResponse, error)
+	RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotResponse, error)
 	// Build an OCI image from a Dockerfile and import into the
 	// DAG store. v0 delegates to `docker build` + `PullImage`.
 	BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error)
@@ -862,6 +903,15 @@ func (UnimplementedRuntimeServer) RemoveGroup(context.Context, *RemoveGroupReque
 }
 func (UnimplementedRuntimeServer) RunGroupSandbox(context.Context, *RunGroupSandboxRequest) (*RunGroupSandboxResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunGroupSandbox not implemented")
+}
+func (UnimplementedRuntimeServer) CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSnapshot not implemented")
+}
+func (UnimplementedRuntimeServer) ListSnapshots(context.Context, *ListSnapshotsRequest) (*ListSnapshotsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSnapshots not implemented")
+}
+func (UnimplementedRuntimeServer) RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveSnapshot not implemented")
 }
 func (UnimplementedRuntimeServer) BuildImage(context.Context, *BuildImageRequest) (*BuildImageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BuildImage not implemented")
@@ -1301,6 +1351,60 @@ func _Runtime_RunGroupSandbox_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).RunGroupSandbox(ctx, req.(*RunGroupSandboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_CreateSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).CreateSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_CreateSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).CreateSnapshot(ctx, req.(*CreateSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_ListSnapshots_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSnapshotsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).ListSnapshots(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_ListSnapshots_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).ListSnapshots(ctx, req.(*ListSnapshotsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RemoveSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RemoveSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RemoveSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RemoveSnapshot(ctx, req.(*RemoveSnapshotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1811,6 +1915,18 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunGroupSandbox",
 			Handler:    _Runtime_RunGroupSandbox_Handler,
+		},
+		{
+			MethodName: "CreateSnapshot",
+			Handler:    _Runtime_CreateSnapshot_Handler,
+		},
+		{
+			MethodName: "ListSnapshots",
+			Handler:    _Runtime_ListSnapshots_Handler,
+		},
+		{
+			MethodName: "RemoveSnapshot",
+			Handler:    _Runtime_RemoveSnapshot_Handler,
 		},
 		{
 			MethodName: "BuildImage",

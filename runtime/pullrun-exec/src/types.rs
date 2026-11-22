@@ -340,6 +340,19 @@ pub struct ProcessHandle {
     pub network_join: Option<String>,
 }
 
+/// Files produced by an executor snapshot.
+#[derive(Debug, Clone)]
+pub struct SnapshotInfo {
+    /// Firecracker VM state file.
+    pub state_path: std::path::PathBuf,
+    /// Guest memory file.
+    pub mem_path: std::path::PathBuf,
+    /// Rootfs image backing the snapshot.
+    pub rootfs_path: std::path::PathBuf,
+    /// Size of the memory file in bytes.
+    pub mem_bytes: u64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WorkloadStats {
     pub id: String,
@@ -418,4 +431,16 @@ pub trait Executor: Send + Sync {
         command: &[String],
         timeout_secs: u64,
     ) -> Result<ExecOutput, ExecError>;
+
+    /// Capture a full memory+state snapshot of a running VM into
+    /// `out_dir`. Backends without snapshot support return an error.
+    async fn snapshot(
+        &self,
+        _id: &str,
+        _out_dir: &std::path::Path,
+    ) -> Result<SnapshotInfo, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "snapshots are only supported by the Firecracker VM backend".into(),
+        ))
+    }
 }

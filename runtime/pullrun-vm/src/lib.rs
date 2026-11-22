@@ -40,7 +40,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use pullrun_exec::types::{Backend, ExecOutput, ExitStatus, WorkloadSpec, WorkloadStats};
+use pullrun_exec::types::{
+    Backend, ExecOutput, ExitStatus, SnapshotInfo, WorkloadSpec, WorkloadStats,
+};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -50,6 +52,8 @@ use pullrun_exec::{ExecError, Executor, ProcessHandle};
 use pullrun_net::{Ipam, NetworkEndpoint, NetworkManager, ProxyNetwork};
 use pullrun_oci::cow;
 use pullrun_store::{Digest, MmapStore};
+
+use crate::snapshot::FirecrackerApi;
 
 pub use ext4::{
     ext4_path_for, firecracker_config, materialize_ext4_rootfs, Ext4Error, Ext4Options,
@@ -840,6 +844,41 @@ impl Executor for FirecrackerExecutor {
         } else {
             Ok("stopped".to_string())
         }
+    }
+
+    async fn snapshot(
+        &self,
+        id: &str,
+        out_dir: &std::path::Path,
+    ) -> Result<SnapshotInfo, ExecError> {
+        let vm_dir = self.vm_dir(id);
+        let api = FirecrackerApi::new(vm_dir.join("firecracker.sock"));
+        tokio::fs::create_dir_all(out_dir).await?;
+        api.pause()
+            .await
+            .map_err(|e| ExecError::ExecutionFailed(format!("pause VM: {e}")))?;
+        let state_path = out_dir.join("state");
+        let mem_path = out_dir.join("mem");
+        if let Err(e) = api.create_full_snapshot(&state_path, &mem_path).await {
+            let _ = api.resume().await;
+            return Err(ExecError::ExecutionFailed(format!("create snapshot: {e}")));
+        }
+        let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
+        let rootfs_path = out_dir.join("rootfs.ext4");
+        if let Err(e) = tokio::fs::copy(&ext4_path, &rootfs_path).await {
+            let _ = api.resume().await;
+            return Err(ExecError::ExecutionFailed(format!(
+                "copy snapshot rootfs {}: {e}",
+                ext4_path.display()
+            )));
+        }
+        let mem_bytes = std::fs::metadata(&mem_path).map(|m| m.len()).unwrap_or(0);
+        Ok(SnapshotInfo {
+            state_path,
+            mem_path,
+            rootfs_path,
+            mem_bytes,
+        })
     }
 
     async fn update(
