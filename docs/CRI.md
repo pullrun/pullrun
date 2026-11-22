@@ -58,7 +58,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container (basic operations) | **14/14 pass** |
-| Container (full) | **22/31 before mount fixes**; mount specs now 2/4 (rprivate + readonly pass; rshared/rslave fail). Multi-container suite now fails earlier pulling the httpd test image: registry returns 200 without a content-type. Bridge fallback (shared bridge when no per-pod /24) is in but not yet validated |
+| Container (full) | **22/31 before mount fixes**; mount specs now 2/4 (rprivate + readonly pass; rshared/rslave fail). Multi-container suite is blocked on slow/failing test-image pulls. Bridge fallback (shared bridge when no per-pod /24) is in but not yet validated. DAG conversion now batches writes and fsyncs once; the speedup is not yet measured |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |

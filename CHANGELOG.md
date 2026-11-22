@@ -10,6 +10,8 @@
 - Host networking no longer creates an OCI network namespace.
 - Per-pod bridge falls back to the shared bridge when no /24 subnet can
   be allocated, avoiding a gateway route conflict.
+- OCI DAG conversion batches node writes and fsyncs the store once at
+  the end instead of fsyncing every node (unverified timing).
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
@@ -308,6 +310,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 - Host networking no longer creates an OCI network namespace.
 - Per-pod bridge falls back to the shared bridge when no /24 subnet can
   be allocated, avoiding a gateway route conflict.
+- OCI DAG conversion batches node writes and fsyncs the store once at
+  the end instead of fsyncing every node (unverified timing).
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
