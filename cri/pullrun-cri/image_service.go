@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
@@ -71,17 +72,30 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 	}
 
 	ref := req.Image.Image
-	if !strings.Contains(ref, "@") {
-		last := ref[strings.LastIndex(ref, "/")+1:]
-		if !strings.Contains(last, ":") {
-			ref += ":latest"
+	isDigest := strings.Contains(ref, "@")
+	if !isDigest {
+		leaf := ref[strings.LastIndex(ref, "/")+1:]
+		if len(leaf) == 64 && leaf == strings.ToLower(leaf) && leaf != "" {
+			if _, err := hex.DecodeString(leaf); err == nil {
+				isDigest = true
+			}
 		}
+	}
+	repoTags := []string{}
+	if !isDigest {
+		if !strings.Contains(ref, "@") {
+			last := ref[strings.LastIndex(ref, "/")+1:]
+			if !strings.Contains(last, ":") {
+				ref += ":latest"
+			}
+		}
+		repoTags = []string{ref}
 	}
 	uid := &runtimeapi.Int64Value{Value: 0}
 	return &runtimeapi.ImageStatusResponse{
 		Image: &runtimeapi.Image{
 			Id:       resp.RootDigest,
-			RepoTags: []string{ref},
+			RepoTags: repoTags,
 			Size:     uint64(resp.SizeBytes),
 			Uid:      uid,
 			Username: "root",
