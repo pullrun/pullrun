@@ -123,6 +123,12 @@ pub struct ServiceConfig {
     pub rootfs_overlay: bool,
     /// Deny egress by default for every workload.
     pub egress_deny: bool,
+    /// Credential-injection rules for the egress proxy.
+    pub egress_credentials: Vec<pullrun_net::egress_proxy::CredentialRule>,
+    /// HTTP(S) proxy address injected into sandboxes.
+    pub egress_proxy_addr: Option<std::net::SocketAddr>,
+    /// CA certificate path mounted into sandboxes.
+    pub egress_ca_path: Option<PathBuf>,
 }
 
 impl ServiceConfig {
@@ -146,6 +152,9 @@ impl ServiceConfig {
             secrets_store: crate::secrets::SecretStore::new(ss),
             rootfs_overlay: false,
             egress_deny: false,
+            egress_credentials: Vec::new(),
+            egress_proxy_addr: None,
+            egress_ca_path: None,
         }
     }
 
@@ -156,6 +165,18 @@ impl ServiceConfig {
 
     pub fn with_egress_deny(mut self, enabled: bool) -> Self {
         self.egress_deny = enabled;
+        self
+    }
+
+    pub fn with_egress_proxy(
+        mut self,
+        rules: Vec<pullrun_net::egress_proxy::CredentialRule>,
+        addr: std::net::SocketAddr,
+        ca_path: PathBuf,
+    ) -> Self {
+        self.egress_credentials = rules;
+        self.egress_proxy_addr = Some(addr);
+        self.egress_ca_path = Some(ca_path);
         self
     }
 
@@ -1625,6 +1646,7 @@ async fn attempt_restart(
         allowed_syscalls,
         dns,
         egress_deny: false,
+        egress_proxy: None,
     };
 
     match watcher_executor.create(spec).await {
@@ -2786,7 +2808,7 @@ impl Runtime for RuntimeService {
         sanitize_mounts(&req.mounts, &self.config.store_root)
             .map_err(tonic::Status::invalid_argument)?;
 
-        let mounts: Vec<pullrun_exec::Mount> = req
+        let mut mounts: Vec<pullrun_exec::Mount> = req
             .mounts
             .iter()
             .map(|m| pullrun_exec::Mount {
@@ -2799,6 +2821,44 @@ impl Runtime for RuntimeService {
             .collect();
 
         let restart_policy = parse_restart_policy(req.restart_policy);
+
+        // Credential injection: when a proxy is configured, sandboxes
+        // only get proxy env + the CA certificate; secrets stay on the
+        // host and are injected by the proxy.
+        let mut env = env;
+        let mut egress_proxy = None;
+        if (self.config.egress_deny || req.egress_deny) && self.config.egress_proxy_addr.is_some() {
+            if let (Some(addr), Some(ca_path)) = (
+                self.config.egress_proxy_addr,
+                self.config.egress_ca_path.as_ref(),
+            ) {
+                if ca_path.exists() {
+                    let proxy_url = format!("http://{addr}");
+                    for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
+                        env.insert(key.to_string(), proxy_url.clone());
+                    }
+                    env.insert(
+                        "NO_PROXY".to_string(),
+                        "localhost,127.0.0.1,::1".to_string(),
+                    );
+                    for key in [
+                        "SSL_CERT_FILE",
+                        "REQUESTS_CA_BUNDLE",
+                        "CURL_CA_BUNDLE",
+                        "NODE_EXTRA_CA_CERTS",
+                    ] {
+                        env.insert(key.to_string(), "/etc/pullrun-ca.pem".to_string());
+                    }
+                    mounts.push(pullrun_exec::Mount {
+                        type_: "bind".to_string(),
+                        source: ca_path.to_string_lossy().to_string(),
+                        destination: "/etc/pullrun-ca.pem".to_string(),
+                        options: vec!["ro".to_string()],
+                    });
+                    egress_proxy = Some(addr);
+                }
+            }
+        }
 
         let image_root = Digest::from_hex(&req.root_digest)
             .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
@@ -2845,6 +2905,7 @@ impl Runtime for RuntimeService {
             allowed_syscalls,
             dns: dns_from_req(req.dns.as_ref()),
             egress_deny: self.config.egress_deny || req.egress_deny,
+            egress_proxy,
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -7688,6 +7749,7 @@ mod tests {
             allowed_syscalls: vec![],
             dns: Default::default(),
             egress_deny: false,
+            egress_proxy: None,
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::NotFound);
@@ -7769,6 +7831,7 @@ mod tests {
             allowed_syscalls: vec![],
             dns: Default::default(),
             egress_deny: false,
+            egress_proxy: None,
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -7810,6 +7873,7 @@ mod tests {
             allowed_syscalls: vec![],
             dns: Default::default(),
             egress_deny: false,
+            egress_proxy: None,
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);

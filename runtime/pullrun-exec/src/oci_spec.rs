@@ -320,6 +320,7 @@ mod tests {
             health_check: None,
             dns: crate::types::DnsConfig::default(),
             egress_deny: false,
+            egress_proxy: None,
         }
     }
 

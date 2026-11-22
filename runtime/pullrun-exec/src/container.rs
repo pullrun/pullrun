@@ -51,6 +51,8 @@ struct EgressConfig {
     allow: Vec<(String, u16, String)>,
     /// DNS servers the workload may reach on port 53.
     nameservers: Vec<std::net::IpAddr>,
+    /// HTTP(S) proxy the workload may reach (credential injection).
+    proxy: Option<std::net::SocketAddr>,
 }
 
 impl LinuxContainerExecutor {
@@ -491,7 +493,14 @@ impl Executor for LinuxContainerExecutor {
                     .iter()
                     .filter_map(|n| n.parse().ok())
                     .collect();
-                egress.insert(spec.id.clone(), EgressConfig { allow, nameservers });
+                egress.insert(
+                    spec.id.clone(),
+                    EgressConfig {
+                        allow,
+                        nameservers,
+                        proxy: spec.egress_proxy,
+                    },
+                );
             } else {
                 egress.remove(&spec.id);
             }
@@ -1189,6 +1198,22 @@ async fn apply_egress_rules(
     if !dns_servers.contains(&std::net::IpAddr::V4(gateway)) {
         dns_servers.push(std::net::IpAddr::V4(gateway));
     }
+    if let Some(proxy) = cfg.proxy {
+        nft(&[
+            "add",
+            "rule",
+            "inet",
+            "pullrun_egress",
+            "output",
+            "ip",
+            "daddr",
+            &proxy.ip().to_string(),
+            "tcp",
+            "dport",
+            &proxy.port().to_string(),
+            "accept",
+        ])?;
+    }
     for ns in dns_servers {
         for proto in ["udp", "tcp"] {
             nft(&[
@@ -1813,6 +1838,7 @@ mod egress_tests {
         let cfg = EgressConfig {
             allow: vec![("1.1.1.1".to_string(), 80, "tcp".to_string())],
             nameservers: vec![],
+            proxy: None,
         };
         let applied = apply_egress_rules(pid, "10.42.0.1".parse().unwrap(), &cfg).await;
         let output = std::process::Command::new("nsenter")

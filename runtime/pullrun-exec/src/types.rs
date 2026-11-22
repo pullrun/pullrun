@@ -160,6 +160,8 @@ pub struct WorkloadSpec {
     /// Fail-closed egress: deny all outbound traffic except the
     /// outbound `network_rules` allowlist and gateway DNS.
     pub egress_deny: bool,
+    /// When set, the only permitted egress is this HTTP(S) proxy.
+    pub egress_proxy: Option<std::net::SocketAddr>,
 }
 
 impl WorkloadSpec {
@@ -186,6 +188,7 @@ impl WorkloadSpec {
             privileged: false,
             dns: DnsConfig::default(),
             egress_deny: false,
+            egress_proxy: None,
         }
     }
 }
@@ -212,6 +215,7 @@ pub struct WorkloadSpecBuilder {
     privileged: bool,
     dns: DnsConfig,
     egress_deny: bool,
+    egress_proxy: Option<std::net::SocketAddr>,
 }
 
 impl WorkloadSpecBuilder {
@@ -222,6 +226,11 @@ impl WorkloadSpecBuilder {
 
     pub fn egress_deny(mut self, deny: bool) -> Self {
         self.egress_deny = deny;
+        self
+    }
+
+    pub fn egress_proxy(mut self, proxy: Option<std::net::SocketAddr>) -> Self {
+        self.egress_proxy = proxy;
         self
     }
 
@@ -328,6 +337,7 @@ impl WorkloadSpecBuilder {
             privileged: self.privileged,
             dns: self.dns,
             egress_deny: self.egress_deny,
+            egress_proxy: self.egress_proxy,
         }
     }
 }

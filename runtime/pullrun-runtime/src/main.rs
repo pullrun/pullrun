@@ -119,6 +119,12 @@ enum Commands {
         )]
         egress_deny: bool,
 
+        #[arg(
+            long = "egress-credential",
+            help = "Inject a credential header via the egress proxy: HOST:HEADER=SECRET (repeatable). Implies --egress-deny"
+        )]
+        egress_credential: Vec<String>,
+
         // OCI pull configuration.
         #[arg(
             long = "insecure-registry",
@@ -463,6 +469,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_warm_pool_size,
         rootfs_overlay,
         egress_deny,
+        egress_credential,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -492,6 +499,7 @@ async fn run_daemon_cmd(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         vm_warm_pool_size,
         rootfs_overlay,
         egress_deny,
+        egress_credential,
         insecure_registry,
         sync_addr,
         registrar_addr,
@@ -577,6 +585,7 @@ async fn run_workload(
         privileged: false,
         dns: Default::default(),
         egress_deny: false,
+        egress_proxy: None,
     };
 
     let mut handle = executor.create(spec).await?;
@@ -628,6 +637,7 @@ async fn run_daemon(
     vm_warm_pool_size: usize,
     rootfs_overlay: bool,
     egress_deny: bool,
+    egress_credential: Vec<String>,
     insecure_registry: Vec<String>,
     sync_addr: SocketAddr,
     registrar_addr: Option<SocketAddr>,
@@ -648,6 +658,46 @@ async fn run_daemon(
     }
     if egress_deny {
         config = config.with_egress_deny(true);
+    }
+
+    let mut credential_rules = Vec::new();
+    for raw in &egress_credential {
+        let (host, rest) = raw.split_once(':').ok_or_else(|| {
+            format!("invalid --egress-credential {raw:?} (want HOST:HEADER=SECRET)")
+        })?;
+        let (header, secret) = rest.split_once('=').ok_or_else(|| {
+            format!("invalid --egress-credential {raw:?} (want HOST:HEADER=SECRET)")
+        })?;
+        if host.is_empty() || header.is_empty() || secret.is_empty() {
+            return Err(format!("invalid --egress-credential {raw:?}").into());
+        }
+        credential_rules.push(pullrun_net::egress_proxy::CredentialRule {
+            host: host.to_string(),
+            header: header.to_string(),
+            secret: secret.to_string(),
+        });
+    }
+    if !credential_rules.is_empty() {
+        let ca_dir = config.store_root.join("egress");
+        std::fs::create_dir_all(&ca_dir)?;
+        let ca_path = ca_dir.join("ca.pem");
+        let secret_store = config.secrets_store.clone();
+        let provider: pullrun_net::egress_proxy::SecretProvider =
+            std::sync::Arc::new(move |name: &str| secret_store.read_secret(name).ok());
+        let proxy =
+            pullrun_net::egress_proxy::CredentialProxy::new(credential_rules.clone(), provider)
+                .map_err(|e| format!("credential proxy: {e}"))?;
+        std::fs::write(&ca_path, proxy.ca_pem())?;
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:3128")
+            .await
+            .map_err(|e| format!("bind credential proxy on :3128: {e}"))?;
+        tokio::spawn(proxy.serve(listener));
+        let proxy_addr: std::net::SocketAddr = "10.42.0.1:3128".parse().unwrap();
+        config =
+            config
+                .with_egress_deny(true)
+                .with_egress_proxy(credential_rules, proxy_addr, ca_path);
+        info!("credential-injecting egress proxy listening on 0.0.0.0:3128");
     }
     if let Some(p) = policy {
         config = config.with_policy(p);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod dns;
+pub mod egress_proxy;
 pub mod firewall;
 pub mod ipam;
 pub mod loopback;
