@@ -717,21 +717,34 @@ impl Executor for LinuxContainerExecutor {
             // only reliable way to observe the exit code.
             cmd.arg("run").arg("-b").arg(&bdir).arg(&id);
             cmd.stdin(std::process::Stdio::null());
-            let log_path = log_path_for_cleanup.clone();
-            let mut log_file = log_path.and_then(|p| {
-                if let Some(parent) = p.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&p)
-                    .ok()
-            });
-            match log_file.as_mut().and_then(|f| f.try_clone().ok()) {
-                Some(f) => {
-                    cmd.stdout(std::process::Stdio::from(f));
-                    cmd.stderr(std::process::Stdio::from(log_file.unwrap()));
+            let mut cri_reader = None;
+            match log_path_for_cleanup {
+                Some(path) => {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    match std::os::unix::net::UnixStream::pair() {
+                        Ok((read, write)) => {
+                            let write2 = write.try_clone().ok();
+                            cmd.stdout(std::process::Stdio::from(std::os::fd::OwnedFd::from(
+                                write,
+                            )));
+                            match write2 {
+                                Some(w) => cmd.stderr(std::process::Stdio::from(
+                                    std::os::fd::OwnedFd::from(w),
+                                )),
+                                None => cmd.stderr(std::process::Stdio::null()),
+                            };
+                            cri_reader = Some((read, path));
+                        }
+                        Err(_) => {
+                            cmd.stdout(std::process::Stdio::null());
+                            match stderr_for_cmd {
+                                Some(f) => cmd.stderr(std::process::Stdio::from(f)),
+                                None => cmd.stderr(std::process::Stdio::null()),
+                            };
+                        }
+                    }
                 }
                 None => {
                     cmd.stdout(std::process::Stdio::null());
@@ -741,7 +754,11 @@ impl Executor for LinuxContainerExecutor {
                     };
                 }
             }
-            cmd.spawn()
+            let child = cmd.spawn();
+            if let Some((read, path)) = cri_reader {
+                spawn_cri_log_reader(read, path);
+            }
+            child
         })
         .await
         .map_err(|e| ExecError::ExecutionFailed(format!("spawn_blocking failed: {e}")))?
@@ -1135,6 +1152,39 @@ fn rootless_state_pid(
 }
 
 /// Allow the bridge to reach a host-side proxy port (UFW defaults to DROP).
+fn spawn_cri_log_reader(read: std::os::unix::net::UnixStream, path: std::path::PathBuf) {
+    use std::io::{BufRead, BufReader, Write};
+    std::thread::spawn(move || {
+        let mut file = match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let mut reader = BufReader::new(read);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let text = line.trim_end_matches(['\r', '\n']);
+                    let ts = time::OffsetDateTime::now_utc()
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default();
+                    if writeln!(file, "{ts} stdout F {text}").is_err() {
+                        break;
+                    }
+                    let _ = file.flush();
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
 fn ensure_input_accept(bridge: &str, port: u16) {
     use std::process::Command;
     let port = port.to_string();

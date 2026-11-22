@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+time = { version = "0.3", features = ["formatting"] }
 pullrun-store = { path = "../pullrun-store" }
 pullrun-oci = { path = "../pullrun-oci" }
 pullrun-net = { path = "../pullrun-net" }
