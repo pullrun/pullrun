@@ -393,6 +393,22 @@ impl FirecrackerExecutor {
     }
 }
 
+impl FirecrackerExecutor {
+    /// Actual rootfs path for a VM. Restored snapshots keep the drive
+    /// path recorded in the snapshot, so a sidecar overrides the
+    /// default `<rootfs_dir>/<id>.ext4`.
+    fn drive_path_for(&self, id: &str) -> std::path::PathBuf {
+        let sidecar = self.vm_dir(id).join("drive_path");
+        if let Ok(p) = std::fs::read_to_string(&sidecar) {
+            let p = p.trim();
+            if !p.is_empty() {
+                return std::path::PathBuf::from(p);
+            }
+        }
+        ext4_path_for(&self.config.rootfs_dir, id)
+    }
+}
+
 /// Copy a VM disk image, preserving holes where the platform supports it.
 fn copy_image_file(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
@@ -703,7 +719,7 @@ impl Executor for FirecrackerExecutor {
                 .expect("pool_allocations lock poisoned")
                 .remove(id);
             info!(%id, "stopping pool-allocated VM workload (keeping FC + TAP)");
-            let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
+            let ext4_path = self.drive_path_for(id);
             if ext4_path.exists() {
                 let _ = std::fs::remove_file(&ext4_path);
             }
@@ -783,7 +799,7 @@ impl Executor for FirecrackerExecutor {
             info!(%id, "slirp4netns child killed");
         }
 
-        let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
+        let ext4_path = self.drive_path_for(id);
         if ext4_path.exists() {
             let _ = std::fs::remove_file(&ext4_path);
         }
@@ -873,7 +889,7 @@ impl Executor for FirecrackerExecutor {
         let vm_dir = self.vm_dir(id);
         let api = FirecrackerApi::new(vm_dir.join("firecracker.sock"));
         tokio::fs::create_dir_all(out_dir).await?;
-        let ext4_path = ext4_path_for(&self.config.rootfs_dir, id);
+        let ext4_path = self.drive_path_for(id);
         let rootfs_path = out_dir.join("rootfs.ext4");
 
         if matches!(fidelity, SnapshotFidelity::Volumes) {
@@ -1011,6 +1027,10 @@ impl Executor for FirecrackerExecutor {
             serde_json::to_vec_pretty(&sidecar)
                 .map_err(|e| ExecError::ExecutionFailed(format!("serialize sidecar: {e}")))?,
         )?;
+        std::fs::write(
+            vm_dir.join("drive_path"),
+            drive_path.to_string_lossy().as_bytes(),
+        )?;
 
         info!(id = %id, pid, "restored Firecracker VM from snapshot");
         Ok(ProcessHandle {
@@ -1086,6 +1106,10 @@ impl Executor for FirecrackerExecutor {
             vm_dir.join("network.json"),
             serde_json::to_vec_pretty(&sidecar)
                 .map_err(|e| ExecError::ExecutionFailed(format!("serialize sidecar: {e}")))?,
+        )?;
+        std::fs::write(
+            vm_dir.join("drive_path"),
+            drive_path.to_string_lossy().as_bytes(),
         )?;
         std::mem::forget(child);
         info!(id = %id, pid, "cold-booted VM from ROOTFS snapshot");
