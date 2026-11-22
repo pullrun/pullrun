@@ -8,6 +8,10 @@
   cancellation, and kills the timed-out process via the runc pid-file.
   Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
+- StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
+  mount propagation maps to rprivate/rslave/rshared.
+- Full Container suite: 22/31 (mount propagation, multi-container
+  network/log and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
@@ -298,6 +302,10 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   cancellation, and kills the timed-out process via the runc pid-file.
   Container basic operations: 14/14.
 - Host networking no longer creates an OCI network namespace.
+- StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
+  mount propagation maps to rprivate/rslave/rshared.
+- Full Container suite: 22/31 (mount propagation, multi-container
+  network/log and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
