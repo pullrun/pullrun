@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -156,6 +158,8 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 		SeccompProfile:  seccomp,
 		Dns:             sandbox.dns,
 		Sysctls:         sandbox.sysctls,
+		CreateOnly:      true,
+		LogPath:         cfg.LogPath,
 	}, nil
 }
 
@@ -206,6 +210,7 @@ func (c *criServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateC
 		imageRef:  rootDigest,
 		createdAt: time.Now(),
 		state:     runtimeapi.ContainerState_CONTAINER_CREATED,
+		logPath:   req.Config.LogPath,
 	}
 	c.sandboxStore.putContainer(rec)
 
@@ -219,29 +224,17 @@ func (c *criServer) StartContainer(ctx context.Context, req *runtimeapi.StartCon
 	if !ok {
 		return nil, fmt.Errorf("StartContainer: container %q not found", req.ContainerId)
 	}
-
-	// The workload was launched at CreateContainer; verify it is actually
-	// running before reporting success.
-	getCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	wl, err := c.runtimeClient.GetWorkload(getCtx, &pullrunruntime.GetWorkloadRequest{Id: rec.pullrunID})
+	startCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	resp, err := c.runtimeClient.StartWorkload(startCtx, &pullrunruntime.StartWorkloadRequest{Id: rec.pullrunID})
 	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("StartContainer: %w", err)
 	}
-	switch wl.State {
-	case "running", "created", "scheduled":
-	case "exited", "stopped":
-		return nil, fmt.Errorf("StartContainer: container %q exited before start (code=%d)", req.ContainerId, wl.ExitCode)
-	default:
-		return nil, fmt.Errorf("StartContainer: container %q in unexpected state %q", req.ContainerId, wl.State)
-	}
-
 	rec.state = runtimeapi.ContainerState_CONTAINER_RUNNING
 	rec.startedAt = time.Now()
 	rec.exitCode = 0
 	c.sandboxStore.putContainer(rec)
-
-	log.Printf("StartContainer id=%s workload=%s running", req.ContainerId, rec.pullrunID)
+	log.Printf("StartContainer id=%s workload=%s pid=%d", req.ContainerId, rec.pullrunID, resp.Pid)
 	return &runtimeapi.StartContainerResponse{}, nil
 }
 
@@ -369,6 +362,14 @@ func (c *criServer) UpdateContainerResources(ctx context.Context, req *runtimeap
 }
 
 func (c *criServer) ReopenContainerLog(ctx context.Context, req *runtimeapi.ReopenContainerLogRequest) (*runtimeapi.ReopenContainerLogResponse, error) {
+	if rec, ok := c.sandboxStore.getContainer(req.ContainerId); ok && rec.logPath != "" {
+		if parent := filepath.Dir(rec.logPath); parent != "" {
+			_ = os.MkdirAll(parent, 0o755)
+		}
+		if f, err := os.OpenFile(rec.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			_ = f.Close()
+		}
+	}
 	return &runtimeapi.ReopenContainerLogResponse{}, nil
 }
 

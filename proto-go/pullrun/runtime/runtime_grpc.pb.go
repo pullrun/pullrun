@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Runtime_PullImage_FullMethodName        = "/pullrun.runtime.Runtime/PullImage"
 	Runtime_RunWorkload_FullMethodName      = "/pullrun.runtime.Runtime/RunWorkload"
+	Runtime_StartWorkload_FullMethodName    = "/pullrun.runtime.Runtime/StartWorkload"
 	Runtime_StopWorkload_FullMethodName     = "/pullrun.runtime.Runtime/StopWorkload"
 	Runtime_GetWorkload_FullMethodName      = "/pullrun.runtime.Runtime/GetWorkload"
 	Runtime_ListWorkloads_FullMethodName    = "/pullrun.runtime.Runtime/ListWorkloads"
@@ -88,6 +89,8 @@ const (
 type RuntimeClient interface {
 	PullImage(ctx context.Context, in *PullImageRequest, opts ...grpc.CallOption) (*PullImageResponse, error)
 	RunWorkload(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*RunResponse, error)
+	// Start a workload created with create_only=true (CRI Created state).
+	StartWorkload(ctx context.Context, in *StartWorkloadRequest, opts ...grpc.CallOption) (*StartWorkloadResponse, error)
 	StopWorkload(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	GetWorkload(ctx context.Context, in *GetWorkloadRequest, opts ...grpc.CallOption) (*WorkloadStatus, error)
 	ListWorkloads(ctx context.Context, in *ListWorkloadsRequest, opts ...grpc.CallOption) (*ListWorkloadsResponse, error)
@@ -224,6 +227,16 @@ func (c *runtimeClient) RunWorkload(ctx context.Context, in *RunRequest, opts ..
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RunResponse)
 	err := c.cc.Invoke(ctx, Runtime_RunWorkload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) StartWorkload(ctx context.Context, in *StartWorkloadRequest, opts ...grpc.CallOption) (*StartWorkloadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartWorkloadResponse)
+	err := c.cc.Invoke(ctx, Runtime_StartWorkload_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -838,6 +851,8 @@ func (c *runtimeClient) GetAttestations(ctx context.Context, in *GetAttestations
 type RuntimeServer interface {
 	PullImage(context.Context, *PullImageRequest) (*PullImageResponse, error)
 	RunWorkload(context.Context, *RunRequest) (*RunResponse, error)
+	// Start a workload created with create_only=true (CRI Created state).
+	StartWorkload(context.Context, *StartWorkloadRequest) (*StartWorkloadResponse, error)
 	StopWorkload(context.Context, *StopRequest) (*StopResponse, error)
 	GetWorkload(context.Context, *GetWorkloadRequest) (*WorkloadStatus, error)
 	ListWorkloads(context.Context, *ListWorkloadsRequest) (*ListWorkloadsResponse, error)
@@ -965,6 +980,9 @@ func (UnimplementedRuntimeServer) PullImage(context.Context, *PullImageRequest) 
 }
 func (UnimplementedRuntimeServer) RunWorkload(context.Context, *RunRequest) (*RunResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunWorkload not implemented")
+}
+func (UnimplementedRuntimeServer) StartWorkload(context.Context, *StartWorkloadRequest) (*StartWorkloadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartWorkload not implemented")
 }
 func (UnimplementedRuntimeServer) StopWorkload(context.Context, *StopRequest) (*StopResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopWorkload not implemented")
@@ -1187,6 +1205,24 @@ func _Runtime_RunWorkload_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).RunWorkload(ctx, req.(*RunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_StartWorkload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartWorkloadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).StartWorkload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_StartWorkload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).StartWorkload(ctx, req.(*StartWorkloadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2163,6 +2199,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunWorkload",
 			Handler:    _Runtime_RunWorkload_Handler,
+		},
+		{
+			MethodName: "StartWorkload",
+			Handler:    _Runtime_StartWorkload_Handler,
 		},
 		{
 			MethodName: "StopWorkload",

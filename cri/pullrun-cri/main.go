@@ -86,6 +86,7 @@ type containerRecord struct {
 	startedAt time.Time
 	state     runtimeapi.ContainerState
 	exitCode  int32
+	logPath   string
 }
 
 func matchesSandboxFilter(rec *sandboxRecord, filter *runtimeapi.PodSandboxFilter) bool {

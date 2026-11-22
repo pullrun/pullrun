@@ -55,6 +55,7 @@ type containerCheckpoint struct {
 	ImageRef  string    `json:"image_ref,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	StartedAt time.Time `json:"started_at,omitempty"`
+	LogPath   string    `json:"log_path,omitempty"`
 	State     int32     `json:"state,omitempty"`
 	ExitCode  int32     `json:"exit_code,omitempty"`
 }
@@ -143,6 +144,7 @@ func (s *fileStore) loadAll() {
 				imageRef:  cp.ImageRef,
 				createdAt: cp.CreatedAt,
 				startedAt: cp.StartedAt,
+				logPath:   cp.LogPath,
 				state:     runtimeapi.ContainerState(cp.State),
 				exitCode:  cp.ExitCode,
 			}
@@ -303,6 +305,7 @@ func (s *fileStore) writeContainer(rec *containerRecord) {
 		ImageRef:  rec.imageRef,
 		CreatedAt: rec.createdAt,
 		StartedAt: rec.startedAt,
+		LogPath:   rec.logPath,
 		State:     int32(rec.state),
 		ExitCode:  rec.exitCode,
 	}

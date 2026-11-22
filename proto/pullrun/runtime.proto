@@ -8,6 +8,8 @@ option go_package = "pullrun/protoapi/pullrun/runtime;runtime";
 service Runtime {
     rpc PullImage(PullImageRequest) returns (PullImageResponse);
     rpc RunWorkload(RunRequest) returns (RunResponse);
+    // Start a workload created with create_only=true (CRI Created state).
+    rpc StartWorkload(StartWorkloadRequest) returns (StartWorkloadResponse);
     rpc StopWorkload(StopRequest) returns (StopResponse);
     rpc GetWorkload(GetWorkloadRequest) returns (WorkloadStatus);
     rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
@@ -322,6 +324,10 @@ message RunRequest {
     bool egress_deny = 24;
     // Linux sysctls applied inside the container/pod network namespace.
     map<string, string> sysctls = 25;
+    // Create the workload but do not start it (CRI Created state).
+    bool create_only = 26;
+    // Capture container stdout/stderr into this path (CRI log path).
+    string log_path = 27;
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.
@@ -1148,3 +1154,11 @@ message SuspendActorResponse {
 
 message RemoveActorRequest { string name = 1; }
 message RemoveActorResponse { bool removed = 1; }
+
+message StartWorkloadRequest {
+    string id = 1;
+}
+
+message StartWorkloadResponse {
+    uint32 pid = 1;
+}

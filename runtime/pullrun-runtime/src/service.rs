@@ -71,10 +71,10 @@ use crate::proto::{
     RemoveSnapshotRequest, RemoveSnapshotResponse, RemoveTemplateRequest, RemoveTemplateResponse,
     RestoreSnapshotRequest, RestoreSnapshotResponse, ResumeActorRequest, ResumeActorResponse,
     RunComposeRequest, RunComposeResponse, RunGroupSandboxRequest, RunGroupSandboxResponse,
-    RunRequest, RunResponse, SnapshotInfo, StopRequest, StopResponse, StreamEventsRequest,
-    StreamLogsRequest, SuspendActorRequest, SuspendActorResponse, TemplateInfo,
-    UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats,
-    WorkloadStatus,
+    RunRequest, RunResponse, SnapshotInfo, StartWorkloadRequest, StartWorkloadResponse,
+    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, SuspendActorRequest,
+    SuspendActorResponse, TemplateInfo, UpdateWorkloadRequest, UpdateWorkloadResponse,
+    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -1648,6 +1648,7 @@ async fn attempt_restart(
         egress_deny: false,
         egress_proxy: None,
         sysctls: std::collections::HashMap::new(),
+        log_path: None,
     };
 
     match watcher_executor.create(spec).await {
@@ -2908,6 +2909,11 @@ impl Runtime for RuntimeService {
             egress_deny: self.config.egress_deny || req.egress_deny,
             egress_proxy,
             sysctls: req.sysctls.clone(),
+            log_path: if req.log_path.is_empty() {
+                None
+            } else {
+                Some(std::path::PathBuf::from(&req.log_path))
+            },
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -3022,21 +3028,23 @@ impl Runtime for RuntimeService {
             }
         };
 
-        if let Err(e) = self.executor.start(&mut handle).await {
-            self.event_bus.emit(
-                Event::new(&req.id, EventKind::WorkloadStarted)
-                    .with_metadata("backend", &handle.backend)
-                    .with_metadata("outcome", "start_failed")
-                    .with_metadata("error", e.to_string()),
-            );
-            return Err(tonic::Status::internal(format!("start failed: {e}")));
-        }
+        if !req.create_only {
+            if let Err(e) = self.executor.start(&mut handle).await {
+                self.event_bus.emit(
+                    Event::new(&req.id, EventKind::WorkloadStarted)
+                        .with_metadata("backend", &handle.backend)
+                        .with_metadata("outcome", "start_failed")
+                        .with_metadata("error", e.to_string()),
+                );
+                return Err(tonic::Status::internal(format!("start failed: {e}")));
+            }
 
-        // Workload reached the running state. Bump the started
-        // counter and the running gauge. The exit path (in
-        // `stop_workload` and the background watcher) is the only
-        // place that decrements the gauge.
-        record_workload_started(&backend_label);
+            // Workload reached the running state. Bump the started
+            // counter and the running gauge. The exit path (in
+            // `stop_workload` and the background watcher) is the only
+            // place that decrements the gauge.
+            record_workload_started(&backend_label);
+        }
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -3100,7 +3108,11 @@ impl Runtime for RuntimeService {
         };
         let hc = spec.health_check.clone();
         let state = WorkloadState {
-            status: "running".to_string(),
+            status: if req.create_only {
+                "created".to_string()
+            } else {
+                "running".to_string()
+            },
             start_time: now,
             exit_time: 0,
             exit_code: None,
@@ -3252,6 +3264,8 @@ impl Runtime for RuntimeService {
                 dns: None,
                 egress_deny: self.config.egress_deny,
                 sysctls: Default::default(),
+                create_only: false,
+                log_path: String::new(),
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -5612,6 +5626,61 @@ impl Runtime for RuntimeService {
         std::fs::remove_file(&path)
             .map_err(|e| tonic::Status::internal(format!("remove actor: {e}")))?;
         Ok(tonic::Response::new(RemoveActorResponse { removed: true }))
+    }
+
+    async fn start_workload(
+        &self,
+        request: tonic::Request<StartWorkloadRequest>,
+    ) -> Result<tonic::Response<StartWorkloadResponse>, tonic::Status> {
+        let id = request.into_inner().id;
+        let mut state = {
+            let workloads = self.workloads.read().await;
+            workloads
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| tonic::Status::not_found("workload not found"))?
+        };
+        if state.status != "created" && state.status != "stopped" {
+            return Err(tonic::Status::failed_precondition(format!(
+                "workload is {}, expected created",
+                state.status
+            )));
+        }
+        let mut handle = pullrun_exec::ProcessHandle {
+            id: id.clone(),
+            pid: if state.pid > 0 { Some(state.pid) } else { None },
+            internal_ip: state.internal_ip.clone(),
+            host_ports: Vec::new(),
+            gateway: None,
+            backend: state.backend.clone(),
+            bridge_name: state.bridge_name.clone(),
+            network_join: None,
+        };
+        self.executor
+            .start(&mut handle)
+            .await
+            .map_err(|e| tonic::Status::internal(format!("start failed: {e}")))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        state.status = "running".to_string();
+        state.start_time = now;
+        state.exit_code = None;
+        state.pid = handle.pid.unwrap_or(state.pid);
+        {
+            let mut workloads = self.workloads.write().await;
+            workloads.insert(id.clone(), state.clone());
+        }
+        write_workload_checkpoint(&self.config.checkpoints_dir, &id, &state);
+        self.event_bus.emit(
+            Event::new(&id, EventKind::WorkloadStarted)
+                .with_metadata("backend", &state.backend)
+                .with_metadata("outcome", "started"),
+        );
+        Ok(tonic::Response::new(StartWorkloadResponse {
+            pid: state.pid,
+        }))
     }
 
     // ------------------------------------------------------------------

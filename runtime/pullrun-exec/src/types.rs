@@ -164,6 +164,8 @@ pub struct WorkloadSpec {
     pub egress_proxy: Option<std::net::SocketAddr>,
     /// Linux sysctls applied in the workload's network namespace.
     pub sysctls: HashMap<String, String>,
+    /// Capture container stdout/stderr into this path.
+    pub log_path: Option<std::path::PathBuf>,
 }
 
 impl WorkloadSpec {
@@ -192,6 +194,7 @@ impl WorkloadSpec {
             egress_deny: false,
             egress_proxy: None,
             sysctls: HashMap::new(),
+            log_path: None,
         }
     }
 }
@@ -220,6 +223,7 @@ pub struct WorkloadSpecBuilder {
     egress_deny: bool,
     egress_proxy: Option<std::net::SocketAddr>,
     sysctls: HashMap<String, String>,
+    log_path: Option<std::path::PathBuf>,
 }
 
 impl WorkloadSpecBuilder {
@@ -348,6 +352,7 @@ impl WorkloadSpecBuilder {
             egress_deny: self.egress_deny,
             egress_proxy: self.egress_proxy,
             sysctls: self.sysctls,
+            log_path: self.log_path,
         }
     }
 }

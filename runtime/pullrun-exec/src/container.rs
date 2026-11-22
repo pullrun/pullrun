@@ -43,6 +43,8 @@ pub struct LinuxContainerExecutor {
     overlay_mounts: Mutex<HashSet<String>>,
     /// Fail-closed egress configs for workloads that requested it.
     egress: Mutex<HashMap<String, EgressConfig>>,
+    /// CRI log paths per workload.
+    log_paths: Mutex<HashMap<String, std::path::PathBuf>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -70,6 +72,7 @@ impl LinuxContainerExecutor {
             rootfs_mode: RootfsMode::Clone,
             overlay_mounts: Mutex::new(HashSet::new()),
             egress: Mutex::new(HashMap::new()),
+            log_paths: Mutex::new(HashMap::new()),
         }
     }
 
@@ -504,6 +507,15 @@ impl Executor for LinuxContainerExecutor {
             } else {
                 egress.remove(&spec.id);
             }
+            let mut logs = self.log_paths.lock().expect("log_paths lock poisoned");
+            match &spec.log_path {
+                Some(path) => {
+                    logs.insert(spec.id.clone(), path.clone());
+                }
+                None => {
+                    logs.remove(&spec.id);
+                }
+            }
         }
 
         info!(id = %spec.id, image_root = %spec.image_root, "creating container");
@@ -691,6 +703,12 @@ impl Executor for LinuxContainerExecutor {
         let stderr_path = bdir.join("runc.stderr.log");
         let stderr_file = std::fs::File::create(&stderr_path).ok();
         let stderr_for_cmd = stderr_file.as_ref().and_then(|f| f.try_clone().ok());
+        let log_path_for_cleanup = self
+            .log_paths
+            .lock()
+            .expect("log_paths lock poisoned")
+            .get(&handle.id)
+            .cloned();
         let mut child = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawning foreground runc run -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
@@ -698,12 +716,31 @@ impl Executor for LinuxContainerExecutor {
             // parent and exits with the workload status, which is the
             // only reliable way to observe the exit code.
             cmd.arg("run").arg("-b").arg(&bdir).arg(&id);
-            cmd.stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null());
-            match stderr_for_cmd {
-                Some(f) => cmd.stderr(std::process::Stdio::from(f)),
-                None => cmd.stderr(std::process::Stdio::null()),
-            };
+            cmd.stdin(std::process::Stdio::null());
+            let log_path = log_path_for_cleanup.clone();
+            let mut log_file = log_path.and_then(|p| {
+                if let Some(parent) = p.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&p)
+                    .ok()
+            });
+            match log_file.as_mut().and_then(|f| f.try_clone().ok()) {
+                Some(f) => {
+                    cmd.stdout(std::process::Stdio::from(f));
+                    cmd.stderr(std::process::Stdio::from(log_file.unwrap()));
+                }
+                None => {
+                    cmd.stdout(std::process::Stdio::null());
+                    match stderr_for_cmd {
+                        Some(f) => cmd.stderr(std::process::Stdio::from(f)),
+                        None => cmd.stderr(std::process::Stdio::null()),
+                    };
+                }
+            }
             cmd.spawn()
         })
         .await
