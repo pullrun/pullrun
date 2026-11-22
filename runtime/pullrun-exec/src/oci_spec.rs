@@ -186,7 +186,11 @@ pub fn build_oci_config(
     }
 
     let capabilities = if spec.privileged {
-        let all = serde_json::json!(PRIVILEGED_CAPABILITIES);
+        let all: Vec<String> = PRIVILEGED_CAPABILITIES
+            .iter()
+            .map(|c| format!("CAP_{c}"))
+            .collect();
+        let all = serde_json::json!(all);
         serde_json::json!({
             "bounding": all,
             "effective": all,
