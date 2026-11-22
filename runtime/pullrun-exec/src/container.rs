@@ -152,12 +152,38 @@ impl LinuxContainerExecutor {
         } else {
             Self::ensure_nat_cidr("10.42.0.0/16");
         }
+        Self::ensure_forward_accept(bridge_name);
         Ok(())
     }
 
     /// Install a MASQUERADE rule for the pod subnet (idempotent) and
     /// enable IPv4 forwarding. Best-effort: failures are logged, not
     /// fatal — pod-internal traffic works without NAT.
+    /// Accept traffic to/from this bridge in FORWARD. Docker sets the
+    /// FORWARD policy to DROP, so a new bridge otherwise gets no
+    /// forwarding even with NAT in place.
+    fn ensure_forward_accept(bridge: &str) {
+        use std::process::Command;
+        if Command::new("iptables").arg("--version").output().is_err() {
+            warn!("iptables not found; bridge {bridge} may not forward");
+            return;
+        }
+        for direction in ["-i", "-o"] {
+            let check = Command::new("iptables")
+                .args(["-C", "FORWARD", direction, bridge, "-j", "ACCEPT"])
+                .status();
+            let present = check.map(|s| s.success()).unwrap_or(false);
+            if !present {
+                let status = Command::new("iptables")
+                    .args(["-A", "FORWARD", direction, bridge, "-j", "ACCEPT"])
+                    .status();
+                if !matches!(status, Ok(s) if s.success()) {
+                    warn!(bridge, direction, "failed to add FORWARD accept rule");
+                }
+            }
+        }
+    }
+
     fn ensure_nat_for_subnet(subnet: &IpRange) {
         Self::ensure_nat_cidr(&format!("{}/24", Ipv4Addr::from(subnet.base)));
     }
