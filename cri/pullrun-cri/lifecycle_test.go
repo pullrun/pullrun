@@ -182,8 +182,8 @@ func TestRunRequestForContainer_CommandEnvResources(t *testing.T) {
 			Command:  []string{"/bin/app"},
 			Args:     []string{"--serve", "--port=8080"},
 			Envs: []*runtimeapi.KeyValue{
-				{Key: "A", Value: "1"},
-				{Key: "B", Value: "2"},
+				{Key: "A", Value: []byte("1")},
+				{Key: "B", Value: []byte("2")},
 			},
 			WorkingDir: "/app",
 			Linux: &runtimeapi.LinuxContainerConfig{

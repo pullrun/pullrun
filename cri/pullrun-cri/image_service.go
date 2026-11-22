@@ -93,7 +93,7 @@ func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRe
 		images = append(images, &runtimeapi.Image{
 			Id:       img.RootDigest,
 			RepoTags: []string{img.ImageRef},
-			Size_:    size,
+			Size:     size,
 		})
 	}
 	return &runtimeapi.ListImagesResponse{Images: images}, nil

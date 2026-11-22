@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	google.golang.org/grpc v1.83.2
-	k8s.io/cri-api v0.30.0
+	k8s.io/cri-api v0.37.2
 	k8s.io/streaming v0.36.1
 	pullrun/protoapi v0.0.0
 )

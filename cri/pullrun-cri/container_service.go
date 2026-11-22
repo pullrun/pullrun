@@ -89,7 +89,7 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 
 	env := make(map[string]string, len(cfg.Envs))
 	for _, e := range cfg.Envs {
-		env[e.Key] = e.Value
+		env[e.Key] = string(e.Value)
 	}
 
 	// Resources: mirror the CRI Linux container resources.
