@@ -3872,9 +3872,14 @@ impl Runtime for RuntimeService {
         // This is the single execution — the executor returns both the
         // exit code and captured stdout/stderr, so the command is never
         // run twice.
+        let timeout_secs = if req.timeout_seconds > 0 {
+            req.timeout_seconds
+        } else {
+            30
+        };
         let output = self
             .executor
-            .exec(&req.id, &req.command, 30)
+            .exec(&req.id, &req.command, timeout_secs)
             .await
             .map_err(|e| match &e {
                 ExecError::NotFound(_) => tonic::Status::not_found(format!("{e}")),

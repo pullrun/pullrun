@@ -1733,11 +1733,13 @@ func (x *Event) GetMetadata() map[string]string {
 }
 
 type ExecRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Command       []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Command []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
+	// 0 = runtime default.
+	TimeoutSeconds uint64 `protobuf:"varint,3,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ExecRequest) Reset() {
@@ -1782,6 +1784,13 @@ func (x *ExecRequest) GetCommand() []string {
 		return x.Command
 	}
 	return nil
+}
+
+func (x *ExecRequest) GetTimeoutSeconds() uint64 {
+	if x != nil {
+		return x.TimeoutSeconds
+	}
+	return 0
 }
 
 type ExecResponse struct {
@@ -8763,10 +8772,11 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x03(\v2$.pullrun.runtime.Event.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"`\n" +
 	"\vExecRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
-	"\acommand\x18\x02 \x03(\tR\acommand\"[\n" +
+	"\acommand\x18\x02 \x03(\tR\acommand\x12'\n" +
+	"\x0ftimeout_seconds\x18\x03 \x01(\x04R\x0etimeoutSeconds\"[\n" +
 	"\fExecResponse\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06stdout\x18\x02 \x01(\fR\x06stdout\x12\x16\n" +

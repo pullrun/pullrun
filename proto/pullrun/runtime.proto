@@ -423,6 +423,8 @@ message Event {
 message ExecRequest {
     string id = 1;
     repeated string command = 2;
+    // 0 = runtime default.
+    uint64 timeout_seconds = 3;
 }
 
 message ExecResponse {

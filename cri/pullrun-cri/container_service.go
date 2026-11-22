@@ -419,9 +419,14 @@ func (c *criServer) ExecSync(ctx context.Context, req *runtimeapi.ExecSyncReques
 		timeout = time.Duration(req.Timeout)*time.Second + 100*time.Millisecond
 	}
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
+	timeoutSeconds := uint64(0)
+	if req.Timeout > 0 {
+		timeoutSeconds = uint64(req.Timeout) + 1
+	}
 	resp, err := c.runtimeClient.ExecInWorkload(execCtx, &pullrunruntime.ExecRequest{
-		Id:      rec.pullrunID,
-		Command: req.Cmd,
+		Id:             rec.pullrunID,
+		Command:        req.Cmd,
+		TimeoutSeconds: timeoutSeconds,
 	})
 	cancel()
 	if err != nil {
