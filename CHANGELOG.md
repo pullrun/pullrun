@@ -11,7 +11,8 @@
 - Per-pod bridge falls back to the shared bridge when no /24 subnet can
   be allocated, avoiding a gateway route conflict.
 - OCI DAG conversion batches node writes and fsyncs the store once at
-  the end instead of fsyncing every node (unverified timing).
+  the end. This did not resolve the >10 minute conversion for large
+  images; the bottleneck appears to be converter concurrency/locking.
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
@@ -311,7 +312,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 - Per-pod bridge falls back to the shared bridge when no /24 subnet can
   be allocated, avoiding a gateway route conflict.
 - OCI DAG conversion batches node writes and fsyncs the store once at
-  the end instead of fsyncing every node (unverified timing).
+  the end. This did not resolve the >10 minute conversion for large
+  images; the bottleneck appears to be converter concurrency/locking.
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
