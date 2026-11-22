@@ -118,13 +118,13 @@ impl LinuxContainerExecutor {
             })?;
         if status.success() {
             info!(bridge = bridge_name, "created bridge");
-            Command::new("ip")
-                .args(["link", "set", bridge_name, "up"])
-                .status()
-                .map_err(|e| {
-                    ExecError::ExecutionFailed(format!("ip link set {bridge_name} up: {e}"))
-                })?;
         }
+        Command::new("ip")
+            .args(["link", "set", bridge_name, "up"])
+            .status()
+            .map_err(|e| {
+                ExecError::ExecutionFailed(format!("ip link set {bridge_name} up: {e}"))
+            })?;
         // Assign the gateway IP to the bridge so the host kernel has a
         // route to the container subnet. Per-pod bridges get their own
         // /24 with gateway .1; the default bridge keeps the flat /16.
@@ -149,6 +149,8 @@ impl LinuxContainerExecutor {
         // works for pod-internal traffic).
         if let Some(s) = subnet {
             Self::ensure_nat_for_subnet(s);
+        } else {
+            Self::ensure_nat_cidr("10.42.0.0/16");
         }
         Ok(())
     }
@@ -157,22 +159,22 @@ impl LinuxContainerExecutor {
     /// enable IPv4 forwarding. Best-effort: failures are logged, not
     /// fatal — pod-internal traffic works without NAT.
     fn ensure_nat_for_subnet(subnet: &IpRange) {
+        Self::ensure_nat_cidr(&format!("{}/24", Ipv4Addr::from(subnet.base)));
+    }
+
+    fn ensure_nat_cidr(cidr: &str) {
         use std::process::Command;
         if Command::new("iptables").arg("--version").output().is_err() {
-            warn!(
-                "iptables not found; pod subnet {} has no outbound NAT",
-                subnet.base
-            );
+            warn!("iptables not found; subnet {cidr} has no outbound NAT");
             return;
         }
-        let cidr = format!("{}/24", Ipv4Addr::from(subnet.base));
         let rule = [
             "-t",
             "nat",
             "-C",
             "POSTROUTING",
             "-s",
-            &cidr,
+            cidr,
             "-j",
             "MASQUERADE",
         ];
@@ -186,7 +188,7 @@ impl LinuxContainerExecutor {
                 "-A",
                 "POSTROUTING",
                 "-s",
-                &cidr,
+                cidr,
                 "-j",
                 "MASQUERADE",
             ]);
@@ -237,7 +239,7 @@ impl LinuxContainerExecutor {
         let _ = SyncCommand::new("ip")
             .args(["link", "del", &veth_host])
             .status();
-        let status = SyncCommand::new("ip")
+        let out = SyncCommand::new("ip")
             .args([
                 "link",
                 "add",
@@ -250,12 +252,13 @@ impl LinuxContainerExecutor {
                 "netns",
                 &pid.to_string(),
             ])
-            .status()
+            .output()
             .map_err(|e| ExecError::ExecutionFailed(format!("ip link add veth: {e}")))?;
-        if !status.success() {
-            return Err(ExecError::ExecutionFailed(
-                "ip link add veth pair failed".into(),
-            ));
+        if !out.status.success() {
+            return Err(ExecError::ExecutionFailed(format!(
+                "ip link add veth pair failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            )));
         }
 
         // Attach host end to bridge
