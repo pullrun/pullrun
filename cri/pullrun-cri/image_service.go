@@ -101,9 +101,18 @@ func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRe
 }
 
 func (c *criServer) RemoveImage(ctx context.Context, req *runtimeapi.RemoveImageRequest) (*runtimeapi.RemoveImageResponse, error) {
+	// Resolve tag/name references to the runtime's root digest.
+	hasCtx, hasCancel := context.WithTimeout(ctx, 5*1e9)
+	has, hasErr := c.runtimeClient.HasImage(hasCtx, &pullrunruntime.HasImageRequest{ImageRef: req.Image.Image})
+	hasCancel()
+	root := req.Image.Image
+	if hasErr == nil && has.Exists && has.RootDigest != "" {
+		root = has.RootDigest
+	}
+
 	removeCtx, cancel := context.WithTimeout(ctx, 10*1e9)
 	resp, err := c.runtimeClient.RemoveImage(removeCtx, &pullrunruntime.RemoveImageRequest{
-		RootDigest: req.Image.Image,
+		RootDigest: root,
 	})
 	cancel()
 

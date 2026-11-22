@@ -4708,10 +4708,20 @@ impl Runtime for RuntimeService {
         let digest = Digest::from_hex(&root_digest)
             .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
 
-        // Check the image exists in the tag map.
+        // Count every tag/ref pointing at this root. Multiple tags of
+        // the same image are separate refcounts and must all be removed.
+        let ref_count = {
+            let refs = self.image_refs.read().await;
+            refs.values().filter(|v| *v == &root_digest).count()
+        };
         let entry_count = {
             let tags = self.image_tags.read().await;
-            tags.iter().filter(|(k, _)| *k == &root_digest).count()
+            let n = tags.iter().filter(|(k, _)| *k == &root_digest).count();
+            if ref_count > 0 {
+                ref_count
+            } else {
+                n
+            }
         };
         if entry_count == 0 {
             return Err(Status::not_found(format!("image {root_digest} not found")));
@@ -4744,6 +4754,13 @@ impl Runtime for RuntimeService {
             }
         }
 
+        {
+            let mut refs = self.image_refs.write().await;
+            refs.retain(|_, v| v != &root_digest);
+            if let Ok(json) = serde_json::to_string(&*refs) {
+                let _ = std::fs::write(self.config.store_root.join("image_refs.json"), json);
+            }
+        }
         // Now remove the tag entries. If we crashed before this point,
         // the tag still exists pointing to possibly deleted data — harmless,
         // the next RPC for this tag will 404.
