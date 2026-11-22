@@ -50,7 +50,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container | in progress — log tests 2/2 pass; full suite rerun still in progress |
-| Image Manager | in progress — pulls work after the `/v2/token` fix; 3/21 pass, image-ID/removal semantics remain |
+| Image Manager | in progress — pulls work; 10/20 pass before the 300s cap. Remaining: image volumes (feature-gated) and some ref/removal cases |
 | Streaming / Stats | not yet run |
 
 A full 142-spec run is not yet green: an earlier run wedged in
@@ -64,6 +64,6 @@ as **in progress**, not complete.
   not fully enforced.
 - User namespaces, image volumes, and checkpoint/restore CRI features
   are not implemented.
-- `ImageStatus` reports the DAG size; multi-arch image list metadata is
-  minimal. critest Image Identifier Consistency expects the registry
-  manifest digest, while Pullrun currently returns the DAG root digest.
+- Image volumes (`Feature:ImageVolume`) are not implemented.
+- Image IDs use the DAG root digest; registry manifest digests are not
+  preserved separately.

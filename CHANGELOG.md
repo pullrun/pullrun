@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### CRI
+- Image refs are indexed per tag (ref → root) instead of root → last
+  ref, so multiple tags of one image remain addressable.
+- RemoveImage resolves tags through HasImage, removes all refs for the
+  root, and is idempotent when the image is absent.
+- ImageStatus/ListImages expose Uid/Username and group RepoTags by
+  image ID; ContainerStatus reports ImageId.
 - OCI puller: use `/v2/token` for non-Docker registries. gcr.io
   redirects `/token` to an HTML page, which broke all gcr.io pulls.
 - Upgrade to Kubernetes 1.37 CRI API (`k8s.io/cri-api v0.37.2`).
@@ -269,6 +275,12 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 ## 0.7.8 — 2026-07-31
 
 ### CRI
+- Image refs are indexed per tag (ref → root) instead of root → last
+  ref, so multiple tags of one image remain addressable.
+- RemoveImage resolves tags through HasImage, removes all refs for the
+  root, and is idempotent when the image is absent.
+- ImageStatus/ListImages expose Uid/Username and group RepoTags by
+  image ID; ContainerStatus reports ImageId.
 - OCI puller: use `/v2/token` for non-Docker registries. gcr.io
   redirects `/token` to an HTML page, which broke all gcr.io pulls. shim: real pod/container runtime
 - **Pod network namespace sharing** (exec/container.rs, exec/rootless.rs). The
