@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### MCP
+- Upgrade mcp-go to v1.6.0 (protocol 2026-07-28, 2025-11-25 and older).
+- Add Streamable HTTP transport: `pullrun mcp --http ADDR`, endpoint
+  `/mcp`, with `--stateless` for session-less deployments.
+- Legacy `--sse` remains available. Verified 2026-07-28
+  `server/discover` and `tools/list` over stateless HTTP (15 tools, no
+  `Mcp-Session-Id`).
+
+## Unreleased
+
 ### Credential injection
 - `--egress-credential HOST:HEADER=SECRET` starts a per-daemon HTTPS
   MITM proxy with a generated CA. Workloads get proxy env and a

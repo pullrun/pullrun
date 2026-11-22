@@ -80,6 +80,8 @@ func (a *mcpGRPCClientAdapter) ListImages(ctx context.Context) (*runtimepb.ListI
 // NewMCPCommand creates the cobra command that starts the MCP server.
 func NewMCPCommand(opts *RootOptions) *cobra.Command {
 	var sseAddr string
+	var httpAddr string
+	var stateless bool
 
 	cmd := &cobra.Command{
 		Use:   "mcp",
@@ -88,8 +90,10 @@ func NewMCPCommand(opts *RootOptions) *cobra.Command {
 so that AI agents (opencode, Claude Code, Cursor, etc.) can pull images,
 run workloads, exec into containers, inspect state, and manage the runtime.
 
-Uses stdio transport by default (for opencode, Claude Code). Pass --sse to
-serve over HTTP for remote agents.`,
+Uses stdio transport by default (for opencode, Claude Code). Pass --http to
+serve Streamable HTTP (MCP 2025-11-25/2026-07-28); add --stateless for
+session-less deployments behind a load balancer. --sse is kept for older
+clients.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, cleanup, err := ensureGRPCClient(opts)
@@ -100,8 +104,16 @@ serve over HTTP for remote agents.`,
 
 			srv := mcp.NewServer(&mcpGRPCClientAdapter{inner: client})
 
+			if httpAddr != "" {
+				mode := "stateful"
+				if stateless {
+					mode = "stateless"
+				}
+				fmt.Fprintf(os.Stderr, "MCP Streamable HTTP (%s) listening on %s/mcp\n", mode, httpAddr)
+				return srv.ServeHTTP(httpAddr, stateless)
+			}
 			if sseAddr != "" {
-				fmt.Fprintf(os.Stderr, "MCP SSE server listening on %s\n", sseAddr)
+				fmt.Fprintf(os.Stderr, "MCP SSE server (legacy) listening on %s\n", sseAddr)
 				return srv.ServeSSE(sseAddr)
 			}
 
@@ -109,6 +121,8 @@ serve over HTTP for remote agents.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&sseAddr, "sse", "", "Serve over SSE on the given address (e.g., :8080)")
+	cmd.Flags().StringVar(&httpAddr, "http", "", "Serve Streamable HTTP on the given address (e.g., :8080); endpoint /mcp")
+	cmd.Flags().BoolVar(&stateless, "stateless", false, "With --http: issue no session IDs (stateless)")
+	cmd.Flags().StringVar(&sseAddr, "sse", "", "Serve over legacy SSE on the given address (deprecated)")
 	return cmd
 }

@@ -196,3 +196,43 @@ Sandbox groups (`pullrun group create/run/ls/rm`) are available over
 the CLI and gRPC API, but are not part of the MCP tool surface yet.
 Agents that need one-VM-many-sandboxes execution should use the CLI
 until a `group_run` tool lands.
+
+## Transports and protocol versions
+
+`pullrun mcp` supports:
+
+| Transport | Flag | Protocol |
+|---|---|---|
+| stdio (default) | — | 2024-11-05 through 2026-07-28 |
+| Streamable HTTP | `--http :8080` | 2025-11-25 / 2026-07-28 |
+| Streamable HTTP, stateless | `--http :8080 --stateless` | 2026-07-28 |
+| HTTP+SSE (legacy) | `--sse :8080` | 2024-11-05 and earlier |
+
+Streamable HTTP serves at `/mcp`. With `--stateless`, no
+`Mcp-Session-Id` is issued or validated, so any replica can serve any
+request (suitable for load-balanced deployments).
+
+2026-07-28 requests carry protocol metadata in the body and require the
+mirrored `Mcp-Method` (and `Mcp-Name` for named operations) headers:
+
+```bash
+curl -sS http://127.0.0.1:8080/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/list' \
+  -d '{
+    "jsonrpc":"2.0","id":1,"method":"tools/list",
+    "params":{"_meta":{
+      "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities":{}
+    }}
+  }'
+```
+
+`server/discover` reports the supported versions and capabilities; it
+also requires `Mcp-Method: server/discover`.
+
+The MCP tool surface is 15 tools (run, stop, exec, list, get, inspect,
+logs, stats, pull_image, list_images, build, push, compose_up,
+compose_down, prune). Snapshots, actors, and groups are still CLI/gRPC
+only.

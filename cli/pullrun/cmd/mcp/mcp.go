@@ -111,10 +111,22 @@ func (s *Server) ServeStdio() error {
 	return server.ServeStdio(s.mcp)
 }
 
-// ServeSSE starts the server in SSE (HTTP) mode.
+// ServeSSE starts the server in the legacy HTTP+SSE mode.
 func (s *Server) ServeSSE(addr string) error {
 	sseSrv := server.NewSSEServer(s.mcp)
 	return sseSrv.Start(addr)
+}
+
+// ServeHTTP starts the server over Streamable HTTP (MCP 2025-11-25 and
+// 2026-07-28). With stateless=true no session IDs are issued or
+// validated, so any request can be served by any replica.
+func (s *Server) ServeHTTP(addr string, stateless bool) error {
+	httpSrv := server.NewStreamableHTTPServer(
+		s.mcp,
+		server.WithEndpointPath("/mcp"),
+		server.WithStateLess(stateless),
+	)
+	return httpSrv.Start(addr)
 }
 
 // MCPServer returns the underlying MCP server (for advanced usage).
