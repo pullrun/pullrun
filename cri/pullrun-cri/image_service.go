@@ -131,7 +131,7 @@ func (c *criServer) RemoveImage(ctx context.Context, req *runtimeapi.RemoveImage
 		root = has.RootDigest
 	}
 
-	removeCtx, cancel := context.WithTimeout(ctx, 10*1e9)
+	removeCtx, cancel := context.WithTimeout(ctx, 60*1e9)
 	resp, err := c.runtimeClient.RemoveImage(removeCtx, &pullrunruntime.RemoveImageRequest{
 		RootDigest: root,
 	})
