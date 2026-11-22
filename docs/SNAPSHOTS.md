@@ -51,20 +51,19 @@ On the Linux KVM host (Firecracker 1.10.1, x86_64, 512 MiB guest):
 and reports the executor-side wall times (`snapshot_ms` / `restore_ms`).
 
 Linux KVM host, Firecracker 1.10.1, 512 MiB guest, 256 MiB rootfs
-(cold-ish page cache, debug runtime):
+(debug runtime, warm page cache):
 
 | metric | measured |
 |---|---|
-| snapshot capture | 3,895 ms |
-| restore, best | **227 ms** |
-| restore, average | 1,619 ms |
-| restore, worst | 2,300 ms |
+| snapshot capture | 3,849 ms |
+| restore, best | **63 ms** |
+| restore, average | **84 ms** |
+| restore, worst | **119 ms** |
 
-The first restore met the <500 ms target; later restores were slower
-because each one rewrites the 256 MB rootfs copy before loading the
-memory file. Reducing that copy (reflink, overlay-backed rootfs, or
-snapshot-owned drive) is required to make resume consistently
-sub-500 ms.
+All five restores were well under the 500 ms target. The key was copying
+the mostly-sparse ext4 image with `cp --sparse=always` (60 ms vs 190 ms
+for 256 MB); before that, the rootfs rewrite dominated and restores
+averaged 1.6 s.
 
 ## Limitations
 
