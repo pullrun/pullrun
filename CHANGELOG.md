@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 — 2026-11-22
+
+Rootful container networking and verified fail-closed egress.
 
 ### Networking
 - Bring the `pullrun-br0` bridge up even when it already exists, add
@@ -10,6 +12,8 @@
 - Fail-closed egress is verified end to end: with
   `--egress-deny --allow-outbound tcp:1.1.1.1:80`, a TCP connect to
   `1.1.1.1:80` exits 0 and a connect to `93.184.216.34:80` exits 1.
+- `docs/EGRESS.md` and `docs/SECURITY_STATUS.md` updated: egress is
+  **Met** for rootful containers; VM/rootless still reject the flag.
 
 ## 0.9.0 — 2026-11-22
 
