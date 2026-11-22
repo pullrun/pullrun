@@ -210,17 +210,13 @@ func (c *criServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateC
 		return nil, fmt.Errorf("CreateContainer: run workload: %w", err)
 	}
 
-	imageID := rootDigest
-	if has, err := c.runtimeClient.HasImage(ctx, &pullrunruntime.HasImageRequest{ImageRef: image}); err == nil && has.Exists && has.ManifestDigest != "" {
-		imageID = has.ManifestDigest
-	}
 	rec := &containerRecord{
 		id:        cid,
 		sandboxID: req.PodSandboxId,
 		pullrunID: runResp.Id,
 		name:      req.Config.Metadata.Name,
 		image:     image,
-		imageRef:  imageID,
+		imageRef:  rootDigest,
 		createdAt: time.Now(),
 		state:     runtimeapi.ContainerState_CONTAINER_CREATED,
 		logPath:   logPath,
