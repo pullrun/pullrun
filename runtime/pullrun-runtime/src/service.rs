@@ -2432,7 +2432,11 @@ impl Runtime for RuntimeService {
             tags.insert(root_digest.as_hex(), image_ref.clone());
             let mut refs = self.image_refs.write().await;
             let root_hex = root_digest.as_hex().to_string();
-            let mut aliases = vec![image_ref.clone()];
+            let mut aliases = vec![
+                image_ref.clone(),
+                manifest_hex.clone(),
+                format!("sha256:{manifest_hex}"),
+            ];
             if let Some((repo, digest)) = image_ref.rsplit_once('@') {
                 if let Some(d) = digest.strip_prefix("sha256:") {
                     aliases.push(digest.to_string());
