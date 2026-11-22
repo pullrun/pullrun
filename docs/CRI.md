@@ -29,8 +29,10 @@ sandbox network namespace with `network_mode=container:<sandbox-id>`.
 - Idempotent StopPodSandbox/StopContainer for missing workloads.
 - CRI Created state: `CreateContainer` creates without starting
   (`create_only`), `StartContainer` calls the new `StartWorkload` RPC.
-- Container stdout/stderr are written to `Config.LogPath`;
-  `ReopenContainerLog` recreates the file.
+- Container stdout/stderr are written to `Config.LogPath` in CRI log
+  format (`RFC3339Nano stream tag message`); relative paths are joined
+  with the sandbox `LogDirectory`; `ReopenContainerLog` recreates the
+  file and the writer follows the new inode. Verified: log tests 2/2.
 
 ## Conformance
 
@@ -47,7 +49,7 @@ Current status on the Linux KVM host:
 |---|---|
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
-| Container | in progress — Created/Start semantics and log files fixed; suite rerun in progress |
+| Container | in progress — log tests 2/2 pass; full suite rerun still in progress |
 | Image / Streaming / Stats | not yet run |
 
 A full 142-spec run is not yet green: an earlier run wedged in
