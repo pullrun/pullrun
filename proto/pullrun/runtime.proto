@@ -332,6 +332,8 @@ message RunRequest {
     string log_path = 27;
     // UTS hostname for the workload.
     string hostname = 28;
+    // Kubernetes image volumes: mount an image's rootfs/subpath.
+    repeated ImageMount image_mounts = 29;
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.
@@ -1171,4 +1173,10 @@ message StartWorkloadRequest {
 
 message StartWorkloadResponse {
     uint32 pid = 1;
+}
+
+message ImageMount {
+    string root_digest = 1;
+    string sub_path = 2;
+    string destination = 3;
 }

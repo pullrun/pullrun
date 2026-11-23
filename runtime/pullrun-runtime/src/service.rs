@@ -2970,6 +2970,41 @@ impl Runtime for RuntimeService {
             }
         }
 
+        // Kubernetes image volumes: materialize each image base and bind
+        // its rootfs/subpath read-only into the container.
+        for im in &req.image_mounts {
+            let digest = Digest::from_hex(&im.root_digest)
+                .map_err(|e| tonic::Status::invalid_argument(format!("image mount digest: {e}")))?;
+            let base =
+                self.base_store.ensure_base(&digest).await.map_err(|e| {
+                    tonic::Status::internal(format!("materialize image volume: {e}"))
+                })?;
+            let mut path = base.path.clone();
+            for comp in std::path::Path::new(&im.sub_path).components() {
+                match comp {
+                    std::path::Component::Normal(c) => path.push(c),
+                    std::path::Component::CurDir => {}
+                    _ => {
+                        return Err(tonic::Status::invalid_argument(
+                            "image volume sub_path must be relative",
+                        ))
+                    }
+                }
+            }
+            if !path.exists() {
+                return Err(tonic::Status::invalid_argument(format!(
+                    "image volume sub_path {:?} not found",
+                    im.sub_path
+                )));
+            }
+            mounts.push(pullrun_exec::Mount {
+                type_: "bind".to_string(),
+                source: path.to_string_lossy().to_string(),
+                destination: im.destination.clone(),
+                options: vec!["ro".to_string(), "rbind".to_string()],
+            });
+        }
+
         let image_root = Digest::from_hex(&req.root_digest)
             .map_err(|e| Status::invalid_argument(format!("invalid root_digest: {e}")))?;
         let spec = WorkloadSpec {
@@ -3380,6 +3415,7 @@ impl Runtime for RuntimeService {
                 create_only: false,
                 log_path: String::new(),
                 hostname: String::new(),
+                image_mounts: Vec::new(),
             });
 
             let run_resp = self.run_workload(run_req).await?;
@@ -8115,6 +8151,7 @@ mod tests {
             create_only: false,
             log_path: String::new(),
             hostname: String::new(),
+            image_mounts: Vec::new(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::NotFound);
@@ -8200,6 +8237,7 @@ mod tests {
             create_only: false,
             log_path: String::new(),
             hostname: String::new(),
+            image_mounts: Vec::new(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -8245,6 +8283,7 @@ mod tests {
             create_only: false,
             log_path: String::new(),
             hostname: String::new(),
+            image_mounts: Vec::new(),
         });
         let err = svc.run_workload(req).await.expect_err("must reject");
         assert_eq!(err.code(), tonic::Code::InvalidArgument);

@@ -734,7 +734,9 @@ type RunRequest struct {
 	// Capture container stdout/stderr into this path (CRI log path).
 	LogPath string `protobuf:"bytes,27,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`
 	// UTS hostname for the workload.
-	Hostname      string `protobuf:"bytes,28,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Hostname string `protobuf:"bytes,28,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	// Kubernetes image volumes: mount an image's rootfs/subpath.
+	ImageMounts   []*ImageMount `protobuf:"bytes,29,rep,name=image_mounts,json=imageMounts,proto3" json:"image_mounts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -963,6 +965,13 @@ func (x *RunRequest) GetHostname() string {
 		return x.Hostname
 	}
 	return ""
+}
+
+func (x *RunRequest) GetImageMounts() []*ImageMount {
+	if x != nil {
+		return x.ImageMounts
+	}
+	return nil
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.
@@ -8638,6 +8647,66 @@ func (x *StartWorkloadResponse) GetPid() uint32 {
 	return 0
 }
 
+type ImageMount struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RootDigest    string                 `protobuf:"bytes,1,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
+	SubPath       string                 `protobuf:"bytes,2,opt,name=sub_path,json=subPath,proto3" json:"sub_path,omitempty"`
+	Destination   string                 `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImageMount) Reset() {
+	*x = ImageMount{}
+	mi := &file_pullrun_runtime_proto_msgTypes[142]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageMount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageMount) ProtoMessage() {}
+
+func (x *ImageMount) ProtoReflect() protoreflect.Message {
+	mi := &file_pullrun_runtime_proto_msgTypes[142]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageMount.ProtoReflect.Descriptor instead.
+func (*ImageMount) Descriptor() ([]byte, []int) {
+	return file_pullrun_runtime_proto_rawDescGZIP(), []int{142}
+}
+
+func (x *ImageMount) GetRootDigest() string {
+	if x != nil {
+		return x.RootDigest
+	}
+	return ""
+}
+
+func (x *ImageMount) GetSubPath() string {
+	if x != nil {
+		return x.SubPath
+	}
+	return ""
+}
+
+func (x *ImageMount) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
 var File_pullrun_runtime_proto protoreflect.FileDescriptor
 
 const file_pullrun_runtime_proto_rawDesc = "" +
@@ -8703,7 +8772,7 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\x12'\n" +
 	"\x0fmanifest_digest\x18\x04 \x01(\tR\x0emanifestDigest\x12\x1d\n" +
 	"\n" +
-	"image_user\x18\x05 \x01(\tR\timageUser\"\x8a\n" +
+	"image_user\x18\x05 \x01(\tR\timageUser\"\xca\n" +
 	"\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
@@ -8742,7 +8811,8 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\vcreate_only\x18\x1a \x01(\bR\n" +
 	"createOnly\x12\x19\n" +
 	"\blog_path\x18\x1b \x01(\tR\alogPath\x12\x1a\n" +
-	"\bhostname\x18\x1c \x01(\tR\bhostname\x1a6\n" +
+	"\bhostname\x18\x1c \x01(\tR\bhostname\x12>\n" +
+	"\fimage_mounts\x18\x1d \x03(\v2\x1b.pullrun.runtime.ImageMountR\vimageMounts\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
@@ -9322,7 +9392,13 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x14StartWorkloadRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\")\n" +
 	"\x15StartWorkloadResponse\x12\x10\n" +
-	"\x03pid\x18\x01 \x01(\rR\x03pid*\x80\x01\n" +
+	"\x03pid\x18\x01 \x01(\rR\x03pid\"j\n" +
+	"\n" +
+	"ImageMount\x12\x1f\n" +
+	"\vroot_digest\x18\x01 \x01(\tR\n" +
+	"rootDigest\x12\x19\n" +
+	"\bsub_path\x18\x02 \x01(\tR\asubPath\x12 \n" +
+	"\vdestination\x18\x03 \x01(\tR\vdestination*\x80\x01\n" +
 	"\rRestartPolicy\x12\x17\n" +
 	"\x13RESTART_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -9411,7 +9487,7 @@ func file_pullrun_runtime_proto_rawDescGZIP() []byte {
 }
 
 var file_pullrun_runtime_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 151)
+var file_pullrun_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 152)
 var file_pullrun_runtime_proto_goTypes = []any{
 	(RestartPolicy)(0),              // 0: pullrun.runtime.RestartPolicy
 	(*Mount)(nil),                   // 1: pullrun.runtime.Mount
@@ -9556,25 +9632,26 @@ var file_pullrun_runtime_proto_goTypes = []any{
 	(*RemoveActorResponse)(nil),     // 140: pullrun.runtime.RemoveActorResponse
 	(*StartWorkloadRequest)(nil),    // 141: pullrun.runtime.StartWorkloadRequest
 	(*StartWorkloadResponse)(nil),   // 142: pullrun.runtime.StartWorkloadResponse
-	nil,                             // 143: pullrun.runtime.ComposeService.EnvironmentEntry
-	nil,                             // 144: pullrun.runtime.ComposeService.LabelsEntry
-	nil,                             // 145: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	nil,                             // 146: pullrun.runtime.RunRequest.EnvEntry
-	nil,                             // 147: pullrun.runtime.RunRequest.SysctlsEntry
-	nil,                             // 148: pullrun.runtime.Event.MetadataEntry
-	nil,                             // 149: pullrun.runtime.AttachOpen.EnvEntry
-	nil,                             // 150: pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	nil,                             // 151: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	(*ImageMount)(nil),              // 143: pullrun.runtime.ImageMount
+	nil,                             // 144: pullrun.runtime.ComposeService.EnvironmentEntry
+	nil,                             // 145: pullrun.runtime.ComposeService.LabelsEntry
+	nil,                             // 146: pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	nil,                             // 147: pullrun.runtime.RunRequest.EnvEntry
+	nil,                             // 148: pullrun.runtime.RunRequest.SysctlsEntry
+	nil,                             // 149: pullrun.runtime.Event.MetadataEntry
+	nil,                             // 150: pullrun.runtime.AttachOpen.EnvEntry
+	nil,                             // 151: pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	nil,                             // 152: pullrun.runtime.InspectResponse.PolicyDecisionsEntry
 }
 var file_pullrun_runtime_proto_depIdxs = []int32{
-	143, // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
+	144, // 0: pullrun.runtime.ComposeService.environment:type_name -> pullrun.runtime.ComposeService.EnvironmentEntry
 	3,   // 1: pullrun.runtime.ComposeService.ports:type_name -> pullrun.runtime.ComposePort
-	144, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
+	145, // 2: pullrun.runtime.ComposeService.labels:type_name -> pullrun.runtime.ComposeService.LabelsEntry
 	1,   // 3: pullrun.runtime.ComposeService.mounts:type_name -> pullrun.runtime.Mount
 	44,  // 4: pullrun.runtime.ComposeService.health_check:type_name -> pullrun.runtime.HealthCheck
 	2,   // 5: pullrun.runtime.RunComposeRequest.services:type_name -> pullrun.runtime.ComposeService
-	145, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
-	146, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
+	146, // 6: pullrun.runtime.RunComposeResponse.service_to_id:type_name -> pullrun.runtime.RunComposeResponse.ServiceToIdEntry
+	147, // 7: pullrun.runtime.RunRequest.env:type_name -> pullrun.runtime.RunRequest.EnvEntry
 	10,  // 8: pullrun.runtime.RunRequest.network_rules:type_name -> pullrun.runtime.NetworkRule
 	1,   // 9: pullrun.runtime.RunRequest.mounts:type_name -> pullrun.runtime.Mount
 	44,  // 10: pullrun.runtime.RunRequest.health_check:type_name -> pullrun.runtime.HealthCheck
@@ -9582,157 +9659,158 @@ var file_pullrun_runtime_proto_depIdxs = []int32{
 	77,  // 12: pullrun.runtime.RunRequest.secrets:type_name -> pullrun.runtime.SecretRef
 	78,  // 13: pullrun.runtime.RunRequest.configs:type_name -> pullrun.runtime.ConfigRef
 	9,   // 14: pullrun.runtime.RunRequest.dns:type_name -> pullrun.runtime.DnsConfig
-	147, // 15: pullrun.runtime.RunRequest.sysctls:type_name -> pullrun.runtime.RunRequest.SysctlsEntry
-	0,   // 16: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
-	15,  // 17: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
-	148, // 18: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
-	25,  // 19: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
-	26,  // 20: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
-	27,  // 21: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
-	28,  // 22: pullrun.runtime.AttachMessage.stdout:type_name -> pullrun.runtime.AttachStdout
-	29,  // 23: pullrun.runtime.AttachMessage.stderr:type_name -> pullrun.runtime.AttachStderr
-	30,  // 24: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
-	31,  // 25: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
-	32,  // 26: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
-	149, // 27: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
-	37,  // 28: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
-	150, // 29: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
-	10,  // 30: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
-	58,  // 31: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
-	151, // 32: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
-	0,   // 33: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
-	69,  // 34: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
-	79,  // 35: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
-	79,  // 36: pullrun.runtime.InspectSecretResponse.secret:type_name -> pullrun.runtime.SecretInfo
-	88,  // 37: pullrun.runtime.ListConfigsResponse.configs:type_name -> pullrun.runtime.ConfigInfo
-	88,  // 38: pullrun.runtime.InspectConfigResponse.config:type_name -> pullrun.runtime.ConfigInfo
-	108, // 39: pullrun.runtime.ListGroupsResponse.groups:type_name -> pullrun.runtime.GroupInfo
-	116, // 40: pullrun.runtime.ListSnapshotsResponse.snapshots:type_name -> pullrun.runtime.SnapshotInfo
-	125, // 41: pullrun.runtime.ListTemplatesResponse.templates:type_name -> pullrun.runtime.TemplateInfo
-	132, // 42: pullrun.runtime.ListActorsResponse.actors:type_name -> pullrun.runtime.ActorInfo
-	6,   // 43: pullrun.runtime.Runtime.PullImage:input_type -> pullrun.runtime.PullImageRequest
-	8,   // 44: pullrun.runtime.Runtime.RunWorkload:input_type -> pullrun.runtime.RunRequest
-	141, // 45: pullrun.runtime.Runtime.StartWorkload:input_type -> pullrun.runtime.StartWorkloadRequest
-	12,  // 46: pullrun.runtime.Runtime.StopWorkload:input_type -> pullrun.runtime.StopRequest
-	14,  // 47: pullrun.runtime.Runtime.GetWorkload:input_type -> pullrun.runtime.GetWorkloadRequest
-	16,  // 48: pullrun.runtime.Runtime.ListWorkloads:input_type -> pullrun.runtime.ListWorkloadsRequest
-	18,  // 49: pullrun.runtime.Runtime.StreamLogs:input_type -> pullrun.runtime.StreamLogsRequest
-	20,  // 50: pullrun.runtime.Runtime.StreamEvents:input_type -> pullrun.runtime.StreamEventsRequest
-	22,  // 51: pullrun.runtime.Runtime.ExecInWorkload:input_type -> pullrun.runtime.ExecRequest
-	57,  // 52: pullrun.runtime.Runtime.InspectWorkload:input_type -> pullrun.runtime.InspectRequest
-	24,  // 53: pullrun.runtime.Runtime.AttachWorkload:input_type -> pullrun.runtime.AttachMessage
-	33,  // 54: pullrun.runtime.Runtime.HasImage:input_type -> pullrun.runtime.HasImageRequest
-	35,  // 55: pullrun.runtime.Runtime.ListImages:input_type -> pullrun.runtime.ListImagesRequest
-	38,  // 56: pullrun.runtime.Runtime.RemoveImage:input_type -> pullrun.runtime.RemoveImageRequest
-	40,  // 57: pullrun.runtime.Runtime.DagStoreInfo:input_type -> pullrun.runtime.DagStoreInfoRequest
-	42,  // 58: pullrun.runtime.Runtime.PortForward:input_type -> pullrun.runtime.PortForwardRequest
-	45,  // 59: pullrun.runtime.Runtime.UpdateWorkload:input_type -> pullrun.runtime.UpdateWorkloadRequest
-	47,  // 60: pullrun.runtime.Runtime.GetWorkloadStats:input_type -> pullrun.runtime.GetWorkloadStatsRequest
-	105, // 61: pullrun.runtime.Runtime.CreateGroup:input_type -> pullrun.runtime.CreateGroupRequest
-	107, // 62: pullrun.runtime.Runtime.ListGroups:input_type -> pullrun.runtime.ListGroupsRequest
-	110, // 63: pullrun.runtime.Runtime.RemoveGroup:input_type -> pullrun.runtime.RemoveGroupRequest
-	112, // 64: pullrun.runtime.Runtime.RunGroupSandbox:input_type -> pullrun.runtime.RunGroupSandboxRequest
-	114, // 65: pullrun.runtime.Runtime.CreateSnapshot:input_type -> pullrun.runtime.CreateSnapshotRequest
-	117, // 66: pullrun.runtime.Runtime.ListSnapshots:input_type -> pullrun.runtime.ListSnapshotsRequest
-	119, // 67: pullrun.runtime.Runtime.RemoveSnapshot:input_type -> pullrun.runtime.RemoveSnapshotRequest
-	121, // 68: pullrun.runtime.Runtime.RestoreSnapshot:input_type -> pullrun.runtime.RestoreSnapshotRequest
-	123, // 69: pullrun.runtime.Runtime.CreateTemplate:input_type -> pullrun.runtime.CreateTemplateRequest
-	126, // 70: pullrun.runtime.Runtime.ListTemplates:input_type -> pullrun.runtime.ListTemplatesRequest
-	128, // 71: pullrun.runtime.Runtime.RemoveTemplate:input_type -> pullrun.runtime.RemoveTemplateRequest
-	130, // 72: pullrun.runtime.Runtime.CreateActor:input_type -> pullrun.runtime.CreateActorRequest
-	133, // 73: pullrun.runtime.Runtime.ListActors:input_type -> pullrun.runtime.ListActorsRequest
-	135, // 74: pullrun.runtime.Runtime.ResumeActor:input_type -> pullrun.runtime.ResumeActorRequest
-	137, // 75: pullrun.runtime.Runtime.SuspendActor:input_type -> pullrun.runtime.SuspendActorRequest
-	139, // 76: pullrun.runtime.Runtime.RemoveActor:input_type -> pullrun.runtime.RemoveActorRequest
-	49,  // 77: pullrun.runtime.Runtime.BuildImage:input_type -> pullrun.runtime.BuildImageRequest
-	51,  // 78: pullrun.runtime.Runtime.PushImage:input_type -> pullrun.runtime.PushImageRequest
-	53,  // 79: pullrun.runtime.Runtime.ExportImage:input_type -> pullrun.runtime.ExportImageRequest
-	55,  // 80: pullrun.runtime.Runtime.ImportImage:input_type -> pullrun.runtime.ImportImageChunk
-	4,   // 81: pullrun.runtime.Runtime.RunCompose:input_type -> pullrun.runtime.RunComposeRequest
-	60,  // 82: pullrun.runtime.Runtime.CopyFile:input_type -> pullrun.runtime.CopyFileRequest
-	62,  // 83: pullrun.runtime.Runtime.CommitImage:input_type -> pullrun.runtime.CommitImageRequest
-	75,  // 84: pullrun.runtime.Runtime.DiffWorkload:input_type -> pullrun.runtime.DiffRequest
-	71,  // 85: pullrun.runtime.Runtime.RuntimeInfo:input_type -> pullrun.runtime.InfoRequest
-	64,  // 86: pullrun.runtime.Runtime.CreateNetwork:input_type -> pullrun.runtime.CreateNetworkRequest
-	66,  // 87: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
-	68,  // 88: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
-	73,  // 89: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
-	97,  // 90: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
-	80,  // 91: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
-	82,  // 92: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
-	84,  // 93: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
-	86,  // 94: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
-	89,  // 95: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
-	91,  // 96: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
-	93,  // 97: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
-	95,  // 98: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
-	99,  // 99: pullrun.runtime.Runtime.AttachSignature:input_type -> pullrun.runtime.AttachSignatureRequest
-	101, // 100: pullrun.runtime.Runtime.AttachSbom:input_type -> pullrun.runtime.AttachSbomRequest
-	103, // 101: pullrun.runtime.Runtime.GetAttestations:input_type -> pullrun.runtime.GetAttestationsRequest
-	7,   // 102: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
-	11,  // 103: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
-	142, // 104: pullrun.runtime.Runtime.StartWorkload:output_type -> pullrun.runtime.StartWorkloadResponse
-	13,  // 105: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
-	15,  // 106: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
-	17,  // 107: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
-	19,  // 108: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
-	21,  // 109: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
-	23,  // 110: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
-	59,  // 111: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
-	24,  // 112: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
-	34,  // 113: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
-	36,  // 114: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
-	39,  // 115: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
-	41,  // 116: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
-	43,  // 117: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
-	46,  // 118: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
-	48,  // 119: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
-	106, // 120: pullrun.runtime.Runtime.CreateGroup:output_type -> pullrun.runtime.CreateGroupResponse
-	109, // 121: pullrun.runtime.Runtime.ListGroups:output_type -> pullrun.runtime.ListGroupsResponse
-	111, // 122: pullrun.runtime.Runtime.RemoveGroup:output_type -> pullrun.runtime.RemoveGroupResponse
-	113, // 123: pullrun.runtime.Runtime.RunGroupSandbox:output_type -> pullrun.runtime.RunGroupSandboxResponse
-	115, // 124: pullrun.runtime.Runtime.CreateSnapshot:output_type -> pullrun.runtime.CreateSnapshotResponse
-	118, // 125: pullrun.runtime.Runtime.ListSnapshots:output_type -> pullrun.runtime.ListSnapshotsResponse
-	120, // 126: pullrun.runtime.Runtime.RemoveSnapshot:output_type -> pullrun.runtime.RemoveSnapshotResponse
-	122, // 127: pullrun.runtime.Runtime.RestoreSnapshot:output_type -> pullrun.runtime.RestoreSnapshotResponse
-	124, // 128: pullrun.runtime.Runtime.CreateTemplate:output_type -> pullrun.runtime.CreateTemplateResponse
-	127, // 129: pullrun.runtime.Runtime.ListTemplates:output_type -> pullrun.runtime.ListTemplatesResponse
-	129, // 130: pullrun.runtime.Runtime.RemoveTemplate:output_type -> pullrun.runtime.RemoveTemplateResponse
-	131, // 131: pullrun.runtime.Runtime.CreateActor:output_type -> pullrun.runtime.CreateActorResponse
-	134, // 132: pullrun.runtime.Runtime.ListActors:output_type -> pullrun.runtime.ListActorsResponse
-	136, // 133: pullrun.runtime.Runtime.ResumeActor:output_type -> pullrun.runtime.ResumeActorResponse
-	138, // 134: pullrun.runtime.Runtime.SuspendActor:output_type -> pullrun.runtime.SuspendActorResponse
-	140, // 135: pullrun.runtime.Runtime.RemoveActor:output_type -> pullrun.runtime.RemoveActorResponse
-	50,  // 136: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
-	52,  // 137: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
-	54,  // 138: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
-	56,  // 139: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
-	5,   // 140: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
-	61,  // 141: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
-	63,  // 142: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
-	76,  // 143: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
-	72,  // 144: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
-	65,  // 145: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
-	67,  // 146: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
-	70,  // 147: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
-	74,  // 148: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
-	98,  // 149: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
-	81,  // 150: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
-	83,  // 151: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
-	85,  // 152: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
-	87,  // 153: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
-	90,  // 154: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
-	92,  // 155: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
-	94,  // 156: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
-	96,  // 157: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
-	100, // 158: pullrun.runtime.Runtime.AttachSignature:output_type -> pullrun.runtime.AttachSignatureResponse
-	102, // 159: pullrun.runtime.Runtime.AttachSbom:output_type -> pullrun.runtime.AttachSbomResponse
-	104, // 160: pullrun.runtime.Runtime.GetAttestations:output_type -> pullrun.runtime.GetAttestationsResponse
-	102, // [102:161] is the sub-list for method output_type
-	43,  // [43:102] is the sub-list for method input_type
-	43,  // [43:43] is the sub-list for extension type_name
-	43,  // [43:43] is the sub-list for extension extendee
-	0,   // [0:43] is the sub-list for field type_name
+	148, // 15: pullrun.runtime.RunRequest.sysctls:type_name -> pullrun.runtime.RunRequest.SysctlsEntry
+	143, // 16: pullrun.runtime.RunRequest.image_mounts:type_name -> pullrun.runtime.ImageMount
+	0,   // 17: pullrun.runtime.WorkloadStatus.restart_policy:type_name -> pullrun.runtime.RestartPolicy
+	15,  // 18: pullrun.runtime.ListWorkloadsResponse.workloads:type_name -> pullrun.runtime.WorkloadStatus
+	149, // 19: pullrun.runtime.Event.metadata:type_name -> pullrun.runtime.Event.MetadataEntry
+	25,  // 20: pullrun.runtime.AttachMessage.open:type_name -> pullrun.runtime.AttachOpen
+	26,  // 21: pullrun.runtime.AttachMessage.stdin:type_name -> pullrun.runtime.AttachStdin
+	27,  // 22: pullrun.runtime.AttachMessage.stdin_eof:type_name -> pullrun.runtime.AttachStdinEof
+	28,  // 23: pullrun.runtime.AttachMessage.stdout:type_name -> pullrun.runtime.AttachStdout
+	29,  // 24: pullrun.runtime.AttachMessage.stderr:type_name -> pullrun.runtime.AttachStderr
+	30,  // 25: pullrun.runtime.AttachMessage.exit:type_name -> pullrun.runtime.AttachExit
+	31,  // 26: pullrun.runtime.AttachMessage.error:type_name -> pullrun.runtime.AttachError
+	32,  // 27: pullrun.runtime.AttachMessage.window_size:type_name -> pullrun.runtime.AttachWindowSize
+	150, // 28: pullrun.runtime.AttachOpen.env:type_name -> pullrun.runtime.AttachOpen.EnvEntry
+	37,  // 29: pullrun.runtime.ListImagesResponse.images:type_name -> pullrun.runtime.ImageInfo
+	151, // 30: pullrun.runtime.BuildImageRequest.build_args:type_name -> pullrun.runtime.BuildImageRequest.BuildArgsEntry
+	10,  // 31: pullrun.runtime.InspectResponse.network_rules:type_name -> pullrun.runtime.NetworkRule
+	58,  // 32: pullrun.runtime.InspectResponse.dag_path:type_name -> pullrun.runtime.DagNode
+	152, // 33: pullrun.runtime.InspectResponse.policy_decisions:type_name -> pullrun.runtime.InspectResponse.PolicyDecisionsEntry
+	0,   // 34: pullrun.runtime.InspectResponse.restart_policy:type_name -> pullrun.runtime.RestartPolicy
+	69,  // 35: pullrun.runtime.ListNetworksResponse.networks:type_name -> pullrun.runtime.NetworkInfo
+	79,  // 36: pullrun.runtime.ListSecretsResponse.secrets:type_name -> pullrun.runtime.SecretInfo
+	79,  // 37: pullrun.runtime.InspectSecretResponse.secret:type_name -> pullrun.runtime.SecretInfo
+	88,  // 38: pullrun.runtime.ListConfigsResponse.configs:type_name -> pullrun.runtime.ConfigInfo
+	88,  // 39: pullrun.runtime.InspectConfigResponse.config:type_name -> pullrun.runtime.ConfigInfo
+	108, // 40: pullrun.runtime.ListGroupsResponse.groups:type_name -> pullrun.runtime.GroupInfo
+	116, // 41: pullrun.runtime.ListSnapshotsResponse.snapshots:type_name -> pullrun.runtime.SnapshotInfo
+	125, // 42: pullrun.runtime.ListTemplatesResponse.templates:type_name -> pullrun.runtime.TemplateInfo
+	132, // 43: pullrun.runtime.ListActorsResponse.actors:type_name -> pullrun.runtime.ActorInfo
+	6,   // 44: pullrun.runtime.Runtime.PullImage:input_type -> pullrun.runtime.PullImageRequest
+	8,   // 45: pullrun.runtime.Runtime.RunWorkload:input_type -> pullrun.runtime.RunRequest
+	141, // 46: pullrun.runtime.Runtime.StartWorkload:input_type -> pullrun.runtime.StartWorkloadRequest
+	12,  // 47: pullrun.runtime.Runtime.StopWorkload:input_type -> pullrun.runtime.StopRequest
+	14,  // 48: pullrun.runtime.Runtime.GetWorkload:input_type -> pullrun.runtime.GetWorkloadRequest
+	16,  // 49: pullrun.runtime.Runtime.ListWorkloads:input_type -> pullrun.runtime.ListWorkloadsRequest
+	18,  // 50: pullrun.runtime.Runtime.StreamLogs:input_type -> pullrun.runtime.StreamLogsRequest
+	20,  // 51: pullrun.runtime.Runtime.StreamEvents:input_type -> pullrun.runtime.StreamEventsRequest
+	22,  // 52: pullrun.runtime.Runtime.ExecInWorkload:input_type -> pullrun.runtime.ExecRequest
+	57,  // 53: pullrun.runtime.Runtime.InspectWorkload:input_type -> pullrun.runtime.InspectRequest
+	24,  // 54: pullrun.runtime.Runtime.AttachWorkload:input_type -> pullrun.runtime.AttachMessage
+	33,  // 55: pullrun.runtime.Runtime.HasImage:input_type -> pullrun.runtime.HasImageRequest
+	35,  // 56: pullrun.runtime.Runtime.ListImages:input_type -> pullrun.runtime.ListImagesRequest
+	38,  // 57: pullrun.runtime.Runtime.RemoveImage:input_type -> pullrun.runtime.RemoveImageRequest
+	40,  // 58: pullrun.runtime.Runtime.DagStoreInfo:input_type -> pullrun.runtime.DagStoreInfoRequest
+	42,  // 59: pullrun.runtime.Runtime.PortForward:input_type -> pullrun.runtime.PortForwardRequest
+	45,  // 60: pullrun.runtime.Runtime.UpdateWorkload:input_type -> pullrun.runtime.UpdateWorkloadRequest
+	47,  // 61: pullrun.runtime.Runtime.GetWorkloadStats:input_type -> pullrun.runtime.GetWorkloadStatsRequest
+	105, // 62: pullrun.runtime.Runtime.CreateGroup:input_type -> pullrun.runtime.CreateGroupRequest
+	107, // 63: pullrun.runtime.Runtime.ListGroups:input_type -> pullrun.runtime.ListGroupsRequest
+	110, // 64: pullrun.runtime.Runtime.RemoveGroup:input_type -> pullrun.runtime.RemoveGroupRequest
+	112, // 65: pullrun.runtime.Runtime.RunGroupSandbox:input_type -> pullrun.runtime.RunGroupSandboxRequest
+	114, // 66: pullrun.runtime.Runtime.CreateSnapshot:input_type -> pullrun.runtime.CreateSnapshotRequest
+	117, // 67: pullrun.runtime.Runtime.ListSnapshots:input_type -> pullrun.runtime.ListSnapshotsRequest
+	119, // 68: pullrun.runtime.Runtime.RemoveSnapshot:input_type -> pullrun.runtime.RemoveSnapshotRequest
+	121, // 69: pullrun.runtime.Runtime.RestoreSnapshot:input_type -> pullrun.runtime.RestoreSnapshotRequest
+	123, // 70: pullrun.runtime.Runtime.CreateTemplate:input_type -> pullrun.runtime.CreateTemplateRequest
+	126, // 71: pullrun.runtime.Runtime.ListTemplates:input_type -> pullrun.runtime.ListTemplatesRequest
+	128, // 72: pullrun.runtime.Runtime.RemoveTemplate:input_type -> pullrun.runtime.RemoveTemplateRequest
+	130, // 73: pullrun.runtime.Runtime.CreateActor:input_type -> pullrun.runtime.CreateActorRequest
+	133, // 74: pullrun.runtime.Runtime.ListActors:input_type -> pullrun.runtime.ListActorsRequest
+	135, // 75: pullrun.runtime.Runtime.ResumeActor:input_type -> pullrun.runtime.ResumeActorRequest
+	137, // 76: pullrun.runtime.Runtime.SuspendActor:input_type -> pullrun.runtime.SuspendActorRequest
+	139, // 77: pullrun.runtime.Runtime.RemoveActor:input_type -> pullrun.runtime.RemoveActorRequest
+	49,  // 78: pullrun.runtime.Runtime.BuildImage:input_type -> pullrun.runtime.BuildImageRequest
+	51,  // 79: pullrun.runtime.Runtime.PushImage:input_type -> pullrun.runtime.PushImageRequest
+	53,  // 80: pullrun.runtime.Runtime.ExportImage:input_type -> pullrun.runtime.ExportImageRequest
+	55,  // 81: pullrun.runtime.Runtime.ImportImage:input_type -> pullrun.runtime.ImportImageChunk
+	4,   // 82: pullrun.runtime.Runtime.RunCompose:input_type -> pullrun.runtime.RunComposeRequest
+	60,  // 83: pullrun.runtime.Runtime.CopyFile:input_type -> pullrun.runtime.CopyFileRequest
+	62,  // 84: pullrun.runtime.Runtime.CommitImage:input_type -> pullrun.runtime.CommitImageRequest
+	75,  // 85: pullrun.runtime.Runtime.DiffWorkload:input_type -> pullrun.runtime.DiffRequest
+	71,  // 86: pullrun.runtime.Runtime.RuntimeInfo:input_type -> pullrun.runtime.InfoRequest
+	64,  // 87: pullrun.runtime.Runtime.CreateNetwork:input_type -> pullrun.runtime.CreateNetworkRequest
+	66,  // 88: pullrun.runtime.Runtime.RemoveNetwork:input_type -> pullrun.runtime.RemoveNetworkRequest
+	68,  // 89: pullrun.runtime.Runtime.ListNetworks:input_type -> pullrun.runtime.ListNetworksRequest
+	73,  // 90: pullrun.runtime.Runtime.Prune:input_type -> pullrun.runtime.PruneRequest
+	97,  // 91: pullrun.runtime.Runtime.Gc:input_type -> pullrun.runtime.GcRequest
+	80,  // 92: pullrun.runtime.Runtime.CreateSecret:input_type -> pullrun.runtime.CreateSecretRequest
+	82,  // 93: pullrun.runtime.Runtime.ListSecrets:input_type -> pullrun.runtime.ListSecretsRequest
+	84,  // 94: pullrun.runtime.Runtime.InspectSecret:input_type -> pullrun.runtime.InspectSecretRequest
+	86,  // 95: pullrun.runtime.Runtime.RemoveSecret:input_type -> pullrun.runtime.RemoveSecretRequest
+	89,  // 96: pullrun.runtime.Runtime.CreateConfig:input_type -> pullrun.runtime.CreateConfigRequest
+	91,  // 97: pullrun.runtime.Runtime.ListConfigs:input_type -> pullrun.runtime.ListConfigsRequest
+	93,  // 98: pullrun.runtime.Runtime.InspectConfig:input_type -> pullrun.runtime.InspectConfigRequest
+	95,  // 99: pullrun.runtime.Runtime.RemoveConfig:input_type -> pullrun.runtime.RemoveConfigRequest
+	99,  // 100: pullrun.runtime.Runtime.AttachSignature:input_type -> pullrun.runtime.AttachSignatureRequest
+	101, // 101: pullrun.runtime.Runtime.AttachSbom:input_type -> pullrun.runtime.AttachSbomRequest
+	103, // 102: pullrun.runtime.Runtime.GetAttestations:input_type -> pullrun.runtime.GetAttestationsRequest
+	7,   // 103: pullrun.runtime.Runtime.PullImage:output_type -> pullrun.runtime.PullImageResponse
+	11,  // 104: pullrun.runtime.Runtime.RunWorkload:output_type -> pullrun.runtime.RunResponse
+	142, // 105: pullrun.runtime.Runtime.StartWorkload:output_type -> pullrun.runtime.StartWorkloadResponse
+	13,  // 106: pullrun.runtime.Runtime.StopWorkload:output_type -> pullrun.runtime.StopResponse
+	15,  // 107: pullrun.runtime.Runtime.GetWorkload:output_type -> pullrun.runtime.WorkloadStatus
+	17,  // 108: pullrun.runtime.Runtime.ListWorkloads:output_type -> pullrun.runtime.ListWorkloadsResponse
+	19,  // 109: pullrun.runtime.Runtime.StreamLogs:output_type -> pullrun.runtime.LogChunk
+	21,  // 110: pullrun.runtime.Runtime.StreamEvents:output_type -> pullrun.runtime.Event
+	23,  // 111: pullrun.runtime.Runtime.ExecInWorkload:output_type -> pullrun.runtime.ExecResponse
+	59,  // 112: pullrun.runtime.Runtime.InspectWorkload:output_type -> pullrun.runtime.InspectResponse
+	24,  // 113: pullrun.runtime.Runtime.AttachWorkload:output_type -> pullrun.runtime.AttachMessage
+	34,  // 114: pullrun.runtime.Runtime.HasImage:output_type -> pullrun.runtime.HasImageResponse
+	36,  // 115: pullrun.runtime.Runtime.ListImages:output_type -> pullrun.runtime.ListImagesResponse
+	39,  // 116: pullrun.runtime.Runtime.RemoveImage:output_type -> pullrun.runtime.RemoveImageResponse
+	41,  // 117: pullrun.runtime.Runtime.DagStoreInfo:output_type -> pullrun.runtime.DagStoreInfoResponse
+	43,  // 118: pullrun.runtime.Runtime.PortForward:output_type -> pullrun.runtime.PortForwardData
+	46,  // 119: pullrun.runtime.Runtime.UpdateWorkload:output_type -> pullrun.runtime.UpdateWorkloadResponse
+	48,  // 120: pullrun.runtime.Runtime.GetWorkloadStats:output_type -> pullrun.runtime.WorkloadStats
+	106, // 121: pullrun.runtime.Runtime.CreateGroup:output_type -> pullrun.runtime.CreateGroupResponse
+	109, // 122: pullrun.runtime.Runtime.ListGroups:output_type -> pullrun.runtime.ListGroupsResponse
+	111, // 123: pullrun.runtime.Runtime.RemoveGroup:output_type -> pullrun.runtime.RemoveGroupResponse
+	113, // 124: pullrun.runtime.Runtime.RunGroupSandbox:output_type -> pullrun.runtime.RunGroupSandboxResponse
+	115, // 125: pullrun.runtime.Runtime.CreateSnapshot:output_type -> pullrun.runtime.CreateSnapshotResponse
+	118, // 126: pullrun.runtime.Runtime.ListSnapshots:output_type -> pullrun.runtime.ListSnapshotsResponse
+	120, // 127: pullrun.runtime.Runtime.RemoveSnapshot:output_type -> pullrun.runtime.RemoveSnapshotResponse
+	122, // 128: pullrun.runtime.Runtime.RestoreSnapshot:output_type -> pullrun.runtime.RestoreSnapshotResponse
+	124, // 129: pullrun.runtime.Runtime.CreateTemplate:output_type -> pullrun.runtime.CreateTemplateResponse
+	127, // 130: pullrun.runtime.Runtime.ListTemplates:output_type -> pullrun.runtime.ListTemplatesResponse
+	129, // 131: pullrun.runtime.Runtime.RemoveTemplate:output_type -> pullrun.runtime.RemoveTemplateResponse
+	131, // 132: pullrun.runtime.Runtime.CreateActor:output_type -> pullrun.runtime.CreateActorResponse
+	134, // 133: pullrun.runtime.Runtime.ListActors:output_type -> pullrun.runtime.ListActorsResponse
+	136, // 134: pullrun.runtime.Runtime.ResumeActor:output_type -> pullrun.runtime.ResumeActorResponse
+	138, // 135: pullrun.runtime.Runtime.SuspendActor:output_type -> pullrun.runtime.SuspendActorResponse
+	140, // 136: pullrun.runtime.Runtime.RemoveActor:output_type -> pullrun.runtime.RemoveActorResponse
+	50,  // 137: pullrun.runtime.Runtime.BuildImage:output_type -> pullrun.runtime.BuildImageResponse
+	52,  // 138: pullrun.runtime.Runtime.PushImage:output_type -> pullrun.runtime.PushImageResponse
+	54,  // 139: pullrun.runtime.Runtime.ExportImage:output_type -> pullrun.runtime.ExportImageChunk
+	56,  // 140: pullrun.runtime.Runtime.ImportImage:output_type -> pullrun.runtime.ImportImageResponse
+	5,   // 141: pullrun.runtime.Runtime.RunCompose:output_type -> pullrun.runtime.RunComposeResponse
+	61,  // 142: pullrun.runtime.Runtime.CopyFile:output_type -> pullrun.runtime.CopyFileResponse
+	63,  // 143: pullrun.runtime.Runtime.CommitImage:output_type -> pullrun.runtime.CommitImageResponse
+	76,  // 144: pullrun.runtime.Runtime.DiffWorkload:output_type -> pullrun.runtime.DiffResponse
+	72,  // 145: pullrun.runtime.Runtime.RuntimeInfo:output_type -> pullrun.runtime.InfoResponse
+	65,  // 146: pullrun.runtime.Runtime.CreateNetwork:output_type -> pullrun.runtime.CreateNetworkResponse
+	67,  // 147: pullrun.runtime.Runtime.RemoveNetwork:output_type -> pullrun.runtime.RemoveNetworkResponse
+	70,  // 148: pullrun.runtime.Runtime.ListNetworks:output_type -> pullrun.runtime.ListNetworksResponse
+	74,  // 149: pullrun.runtime.Runtime.Prune:output_type -> pullrun.runtime.PruneResponse
+	98,  // 150: pullrun.runtime.Runtime.Gc:output_type -> pullrun.runtime.GcResponse
+	81,  // 151: pullrun.runtime.Runtime.CreateSecret:output_type -> pullrun.runtime.CreateSecretResponse
+	83,  // 152: pullrun.runtime.Runtime.ListSecrets:output_type -> pullrun.runtime.ListSecretsResponse
+	85,  // 153: pullrun.runtime.Runtime.InspectSecret:output_type -> pullrun.runtime.InspectSecretResponse
+	87,  // 154: pullrun.runtime.Runtime.RemoveSecret:output_type -> pullrun.runtime.RemoveSecretResponse
+	90,  // 155: pullrun.runtime.Runtime.CreateConfig:output_type -> pullrun.runtime.CreateConfigResponse
+	92,  // 156: pullrun.runtime.Runtime.ListConfigs:output_type -> pullrun.runtime.ListConfigsResponse
+	94,  // 157: pullrun.runtime.Runtime.InspectConfig:output_type -> pullrun.runtime.InspectConfigResponse
+	96,  // 158: pullrun.runtime.Runtime.RemoveConfig:output_type -> pullrun.runtime.RemoveConfigResponse
+	100, // 159: pullrun.runtime.Runtime.AttachSignature:output_type -> pullrun.runtime.AttachSignatureResponse
+	102, // 160: pullrun.runtime.Runtime.AttachSbom:output_type -> pullrun.runtime.AttachSbomResponse
+	104, // 161: pullrun.runtime.Runtime.GetAttestations:output_type -> pullrun.runtime.GetAttestationsResponse
+	103, // [103:162] is the sub-list for method output_type
+	44,  // [44:103] is the sub-list for method input_type
+	44,  // [44:44] is the sub-list for extension type_name
+	44,  // [44:44] is the sub-list for extension extendee
+	0,   // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_pullrun_runtime_proto_init() }
@@ -9756,7 +9834,7 @@ func file_pullrun_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pullrun_runtime_proto_rawDesc), len(file_pullrun_runtime_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   151,
+			NumMessages:   152,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
