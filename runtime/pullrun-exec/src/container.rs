@@ -166,21 +166,13 @@ impl LinuxContainerExecutor {
                     &flag,
                     &dest,
                 ])
-                .output();
+                .status();
             match (&bind_status, &prop_status) {
                 (Ok(b), Ok(p)) if b.status.success() && p.status.success() => {
                     info!(id = %id, source = %source, dest = %dest, mode = %mode, "propagated mount")
                 }
                 _ => {
-                    let e1 = bind_status
-                        .as_ref()
-                        .map(|o| String::from_utf8_lossy(&o.stderr).trim().to_string())
-                        .unwrap_or_default();
-                    let e2 = prop_status
-                        .as_ref()
-                        .map(|o| String::from_utf8_lossy(&o.stderr).trim().to_string())
-                        .unwrap_or_default();
-                    warn!(id = %id, source = %source, dest = %dest, mode = %mode, bind_err = %e1, prop_err = %e2, "mount propagation failed")
+                    warn!(id = %id, source = %source, dest = %dest, mode = %mode, "mount propagation failed")
                 }
             }
             drop(source_file);
