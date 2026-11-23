@@ -62,6 +62,8 @@ Current status on the Linux KVM host:
 | PodSandbox (attributes, sysctls, idempotence) | **9/9 pass** |
 | Container basics | **14/14 pass** |
 | Container full | **28/31 pass** (multi-container 3/3); remaining rshared/rslave propagation and image volume |
+| Networking | **4/4 pass** |
+| Conformance subset | **50/50 pass** |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image core | **15/15 pass** |

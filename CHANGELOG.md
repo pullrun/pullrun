@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1 — 2026-11-23
+
+- CRI conformance subset **50/50** on Kubernetes 1.37.
+- Pod hostname is applied to the sandbox and joined containers.
+- CRI `PortMappings` are translated into host-port forwarding rules.
+- Networking suite 4/4 (hostname + host/container port mapping).
+
 ## 0.10.0 — 2026-11-23
 
 Kubernetes 1.37 CRI support, MCP 2026-07-28 stateless HTTP, and the
