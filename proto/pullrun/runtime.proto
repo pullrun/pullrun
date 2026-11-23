@@ -1051,6 +1051,8 @@ message CreateSnapshotRequest {
     string workload_id = 1;
     // "memory" (default), "rootfs", or "volumes".
     string fidelity = 2;
+    // Optional parent snapshot for incremental bookkeeping.
+    string parent_id = 3;
 }
 
 message CreateSnapshotResponse {
@@ -1063,6 +1065,9 @@ message CreateSnapshotResponse {
     // Wall time spent capturing the snapshot (pause + write + copy).
     uint64 snapshot_ms = 7;
     string fidelity = 8;
+    // Guest-memory pages in this snapshot and newly stored blobs.
+    uint64 pages_total = 9;
+    uint64 pages_new = 10;
 }
 
 message SnapshotInfo {

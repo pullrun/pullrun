@@ -379,7 +379,16 @@ func (c *GRPCClient) RemoveActor(ctx context.Context, name string) (*runtimepb.R
 
 // CreateSnapshot captures a VM memory+disk snapshot.
 func (c *GRPCClient) CreateSnapshot(ctx context.Context, workloadID, fidelity string) (*runtimepb.CreateSnapshotResponse, error) {
-	return c.client.CreateSnapshot(ctx, &runtimepb.CreateSnapshotRequest{WorkloadId: workloadID, Fidelity: fidelity})
+	return c.CreateSnapshotWithParent(ctx, workloadID, fidelity, "")
+}
+
+// CreateSnapshotWithParent records an optional parent for incremental bookkeeping.
+func (c *GRPCClient) CreateSnapshotWithParent(ctx context.Context, workloadID, fidelity, parentID string) (*runtimepb.CreateSnapshotResponse, error) {
+	return c.client.CreateSnapshot(ctx, &runtimepb.CreateSnapshotRequest{
+		WorkloadId: workloadID,
+		Fidelity:   fidelity,
+		ParentId:   parentID,
+	})
 }
 
 // ListSnapshots returns the VM snapshots known to the runtime.

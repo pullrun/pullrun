@@ -1900,6 +1900,21 @@ fn new_workload_id() -> String {
     format!("wl-restored-{nanos:x}")
 }
 
+fn count_files(path: &std::path::Path) -> u64 {
+    let mut n = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => n += count_files(&p),
+                Ok(_) => n += 1,
+                Err(_) => {}
+            }
+        }
+    }
+    n
+}
+
 fn dir_size(path: &std::path::Path) -> u64 {
     let mut total = 0;
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -5436,12 +5451,21 @@ impl Runtime for RuntimeService {
         let rootfs_sha256 = hash(&info.rootfs_path);
         let snapshot_key = crate::snapshot_crypto::load_or_create_key(&self.config.store_root)
             .map_err(|e| tonic::Status::internal(format!("snapshot key: {e}")))?;
+        let pages_before = count_files(&self.config.store_root.join("snapshot-pages"));
         let paged_mem = if !info.mem_path.as_os_str().is_empty() && info.mem_path.exists() {
             crate::snapshot_pages::store(&info.mem_path, &self.config.store_root, &snapshot_key)
                 .map_err(|e| tonic::Status::internal(format!("page snapshot: {e}")))?;
             true
         } else {
             false
+        };
+        let pages_after = count_files(&self.config.store_root.join("snapshot-pages"));
+        let pages_total = if paged_mem {
+            crate::snapshot_pages::page_hashes(&info.mem_path)
+                .map(|h| h.len() as u64)
+                .unwrap_or(0)
+        } else {
+            0
         };
         for path in [&info.state_path, &info.mem_path, &info.rootfs_path] {
             if path.as_os_str().is_empty() || !path.exists() {
@@ -5468,6 +5492,7 @@ impl Runtime for RuntimeService {
             created_at,
             mem_bytes: info.mem_bytes,
             encrypted: true,
+            parent_id: req.parent_id.clone(),
             paged_mem,
             state_sha256,
             mem_sha256,
@@ -5532,6 +5557,8 @@ impl Runtime for RuntimeService {
             rootfs_path: info.rootfs_path.to_string_lossy().to_string(),
             snapshot_ms,
             fidelity: fidelity.as_str().to_string(),
+            pages_total,
+            pages_new: pages_after.saturating_sub(pages_before),
         }))
     }
 
@@ -5980,6 +6007,7 @@ impl Runtime for RuntimeService {
         };
         let snap = self
             .create_snapshot(tonic::Request::new(CreateSnapshotRequest {
+                parent_id: String::new(),
                 workload_id: req.workload_id.clone(),
                 fidelity: "memory".to_string(),
             }))
@@ -6219,6 +6247,7 @@ impl Runtime for RuntimeService {
         }
         let snap = self
             .create_snapshot(tonic::Request::new(CreateSnapshotRequest {
+                parent_id: String::new(),
                 workload_id: actor.workload_id.clone(),
                 fidelity: "memory".to_string(),
             }))

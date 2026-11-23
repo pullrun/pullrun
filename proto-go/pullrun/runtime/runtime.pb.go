@@ -7138,7 +7138,9 @@ type CreateSnapshotRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	WorkloadId string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
 	// "memory" (default), "rootfs", or "volumes".
-	Fidelity      string `protobuf:"bytes,2,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
+	Fidelity string `protobuf:"bytes,2,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
+	// Optional parent snapshot for incremental bookkeeping.
+	ParentId      string `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7187,6 +7189,13 @@ func (x *CreateSnapshotRequest) GetFidelity() string {
 	return ""
 }
 
+func (x *CreateSnapshotRequest) GetParentId() string {
+	if x != nil {
+		return x.ParentId
+	}
+	return ""
+}
+
 type CreateSnapshotResponse struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
@@ -7196,8 +7205,11 @@ type CreateSnapshotResponse struct {
 	StatePath  string                 `protobuf:"bytes,5,opt,name=state_path,json=statePath,proto3" json:"state_path,omitempty"`
 	RootfsPath string                 `protobuf:"bytes,6,opt,name=rootfs_path,json=rootfsPath,proto3" json:"rootfs_path,omitempty"`
 	// Wall time spent capturing the snapshot (pause + write + copy).
-	SnapshotMs    uint64 `protobuf:"varint,7,opt,name=snapshot_ms,json=snapshotMs,proto3" json:"snapshot_ms,omitempty"`
-	Fidelity      string `protobuf:"bytes,8,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
+	SnapshotMs uint64 `protobuf:"varint,7,opt,name=snapshot_ms,json=snapshotMs,proto3" json:"snapshot_ms,omitempty"`
+	Fidelity   string `protobuf:"bytes,8,opt,name=fidelity,proto3" json:"fidelity,omitempty"`
+	// Guest-memory pages in this snapshot and newly stored blobs.
+	PagesTotal    uint64 `protobuf:"varint,9,opt,name=pages_total,json=pagesTotal,proto3" json:"pages_total,omitempty"`
+	PagesNew      uint64 `protobuf:"varint,10,opt,name=pages_new,json=pagesNew,proto3" json:"pages_new,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7286,6 +7298,20 @@ func (x *CreateSnapshotResponse) GetFidelity() string {
 		return x.Fidelity
 	}
 	return ""
+}
+
+func (x *CreateSnapshotResponse) GetPagesTotal() uint64 {
+	if x != nil {
+		return x.PagesTotal
+	}
+	return 0
+}
+
+func (x *CreateSnapshotResponse) GetPagesNew() uint64 {
+	if x != nil {
+		return x.PagesNew
+	}
+	return 0
 }
 
 type SnapshotInfo struct {
@@ -9482,11 +9508,12 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x17RunGroupSandboxResponse\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06stdout\x18\x02 \x01(\fR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x03 \x01(\fR\x06stderr\"T\n" +
+	"\x06stderr\x18\x03 \x01(\fR\x06stderr\"q\n" +
 	"\x15CreateSnapshotRequest\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1a\n" +
-	"\bfidelity\x18\x02 \x01(\tR\bfidelity\"\x93\x02\n" +
+	"\bfidelity\x18\x02 \x01(\tR\bfidelity\x12\x1b\n" +
+	"\tparent_id\x18\x03 \x01(\tR\bparentId\"\xd1\x02\n" +
 	"\x16CreateSnapshotResponse\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +
@@ -9501,7 +9528,11 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"rootfsPath\x12\x1f\n" +
 	"\vsnapshot_ms\x18\a \x01(\x04R\n" +
 	"snapshotMs\x12\x1a\n" +
-	"\bfidelity\x18\b \x01(\tR\bfidelity\"\xe8\x01\n" +
+	"\bfidelity\x18\b \x01(\tR\bfidelity\x12\x1f\n" +
+	"\vpages_total\x18\t \x01(\x04R\n" +
+	"pagesTotal\x12\x1b\n" +
+	"\tpages_new\x18\n" +
+	" \x01(\x04R\bpagesNew\"\xe8\x01\n" +
 	"\fSnapshotInfo\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1f\n" +

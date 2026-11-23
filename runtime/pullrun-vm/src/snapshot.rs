@@ -264,6 +264,9 @@ pub struct SnapshotMeta {
     pub created_at: i64,
     /// Size of the memory file in bytes.
     pub mem_bytes: u64,
+    /// Parent snapshot for incremental bookkeeping.
+    #[serde(default)]
+    pub parent_id: String,
     /// Guest memory is stored as content-addressed pages.
     #[serde(default)]
     pub paged_mem: bool,

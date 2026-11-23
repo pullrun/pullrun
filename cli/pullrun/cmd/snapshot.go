@@ -23,6 +23,7 @@ the VM is stopped after the snapshot is written.`,
 	}
 
 	var fidelity string
+	var parentID string
 	create := &cobra.Command{
 		Use:   "create WORKLOAD_ID",
 		Short: "Snapshot a running VM (memory or rootfs)",
@@ -33,7 +34,7 @@ the VM is stopped after the snapshot is written.`,
 				return err
 			}
 			defer closeFn()
-			resp, err := client.CreateSnapshot(context.Background(), args[0], fidelity)
+			resp, err := client.CreateSnapshotWithParent(context.Background(), args[0], fidelity, parentID)
 			if err != nil {
 				return err
 			}
@@ -43,6 +44,9 @@ the VM is stopped after the snapshot is written.`,
 			fmt.Printf("  state:     %s\n", resp.StatePath)
 			fmt.Printf("  rootfs:    %s\n", resp.RootfsPath)
 			fmt.Printf("  capture:   %d ms\n", resp.SnapshotMs)
+			if resp.PagesTotal > 0 {
+				fmt.Printf("  pages:     %d total, %d new\n", resp.PagesTotal, resp.PagesNew)
+			}
 			return nil
 		},
 	}
@@ -140,6 +144,7 @@ the VM is stopped after the snapshot is written.`,
 	gc.Flags().BoolVar(&dryRun, "dry-run", false, "Print candidates without deleting")
 
 	create.Flags().StringVar(&fidelity, "fidelity", "memory", "memory (RAM + disk, stops the VM), rootfs (disk only), or volumes")
+	create.Flags().StringVar(&parentID, "parent", "", "Parent snapshot ID (incremental bookkeeping)")
 	restore.Flags().BoolVar(&fork, "fork", false, "Isolate the restored guest on its own slirp network namespace (unique TAP)")
 	cmd.AddCommand(create, gc, ls, rm, restore)
 	return cmd
