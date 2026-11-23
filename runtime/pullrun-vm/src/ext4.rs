@@ -484,6 +484,7 @@ mod tests {
             Ext4Options {
                 size_mb: 128,
                 label: Some("pullrun-test".to_string()),
+                env: Vec::new(),
             },
             &[],
         )
