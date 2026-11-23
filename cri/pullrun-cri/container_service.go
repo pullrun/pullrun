@@ -234,8 +234,8 @@ func (c *criServer) CreateContainer(ctx context.Context, req *runtimeapi.CreateC
 	}
 	c.sandboxStore.putContainer(rec)
 
-	log.Printf("CreateContainer id=%s sandbox=%s workload=%s image=%s net=%s log=%q",
-		cid, req.PodSandboxId, runResp.Id, image, runReq.NetworkMode, req.Config.LogPath)
+	log.Printf("CreateContainer id=%s sandbox=%s workload=%s image=%s net=%s log=%q mounts=%v",
+		cid, req.PodSandboxId, runResp.Id, image, runReq.NetworkMode, req.Config.LogPath, runReq.Mounts)
 	return &runtimeapi.CreateContainerResponse{ContainerId: cid}, nil
 }
 
