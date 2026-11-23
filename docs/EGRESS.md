@@ -37,8 +37,10 @@ Hostnames in `--allow-outbound` are resolved on the host at start time
 and their IPv4 addresses are installed as rules. A failure to install
 the policy aborts workload startup (fail closed).
 
-Rootless containers now apply the same nftables policy inside their
-slirp netns; slirp VMs still reject the flag.
+Rootless containers attempt the same nftables policy inside their slirp
+netns, but entering that netns currently fails with `Operation not
+permitted`; rootless egress is therefore not enforced. Slirp VMs still
+reject the flag.
 
 **Bridge-networked Firecracker VMs** enforce `--egress-deny` with a
 per-VM nftables forward/input policy (DNS + allowlist + proxy accepted,

@@ -277,33 +277,52 @@ pub async fn setup_rootless_network(
 ) -> Result<NetworkHandle, ExecError> {
     let netns_path = format!("/proc/{container_pid}/ns/net");
 
-    let (program, args) = if use_pasta {
-        info!(%workload_id, %container_pid, "starting pasta for rootless networking");
-        let mut args = vec!["--ns", &netns_path, "--config-net", "--mtu", "65520"];
-        (
-            PathBuf::from("pasta"),
-            args.drain(..).map(String::from).collect(),
-        )
-    } else {
-        info!(%workload_id, %container_pid, "starting slirp4netns for rootless networking");
-        let args = vec![
+    let slirp_args = || {
+        vec![
             "--configure".to_string(),
             "--mtu=65520".to_string(),
             netns_path.clone(),
             "tap0".to_string(),
-        ];
-        (PathBuf::from("slirp4netns"), args)
+        ]
     };
-
-    let child = tokio::process::Command::new(&program)
-        .args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| {
-            ExecError::BackendNotAvailable(format!("{} not available: {e}", program.display()))
-        })?;
+    let child = if use_pasta {
+        info!(%workload_id, %container_pid, "starting pasta for rootless networking");
+        let pasta = tokio::process::Command::new("pasta")
+            .args(["--ns", &netns_path, "--config-net", "--mtu", "65520"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn();
+        match pasta {
+            Ok(child) => child,
+            Err(e) => {
+                tracing::warn!(%workload_id, error = %e, "pasta unavailable; falling back to slirp4netns");
+                info!(%workload_id, %container_pid, "starting slirp4netns for rootless networking");
+                tokio::process::Command::new("slirp4netns")
+                    .args(slirp_args())
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .map_err(|e| {
+                        ExecError::BackendNotAvailable(format!(
+                            "neither pasta nor slirp4netns available: {e}"
+                        ))
+                    })?
+            }
+        }
+    } else {
+        info!(%workload_id, %container_pid, "starting slirp4netns for rootless networking");
+        tokio::process::Command::new("slirp4netns")
+            .args(slirp_args())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| {
+                ExecError::BackendNotAvailable(format!("slirp4netns not available: {e}"))
+            })?
+    };
 
     Ok(NetworkHandle { child })
 }
