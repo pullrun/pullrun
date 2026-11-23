@@ -268,6 +268,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 	sessionDone := make(chan struct{})
 
 	var errorStream httpstream.Stream
+	var pendingExitCode *int
 	var streamMu sync.Mutex
 
 	var grpcWg sync.WaitGroup
@@ -320,10 +321,14 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 				}
 			case *pullrunruntime.AttachMessage_Exit:
 				exitCh <- b.Exit
+				code := int(b.Exit.ExitCode)
 				streamMu.Lock()
 				es := errorStream
+				if es == nil {
+					pendingExitCode = &code
+				}
 				streamMu.Unlock()
-				writeExitStatus(es, int(b.Exit.ExitCode))
+				writeExitStatus(es, code)
 				return
 			case *pullrunruntime.AttachMessage_Error:
 				errCh <- fmt.Errorf("runtime error: %s", b.Error.Message)
@@ -359,7 +364,12 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 		case streamTypeError:
 			streamMu.Lock()
 			errorStream = stream
+			pending := pendingExitCode
+			pendingExitCode = nil
 			streamMu.Unlock()
+			if pending != nil {
+				writeExitStatus(stream, *pending)
+			}
 			return nil
 		case streamTypeStdin:
 			go func() {
