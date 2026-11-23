@@ -337,6 +337,7 @@ func (c *criServer) ContainerStatus(ctx context.Context, req *runtimeapi.Contain
 		ImageRef:    rec.imageRef,
 		ImageId:     rec.imageRef,
 		Mounts:      rec.mounts,
+		LogPath:     rec.logPath,
 	}
 	if startedAt > 0 {
 		status.StartedAt = startedAt
