@@ -225,6 +225,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 	session := raw.(*execSession)
 	defer s.sessions.Delete(token)
 
+	log.Printf("stream session %s: creating runtime attach", token)
 	grpcStream, err := s.runtimeClient.AttachWorkload(r.Context())
 	if err != nil {
 		log.Printf("attach stream error: %v", err)
@@ -232,6 +233,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("stream session %s: sending open (tty=%v)", token, session.tty)
 	if err := grpcStream.Send(&pullrunruntime.AttachMessage{
 		Body: &pullrunruntime.AttachMessage_Open{
 			Open: &pullrunruntime.AttachOpen{
@@ -325,6 +327,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	log.Printf("stream session %s: open sent, starting handshake", token)
 	upgrader := spdy.NewResponseUpgrader()
 	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
 		log.Printf("exec protocol handshake: %v", err)
