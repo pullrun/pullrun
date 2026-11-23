@@ -205,6 +205,13 @@ impl FirecrackerApi {
         self.request("PUT", "/snapshot/load", Some(body))
             .await
             .map(|_| ())
+            .map_err(|e| {
+                if e.contains("network_overrides") {
+                    "fork restore requires a Firecracker build with snapshot network overrides (tested with v1.18.0)".to_string()
+                } else {
+                    e
+                }
+            })
     }
 }
 
