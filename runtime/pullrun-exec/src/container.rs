@@ -144,7 +144,7 @@ impl LinuxContainerExecutor {
             };
             let fd = source_file.as_raw_fd();
             let mut bind = std::process::Command::new("nsenter");
-            bind.args(["-t", &pid.to_string(), "-m", "--", "mount", "--bind"])
+            bind.args(["-t", &pid.to_string(), "-m", "-p", "--", "mount", "--bind"])
                 .arg(format!("/proc/self/fd/{fd}"))
                 .arg(&dest);
             unsafe {
@@ -156,7 +156,16 @@ impl LinuxContainerExecutor {
             let bind_status = bind.output();
             let flag = format!("--make-{mode}");
             let prop_status = std::process::Command::new("nsenter")
-                .args(["-t", &pid.to_string(), "-m", "--", "mount", &flag, &dest])
+                .args([
+                    "-t",
+                    &pid.to_string(),
+                    "-m",
+                    "-p",
+                    "--",
+                    "mount",
+                    &flag,
+                    &dest,
+                ])
                 .output();
             match (&bind_status, &prop_status) {
                 (Ok(b), Ok(p)) if b.status.success() && p.status.success() => {
