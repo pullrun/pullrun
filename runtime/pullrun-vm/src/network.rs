@@ -149,6 +149,9 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
     const TUNSETIFF: u32 = 0x4004_54CA;
     const IFF_TAP: std::os::raw::c_short = 0x0002;
     const IFF_NO_PI: std::os::raw::c_short = 0x1000;
+    // Firecracker opens the TAP with IFF_VNET_HDR; creating it with the
+    // same flags avoids EBUSY when it re-opens the existing device.
+    const IFF_VNET_HDR: std::os::raw::c_short = 0x4000;
 
     // ifreq structure for TUNSETIFF
     // Must be sizeof(struct ifreq) = 40 bytes. The kernel reads the full
@@ -174,7 +177,7 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
             buf[..len].copy_from_slice(&name_bytes[..len]);
             buf
         },
-        ifr_flags: IFF_TAP | IFF_NO_PI,
+        ifr_flags: IFF_TAP | IFF_NO_PI | IFF_VNET_HDR,
         _pad: [0u8; 22],
     };
 
