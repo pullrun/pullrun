@@ -129,10 +129,11 @@ func imageUserFields(user string) (*runtimeapi.Int64Value, string) {
 	if user == "" {
 		return &runtimeapi.Int64Value{Value: 0}, "root"
 	}
-	if n, err := strconv.ParseInt(user, 10, 64); err == nil {
+	base := strings.SplitN(user, ":", 2)[0]
+	if n, err := strconv.ParseInt(base, 10, 64); err == nil {
 		return &runtimeapi.Int64Value{Value: n}, ""
 	}
-	return nil, user
+	return nil, base
 }
 
 func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRequest) (*runtimeapi.ListImagesResponse, error) {
