@@ -1491,10 +1491,10 @@ async fn apply_container_egress_policy(
     let pid = json["pid"]
         .as_i64()
         .ok_or_else(|| ExecError::ExecutionFailed("no pid for egress policy".into()))?;
-    apply_egress_rules(pid, gateway, cfg).await
+    apply_egress_rules(pid, gateway, cfg)
 }
 
-async fn apply_egress_rules(
+fn apply_egress_rules(
     pid: i64,
     gateway: std::net::Ipv4Addr,
     cfg: &EgressConfig,
@@ -1687,6 +1687,7 @@ pub struct RootlessContainerExecutor {
     net_handles: Mutex<HashMap<String, crate::rootless::NetworkHandle>>,
     children: Mutex<HashMap<String, std::process::Child>>,
     base_store: Option<Arc<BaseStore>>,
+    egress: Mutex<HashMap<String, EgressConfig>>,
 }
 
 impl RootlessContainerExecutor {
@@ -1702,6 +1703,7 @@ impl RootlessContainerExecutor {
             net_handles: Mutex::new(HashMap::new()),
             children: Mutex::new(HashMap::new()),
             base_store: None,
+            egress: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1730,9 +1732,42 @@ impl RootlessContainerExecutor {
 impl Executor for RootlessContainerExecutor {
     async fn create(&self, spec: WorkloadSpec) -> Result<ProcessHandle, ExecError> {
         if spec.egress_deny {
-            return Err(ExecError::ExecutionFailed(
-                "fail-closed egress requires rootful container networking".into(),
-            ));
+            let allow = spec
+                .network_rules
+                .iter()
+                .filter(|r| matches!(r.direction, pullrun_net::Direction::Outbound))
+                .filter_map(|r| {
+                    r.to_host.clone().map(|h| {
+                        (
+                            h,
+                            r.port,
+                            match r.protocol {
+                                pullrun_net::Protocol::Udp => "udp".to_string(),
+                                _ => "tcp".to_string(),
+                            },
+                        )
+                    })
+                })
+                .collect();
+            let nameservers = spec
+                .dns
+                .nameservers
+                .iter()
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            self.egress.lock().expect("egress lock poisoned").insert(
+                spec.id.clone(),
+                EgressConfig {
+                    allow,
+                    nameservers,
+                    proxy: spec.egress_proxy,
+                },
+            );
+        } else {
+            self.egress
+                .lock()
+                .expect("egress lock poisoned")
+                .remove(&spec.id);
         }
 
         info!(id = %spec.id, uid = self.uid, "creating rootless container");
@@ -1917,6 +1952,18 @@ impl Executor for RootlessContainerExecutor {
             }
         }
 
+        if let Some(cfg) = self
+            .egress
+            .lock()
+            .expect("egress lock poisoned")
+            .get(&handle.id)
+            .cloned()
+        {
+            if let Some(pid) = container_pid {
+                apply_egress_rules(pid as i64, std::net::Ipv4Addr::new(10, 0, 2, 2), &cfg)?;
+            }
+        }
+
         // Keep the foreground runc child so status() can report the
         // real exit code.
         self.children
@@ -1957,6 +2004,7 @@ impl Executor for RootlessContainerExecutor {
             .arg(id)
             .output();
 
+        self.egress.lock().expect("egress lock poisoned").remove(id);
         let bundle_dir = self.bundle_dir(id);
         if bundle_dir.exists() {
             tokio::fs::remove_dir_all(&bundle_dir).await.ok();
@@ -2193,7 +2241,7 @@ mod egress_tests {
             nameservers: vec![],
             proxy: None,
         };
-        let applied = apply_egress_rules(pid, "10.42.0.1".parse().unwrap(), &cfg).await;
+        let applied = apply_egress_rules(pid, "10.42.0.1".parse().unwrap(), &cfg);
         let output = std::process::Command::new("nsenter")
             .args([
                 "-t",
