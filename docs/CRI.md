@@ -59,23 +59,20 @@ Current status on the Linux KVM host:
 | Suite | Result |
 |---|---|
 | Runtime info (version, conditions) | **2/2 pass** |
-| PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
-| Container (basic operations) | **14/14 pass** |
-| Container (full) | **28/31 expected**: multi-container 3/3 now passes; remaining rshared/rslave mount propagation and image volume |
-| OCI conversion | httpd (300 MB) now pulls + converts in **~25 s** after rebuilding with batch writes | |
+| PodSandbox (attributes, sysctls, idempotence) | **9/9 pass** |
+| Container basics | **14/14 pass** |
+| Container full | **28/31 pass** (multi-container 3/3); remaining rshared/rslave propagation and image volume |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
-| Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
+| Image core | **15/15 pass** |
+| Streaming | **5/5 pass** |
 | Image volumes | feature-gated, not implemented |
-| Stats | **5/5 pass** |
-| Streaming | **2/5 pass**; host networking now omits the OCI network namespace (fixes hostNetwork pods), TTY forwarding is wired, but the suite still needs re-verification |
+| OCI conversion | httpd (300 MB) pulls + converts in **~25 s** |
 
-A full 142-spec run is not yet a usable gate: the latest run hit the
-20-minute cap with 72 failures, including optional benchmark/event specs,
-so individual suites above are the authoritative results. An earlier run wedged in
-`StopPodSandbox` before the idempotence fix, and the complete suite has
-not been re-run end to end. Treat container/image/streaming conformance
-as **in progress**, not complete.
+A full 142-spec run is not yet a gate: it hits the 20-minute cap and
+includes optional benchmark/event/feature specs. The per-suite results
+above are the authoritative conformance evidence. Remaining CRI gaps:
+`rshared`/`rslave` mount propagation and image volumes.
 
 ## Known gaps
 

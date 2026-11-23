@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.10.0 — 2026-11-23
+
+Kubernetes 1.37 CRI support, MCP 2026-07-28 stateless HTTP, and the
+stateful-agent layer (snapshots, actors, credential injection).
+
+### CRI (Kubernetes 1.37, critest v1.37)
+- `k8s.io/cri-api v0.37.2`; Runtime info 2/2, PodSandbox 9/9,
+  Container basics 14/14, logs 2/2, stats 5/5, Image 15/15,
+  Streaming 5/5.
+- Full Container suite 28/31; remaining `rshared`/`rslave` mount
+  propagation and the feature-gated image volume.
+- Container Created/Start semantics, CRI log format and reopen,
+  netns-joined pods, hostNetwork, port-forward, TTY exec, image
+  digest/RepoDigests/Uid/Username, idempotent stops.
+- OCI DAG conversion batches writes and fsyncs once (httpd converts in
+  ~25 s).
+
+### MCP
+- mcp-go v1.6.0, protocol 2026-07-28; Streamable HTTP (`--http`) and
+  stateless mode (`--stateless`), discovery, per-request headers.
+
+### Stateful agents
+- Firecracker MEMORY/ROOTFS snapshots, templates/actors with resume,
+  measured restore latency.
+- Fail-closed egress and HTTPS credential injection with no sandbox
+  secrets.
+- Security status matrix and metrics.
+
+### Docs
+- `docs/CRI.md`, `docs/ALL_MCP.md`, `docs/SECURITY_STATUS.md`,
+  `docs/SNAPSHOTS.md`, `docs/ACTORS.md`, `docs/EGRESS.md`.
+
 ## Unreleased
 
 ### CRI

@@ -22,7 +22,7 @@ func NewRootCommand() *cobra.Command {
 		Long: `pullrun manages Pullrun workloads - pull images, run containers/VMs,
 and inspect network policies. All communication with the runtime uses gRPC
 over a Unix domain socket.`,
-		Version: "0.9.1",
+		Version: "0.10.0",
 	}
 
 	cmd.Flags().BoolP("version", "V", false, "version for pullrun")
