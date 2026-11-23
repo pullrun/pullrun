@@ -257,6 +257,9 @@ pub struct SnapshotMeta {
     pub created_at: i64,
     /// Size of the memory file in bytes.
     pub mem_bytes: u64,
+    /// Guest memory is stored as content-addressed pages.
+    #[serde(default)]
+    pub paged_mem: bool,
     /// Files are AES-256-GCM encrypted at rest.
     #[serde(default)]
     pub encrypted: bool,

@@ -5416,8 +5416,18 @@ impl Runtime for RuntimeService {
         let rootfs_sha256 = hash(&info.rootfs_path);
         let snapshot_key = crate::snapshot_crypto::load_or_create_key(&self.config.store_root)
             .map_err(|e| tonic::Status::internal(format!("snapshot key: {e}")))?;
+        let paged_mem = if !info.mem_path.as_os_str().is_empty() && info.mem_path.exists() {
+            crate::snapshot_pages::store(&info.mem_path, &self.config.store_root, &snapshot_key)
+                .map_err(|e| tonic::Status::internal(format!("page snapshot: {e}")))?;
+            true
+        } else {
+            false
+        };
         for path in [&info.state_path, &info.mem_path, &info.rootfs_path] {
             if path.as_os_str().is_empty() || !path.exists() {
+                continue;
+            }
+            if paged_mem && path == &info.mem_path {
                 continue;
             }
             if !crate::snapshot_crypto::is_encrypted(path) {
@@ -5438,6 +5448,7 @@ impl Runtime for RuntimeService {
             created_at,
             mem_bytes: info.mem_bytes,
             encrypted: true,
+            paged_mem,
             state_sha256,
             mem_sha256,
             rootfs_sha256,
@@ -5689,7 +5700,7 @@ impl Runtime for RuntimeService {
                 .map_err(|e| tonic::Status::internal(format!("restore temp dir: {e}")))?;
             let key = crate::snapshot_crypto::load_or_create_key(&self.config.store_root)
                 .map_err(|e| tonic::Status::internal(format!("snapshot key: {e}")))?;
-            let mut decrypt =
+            let decrypt =
                 |src: &std::path::Path, name: &str| -> Result<std::path::PathBuf, tonic::Status> {
                     let dst = restore_dir.join(name);
                     if src.exists() {
@@ -5701,9 +5712,24 @@ impl Runtime for RuntimeService {
                         Ok(src.to_path_buf())
                     }
                 };
+            let mem = if meta.paged_mem {
+                let dst = restore_dir.join("mem");
+                crate::snapshot_pages::reconstruct(
+                    &meta.mem_path,
+                    &self.config.store_root,
+                    &key,
+                    &dst,
+                )
+                .map_err(|e| {
+                    tonic::Status::failed_precondition(format!("rebuild memory pages: {e}"))
+                })?;
+                dst
+            } else {
+                decrypt(&meta.mem_path, "mem")?
+            };
             (
                 decrypt(&meta.state_path, "state")?,
-                decrypt(&meta.mem_path, "mem")?,
+                mem,
                 decrypt(&meta.rootfs_path, "rootfs.ext4")?,
             )
         } else {
