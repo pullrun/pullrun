@@ -66,6 +66,16 @@ func parseResourceAnnotations(annotations map[string]string) (cpu uint64, mem ui
 // Linux interface names are capped at 15 characters (IFNAMSIZ), so we
 // keep a short prefix plus a truncated hash of the id.
 
+// podBridgeName derives a per-pod bridge name (kept for the unit tests;
+// production pods now use the shared bridge).
+func podBridgeName(podID string) string {
+	const prefix = "pr-"
+	if len(podID) > 12 {
+		podID = podID[len(podID)-12:]
+	}
+	return prefix + podID
+}
+
 // ============================================================
 // Critical path: RunPodSandbox / StopPodSandbox / PodSandboxStatus
 // / ListPodSandbox / Version
