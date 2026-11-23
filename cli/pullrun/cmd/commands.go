@@ -239,6 +239,7 @@ func NewRunCommand(opts *RootOptions) *cobra.Command {
 		backend           string
 		allowOutbound     []string
 		egressDeny        bool
+		trusted           bool
 		allowInbound      []string
 		publishPorts      []string
 		envVars           []string
@@ -375,8 +376,14 @@ an OCI image via --kernel-image=<ref>.`,
 				return err
 			}
 			netMode := networkMode
-			if backend == "vm" && !cmd.Flags().Changed("net") && netMode == "isolated" {
-				netMode = "slirp"
+			if backend == "vm" && !cmd.Flags().Changed("net") {
+				// Safe default: VMs start without network. Use --net slirp
+				// (or --trusted) to opt into egress.
+				if trusted {
+					netMode = "slirp"
+				} else {
+					netMode = "isolated"
+				}
 			}
 			resp, err := client.RunWorkload(ctx, &runtimepb.RunRequest{
 				Id:            id,
@@ -450,7 +457,8 @@ an OCI image via --kernel-image=<ref>.`,
 	cmd.Flags().StringVar(&backend, "backend", defaultBackend(), "Backend: container, vm, sandbox")
 	cmd.Flags().StringVar(&name, "name", "", "Workload name (auto-generated if empty)")
 	cmd.Flags().StringSliceVar(&allowOutbound, "allow-outbound", nil, "Allow outbound: tcp:host:port")
-	cmd.Flags().BoolVar(&egressDeny, "egress-deny", false, "Deny egress except --allow-outbound rules and gateway DNS")
+	cmd.Flags().BoolVar(&egressDeny, "egress-deny", false, "Deny egress except --allow-outbound rules and gateway DNS (default for vm/sandbox)")
+	cmd.Flags().BoolVar(&trusted, "trusted", false, "Allow VM egress by default (equivalent to --net slirp for vm)")
 	cmd.Flags().StringSliceVar(&allowInbound, "allow-inbound", nil, "Allow inbound port (e.g. 8080)")
 	cmd.Flags().StringSliceVarP(&publishPorts, "publish", "p", nil, "Publish host:container port (e.g. 8080:80, or just 8080)")
 	cmd.Flags().StringSliceVarP(&envVars, "env", "e", nil, "Environment variables (KEY=VALUE)")

@@ -40,6 +40,11 @@ the policy aborts workload startup (fail closed).
 The **VM and rootless container** backends reject `--egress-deny` with a
 clear error rather than silently allowing egress.
 
+VM networking is therefore safe by default: `pullrun run --backend vm`
+starts the VM **isolated**. Pass `--net slirp` (or `--trusted`) to allow
+egress explicitly. MCP's `run` tool behaves the same way (`trusted:
+true` opts in).
+
 ## Credential injection (HTTPS MITM)
 
 Start the daemon with one or more credential rules. The rule format is

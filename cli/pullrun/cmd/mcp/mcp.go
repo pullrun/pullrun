@@ -238,6 +238,9 @@ func (s *Server) defineRun() mcp.Tool {
 		mcp.WithString("platform",
 			mcp.Description("Platform (e.g., 'linux/amd64', 'linux/arm64')"),
 		),
+		mcp.WithBoolean("trusted",
+			mcp.Description("Allow VM networking (default false: isolated)"),
+		),
 	)
 }
 
@@ -410,6 +413,13 @@ func (s *Server) handleRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		r.MemoryBytes = uint64(mem * 1024 * 1024)
 	}
 
+	if r.Backend == "vm" {
+		// VMs are isolated unless the caller explicitly trusts them.
+		r.NetworkMode = "isolated"
+		if trusted, ok := args["trusted"].(bool); ok && trusted {
+			r.NetworkMode = "slirp"
+		}
+	}
 	resp, err := s.client.RunWorkload(ctx, r)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("run failed: %v", err)), nil

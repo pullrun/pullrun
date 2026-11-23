@@ -222,6 +222,7 @@ AI agents churn through sandboxes by the thousands. Pullrun is built for that ch
 | What agents need | Pullrun provides |
 |------------------|------------------|
 | Fast task boot | Firecracker VM **~500 ms cold** / **~200 ms warm pool**, container **~400 ms**, Apple Silicon VM **~160 ms** |
+| Safe VM default | VM networking is **isolated** unless `--net slirp` or `--trusted` |
 | Strong isolation | Kernel-per-task microVMs for untrusted code; group sandboxes share a guest kernel and are meant for trusted same-tenant tasks |
 | Cheap per-sandbox storage | Base image stored once; reflink clones share blocks (APFS/btrfs/XFS); group sandboxes share one base + page cache |
 | Low memory | Group sandboxes share the guest page cache (measured: 6 MiB warmed once, zero per extra reader); per-task VMs have independent guest memory |
