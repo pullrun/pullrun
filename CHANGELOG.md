@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.3 — 2026-11-23
+
+- `pullrun info` reports snapshot page count/bytes (verified: a 512 MiB
+  guest memory snapshot stores 441 unique pages, 27.6 MiB).
+- Audit scope and good-first issues published.
+- Rootless fail-closed egress remains rejected (credential injection
+  there is therefore blocked).
+
 ## 0.11.2 — 2026-11-23
 
 - Snapshot page-sharing metrics: `pages_total` / `pages_new`; two
