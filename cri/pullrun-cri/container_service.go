@@ -132,6 +132,9 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 	// hostPath/EmptyDir dirs itself), so every mount is a bind mount.
 	mounts := make([]*pullrunruntime.Mount, 0, len(cfg.Mounts))
 	for _, m := range cfg.Mounts {
+		if m.Image != nil {
+			continue
+		}
 		propagation := "rprivate"
 		switch m.Propagation {
 		case runtimeapi.MountPropagation_PROPAGATION_BIDIRECTIONAL:
