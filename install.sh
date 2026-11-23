@@ -5,7 +5,7 @@
 set -eu
 
 REPO="pullrun/pullrun"
-CURRENT_VERSION="v0.10.5"
+CURRENT_VERSION="v0.11.0"
 VERSION="${VERSION:-latest}"
 
 info()  { printf "\033[32m%s\033[0m\n" "$*"; }

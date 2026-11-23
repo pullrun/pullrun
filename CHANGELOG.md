@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.11.0 — 2026-11-23
+
+Snapshot hardening and SDKs.
+
+- Snapshot network re-attach: TAP/bridge restored; verified ping after
+  restore (130–153 ms server-side).
+- Snapshot fork: two concurrent forks from one snapshot on Firecracker
+  1.18, unique bridges/TAPs (152/200 ms). Guest IP/MAC/entropy/clock
+  re-seeding and 10-actor scale evidence remain open.
+- Snapshot integrity (SHA-256), AES-256-GCM at rest, content-addressed
+  64 KiB memory-page dedup, page GC, snapshot GC.
+- Python SDK (gRPC, verified end-to-end over opt-in TCP) and TypeScript
+  SDK (verified against the runtime UDS).
+- Values/claims: UDS remains default; TCP is explicit plaintext opt-in.
+
 ## 0.10.5 — 2026-11-23
 
 - Daemon hardening: refcount lock recovers poison instead of panicking;
