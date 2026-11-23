@@ -4,9 +4,9 @@
 
 # **Pullrun**
 
-### *The AI agent sandbox runtime — a disposable microVM per task, booted from any OCI image in ~400 ms.*
+### *The AI agent sandbox runtime — a disposable microVM per task, booted from any OCI image in 200–500 ms depending on backend and warmth.*
 
-**Give every agent task its own sandbox. Pullrun boots any OCI image as a hardened microVM (Firecracker or Apple Silicon), a Linux container, or a dense sandbox group in ~400 ms — from one content-addressed image store. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and commit filesystem state directly. No daemon required. No overlayfs in the image store. No separate VM images.**
+**Give every agent task its own sandbox. Pullrun boots any OCI image as a hardened microVM (Firecracker or Apple Silicon), a Linux container, or a dense sandbox group — measured at ~500 ms Firecracker cold / ~200 ms warm, ~400 ms containers, ~160 ms to an Apple VM exec prompt, and ~185 ms for the 10th concurrent sandbox in a group. One content-addressed image store feeds all of them. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and commit filesystem state directly. The CLI can run without a persistent daemon; the MCP server, sync, and long-lived workloads use the runtime daemon. No overlayfs in the image store. No separate VM images.**
 
 **One OCI image. Any execution target — agent sandbox, container, Firecracker microVM, Apple Silicon VM, or Kubernetes workload. CLI + runtime under 25 MB.**
 
@@ -21,7 +21,7 @@
 [![MCP](https://img.shields.io/badge/MCP-native-6A1B9A?logo=protocol)](docs/ALL_MCP.md)
 [![Rust](https://img.shields.io/badge/Rust-1.78+-dca282?logo=rust)](https://www.rust-lang.org)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org)
-[![Tests](https://img.shields.io/badge/tests-272%20passing-brightgreen?logo=checkmarx)](#testing)
+[![Tests](https://img.shields.io/badge/tests-278%20passing-brightgreen?logo=checkmarx)](#testing)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?logo=gitpullrequest)](CONTRIBUTING.md)
 
 </div>
@@ -521,7 +521,7 @@ Each block verified by content hash before acceptance — no trust required.
                    └─────────────────────┘
 ```
 
-The store uses `DashMap<Digest, Arc<Mmap>>` for lock-free concurrent reads — the first reader pays for `mmap()` + page faults, every subsequent reader is a single atomic load. The Rust workspace is eleven crates (store, oci, exec, vm, net, dns, vsock, sync, policy, runtime, init); the Go side is the CLI, CRI shim, compose, and control-plane stub.
+The store uses `DashMap<Digest, Arc<Mmap>>` for lock-free concurrent reads — the first reader pays for `mmap()` + page faults, every subsequent reader is a single atomic load. The Rust workspace is eleven crates (store, oci, exec, vm, net, vsock, sync, policy, runtime, init, gc); the Go side is the CLI, CRI shim, compose, and control-plane stub.
 
 ---
 
@@ -535,7 +535,6 @@ runtime/          # Rust workspace — core data plane
   pullrun-exec/    # Executor trait + runc wrapper
   pullrun-vm/      # Firecracker + Apple Virt backends, warm VM pool (pool.rs), pullrun-init guest agent
   pullrun-net/     # IPAM, proxy, DNS, iptables, slirp4netns
-  pullrun-dns/     # In-process DNS server for workload resolution
   pullrun-vsock/   # Vsock transport layer for VM guest-host communication
   pullrun-sync/    # P2P block sync (Bloom, mDNS, gossip)
   pullrun-policy/  # image signatures, SBOM, seccomp gates
@@ -553,34 +552,34 @@ tools/            # Standalone smoke-test workspaces (apple-virt-exec, firecrack
 
 ## 🧪 Testing
 
-> **272 tests, 0 failures** — every commit is gated by the full suite
+> **278 tests, 0 failures** — every commit is gated by the full suite
 > (`cargo fmt --check`, `cargo test`, `go test ./...`, `golangci-lint`).
 
 | Suite | Stack | What it covers | Tests |
 |-------|-------|----------------|------:|
-| `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 31 |
+| `pullrun-store` | 🦀 Rust | DAG store, rkyv round-trips, op-locks | 30 |
 | `pullrun-runtime` | 🦀 Rust | gRPC service, events, metrics, policy integration | 43 |
-| `pullrun-vm` | 🦀 Rust | network, ext4 bases, OCI kernels, Apple Virt + group, Firecracker* | 25 |
+| `pullrun-vm` | 🦀 Rust | network, ext4 bases, OCI kernels, Apple Virt + group, Firecracker* | 31 |
 | `pullrun-net` | 🦀 Rust | IPAM, firewall, proxy, DNS, loopback | 18 |
 | `pullrun-policy` | 🦀 Rust | signatures, SBOM, gates | 17 |
 | `pullrun-oci` | 🦀 Rust | confinement, bases/CoW, dockerfile, puller, converter, layouts | 30 |
-| `pullrun-gc` | 🦀 Rust | DAG garbage collection | 17 |
 | `pullrun-sync` | 🦀 Rust | P2P block sync, bloom, delta | 13 |
 | `pullrun-vsock` | 🦀 Rust | vsock transport, group frames | 10 |
-| `pullrun-exec` | 🦀 Rust | seccomp, rootless, OCI spec, overlay | 10 |
+| `pullrun-exec` | 🦀 Rust | seccomp, rootless, OCI spec, overlay | 12 |
+| `pullrun-gc` | 🦀 Rust | DAG garbage collection | 16 |
 | `pullrun-init` | 🦀 Rust | guest agent, initramfs | 2 |
 | `pullrun-cri` | 🐹 Go | CRI shim lifecycle, filestore | 20 |
 | `pullrun-compose` | 🐹 Go | compose parsing, `up`/`down` flows | 15 |
 | `pullrun` CLI | 🐹 Go | workload run, commands, attestations | 12 |
 | `control-plane` | 🐹 Go | controller store | 9 |
-| **Total** | | | **272** |
+| **Total** | | | **278** |
 
 \* 2 Firecracker hardware tests are `#[ignore]`d (need /dev/kvm) — run manually:
 `cargo test -p pullrun-vm --test firecracker_boot -- --include-ignored --nocapture`
 
 ```bash
-cargo test                                   # Rust workspace: 216 tests
-go test ./...                                # Go modules (cri, cli, compose, control-plane): 53 tests
+cargo test                                   # Rust workspace: 222 tests
+go test ./...                                # Go modules (cri, cli, compose, control-plane): 56 tests
 cargo fmt --all --check && golangci-lint run ./...   # CI gates
 ```
 
@@ -618,7 +617,7 @@ A technical report describing the architecture is available in [`/paper`](./pape
 
 ## 📄 License
 
-Apache 2.0 — see [LICENSE](LICENSE). Contributions subject to [CLA.md](CLA.md).
+Apache-2.0 — see [LICENSE](LICENSE). Contributions subject to [CLA.md](CLA.md).
 
 ---
 
