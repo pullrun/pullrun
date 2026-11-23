@@ -132,7 +132,7 @@ pub fn reconstruct(
         return Err("corrupt page index".into());
     }
     let mut out = std::fs::File::create(dst).map_err(|e| format!("create mem: {e}"))?;
-    for hash in hashes.chunks_exact(HASH_LEN) {
+    for hash in hashes.as_chunks::<HASH_LEN>().0 {
         let ct = std::fs::read(page_path(store_root, hash))
             .map_err(|e| format!("read page {}: {e}", hex(hash)))?;
         let plain = decrypt_page(&ct, key, hash)?;
