@@ -11,6 +11,9 @@ is not proven; "Future" means not implemented.
 | VM isolation (Firecracker) | **Met** | one kernel per VM; boot, command execution, exit codes verified on KVM |
 | VM isolation (Apple Virtualization) | **Met** | per-workload APFS clone, separate VM; macOS verified |
 | Container isolation | **Trusted tier only** | namespaces on the host kernel; do not run untrusted code in containers |
+| Safe VM default | **Met** | `run --backend vm` starts isolated; `--net slirp`/`--trusted` opt in |
+| Daemon panic surface | **Partial** | non-test `unwrap()` denied in store/runtime; refcount lock recovers poison; no full audit |
+| Fuzzing | **In progress** | `runtime/pullrun-oci/fuzz` RelPath target + nightly CI job; campaign not yet green |
 | Sandbox groups | **In Progress** | one VM, per-sandbox mount/net/UTS/IPC + tmpfs overlay; shared guest kernel |
 | Immutable image bases | **Met** | one flattened base per digest; CoW clones; no hardlinks; GC |
 | VM memory snapshot | **Met** (Linux) | state + memory + rootfs; restore verified (`tick 2 → 3`) |
