@@ -16,7 +16,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 const MAGIC: &[u8; 8] = b"PRPAGE1\0";
-pub const PAGE_SIZE: usize = 4096;
+pub const PAGE_SIZE: usize = 64 * 1024;
 const HASH_LEN: usize = 32;
 
 fn page_path(store_root: &Path, hash: &[u8]) -> std::path::PathBuf {
