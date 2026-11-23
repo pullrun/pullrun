@@ -370,6 +370,11 @@ pub fn create_fork_tap(tap_name: &str, bridge_name: &str) -> Result<File, VmNetE
     Ok(tap_fd)
 }
 
+#[cfg(not(target_os = "linux"))]
+pub fn create_fork_tap(_tap_name: &str, _bridge_name: &str) -> Result<File, VmNetError> {
+    Err(VmNetError::NotLinux)
+}
+
 /// Create a persistent TAP with no bridge or host IP (fork isolation).
 #[cfg(target_os = "linux")]
 pub fn create_tap_isolated(tap_name: &str) -> Result<File, VmNetError> {

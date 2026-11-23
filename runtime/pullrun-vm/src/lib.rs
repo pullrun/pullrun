@@ -451,12 +451,31 @@ async fn restore_snapshot_inner(
     })?;
 
     // The snapshot references the host TAP by name, so it must exist
-    // before Firecracker loads the state.
-    if let Some(net) = &network {
-        let tap_name = net.tap_name.clone();
-        if net.slirp {
+    // before Firecracker loads the state. Fork restores get a unique TAP
+    // and a dedicated no-IP bridge; the TAP is overridden at load time.
+    let fork_bridge = format!("pf-{}", &id[id.len().saturating_sub(8)..]);
+    let actual_tap = network.as_ref().map(|net| {
+        if net.fork || net.slirp {
+            format!("fc-{id}")
+        } else {
+            net.tap_name.clone()
+        }
+    });
+    let tap_override = network
+        .as_ref()
+        .zip(actual_tap.as_ref())
+        .and_then(|(net, tap)| (tap != &net.tap_name).then(|| tap.clone()));
+    if let (Some(net), Some(tap_name)) = (&network, &actual_tap) {
+        if net.fork {
+            let fd = crate::network::create_fork_tap(tap_name, &fork_bridge)
+                .map_err(|e| ExecError::ExecutionFailed(format!("fork tap: {e}")))?;
+            exec.tap_fds
+                .lock()
+                .expect("tap_fds lock poisoned")
+                .insert(id.to_string(), fd);
+        } else if net.slirp {
             let (_, child) =
-                crate::network::create_slirp_tap(&tap_name, net.guest_ip, net.netmask, net.gateway)
+                crate::network::create_slirp_tap(tap_name, net.guest_ip, net.netmask, net.gateway)
                     .map_err(|e| ExecError::ExecutionFailed(format!("slirp restore setup: {e}")))?;
             exec.slirp_children
                 .lock()
@@ -467,14 +486,14 @@ async fn restore_snapshot_inner(
             let cidr = format!("10.{}.{}.0/24", gw.octets()[1], gw.octets()[2]);
             crate::network::ensure_bridge_named(&net.bridge_name, &cidr, gw)
                 .map_err(|e| ExecError::ExecutionFailed(format!("bridge restore: {e}")))?;
-            let (_, fd) = create_tap_on_bridge(&tap_name, net.guest_ip, &net.bridge_name, nm, gw)
+            let (_, fd) = create_tap_on_bridge(tap_name, net.guest_ip, &net.bridge_name, nm, gw)
                 .map_err(|e| ExecError::ExecutionFailed(format!("tap restore: {e}")))?;
             exec.tap_fds
                 .lock()
                 .expect("tap_fds lock poisoned")
                 .insert(id.to_string(), fd);
         } else {
-            let (_, fd) = create_tap(&tap_name, net.guest_ip)
+            let (_, fd) = create_tap(tap_name, net.guest_ip)
                 .map_err(|e| ExecError::ExecutionFailed(format!("tap restore: {e}")))?;
             exec.tap_fds
                 .lock()
@@ -502,7 +521,10 @@ async fn restore_snapshot_inner(
         .await
         .map_err(|e| ExecError::ExecutionFailed(format!("restore API: {e}")))?;
     let api = FirecrackerApi::new(&api_socket);
-    if let Err(e) = api.load_snapshot(state_path, mem_path, true).await {
+    if let Err(e) = api
+        .load_snapshot_with_tap(state_path, mem_path, true, tap_override.as_deref())
+        .await
+    {
         unsafe {
             libc::kill(pid as i32, libc::SIGKILL);
         }
@@ -514,8 +536,12 @@ async fn restore_snapshot_inner(
         Some(net) => (
             VmSidecar {
                 vm_net: VmNetwork {
-                    tap_name: net.tap_name.clone(),
-                    bridge_name: net.bridge_name.clone(),
+                    tap_name: actual_tap.clone().unwrap_or_default(),
+                    bridge_name: if net.fork {
+                        fork_bridge.clone()
+                    } else {
+                        net.bridge_name.clone()
+                    },
                     guest_ip: net.guest_ip,
                     guest_mac: net.guest_mac.clone(),
                     netmask: net.netmask,
