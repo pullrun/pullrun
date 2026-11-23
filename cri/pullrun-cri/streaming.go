@@ -329,9 +329,11 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("stream session %s: open sent, starting handshake", token)
 	upgrader := spdy.NewResponseUpgrader()
-	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
+	if ok, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
 		log.Printf("exec protocol handshake: %v", err)
 		return
+	} else {
+		log.Printf("stream session %s: handshake ok=%v", token, ok)
 	}
 
 	// Drain exit/error channels so the gRPC receiver goroutine
@@ -420,6 +422,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 		log.Printf("spdy upgrade returned nil connection")
 		return
 	}
+	log.Printf("stream session %s: spdy upgraded", token)
 
 	// Wait for the runtime session to end (Exit/Error/stream EOF),
 	// then tear down the connection: closing it wakes any stream
