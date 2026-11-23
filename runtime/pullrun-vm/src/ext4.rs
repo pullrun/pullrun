@@ -114,7 +114,7 @@ pub async fn materialize_ext4_rootfs(
         std::fs::create_dir_all(&etc)?;
         std::fs::write(
             etc.join("resolv.conf"),
-            format!("nameserver {}\nnameserver 1.1.1.1\n", crate::GATEWAY_IP),
+            "nameserver 8.8.8.8\nnameserver 1.1.1.1\n",
         )?;
     }
 

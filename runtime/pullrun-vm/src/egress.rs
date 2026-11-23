@@ -92,7 +92,11 @@ pub fn install(
     )?;
     // DNS to the configured resolvers (or the gateway).
     let dns_ips: Vec<IpAddr> = if nameservers.is_empty() {
-        vec![IpAddr::V4(crate::GATEWAY_IP)]
+        vec![
+            IpAddr::V4(crate::GATEWAY_IP),
+            "8.8.8.8".parse().expect("dns ip"),
+            "1.1.1.1".parse().expect("dns ip"),
+        ]
     } else {
         nameservers.to_vec()
     };
