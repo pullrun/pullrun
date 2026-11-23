@@ -57,7 +57,7 @@ pub fn install(
         "chain".into(),
         "inet".into(),
         table.clone(),
-        "fwd".into(),
+        "c_fwd".into(),
         "{ type filter hook forward priority 0 ; }".into(),
     ])?;
     nft(&[
@@ -65,7 +65,7 @@ pub fn install(
         "chain".into(),
         "inet".into(),
         table.clone(),
-        "inp".into(),
+        "c_inp".into(),
         "{ type filter hook input priority 0 ; }".into(),
     ])?;
 
@@ -82,7 +82,7 @@ pub fn install(
     };
 
     push(
-        "fwd",
+        "c_fwd",
         vec![
             "ct".into(),
             "state".into(),
@@ -99,7 +99,7 @@ pub fn install(
     for ns in dns_ips {
         for proto in ["udp", "tcp"] {
             push(
-                "fwd",
+                "c_fwd",
                 vec![
                     "ip".into(),
                     "saddr".into(),
@@ -117,7 +117,7 @@ pub fn install(
     }
     // Host-side DNS for the gateway.
     push(
-        "inp",
+        "c_inp",
         vec![
             "iifname".into(),
             bridge.into(),
@@ -131,7 +131,7 @@ pub fn install(
         ],
     )?;
     push(
-        "inp",
+        "c_inp",
         vec![
             "iifname".into(),
             bridge.into(),
@@ -165,9 +165,8 @@ pub fn install(
                 Protocol::Udp => "udp",
                 _ => "tcp",
             };
-            push(
-                "fwd",
-                vec![
+            for chain in ["c_fwd", "c_inp"] {
+                let mut rule_vec = vec![
                     "ip".into(),
                     "saddr".into(),
                     guest_ip.to_string(),
@@ -178,13 +177,18 @@ pub fn install(
                     "dport".into(),
                     rule.port.to_string(),
                     "accept".into(),
-                ],
-            )?;
+                ];
+                if chain == "c_inp" {
+                    rule_vec.insert(0, bridge.into());
+                    rule_vec.insert(0, "iifname".into());
+                }
+                push(chain, rule_vec)?;
+            }
         }
     }
     if let Some(proxy) = proxy {
         push(
-            "fwd",
+            "c_fwd",
             vec![
                 "ip".into(),
                 "saddr".into(),
@@ -202,7 +206,7 @@ pub fn install(
 
     // Default deny: guest-originated forward and host-input traffic.
     push(
-        "fwd",
+        "c_fwd",
         vec![
             "ip".into(),
             "saddr".into(),
@@ -211,7 +215,7 @@ pub fn install(
         ],
     )?;
     push(
-        "inp",
+        "c_inp",
         vec![
             "iifname".into(),
             bridge.into(),
