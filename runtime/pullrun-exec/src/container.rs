@@ -691,8 +691,15 @@ impl Executor for LinuxContainerExecutor {
         // so runc joins it instead of creating a fresh namespace.
         if let Some(ref target) = network_join {
             let netns = netns_path_of(&runc_path, None, target)?;
-            join_netns_in_config(&bdir, &netns)?;
-            tracing::debug!(id = %id, target = %target, netns = %netns, "joined network namespace");
+            match join_netns_in_config(&bdir, &netns) {
+                Ok(()) => {
+                    tracing::info!(id = %id, target = %target, netns = %netns, "joined network namespace")
+                }
+                Err(e) => {
+                    tracing::error!(id = %id, target = %target, netns = %netns, error = %e, "join network namespace failed");
+                    return Err(e);
+                }
+            }
         }
 
         tracing::debug!(
