@@ -5639,6 +5639,33 @@ impl Runtime for RuntimeService {
                 kept.push(id.clone());
             }
         }
+        if !req.dry_run {
+            // Drop page blobs no remaining paged snapshot references.
+            let mut referenced = std::collections::HashSet::new();
+            if let Ok(entries) = std::fs::read_dir(&self.config.snapshots_dir) {
+                for entry in entries.flatten() {
+                    let mem = entry.path().join("mem");
+                    if let Ok(hashes) = crate::snapshot_pages::page_hashes(&mem) {
+                        for h in hashes {
+                            referenced
+                                .insert(h.iter().map(|b| format!("{b:02x}")).collect::<String>());
+                        }
+                    }
+                }
+            }
+            let pages = self.config.store_root.join("snapshot-pages");
+            if let Ok(entries) = std::fs::read_dir(&pages) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !referenced.contains(&name) {
+                        if let Ok(meta) = entry.metadata() {
+                            bytes_freed += meta.len();
+                        }
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
         Ok(tonic::Response::new(GcSnapshotsResponse {
             removed,
             kept,

@@ -91,6 +91,24 @@ pub fn is_paged(path: &Path) -> bool {
     f.read_exact(&mut magic).is_ok() && &magic == MAGIC
 }
 
+/// Page hashes referenced by a paged memory index.
+pub fn page_hashes(index_path: &Path) -> Result<Vec<Vec<u8>>, String> {
+    let bytes = std::fs::read(index_path).map_err(|e| format!("read index: {e}"))?;
+    if bytes.len() < MAGIC.len() + 8 || &bytes[..MAGIC.len()] != MAGIC {
+        return Err("not a paged snapshot".into());
+    }
+    let count = u64::from_le_bytes(
+        bytes[MAGIC.len()..MAGIC.len() + 8]
+            .try_into()
+            .map_err(|_| "corrupt page index")?,
+    ) as usize;
+    let hashes = &bytes[MAGIC.len() + 8..];
+    if hashes.len() != count * HASH_LEN {
+        return Err("corrupt page index".into());
+    }
+    Ok(hashes.chunks_exact(HASH_LEN).map(|h| h.to_vec()).collect())
+}
+
 /// Rebuild a raw guest-memory file from a paged index.
 pub fn reconstruct(
     index_path: &Path,
