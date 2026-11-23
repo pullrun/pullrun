@@ -356,6 +356,14 @@ pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<(VmNetwork, File
     create_tap_on_bridge(tap_name, guest_ip, BRIDGE_NAME, NETMASK, GATEWAY_IP)
 }
 
+/// Create a persistent TAP with no bridge or host IP (fork isolation).
+#[cfg(target_os = "linux")]
+pub fn create_tap_isolated(tap_name: &str) -> Result<File, VmNetError> {
+    let tap_fd = create_tap_ioctl(tap_name)?;
+    run_ip(&["link", "set", tap_name, "up"])?;
+    Ok(tap_fd)
+}
+
 /// Create a TAP device with userspace NAT via slirp4netns.
 ///
 /// Replaces the bridge + iptables chain with a pure-userspace NAT.

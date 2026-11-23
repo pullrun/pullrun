@@ -5570,7 +5570,7 @@ impl Runtime for RuntimeService {
                     .netmask
                     .parse()
                     .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
-                slirp: meta.network_mode == "slirp" || fork,
+                slirp: meta.network_mode == "slirp" && !fork,
                 fork,
             })
         } else {
@@ -5656,7 +5656,7 @@ impl Runtime for RuntimeService {
                 Some(meta.bridge_name.clone())
             },
             network_mode: if fork {
-                "slirp".to_string()
+                "isolated".to_string()
             } else {
                 meta.network_mode.clone()
             },
