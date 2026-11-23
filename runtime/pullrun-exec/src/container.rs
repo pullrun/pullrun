@@ -45,6 +45,8 @@ pub struct LinuxContainerExecutor {
     egress: Mutex<HashMap<String, EgressConfig>>,
     /// CRI log paths per workload.
     log_paths: Mutex<HashMap<String, std::path::PathBuf>>,
+    /// Workloads whose rootfs should not be pivot-rooted (mount propagation).
+    no_pivot: Mutex<HashSet<String>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -73,6 +75,7 @@ impl LinuxContainerExecutor {
             overlay_mounts: Mutex::new(HashSet::new()),
             egress: Mutex::new(HashMap::new()),
             log_paths: Mutex::new(HashMap::new()),
+            no_pivot: Mutex::new(HashSet::new()),
         }
     }
 
@@ -507,6 +510,18 @@ impl Executor for LinuxContainerExecutor {
             } else {
                 egress.remove(&spec.id);
             }
+            {
+                let mut np = self.no_pivot.lock().expect("no_pivot lock poisoned");
+                if spec
+                    .mounts
+                    .iter()
+                    .any(|m| m.options.iter().any(|o| o == "rshared" || o == "rslave"))
+                {
+                    np.insert(spec.id.clone());
+                } else {
+                    np.remove(&spec.id);
+                }
+            }
             let mut logs = self.log_paths.lock().expect("log_paths lock poisoned");
             match &spec.log_path {
                 Some(path) => {
@@ -729,13 +744,22 @@ impl Executor for LinuxContainerExecutor {
             .expect("log_paths lock poisoned")
             .get(&handle.id)
             .cloned();
+        let no_pivot = self
+            .no_pivot
+            .lock()
+            .expect("no_pivot lock poisoned")
+            .contains(&handle.id);
         let mut child = tokio::task::spawn_blocking(move || {
             tracing::debug!("spawning foreground runc run -b {:?} {}", bdir, id);
             let mut cmd = SyncCommand::new(&runc_path);
             // Foreground run: runc stays alive as the container's
             // parent and exits with the workload status, which is the
             // only reliable way to observe the exit code.
-            cmd.arg("run").arg("-b").arg(&bdir).arg(&id);
+            cmd.arg("run");
+            if no_pivot {
+                cmd.arg("--no-pivot");
+            }
+            cmd.arg("-b").arg(&bdir).arg(&id);
             cmd.stdin(std::process::Stdio::null());
             let mut cri_reader = None;
             match log_path_for_cleanup {
