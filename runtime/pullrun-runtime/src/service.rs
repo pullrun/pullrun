@@ -7256,11 +7256,14 @@ fn run_runc_attach_session(
     command: &[String],
     _env: &[String],
     _working_dir: &str,
-    tty: bool,
+    _tty: bool,
     bundle_path: &std::path::Path,
     client_in_rx: std::sync::mpsc::Receiver<pullrun_vsock::Frame>,
     server_out_tx: std::sync::mpsc::Sender<pullrun_vsock::Frame>,
 ) -> Result<(), String> {
+    // CRI TTY exec is currently served through the non-TTY pipe path;
+    // the PTY path blocked clients waiting for the streamer.
+    let tty = false;
     // Check whether the runc container still exists and is running.
     let container_alive = {
         let out = std::process::Command::new("runc")
