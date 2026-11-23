@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // Copyright 2026 Mohammed Boukaba.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -695,7 +696,7 @@ async fn run_daemon(
             .await
             .map_err(|e| format!("bind credential proxy on :3128: {e}"))?;
         tokio::spawn(proxy.serve(listener));
-        let proxy_addr: std::net::SocketAddr = "10.42.0.1:3128".parse().unwrap();
+        let proxy_addr = std::net::SocketAddr::from(([10, 42, 0, 1], 3128));
         config =
             config
                 .with_egress_deny(true)

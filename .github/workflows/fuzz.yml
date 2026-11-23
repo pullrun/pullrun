@@ -1,0 +1,27 @@
+name: Fuzz
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+jobs:
+  relpath:
+    name: OCI RelPath parser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Build fuzz target
+        run: cargo fuzz build relpath
+        working-directory: runtime/pullrun-oci
+
+      - name: Fuzz for 120 seconds
+        run: cargo fuzz run relpath -- -max_total_time=120 -rss_limit_mb=2048
+        working-directory: runtime/pullrun-oci

@@ -325,7 +325,10 @@ impl MmapStore {
 
     /// Increment the reference count for a digest. Returns the new count.
     pub fn increment_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
-        let _guard = self.refcount_lock.lock().unwrap();
+        let _guard = self
+            .refcount_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let count = self.get_refcount(digest)? + 1;
         self.set_refcount(digest, count)?;
         Ok(count)
@@ -333,7 +336,10 @@ impl MmapStore {
 
     /// Decrement the reference count for a digest. Returns the new count.
     pub fn decrement_refcount(&self, digest: &Digest) -> Result<u64, StoreError> {
-        let _guard = self.refcount_lock.lock().unwrap();
+        let _guard = self
+            .refcount_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let count = self.get_refcount(digest)?;
         let new = count.saturating_sub(1);
         self.set_refcount(digest, new)?;
