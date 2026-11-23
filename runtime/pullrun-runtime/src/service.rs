@@ -5339,6 +5339,12 @@ impl Runtime for RuntimeService {
             .as_ref()
             .map(|c| (c.vcpus, c.mem_mib, c.kernel_path.clone()))
             .unwrap_or((1, 512, std::path::PathBuf::new()));
+        let sidecar = self
+            .config
+            .vm_backend
+            .as_ref()
+            .and_then(|c| std::fs::read(c.vm_root.join(&req.workload_id).join("network.json")).ok())
+            .and_then(|b| serde_json::from_slice::<pullrun_vm::VmSidecar>(&b).ok());
         let meta = SnapshotMeta {
             workload_id: req.workload_id.clone(),
             fidelity: fidelity.as_str().to_string(),
@@ -5354,6 +5360,22 @@ impl Runtime for RuntimeService {
             network_mode: state.network_mode.clone(),
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
             bridge_name: state.bridge_name.clone().unwrap_or_default(),
+            tap_name: sidecar
+                .as_ref()
+                .map(|s| s.tap_name.clone())
+                .unwrap_or_default(),
+            guest_mac: sidecar
+                .as_ref()
+                .map(|s| s.vm_net.guest_mac.clone())
+                .unwrap_or_default(),
+            gateway: sidecar
+                .as_ref()
+                .map(|s| s.vm_net.gateway.to_string())
+                .unwrap_or_default(),
+            netmask: sidecar
+                .as_ref()
+                .map(|s| s.vm_net.netmask.to_string())
+                .unwrap_or_default(),
         };
         std::fs::write(
             dir.join("meta.json"),
@@ -5502,6 +5524,28 @@ impl Runtime for RuntimeService {
 
         let workload_id = new_workload_id();
         let restore_start = std::time::Instant::now();
+        let network = if meta.fidelity != "rootfs" && !meta.tap_name.is_empty() {
+            let guest_ip = meta.internal_ip.parse().map_err(|_| {
+                tonic::Status::failed_precondition("snapshot has invalid internal_ip")
+            })?;
+            Some(pullrun_exec::types::SnapshotNetwork {
+                tap_name: meta.tap_name.clone(),
+                bridge_name: meta.bridge_name.clone(),
+                guest_ip,
+                guest_mac: meta.guest_mac.clone(),
+                gateway: meta
+                    .gateway
+                    .parse()
+                    .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
+                netmask: meta
+                    .netmask
+                    .parse()
+                    .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
+                slirp: meta.network_mode == "slirp",
+            })
+        } else {
+            None
+        };
         let handle = if meta.fidelity == "rootfs" {
             if meta.kernel_path.as_os_str().is_empty() || !meta.kernel_path.exists() {
                 return Err(tonic::Status::failed_precondition(
@@ -5516,6 +5560,17 @@ impl Runtime for RuntimeService {
                     &meta.kernel_path,
                     meta.vcpus.max(1),
                     meta.mem_mib.max(64),
+                )
+                .await
+        } else if let Some(net) = network.clone() {
+            self.executor
+                .restore_snapshot_with_network(
+                    &workload_id,
+                    &meta.state_path,
+                    &meta.mem_path,
+                    &meta.rootfs_path,
+                    &meta.drive_path,
+                    net,
                 )
                 .await
         } else {
@@ -5546,7 +5601,7 @@ impl Runtime for RuntimeService {
             exit_time: 0,
             exit_code: None,
             backend: "vm".to_string(),
-            internal_ip: None,
+            internal_ip: handle.internal_ip.clone(),
             pid: handle.pid.unwrap_or(0),
             image_root: format!("snapshot:{snapshot_id}"),
             command: Vec::new(),
@@ -5565,8 +5620,12 @@ impl Runtime for RuntimeService {
             env: HashMap::new(),
             cpu_millicores: None,
             memory_bytes: None,
-            bridge_name: None,
-            network_mode: "isolated".to_string(),
+            bridge_name: if meta.bridge_name.is_empty() {
+                None
+            } else {
+                Some(meta.bridge_name.clone())
+            },
+            network_mode: meta.network_mode.clone(),
             mounts: Vec::new(),
             privileged: false,
             readonly_rootfs: false,
@@ -8743,7 +8802,7 @@ mod tests {
                     cpu_millicores: None,
                     memory_bytes: None,
                     bridge_name: None,
-                    network_mode: "isolated".to_string(),
+                    network_mode: meta.network_mode.clone(),
                     mounts: vec![],
                     privileged: false,
                     readonly_rootfs: false,

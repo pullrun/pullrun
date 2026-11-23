@@ -381,6 +381,18 @@ pub struct ProcessHandle {
     pub network_join: Option<String>,
 }
 
+/// Host network state needed to restore a Firecracker snapshot.
+#[derive(Debug, Clone)]
+pub struct SnapshotNetwork {
+    pub tap_name: String,
+    pub bridge_name: String,
+    pub guest_ip: std::net::Ipv4Addr,
+    pub guest_mac: String,
+    pub gateway: std::net::Ipv4Addr,
+    pub netmask: std::net::Ipv4Addr,
+    pub slirp: bool,
+}
+
 /// How much state a snapshot captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnapshotFidelity {
@@ -529,6 +541,21 @@ pub trait Executor: Send + Sync {
     ) -> Result<ProcessHandle, ExecError> {
         Err(ExecError::BackendNotAvailable(
             "snapshot restore is only supported by the Firecracker VM backend".into(),
+        ))
+    }
+
+    /// Restore a memory snapshot and re-attach its host network.
+    async fn restore_snapshot_with_network(
+        &self,
+        _id: &str,
+        _state_path: &std::path::Path,
+        _mem_path: &std::path::Path,
+        _rootfs_path: &std::path::Path,
+        _drive_path: &std::path::Path,
+        _network: SnapshotNetwork,
+    ) -> Result<ProcessHandle, ExecError> {
+        Err(ExecError::BackendNotAvailable(
+            "networked snapshot restore is only supported by the Firecracker VM backend".into(),
         ))
     }
 

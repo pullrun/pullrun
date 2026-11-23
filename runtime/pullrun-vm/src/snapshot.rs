@@ -251,4 +251,16 @@ pub struct SnapshotMeta {
     /// Bridge the guest was attached to, if networked.
     #[serde(default)]
     pub bridge_name: String,
+    /// TAP device name referenced by the Firecracker snapshot.
+    #[serde(default)]
+    pub tap_name: String,
+    /// Guest MAC at capture time.
+    #[serde(default)]
+    pub guest_mac: String,
+    /// Guest gateway at capture time.
+    #[serde(default)]
+    pub gateway: String,
+    /// Guest netmask at capture time.
+    #[serde(default)]
+    pub netmask: String,
 }
