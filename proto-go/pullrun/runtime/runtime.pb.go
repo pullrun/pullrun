@@ -582,6 +582,7 @@ type PullImageResponse struct {
 	BytesStored       int64                  `protobuf:"varint,2,opt,name=bytes_stored,json=bytesStored,proto3" json:"bytes_stored,omitempty"`
 	BytesDeduplicated int64                  `protobuf:"varint,3,opt,name=bytes_deduplicated,json=bytesDeduplicated,proto3" json:"bytes_deduplicated,omitempty"`
 	ManifestDigest    string                 `protobuf:"bytes,4,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	ImageUser         string                 `protobuf:"bytes,5,opt,name=image_user,json=imageUser,proto3" json:"image_user,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -640,6 +641,13 @@ func (x *PullImageResponse) GetBytesDeduplicated() int64 {
 func (x *PullImageResponse) GetManifestDigest() string {
 	if x != nil {
 		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *PullImageResponse) GetImageUser() string {
+	if x != nil {
+		return x.ImageUser
 	}
 	return ""
 }
@@ -2530,6 +2538,7 @@ type HasImageResponse struct {
 	RootDigest     string                 `protobuf:"bytes,2,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
 	SizeBytes      int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	ManifestDigest string                 `protobuf:"bytes,4,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	ImageUser      string                 `protobuf:"bytes,5,opt,name=image_user,json=imageUser,proto3" json:"image_user,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2588,6 +2597,13 @@ func (x *HasImageResponse) GetSizeBytes() int64 {
 func (x *HasImageResponse) GetManifestDigest() string {
 	if x != nil {
 		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *HasImageResponse) GetImageUser() string {
+	if x != nil {
+		return x.ImageUser
 	}
 	return ""
 }
@@ -2676,6 +2692,7 @@ type ImageInfo struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ImageRef       string                 `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
 	ManifestDigest string                 `protobuf:"bytes,5,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	ImageUser      string                 `protobuf:"bytes,6,opt,name=image_user,json=imageUser,proto3" json:"image_user,omitempty"`
 	RootDigest     string                 `protobuf:"bytes,2,opt,name=root_digest,json=rootDigest,proto3" json:"root_digest,omitempty"`
 	SizeBytes      int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	CreatedAt      int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // unix seconds
@@ -2723,6 +2740,13 @@ func (x *ImageInfo) GetImageRef() string {
 func (x *ImageInfo) GetManifestDigest() string {
 	if x != nil {
 		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *ImageInfo) GetImageUser() string {
+	if x != nil {
+		return x.ImageUser
 	}
 	return ""
 }
@@ -8662,13 +8686,15 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x11registry_username\x18\x03 \x01(\tR\x10registryUsername\x12+\n" +
 	"\x11registry_password\x18\x04 \x01(\tR\x10registryPassword\x12%\n" +
 	"\x0eregistry_token\x18\x05 \x01(\tR\rregistryToken\x12\x1a\n" +
-	"\bplatform\x18\x06 \x01(\tR\bplatform\"\xaf\x01\n" +
+	"\bplatform\x18\x06 \x01(\tR\bplatform\"\xce\x01\n" +
 	"\x11PullImageResponse\x12\x1f\n" +
 	"\vroot_digest\x18\x01 \x01(\tR\n" +
 	"rootDigest\x12!\n" +
 	"\fbytes_stored\x18\x02 \x01(\x03R\vbytesStored\x12-\n" +
 	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\x12'\n" +
-	"\x0fmanifest_digest\x18\x04 \x01(\tR\x0emanifestDigest\"\xee\t\n" +
+	"\x0fmanifest_digest\x18\x04 \x01(\tR\x0emanifestDigest\x12\x1d\n" +
+	"\n" +
+	"image_user\x18\x05 \x01(\tR\timageUser\"\xee\t\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -8826,20 +8852,24 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x04rows\x18\x01 \x01(\rR\x04rows\x12\x12\n" +
 	"\x04cols\x18\x02 \x01(\rR\x04cols\".\n" +
 	"\x0fHasImageRequest\x12\x1b\n" +
-	"\timage_ref\x18\x01 \x01(\tR\bimageRef\"\x93\x01\n" +
+	"\timage_ref\x18\x01 \x01(\tR\bimageRef\"\xb2\x01\n" +
 	"\x10HasImageResponse\x12\x16\n" +
 	"\x06exists\x18\x01 \x01(\bR\x06exists\x12\x1f\n" +
 	"\vroot_digest\x18\x02 \x01(\tR\n" +
 	"rootDigest\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x12'\n" +
-	"\x0fmanifest_digest\x18\x04 \x01(\tR\x0emanifestDigest\"\x13\n" +
+	"\x0fmanifest_digest\x18\x04 \x01(\tR\x0emanifestDigest\x12\x1d\n" +
+	"\n" +
+	"image_user\x18\x05 \x01(\tR\timageUser\"\x13\n" +
 	"\x11ListImagesRequest\"H\n" +
 	"\x12ListImagesResponse\x122\n" +
-	"\x06images\x18\x01 \x03(\v2\x1a.pullrun.runtime.ImageInfoR\x06images\"\xb0\x01\n" +
+	"\x06images\x18\x01 \x03(\v2\x1a.pullrun.runtime.ImageInfoR\x06images\"\xcf\x01\n" +
 	"\tImageInfo\x12\x1b\n" +
 	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12'\n" +
-	"\x0fmanifest_digest\x18\x05 \x01(\tR\x0emanifestDigest\x12\x1f\n" +
+	"\x0fmanifest_digest\x18\x05 \x01(\tR\x0emanifestDigest\x12\x1d\n" +
+	"\n" +
+	"image_user\x18\x06 \x01(\tR\timageUser\x12\x1f\n" +
 	"\vroot_digest\x18\x02 \x01(\tR\n" +
 	"rootDigest\x12\x1d\n" +
 	"\n" +

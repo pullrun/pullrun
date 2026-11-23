@@ -703,6 +703,16 @@ impl RuntimeCommand {
                 Arc::new(RwLock::new(HashMap::new()))
             }
         };
+        let image_users: Arc<RwLock<HashMap<String, String>>> = {
+            let path = self.config.store_root.join("image_users.json");
+            if let Ok(file) = std::fs::File::open(&path) {
+                Arc::new(RwLock::new(
+                    serde_json::from_reader(file).unwrap_or_default(),
+                ))
+            } else {
+                Arc::new(RwLock::new(HashMap::new()))
+            }
+        };
         let image_manifests: Arc<RwLock<HashMap<String, String>>> = {
             let path = self.config.store_root.join("image_manifests.json");
             if let Ok(file) = std::fs::File::open(&path) {
@@ -1067,6 +1077,7 @@ impl RuntimeCommand {
             image_tags,
             image_refs,
             image_manifests,
+            image_users,
             event_bus: event_bus.clone(),
             kernel_cache: Arc::new(RwLock::new(HashMap::new())),
             rootfs_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -1899,6 +1910,8 @@ pub struct RuntimeService {
     pub image_refs: Arc<RwLock<HashMap<String, String>>>,
     /// root_digest -> registry manifest digest.
     pub image_manifests: Arc<RwLock<HashMap<String, String>>>,
+    /// root_digest -> image config user.
+    pub image_users: Arc<RwLock<HashMap<String, String>>>,
     /// Process-wide event bus. Service emitters call `.emit()`;
     /// subscribers (CLI follow sessions, future audit daemons) call
     /// `.subscribe()`. The watcher task also subscribes to its own
@@ -2340,11 +2353,19 @@ impl Runtime for RuntimeService {
                         .get(digest)
                         .cloned()
                         .unwrap_or_default();
+                    let user = self
+                        .image_users
+                        .read()
+                        .await
+                        .get(digest)
+                        .cloned()
+                        .unwrap_or_default();
                     return Ok(tonic::Response::new(PullImageResponse {
                         root_digest: digest.clone(),
                         bytes_stored: 0,
                         bytes_deduplicated: 0,
                         manifest_digest: manifest,
+                        image_user: user,
                     }));
                 }
             }
@@ -2412,6 +2433,12 @@ impl Runtime for RuntimeService {
 
         let converter = OciToDagConverter::new(self.store.clone());
         let manifest_hex = pulled.manifest_digest.as_hex();
+        let image_user = pulled
+            .config
+            .config
+            .as_ref()
+            .and_then(|c| c.user.clone())
+            .unwrap_or_default();
         let root_digest = match converter.convert(&pulled).await {
             Ok(d) => d,
             Err(e) => {
@@ -2463,6 +2490,11 @@ impl Runtime for RuntimeService {
             manifests.insert(root_digest.as_hex().to_string(), manifest_hex.clone());
             if let Ok(json) = serde_json::to_string(&*manifests) {
                 let _ = std::fs::write(self.config.store_root.join("image_manifests.json"), json);
+            }
+            let mut users = self.image_users.write().await;
+            users.insert(root_digest.as_hex().to_string(), image_user.clone());
+            if let Ok(json) = serde_json::to_string(&*users) {
+                let _ = std::fs::write(self.config.store_root.join("image_users.json"), json);
             }
         }
         let _ = self.store.increment_refcount(&root_digest);
@@ -2516,6 +2548,7 @@ impl Runtime for RuntimeService {
             bytes_stored,
             bytes_deduplicated: 0,
             manifest_digest: manifest_hex,
+            image_user,
         }))
     }
 
@@ -4623,6 +4656,13 @@ impl Runtime for RuntimeService {
                     size_bytes: self.store.compute_image_size(&d) as i64,
                     root_digest: hex,
                     manifest_digest: manifest,
+                    image_user: self
+                        .image_users
+                        .read()
+                        .await
+                        .get(&d.as_hex())
+                        .cloned()
+                        .unwrap_or_default(),
                 }));
             }
         }
@@ -4649,6 +4689,13 @@ impl Runtime for RuntimeService {
                     size_bytes,
                     root_digest: root_digest.clone(),
                     manifest_digest: manifest,
+                    image_user: self
+                        .image_users
+                        .read()
+                        .await
+                        .get(root_digest)
+                        .cloned()
+                        .unwrap_or_default(),
                 }));
             }
         }
@@ -4674,6 +4721,13 @@ impl Runtime for RuntimeService {
                     size_bytes,
                     root_digest: root_digest.clone(),
                     manifest_digest: manifest,
+                    image_user: self
+                        .image_users
+                        .read()
+                        .await
+                        .get(root_digest)
+                        .cloned()
+                        .unwrap_or_default(),
                 }));
             }
         }
@@ -4682,6 +4736,7 @@ impl Runtime for RuntimeService {
             size_bytes: 0,
             root_digest: String::new(),
             manifest_digest: String::new(),
+            image_user: String::new(),
         }))
     }
 
@@ -4741,6 +4796,7 @@ impl Runtime for RuntimeService {
         _request: tonic::Request<ListImagesRequest>,
     ) -> Result<tonic::Response<ListImagesResponse>, tonic::Status> {
         let manifest_map = self.image_manifests.read().await.clone();
+        let user_map = self.image_users.read().await.clone();
         let refs = self.image_refs.read().await;
         if !refs.is_empty() {
             let mut images = Vec::with_capacity(refs.len());
@@ -4764,6 +4820,7 @@ impl Runtime for RuntimeService {
                     size_bytes,
                     created_at,
                     manifest_digest: manifest_map.get(root_digest).cloned().unwrap_or_default(),
+                    image_user: user_map.get(root_digest).cloned().unwrap_or_default(),
                 });
             }
             return Ok(tonic::Response::new(ListImagesResponse { images }));
@@ -4788,6 +4845,7 @@ impl Runtime for RuntimeService {
                 size_bytes,
                 created_at,
                 manifest_digest: manifest_map.get(root_digest).cloned().unwrap_or_default(),
+                image_user: user_map.get(root_digest).cloned().unwrap_or_default(),
             });
         }
         Ok(tonic::Response::new(ListImagesResponse { images }))

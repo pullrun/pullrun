@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -110,7 +111,7 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 		}
 		repoTags = []string{ref}
 	}
-	uid := &runtimeapi.Int64Value{Value: 0}
+	uid, username := imageUserFields(resp.ImageUser)
 	return &runtimeapi.ImageStatusResponse{
 		Image: &runtimeapi.Image{
 			Id:       resp.RootDigest,
@@ -118,10 +119,20 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 			RepoDigests: repoDigests,
 			Size:     uint64(resp.SizeBytes),
 			Uid:      uid,
-			Username: "root",
+			Username: username,
 			Spec:     &runtimeapi.ImageSpec{Image: req.Image.Image},
 		},
 	}, nil
+}
+
+func imageUserFields(user string) (*runtimeapi.Int64Value, string) {
+	if user == "" {
+		return &runtimeapi.Int64Value{Value: 0}, "root"
+	}
+	if n, err := strconv.ParseInt(user, 10, 64); err == nil {
+		return &runtimeapi.Int64Value{Value: n}, ""
+	}
+	return nil, user
 }
 
 func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRequest) (*runtimeapi.ListImagesResponse, error) {
@@ -145,13 +156,13 @@ func (c *criServer) ListImages(ctx context.Context, req *runtimeapi.ListImagesRe
 			existing.RepoTags = append(existing.RepoTags, img.ImageRef)
 			continue
 		}
-		uid := &runtimeapi.Int64Value{Value: 0}
+		uid, username := imageUserFields(img.ImageUser)
 		byID[img.RootDigest] = &runtimeapi.Image{
 			Id:       img.RootDigest,
 			RepoTags: []string{img.ImageRef},
 			Size:     size,
 			Uid:      uid,
-			Username: "root",
+			Username: username,
 			Spec:     &runtimeapi.ImageSpec{Image: img.ImageRef},
 		}
 		order = append(order, img.RootDigest)
