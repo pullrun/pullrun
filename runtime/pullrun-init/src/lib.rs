@@ -860,6 +860,14 @@ esac
                 "/etc/resolv.conf",
                 "nameserver 192.168.64.1\nnameserver 8.8.8.8\n",
             );
+            if let Some(pem) = self
+                .env
+                .iter()
+                .find_map(|kv| kv.strip_prefix("PULLRUN_CA_PEM="))
+            {
+                let _ = std::fs::create_dir_all("/etc");
+                let _ = std::fs::write("/etc/pullrun-ca.pem", pem);
+            }
         }
         if self.tty {
             self.run_tty(client).await

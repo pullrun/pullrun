@@ -56,6 +56,8 @@ pub enum Ext4Error {
 pub struct Ext4Options {
     pub size_mb: u64,
     pub label: Option<String>,
+    /// Environment exported by the injected `/init` (VM workloads).
+    pub env: Vec<String>,
 }
 
 impl Default for Ext4Options {
@@ -63,6 +65,7 @@ impl Default for Ext4Options {
         Self {
             size_mb: 256,
             label: None,
+            env: Vec::new(),
         }
     }
 }
@@ -105,6 +108,19 @@ pub async fn materialize_ext4_rootfs(
         return Err(Ext4Error::Materialization(format!("{e}")));
     }
 
+    // Credential-proxy CA: VM rootfs is self-contained, so write the
+    // public CA into the image; the env var is not exported to the
+    // workload.
+    if let Some(pem) = options
+        .env
+        .iter()
+        .find_map(|kv| kv.strip_prefix("PULLRUN_CA_PEM="))
+    {
+        let etc = work_dir.path().join("etc");
+        std::fs::create_dir_all(&etc)?;
+        std::fs::write(etc.join("pullrun-ca.pem"), pem)?;
+    }
+
     // 2. Inject /init using the OCI image's ENTRYPOINT/CMD.
     //    Container images (alpine, ubuntu, etc.) have ENTRYPOINT/CMD
     //    but no /init executable. The kernel boot args pass init=/init,
@@ -137,6 +153,14 @@ pub async fn materialize_ext4_rootfs(
             }
         };
         let mut init_content = String::from("#!/bin/sh\n");
+        for kv in &options.env {
+            if kv.starts_with("PULLRUN_CA_PEM=") {
+                continue;
+            }
+            init_content.push_str("export ");
+            init_content.push_str(&shell_quote(kv));
+            init_content.push('\n');
+        }
         if run_wrapper {
             // Run the requested command, report its code on the serial
             // console, then power the VM off so it does not reboot.

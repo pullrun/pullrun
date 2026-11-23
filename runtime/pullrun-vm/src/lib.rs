@@ -242,6 +242,7 @@ impl FirecrackerExecutor {
         let options = Ext4Options {
             size_mb: self.config.size_mb,
             label: Some("pullrun-base".to_string()),
+            env: Vec::new(),
         };
         info!(%digest, path = %base.display(), "building ext4 image base");
         materialize_ext4_rootfs(&self.store, digest, &tmp, options, &[])
@@ -270,6 +271,7 @@ impl FirecrackerExecutor {
         digest: &Digest,
         id: &str,
         init_command: &[String],
+        env: &[String],
     ) -> Result<PathBuf, ExecError> {
         let dest = ext4_path_for(&self.config.rootfs_dir, id);
         // A workload command needs its own /init, so it cannot reuse the
@@ -280,6 +282,7 @@ impl FirecrackerExecutor {
             let options = Ext4Options {
                 size_mb: self.config.size_mb,
                 label: Some(format!("pullrun-{id}")),
+                env: env.to_vec(),
             };
             materialize_ext4_rootfs(&self.store, digest, &dest, options, init_command)
                 .await
@@ -314,8 +317,9 @@ impl FirecrackerExecutor {
         std::fs::create_dir_all(&vm_dir)?;
 
         // Provision the workload's ext4 rootfs from the image base.
+        let env_vec: Vec<String> = spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         let ext4_path = self
-            .provision_vm_rootfs(&spec.image_root, &spec.id, &spec.command)
+            .provision_vm_rootfs(&spec.image_root, &spec.id, &spec.command, &env_vec)
             .await?;
 
         // Hot-swap the rootfs on the running pool VM.
@@ -733,7 +737,8 @@ impl Executor for FirecrackerExecutor {
         std::fs::create_dir_all(&vm_dir)?;
 
         // 4. Provision the ext4 rootfs as a CoW clone of the image base.
-        self.provision_vm_rootfs(&spec.image_root, &spec.id, &spec.command)
+        let env_vec: Vec<String> = spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        self.provision_vm_rootfs(&spec.image_root, &spec.id, &spec.command, &env_vec)
             .await?;
         let ext4_id = spec.id.clone();
 
@@ -1442,11 +1447,11 @@ mod ext4_base_cache_tests {
         assert!(base_a.is_file());
 
         let vm_a = exec
-            .provision_vm_rootfs(&built.manifest_digest, "vm-a", &[])
+            .provision_vm_rootfs(&built.manifest_digest, "vm-a", &[], &[])
             .await
             .unwrap();
         let vm_b = exec
-            .provision_vm_rootfs(&built.manifest_digest, "vm-b", &[])
+            .provision_vm_rootfs(&built.manifest_digest, "vm-b", &[], &[])
             .await
             .unwrap();
         assert_ne!(vm_a, vm_b);

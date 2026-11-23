@@ -72,6 +72,7 @@ No release gate; tracked as program completion.
 
 | 2026-11-23 | Release | **v0.11.0** shipped: snapshot network re-attach, fork, integrity, encryption, page dedup/GC, Python+TypeScript SDKs, opt-in TCP. Homebrew/install verified; CI green `98d0984`. Open: guest re-seed, incremental capture, 10-actor scale, Python-on-UDS |
 
+| 2026-11-23 | M3 VM credential plumbing (verified) | Firecracker ext4 now honors env and writes the **public** proxy CA into `/etc/pullrun-ca.pem`; the secret stays host-side. VM command printed `HTTPS_PROXY=http://10.42.0.1:3128`, `SSL_CERT_FILE=/etc/pullrun-ca.pem`, `CA=yes`. Full header-injection echo blocked by guest DNS resolution (httpbin hostname) |
 | 2026-11-23 | M3 egress audit (partial) | Denied VM flows emit `pullrun-audit <id>` kernel log lines (rate 10/s). Verified on KVM: `SRC=10.42.0.2 DST=10.42.0.1 DPT=18080` appears in `journalctl -k`/`dmesg`. No structured event stream yet |
 | 2026-11-23 | M3 CA rotation (code) | `RotateEgressCa` RPC + `pullrun network rotate-ca`: rotates the credential-proxy CA, rewrites `<store>/egress/ca.pem`, new connections use the new CA. Unit test covers PEM replacement. Existing sandboxes must be restarted; end-to-end proxy test not run |
 | 2026-11-23 | M3 VM egress (verified) | Bridge VM to host HTTP `10.42.0.1:18080`: baseline (no policy) exit **0**, `--egress-deny --allow-outbound tcp:10.42.0.1:18080` exit **0**, `--egress-deny` without allow exit **1**. Host UFW needed a temporary allow for the test port; rules themselves are nftables. Audit events/CA rotation still open |

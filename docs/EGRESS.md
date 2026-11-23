@@ -105,6 +105,8 @@ with a container that had no `/run/secrets/TEST_SECRET`
 - DNS names are resolved once at start; rotating IPs need a restart.
 - Rootful containers and bridge-networked VMs are enforced; slirp VMs
   and rootless containers reject `--egress-deny`.
+- Firecracker VMs receive the proxy env and a **public CA file** written
+  into the ext4 rootfs; the secret never enters the guest.
 - VM egress emits a rate-limited kernel audit line per denied flow:
   `journalctl -k | grep "pullrun-audit <workload-id>"` (SRC/DST/DPT,
   rate 10/s). There is no structured EventBus audit stream yet.

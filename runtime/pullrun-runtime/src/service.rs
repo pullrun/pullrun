@@ -3023,12 +3023,21 @@ impl Runtime for RuntimeService {
                     ] {
                         env.insert(key.to_string(), "/etc/pullrun-ca.pem".to_string());
                     }
-                    mounts.push(pullrun_exec::Mount {
-                        type_: "bind".to_string(),
-                        source: ca_path.to_string_lossy().to_string(),
-                        destination: "/etc/pullrun-ca.pem".to_string(),
-                        options: vec!["ro".to_string()],
-                    });
+                    if matches!(backend, Backend::Vm) {
+                        // VMs are self-contained: carry the public CA in
+                        // the workload spec and let the guest init write
+                        // it into the image rootfs.
+                        if let Ok(pem) = std::fs::read_to_string(ca_path) {
+                            env.insert("PULLRUN_CA_PEM".to_string(), pem);
+                        }
+                    } else {
+                        mounts.push(pullrun_exec::Mount {
+                            type_: "bind".to_string(),
+                            source: ca_path.to_string_lossy().to_string(),
+                            destination: "/etc/pullrun-ca.pem".to_string(),
+                            options: vec!["ro".to_string()],
+                        });
+                    }
                     egress_proxy = Some(addr);
                 }
             }
