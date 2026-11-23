@@ -37,8 +37,10 @@ Hostnames in `--allow-outbound` are resolved on the host at start time
 and their IPv4 addresses are installed as rules. A failure to install
 the policy aborts workload startup (fail closed).
 
-The **VM and rootless container** backends reject `--egress-deny` with a
-clear error rather than silently allowing egress.
+**Bridge-networked Firecracker VMs** enforce `--egress-deny` with a
+per-VM nftables forward/input policy (DNS + allowlist + proxy accepted,
+everything else dropped). Slirp VMs and rootless containers still reject
+the flag; use bridge networking for fail-closed VM egress.
 
 VM networking is therefore safe by default: `pullrun run --backend vm`
 starts the VM **isolated**. Pass `--net slirp` (or `--trusted`) to allow
@@ -100,8 +102,9 @@ with a container that had no `/run/secrets/TEST_SECRET`
 - The CA private key lives in the daemon process; the public CA cert is
   written to `<store>/egress/ca.pem`. There is no CA rotation API yet.
 - DNS names are resolved once at start; rotating IPs need a restart.
-- Only rootful containers are enforced; VMs and rootless containers
-  reject `--egress-deny`.
+- Rootful containers and bridge-networked VMs are enforced; slirp VMs
+  and rootless containers reject `--egress-deny`.
+- VM egress has no per-flow audit events or CA rotation yet.
 - No egress audit events yet.
 - Host networking and `--net host` cannot be made fail-closed and are
   rejected when `--egress-deny` is set.

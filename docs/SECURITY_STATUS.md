@@ -22,7 +22,7 @@ is not proven; "Future" means not implemented.
 | Snapshot latency | **Met target** | capture 3.8 s; restore 63 / 84 / 119 ms (best/avg/worst, 512 MiB guest) |
 | Actor templates / suspend/resume | **Met** (single-node) | golden memory snapshot; resume 99–110 ms; suspend writes a new snapshot |
 | Request parking | **Partial** | per-actor mutex serializes resume/suspend; no HTTP ingress queue |
-| Fail-closed egress | **Met** (rootful containers) | nftables `policy drop` + allowlist verified in a netns and with real traffic: allowed TCP connect exit 0, denied exit 1. VM/rootless reject the flag; no egress audit yet |
+| Fail-closed egress | **Met** (rootful containers + bridge VMs) | Container nftables and per-VM bridge forward/input chains. VM test: baseline 0, allowed 0, denied 1. Slirp/rootless reject; no egress audit yet |
 | Credential injection | **Met** (rootful containers) | HTTPS MITM proxy injects headers from the secret store; verified `Authorization: Bearer …` with no sandbox secret |
 | No ambient credentials | **Partial** | egress-credential workloads hold no secret; explicit `--secret` mounts still place secrets in the sandbox; snapshots contain guest memory |
 | Snapshot encryption / integrity | **Partial** | AES-256-GCM at rest + SHA-256 per file; key sits in `<store>/snapshots.key` (0600), no KMS/HSM |
