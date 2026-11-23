@@ -29,6 +29,7 @@ const (
 	streamTypeError  = "error"
 
 	streamProtocolV4 = "v4.channel.k8s.io"
+	streamProtocolV5 = "v5.channel.k8s.io"
 	portForwardProtocol = "portforward.k8s.io"
 )
 
@@ -342,7 +343,7 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	upgrader := spdy.NewResponseUpgrader()
-	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
+	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV5, streamProtocolV4}); err != nil {
 		log.Printf("exec protocol handshake: %v", err)
 		return
 	}
