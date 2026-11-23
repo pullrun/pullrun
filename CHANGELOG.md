@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1 — 2026-11-23
+
+- Fail-closed egress for bridge-networked Firecracker VMs.
+- Verified: baseline VM exit 0, allowlisted target exit 0, denied target
+  exit 1. Slirp VMs and rootless containers still reject the flag.
+- No VM egress audit events or CA rotation yet.
+
 ## 0.11.0 — 2026-11-23
 
 Snapshot hardening and SDKs.
