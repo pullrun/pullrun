@@ -323,25 +323,6 @@ pub fn build_oci_config(
     if let Some(hostname) = &spec.hostname {
         config["hostname"] = serde_json::Value::String(hostname.clone());
     }
-    let mut prestart = Vec::new();
-    for m in &spec.mounts {
-        let mode = if m.options.iter().any(|o| o == "rshared") {
-            "rshared"
-        } else if m.options.iter().any(|o| o == "rslave") {
-            "rslave"
-        } else {
-            continue;
-        };
-        let script = format!(
-            "echo HOOK src={src} dst={dst} >> /tmp/pullrun-hook.log; ls -ld '{src}' >> /tmp/pullrun-hook.log 2>&1; mount --bind '{src}' '{dst}' >> /tmp/pullrun-hook.log 2>&1; echo bind=$? >> /tmp/pullrun-hook.log; mount --make-{mode} '{dst}' >> /tmp/pullrun-hook.log 2>&1; echo prop=$? >> /tmp/pullrun-hook.log",
-            src = m.source,
-            dst = m.destination
-        );
-        prestart.push(serde_json::json!({"path": "/bin/sh", "args": ["sh", "-c", script]}));
-    }
-    if !prestart.is_empty() {
-        config["hooks"] = serde_json::json!({ "prestart": prestart });
-    }
     Ok(config)
 }
 
