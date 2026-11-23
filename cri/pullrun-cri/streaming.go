@@ -167,6 +167,11 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 	session := raw.(*portForwardSession)
 	defer s.sessions.Delete(token)
 
+	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
+		log.Printf("port-forward protocol handshake: %v", err)
+		return
+	}
+
 	upgrader := spdy.NewResponseUpgrader()
 	conn := upgrader.UpgradeResponse(w, r, func(stream httpstream.Stream, _ <-chan struct{}) error {
 		portStr := stream.Headers().Get("port")
