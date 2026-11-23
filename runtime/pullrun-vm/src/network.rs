@@ -198,8 +198,20 @@ fn create_tap_ioctl(name: &str) -> Result<File, VmNetError> {
         )));
     }
 
-    debug!(tap = name, "TAP device created via ioctl");
-    Ok(tun)
+    // Keep the interface after this fd closes: Firecracker opens the TAP
+    // itself, and holding a second fd with different flags causes EBUSY.
+    const TUNSETPERSIST: u32 = 0x4004_54cb;
+    let persist: std::os::raw::c_int = 1;
+    let ret = unsafe { libc::ioctl(tun.as_raw_fd(), TUNSETPERSIST as _, &persist) };
+    if ret < 0 {
+        return Err(VmNetError::IpCommand(format!(
+            "ioctl(TUNSETPERSIST) for {name}: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    drop(tun);
+    debug!(tap = name, "TAP device created persistent via ioctl");
+    std::fs::File::open("/dev/null").map_err(VmNetError::Io)
 }
 
 /// Stub for non-Linux platforms.
