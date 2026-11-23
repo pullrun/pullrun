@@ -10,15 +10,14 @@
 - Host networking no longer creates an OCI network namespace.
 - Per-pod bridge falls back to the shared bridge when no /24 subnet can
   be allocated, avoiding a gateway route conflict.
-- OCI DAG conversion batches node writes and fsyncs the store once at
-  the end. This did not resolve the >10 minute conversion for large
-  images; the bottleneck appears to be converter concurrency/locking.
+- OCI DAG conversion batches node writes and fsyncs once; after a clean
+  rebuild the httpd image converts in ~25 s (previously >10 minutes).
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
   readonly mount specs pass; rshared/rslave still fail).
-- Full Container suite: 22/31 (mount propagation, multi-container
-  network/log and image volumes remain).
+- Full Container suite: 26/31 (multi-container network/log, rshared/
+  rslave propagation and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
@@ -311,15 +310,14 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 - Host networking no longer creates an OCI network namespace.
 - Per-pod bridge falls back to the shared bridge when no /24 subnet can
   be allocated, avoiding a gateway route conflict.
-- OCI DAG conversion batches node writes and fsyncs the store once at
-  the end. This did not resolve the >10 minute conversion for large
-  images; the bottleneck appears to be converter concurrency/locking.
+- OCI DAG conversion batches node writes and fsyncs once; after a clean
+  rebuild the httpd image converts in ~25 s (previously >10 minutes).
 - StopContainer is idempotent; OOM exits report `OOMKilled`; CRI
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
   readonly mount specs pass; rshared/rslave still fail).
-- Full Container suite: 22/31 (mount propagation, multi-container
-  network/log and image volumes remain).
+- Full Container suite: 26/31 (multi-container network/log, rshared/
+  rslave propagation and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).

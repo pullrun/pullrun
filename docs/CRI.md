@@ -58,7 +58,8 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container (basic operations) | **14/14 pass** |
-| Container (full) | **22/31 before mount fixes**; mount specs now 2/4 (rprivate + readonly pass; rshared/rslave fail). Multi-container suite is blocked on slow/failing test-image pulls. Bridge fallback (shared bridge when no per-pod /24) is in but not yet validated. DAG conversion now batches writes and fsyncs once, but a 300 MB httpd image still takes >10 minutes with low CPU and futex waits; the bottleneck is not per-node fsync and needs converter profiling |
+| Container (full) | **26/31 pass**. Remaining: multi-container network/log, rshared/rslave mount propagation, image volume |
+| OCI conversion | httpd (300 MB) now pulls + converts in **~25 s** after rebuilding with batch writes | |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image Manager (core) | **11/15 pass**; remaining: registry manifest-digest IDs, all-reference status, Uid/Username from image config, identifier consistency |
