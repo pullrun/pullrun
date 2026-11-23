@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.4 — 2026-11-23
+
+- VM workloads are isolated by default; `--net slirp` or `--trusted`
+  opts into egress. MCP `run` gains `trusted` (default false).
+- Added `runtime/pullrun-oci/fuzz` RelPath target (unverified on macOS
+  ASAN; run on Linux).
+- CRI image volumes and 30/30 container suite from 0.10.3 unchanged.
+
 ## 0.10.3 — 2026-11-23
 
 - Kubernetes image volumes: rootfs and subPath mounts, read-only.
