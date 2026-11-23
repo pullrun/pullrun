@@ -54,27 +54,28 @@ use crate::proto::{
     CreateSecretResponse, CreateSnapshotRequest, CreateSnapshotResponse, CreateTemplateRequest,
     CreateTemplateResponse, DagNode, DagStoreInfoRequest, DagStoreInfoResponse, DiffRequest,
     DiffResponse, Event as ProtoEvent, ExecRequest, ExecResponse, ExportImageChunk,
-    ExportImageRequest, GcRequest, GcResponse, GetAttestationsRequest, GetAttestationsResponse,
-    GetWorkloadRequest, GetWorkloadStatsRequest, GroupInfo, HasImageRequest, HasImageResponse,
-    ImportImageChunk, ImportImageResponse, InfoRequest, InfoResponse, InspectConfigRequest,
-    InspectConfigResponse, InspectRequest, InspectResponse, InspectSecretRequest,
-    InspectSecretResponse, ListActorsRequest, ListActorsResponse, ListConfigsRequest,
-    ListConfigsResponse, ListGroupsRequest, ListGroupsResponse, ListImagesRequest,
-    ListImagesResponse, ListNetworksRequest, ListNetworksResponse, ListSecretsRequest,
-    ListSecretsResponse, ListSnapshotsRequest, ListSnapshotsResponse, ListTemplatesRequest,
-    ListTemplatesResponse, ListWorkloadsRequest, ListWorkloadsResponse, LogChunk, NetworkInfo,
-    NetworkRule as ProtoNetworkRule, PortForwardData, PortForwardRequest, PruneRequest,
-    PruneResponse, PullImageRequest, PullImageResponse, PushImageRequest, PushImageResponse,
-    RemoveActorRequest, RemoveActorResponse, RemoveConfigRequest, RemoveConfigResponse,
-    RemoveGroupRequest, RemoveGroupResponse, RemoveImageRequest, RemoveImageResponse,
-    RemoveNetworkRequest, RemoveNetworkResponse, RemoveSecretRequest, RemoveSecretResponse,
-    RemoveSnapshotRequest, RemoveSnapshotResponse, RemoveTemplateRequest, RemoveTemplateResponse,
-    RestoreSnapshotRequest, RestoreSnapshotResponse, ResumeActorRequest, ResumeActorResponse,
-    RunComposeRequest, RunComposeResponse, RunGroupSandboxRequest, RunGroupSandboxResponse,
-    RunRequest, RunResponse, SnapshotInfo, StartWorkloadRequest, StartWorkloadResponse,
-    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, SuspendActorRequest,
-    SuspendActorResponse, TemplateInfo, UpdateWorkloadRequest, UpdateWorkloadResponse,
-    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
+    ExportImageRequest, GcRequest, GcResponse, GcSnapshotsRequest, GcSnapshotsResponse,
+    GetAttestationsRequest, GetAttestationsResponse, GetWorkloadRequest, GetWorkloadStatsRequest,
+    GroupInfo, HasImageRequest, HasImageResponse, ImportImageChunk, ImportImageResponse,
+    InfoRequest, InfoResponse, InspectConfigRequest, InspectConfigResponse, InspectRequest,
+    InspectResponse, InspectSecretRequest, InspectSecretResponse, ListActorsRequest,
+    ListActorsResponse, ListConfigsRequest, ListConfigsResponse, ListGroupsRequest,
+    ListGroupsResponse, ListImagesRequest, ListImagesResponse, ListNetworksRequest,
+    ListNetworksResponse, ListSecretsRequest, ListSecretsResponse, ListSnapshotsRequest,
+    ListSnapshotsResponse, ListTemplatesRequest, ListTemplatesResponse, ListWorkloadsRequest,
+    ListWorkloadsResponse, LogChunk, NetworkInfo, NetworkRule as ProtoNetworkRule, PortForwardData,
+    PortForwardRequest, PruneRequest, PruneResponse, PullImageRequest, PullImageResponse,
+    PushImageRequest, PushImageResponse, RemoveActorRequest, RemoveActorResponse,
+    RemoveConfigRequest, RemoveConfigResponse, RemoveGroupRequest, RemoveGroupResponse,
+    RemoveImageRequest, RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse,
+    RemoveSecretRequest, RemoveSecretResponse, RemoveSnapshotRequest, RemoveSnapshotResponse,
+    RemoveTemplateRequest, RemoveTemplateResponse, RestoreSnapshotRequest, RestoreSnapshotResponse,
+    ResumeActorRequest, ResumeActorResponse, RunComposeRequest, RunComposeResponse,
+    RunGroupSandboxRequest, RunGroupSandboxResponse, RunRequest, RunResponse, SnapshotInfo,
+    StartWorkloadRequest, StartWorkloadResponse, StopRequest, StopResponse, StreamEventsRequest,
+    StreamLogsRequest, SuspendActorRequest, SuspendActorResponse, TemplateInfo,
+    UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats,
+    WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -1892,6 +1893,37 @@ fn new_workload_id() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("wl-restored-{nanos:x}")
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => total += dir_size(&p),
+                Ok(_) => total += entry.metadata().map(|m| m.len()).unwrap_or(0),
+                Err(_) => {}
+            }
+        }
+    }
+    total
+}
+
+fn collect_json_text(path: &std::path::Path, out: &mut String) {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_json_text(&p, out);
+        } else if p.extension().and_then(|e| e.to_str()) == Some("json") {
+            if let Ok(s) = std::fs::read_to_string(&p) {
+                out.push_str(&s);
+            }
+        }
+    }
 }
 
 fn new_snapshot_id() -> String {
@@ -5505,6 +5537,77 @@ impl Runtime for RuntimeService {
             false
         };
         Ok(tonic::Response::new(RemoveSnapshotResponse { removed }))
+    }
+
+    async fn gc_snapshots(
+        &self,
+        request: tonic::Request<GcSnapshotsRequest>,
+    ) -> Result<tonic::Response<GcSnapshotsResponse>, tonic::Status> {
+        use pullrun_vm::snapshot::SnapshotMeta;
+        let req = request.into_inner();
+        let mut snapshots: Vec<(String, i64, u64)> = Vec::new();
+        let entries = std::fs::read_dir(&self.config.snapshots_dir)
+            .map_err(|e| tonic::Status::internal(format!("read snapshots dir: {e}")))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(path.join("meta.json")) else {
+                continue;
+            };
+            let Ok(meta) = serde_json::from_slice::<SnapshotMeta>(&bytes) else {
+                continue;
+            };
+            let id = entry.file_name().to_string_lossy().to_string();
+            let size = dir_size(&path);
+            snapshots.push((id, meta.created_at, size));
+        }
+
+        // Conservative reference scan: any actor/template JSON containing
+        // the id, or a live workload restored from it, keeps the snapshot.
+        let mut refs = String::new();
+        collect_json_text(&self.config.actors_dir, &mut refs);
+        let active: Vec<String> = {
+            let workloads = self.workloads.read().await;
+            workloads
+                .values()
+                .filter_map(|s| s.image_root.strip_prefix("snapshot:").map(str::to_string))
+                .collect()
+        };
+
+        snapshots.sort_by_key(|(_, created, _)| *created);
+        let unreferenced: Vec<&(String, i64, u64)> = snapshots
+            .iter()
+            .filter(|(id, _, _)| !refs.contains(id) && !active.contains(id))
+            .collect();
+        let keep = req.keep_last as usize;
+        let delete_count = unreferenced.len().saturating_sub(keep);
+        let mut removed = Vec::new();
+        let mut kept = Vec::new();
+        let mut bytes_freed = 0u64;
+        for (idx, (id, _, size)) in unreferenced.into_iter().enumerate() {
+            if idx < delete_count {
+                if !req.dry_run {
+                    std::fs::remove_dir_all(self.config.snapshots_dir.join(id))
+                        .map_err(|e| tonic::Status::internal(format!("remove {id}: {e}")))?;
+                }
+                bytes_freed += *size;
+                removed.push(id.clone());
+            } else {
+                kept.push(id.clone());
+            }
+        }
+        for (id, _, _) in &snapshots {
+            if !removed.contains(id) && !kept.contains(id) {
+                kept.push(id.clone());
+            }
+        }
+        Ok(tonic::Response::new(GcSnapshotsResponse {
+            removed,
+            kept,
+            bytes_freed,
+        }))
     }
 
     async fn restore_snapshot(

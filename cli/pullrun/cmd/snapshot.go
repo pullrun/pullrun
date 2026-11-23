@@ -111,8 +111,36 @@ the VM is stopped after the snapshot is written.`,
 		},
 	}
 
+	var keepLast uint32
+	var dryRun bool
+	gc := &cobra.Command{
+		Use:   "gc",
+		Short: "Delete unreferenced snapshots (referenced by actors/templates are kept)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, closeFn, err := ensureGRPCClient(opts)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			resp, err := client.GcSnapshots(context.Background(), keepLast, dryRun)
+			if err != nil {
+				return err
+			}
+			for _, id := range resp.Removed {
+				fmt.Printf("removed %s\n", id)
+			}
+			for _, id := range resp.Kept {
+				fmt.Printf("kept    %s\n", id)
+			}
+			fmt.Printf("freed %.1f MiB\n", float64(resp.BytesFreed)/(1024*1024))
+			return nil
+		},
+	}
+	gc.Flags().Uint32Var(&keepLast, "keep", 0, "Keep the newest N unreferenced snapshots")
+	gc.Flags().BoolVar(&dryRun, "dry-run", false, "Print candidates without deleting")
+
 	create.Flags().StringVar(&fidelity, "fidelity", "memory", "memory (RAM + disk, stops the VM), rootfs (disk only), or volumes")
 	restore.Flags().BoolVar(&fork, "fork", false, "Isolate the restored guest on its own slirp network namespace (unique TAP)")
-	cmd.AddCommand(create, ls, rm, restore)
+	cmd.AddCommand(create, gc, ls, rm, restore)
 	return cmd
 }

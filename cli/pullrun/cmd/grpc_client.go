@@ -398,6 +398,11 @@ func (c *GRPCClient) RestoreSnapshotWithFork(ctx context.Context, snapshotID str
 	return c.client.RestoreSnapshot(ctx, &runtimepb.RestoreSnapshotRequest{SnapshotId: snapshotID, Fork: fork})
 }
 
+// GcSnapshots deletes unreferenced snapshots, keeping the newest N.
+func (c *GRPCClient) GcSnapshots(ctx context.Context, keepLast uint32, dryRun bool) (*runtimepb.GcSnapshotsResponse, error) {
+	return c.client.GcSnapshots(ctx, &runtimepb.GcSnapshotsRequest{KeepLast: keepLast, DryRun: dryRun})
+}
+
 // RemoveSnapshot deletes a snapshot directory.
 func (c *GRPCClient) RemoveSnapshot(ctx context.Context, snapshotID string) (*runtimepb.RemoveSnapshotResponse, error) {
 	return c.client.RemoveSnapshot(ctx, &runtimepb.RemoveSnapshotRequest{SnapshotId: snapshotID})

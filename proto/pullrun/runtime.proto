@@ -52,6 +52,7 @@ service Runtime {
     rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
     rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
     rpc RemoveSnapshot(RemoveSnapshotRequest) returns (RemoveSnapshotResponse);
+    rpc GcSnapshots(GcSnapshotsRequest) returns (GcSnapshotsResponse);
     rpc RestoreSnapshot(RestoreSnapshotRequest) returns (RestoreSnapshotResponse);
 
     // --- Actor templates (golden snapshots) and actors ---
@@ -1085,6 +1086,19 @@ message RemoveSnapshotRequest {
 
 message RemoveSnapshotResponse {
     bool removed = 1;
+}
+
+message GcSnapshotsRequest {
+    // Keep this many newest unreferenced snapshots (default 0).
+    uint32 keep_last = 1;
+    // Report candidates without deleting.
+    bool dry_run = 2;
+}
+
+message GcSnapshotsResponse {
+    repeated string removed = 1;
+    repeated string kept = 2;
+    uint64 bytes_freed = 3;
 }
 
 message RestoreSnapshotRequest {
