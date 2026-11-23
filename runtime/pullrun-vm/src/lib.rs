@@ -456,7 +456,7 @@ async fn restore_snapshot_inner(
     let fork_bridge = format!("pf-{}", &id[id.len().saturating_sub(8)..]);
     let actual_tap = network.as_ref().map(|net| {
         if net.fork || net.slirp {
-            format!("fc-{id}")
+            format!("fc-{}", &id[id.len().saturating_sub(8)..])
         } else {
             net.tap_name.clone()
         }
