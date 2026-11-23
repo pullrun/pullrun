@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pullrun"
+version = "0.1.0"
+description = "Thin Python SDK for the Pullrun sandbox runtime"
+requires-python = ">=3.10"
+dependencies = ["grpcio>=1.60"]
+
+[tool.setuptools.packages.find]
+include = ["pullrun*"]
