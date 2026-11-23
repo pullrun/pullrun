@@ -82,8 +82,9 @@ averaged 1.6 s.
 
 - **Firecracker / Linux only.** Apple Virtualization and containers are
   not supported by this API yet.
-- **Net-less snapshots only.** The restore path currently assumes
-  `--net none`; network devices and taps are not re-established.
+- **Network re-attach works for bridged and slirp restores.** The TAP is
+  recreated before `load_snapshot`; inbound proxy rules are not
+  re-registered yet.
 - **Single restore.** Creating a snapshot stops the source VM; the
   snapshot is intended to be resumed once (secure usage). Restoring the
   same snapshot multiple times is possible but clones guest uniqueness

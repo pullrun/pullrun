@@ -73,4 +73,4 @@ No release gate; tracked as program completion.
 | Date | Milestone | Evidence |
 |---|---|---|
 | 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcoded `network_mode: isolated`; docs/SNAPSHOTS.md confirms net-less-only |
-| 2026-11-23 | M1 network (code) | Meta stores TAP/MAC/gateway/netmask; `restore_snapshot_with_network` recreates tap before `load_snapshot`; compiles on Linux. Integration test blocked: Firecracker reports `EBUSY` opening the recreated tap on the KVM host; needs tap lifecycle investigation before claiming acceptance |
+| 2026-11-23 | M1 network (done) | Meta stores TAP/MAC/gateway/netmask; restore recreates the persistent TAP before `load_snapshot`. Verified on KVM: snapshot of `alpine:3.18` with `--net bridge` (10.42.0.4), restore in **130 ms**, host `ping 10.42.0.4` succeeds, tap attached to `pullrun-br0`. Note: inbound proxy rules are not re-registered yet |
