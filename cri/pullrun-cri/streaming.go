@@ -210,7 +210,6 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 		go func() {
 			defer wg.Done()
 			_, _ = io.Copy(tcpConn, stream)
-			stream.Close()
 		}()
 		wg.Wait()
 		return nil
