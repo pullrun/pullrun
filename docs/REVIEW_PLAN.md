@@ -88,6 +88,7 @@ No release gate; tracked as program completion.
 | Date | Milestone | Evidence |
 |---|---|---|
 | 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcoded `network_mode: isolated`; docs/SNAPSHOTS.md confirms net-less-only |
+| 2026-11-23 | M1 incremental storage (measured) | Two 512 MiB alpine VM snapshots: second reports **8192 total pages, 194 new** (~97.6% shared), capture 176 ms. `parent_id` recorded. This is storage-incremental dedup, not a capture-time delta |
 | 2026-11-23 | M1 page GC (done) | `snapshot gc` now removes page blobs no remaining paged snapshot references. Local test: h3 orphan removed; h1/h2 kept because `snap-b` referenced them |
 | 2026-11-23 | M1 dedup (code) | Guest memory split into 4 KiB pages, stored once under `<store>/snapshot-pages` (convergent AES-GCM), snapshot `mem` is a `PRPAGE1` index. Restore reconstructs raw memory and verifies SHA-256. Unit tests: dedup (2 identical pages → 1 blob), round-trip, tamper. GC of page blobs and measured multi-actor sharing still pending; Firecracker integration blocked on host |
 | 2026-11-23 | M1 encryption (code) | AES-256-GCM snapshot files (`PRSNAP1` format) with `<store>/snapshots.key` 0600; capture hashes plaintext then encrypts; restore decrypts to a temp dir, verifies SHA-256, loads, removes temp. Unit tests: round-trip, tamper, key mode/stability. Firecracker integration still blocked on host |
