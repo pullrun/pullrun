@@ -45,8 +45,6 @@ pub struct LinuxContainerExecutor {
     egress: Mutex<HashMap<String, EgressConfig>>,
     /// CRI log paths per workload.
     log_paths: Mutex<HashMap<String, std::path::PathBuf>>,
-    /// Bind mounts that need shared/slave propagation after start.
-    propagations: Mutex<HashMap<String, Vec<(String, String)>>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -75,7 +73,6 @@ impl LinuxContainerExecutor {
             overlay_mounts: Mutex::new(HashSet::new()),
             egress: Mutex::new(HashMap::new()),
             log_paths: Mutex::new(HashMap::new()),
-            propagations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -105,49 +102,6 @@ impl LinuxContainerExecutor {
         // share the anchor's netns and must NOT get their own veth pair —
         // the peer name `eth0` would collide with the sandbox's interface.
         matches!(spec.network_mode, crate::types::NetworkMode::Bridge)
-    }
-
-    fn apply_mount_propagations(&self, id: &str) {
-        use std::process::Command;
-        let props = self
-            .propagations
-            .lock()
-            .expect("propagations lock poisoned")
-            .get(id)
-            .cloned()
-            .unwrap_or_default();
-        if props.is_empty() {
-            return;
-        }
-        let state = Command::new(&self.runc_path).args(["state", id]).output();
-        let pid = match state {
-            Ok(o) if o.status.success() => serde_json::from_slice::<serde_json::Value>(&o.stdout)
-                .ok()
-                .and_then(|v| v.get("pid").and_then(|p| p.as_u64()))
-                .map(|p| p as u32),
-            _ => None,
-        };
-        let Some(pid) = pid else {
-            warn!(id = %id, "could not resolve container pid for mount propagation");
-            return;
-        };
-        for (dest, mode) in props {
-            let flag = format!("--make-{mode}");
-            let out = Command::new("nsenter")
-                .args(["-t", &pid.to_string(), "-m", "mount", &flag, &dest])
-                .output();
-            match out {
-                Ok(o) if o.status.success() => {
-                    info!(id = %id, dest = %dest, mode = %mode, "set mount propagation")
-                }
-                Ok(o) => {
-                    warn!(id = %id, dest = %dest, mode = %mode, stderr = %String::from_utf8_lossy(&o.stderr).trim(), "mount propagation failed")
-                }
-                Err(e) => {
-                    warn!(id = %id, dest = %dest, error = %e, "mount propagation command failed")
-                }
-            }
-        }
     }
 
     fn ensure_bridge_exists(bridge_name: &str, subnet: Option<&IpRange>) -> Result<(), ExecError> {
@@ -553,29 +507,6 @@ impl Executor for LinuxContainerExecutor {
             } else {
                 egress.remove(&spec.id);
             }
-            let props: Vec<(String, String)> = spec
-                .mounts
-                .iter()
-                .filter_map(|m| {
-                    if m.options.iter().any(|o| o == "rshared") {
-                        Some((m.destination.clone(), "rshared".to_string()))
-                    } else if m.options.iter().any(|o| o == "rslave") {
-                        Some((m.destination.clone(), "rslave".to_string()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            let mut props_map = self
-                .propagations
-                .lock()
-                .expect("propagations lock poisoned");
-            if props.is_empty() {
-                props_map.remove(&spec.id);
-            } else {
-                props_map.insert(spec.id.clone(), props);
-            }
-            drop(props_map);
             let mut logs = self.log_paths.lock().expect("log_paths lock poisoned");
             match &spec.log_path {
                 Some(path) => {
@@ -854,7 +785,6 @@ impl Executor for LinuxContainerExecutor {
         .map_err(|e| ExecError::ExecutionFailed(format!("runc spawn failed: {e}")))?;
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-        self.apply_mount_propagations(&handle.id);
         let early = child.try_wait().ok().flatten();
         if let Some(status) = early {
             if !status.success() {
