@@ -65,13 +65,6 @@ func parseResourceAnnotations(annotations map[string]string) (cpu uint64, mem ui
 // podBridgeName derives a stable per-pod bridge name from the pod id.
 // Linux interface names are capped at 15 characters (IFNAMSIZ), so we
 // keep a short prefix plus a truncated hash of the id.
-func podBridgeName(podID string) string {
-	const prefix = "pr-"
-	if len(podID) > 12 {
-		podID = podID[len(podID)-12:]
-	}
-	return prefix + podID
-}
 
 // ============================================================
 // Critical path: RunPodSandbox / StopPodSandbox / PodSandboxStatus
@@ -112,10 +105,10 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 
 	// Per-pod bridge for pod-level network isolation: every pod gets its
 	// own /24 subnet, so pod traffic is isolated even inside the host.
+	// Use the runtime's shared bridge. Per-pod bridges created
+	// route/subnet conflicts with the flat /16 when IPAM could not
+	// allocate a distinct /24.
 	bridgeName := ""
-	if netMode == "bridge" {
-		bridgeName = podBridgeName(req.Config.Metadata.Uid)
-	}
 
 	// Pod DNS config is applied to the sandbox's /etc/resolv.conf and
 	// propagated to every container in the pod.
