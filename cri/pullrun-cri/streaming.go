@@ -200,18 +200,20 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 		}
 		log.Printf("port-forward connected %s", targetAddr)
 
-		var wg sync.WaitGroup
-		wg.Add(2)
 		go func() {
-			defer wg.Done()
-			_, _ = io.Copy(stream, tcpConn)
-			tcpConn.Close()
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				_, _ = io.Copy(stream, tcpConn)
+				tcpConn.Close()
+			}()
+			go func() {
+				defer wg.Done()
+				_, _ = io.Copy(tcpConn, stream)
+			}()
+			wg.Wait()
 		}()
-		go func() {
-			defer wg.Done()
-			_, _ = io.Copy(tcpConn, stream)
-		}()
-		wg.Wait()
 		return nil
 	})
 	if conn == nil {
