@@ -73,6 +73,7 @@ type sandboxRecord struct {
 	labels       map[string]string
 	annotations  map[string]string
 	sysctls      map[string]string
+	hostname     string
 	dns          *pullrunruntime.DnsConfig
 }
 

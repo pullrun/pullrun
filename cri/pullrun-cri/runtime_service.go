@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -68,6 +69,26 @@ func parseResourceAnnotations(annotations map[string]string) (cpu uint64, mem ui
 
 // podBridgeName derives a per-pod bridge name (kept for the unit tests;
 // production pods now use the shared bridge).
+func portMappingRules(mappings []*runtimeapi.PortMapping) []*pullrunruntime.NetworkRule {
+	rules := make([]*pullrunruntime.NetworkRule, 0, len(mappings))
+	for _, m := range mappings {
+		if m.HostPort == 0 {
+			continue
+		}
+		proto := strings.ToLower(m.Protocol.String())
+		if proto == "" || proto == "protocol_unspecified" {
+			proto = "tcp"
+		}
+		rules = append(rules, &pullrunruntime.NetworkRule{
+			Direction: "inbound",
+			Protocol:  proto,
+			Port:      uint32(m.ContainerPort),
+			HostPort:  uint32(m.HostPort),
+		})
+	}
+	return rules
+}
+
 func podBridgeName(podID string) string {
 	const prefix = "pr-"
 	if len(podID) > 12 {
@@ -143,6 +164,8 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		BridgeName:    bridgeName,
 		Dns:           dns,
 		Sysctls:       req.Config.GetLinux().GetSysctls(),
+		Hostname:      req.Config.Hostname,
+		NetworkRules:  portMappingRules(req.Config.PortMappings),
 	})
 	cancel()
 	if err != nil {
@@ -166,6 +189,7 @@ func (c *criServer) RunPodSandbox(ctx context.Context, req *runtimeapi.RunPodSan
 		labels:       req.Config.Labels,
 		annotations:  req.Config.Annotations,
 		sysctls:      req.Config.GetLinux().GetSysctls(),
+		hostname:     req.Config.Hostname,
 		dns:          dns,
 	}
 	c.sandboxStore.putSandbox(rec)

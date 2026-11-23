@@ -1682,6 +1682,7 @@ async fn attempt_restart(
         egress_proxy: None,
         sysctls: std::collections::HashMap::new(),
         log_path: None,
+        hostname: None,
     };
 
     match watcher_executor.create(spec).await {
@@ -3021,6 +3022,11 @@ impl Runtime for RuntimeService {
             } else {
                 Some(std::path::PathBuf::from(&req.log_path))
             },
+            hostname: if req.hostname.is_empty() {
+                None
+            } else {
+                Some(req.hostname.clone())
+            },
         };
 
         // Emit BackendSelected *before* we touch the executor. This
@@ -3373,6 +3379,7 @@ impl Runtime for RuntimeService {
                 sysctls: Default::default(),
                 create_only: false,
                 log_path: String::new(),
+                hostname: String::new(),
             });
 
             let run_resp = self.run_workload(run_req).await?;

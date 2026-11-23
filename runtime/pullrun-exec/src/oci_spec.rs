@@ -310,7 +310,7 @@ pub fn build_oci_config(
         }
     }
 
-    Ok(serde_json::json!({
+    let mut config = serde_json::json!({
         "ociVersion": "1.1.0",
         "process": process,
         "root": {
@@ -319,7 +319,11 @@ pub fn build_oci_config(
         },
         "mounts": serde_json::Value::Array(mounts),
         "linux": linux
-    }))
+    });
+    if let Some(hostname) = &spec.hostname {
+        config["hostname"] = serde_json::Value::String(hostname.clone());
+    }
+    Ok(config)
 }
 
 /// Write the OCI config next to the bundle rootfs.

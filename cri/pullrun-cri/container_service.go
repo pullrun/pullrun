@@ -169,6 +169,7 @@ func (c *criServer) runRequestForContainer(cid string, req *runtimeapi.CreateCon
 		SeccompProfile:  seccomp,
 		Dns:             sandbox.dns,
 		Sysctls:         sandbox.sysctls,
+		Hostname:        sandbox.hostname,
 		CreateOnly:      true,
 		LogPath:         logPath,
 	}, nil

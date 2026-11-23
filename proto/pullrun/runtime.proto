@@ -330,6 +330,8 @@ message RunRequest {
     bool create_only = 26;
     // Capture container stdout/stderr into this path (CRI log path).
     string log_path = 27;
+    // UTS hostname for the workload.
+    string hostname = 28;
 }
 
 // DNS configuration written to the workload's /etc/resolv.conf.

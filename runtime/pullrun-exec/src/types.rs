@@ -166,6 +166,8 @@ pub struct WorkloadSpec {
     pub sysctls: HashMap<String, String>,
     /// Capture container stdout/stderr into this path.
     pub log_path: Option<std::path::PathBuf>,
+    /// UTS hostname.
+    pub hostname: Option<String>,
 }
 
 impl WorkloadSpec {
@@ -195,6 +197,7 @@ impl WorkloadSpec {
             egress_proxy: None,
             sysctls: HashMap::new(),
             log_path: None,
+            hostname: None,
         }
     }
 }
@@ -224,6 +227,7 @@ pub struct WorkloadSpecBuilder {
     egress_proxy: Option<std::net::SocketAddr>,
     sysctls: HashMap<String, String>,
     log_path: Option<std::path::PathBuf>,
+    hostname: Option<String>,
 }
 
 impl WorkloadSpecBuilder {
@@ -353,6 +357,7 @@ impl WorkloadSpecBuilder {
             egress_proxy: self.egress_proxy,
             sysctls: self.sysctls,
             log_path: self.log_path,
+            hostname: self.hostname,
         }
     }
 }

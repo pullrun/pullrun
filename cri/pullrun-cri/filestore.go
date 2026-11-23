@@ -41,6 +41,7 @@ type sandboxCheckpoint struct {
 	Labels       map[string]string `json:"labels,omitempty"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
 	Sysctls      map[string]string `json:"sysctls,omitempty"`
+	Hostname     string            `json:"hostname,omitempty"`
 	DNSServers   []string          `json:"dns_servers,omitempty"`
 	DNSSearches  []string  `json:"dns_searches,omitempty"`
 	DNSOptions   []string  `json:"dns_options,omitempty"`
@@ -113,6 +114,7 @@ func (s *fileStore) loadAll() {
 				labels:       cp.Labels,
 				annotations:  cp.Annotations,
 				sysctls:      cp.Sysctls,
+				hostname:     cp.Hostname,
 				dns: &pullrunruntime.DnsConfig{
 					Nameservers: cp.DNSServers,
 					Searches:    cp.DNSSearches,
@@ -287,6 +289,7 @@ func (s *fileStore) writeSandbox(rec *sandboxRecord) {
 		Labels:       rec.labels,
 		Annotations:  rec.annotations,
 		Sysctls:      rec.sysctls,
+		Hostname:     rec.hostname,
 	}
 	if rec.dns != nil {
 		cp.DNSServers = rec.dns.Nameservers

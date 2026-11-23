@@ -732,7 +732,9 @@ type RunRequest struct {
 	// Create the workload but do not start it (CRI Created state).
 	CreateOnly bool `protobuf:"varint,26,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	// Capture container stdout/stderr into this path (CRI log path).
-	LogPath       string `protobuf:"bytes,27,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`
+	LogPath string `protobuf:"bytes,27,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`
+	// UTS hostname for the workload.
+	Hostname      string `protobuf:"bytes,28,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -952,6 +954,13 @@ func (x *RunRequest) GetCreateOnly() bool {
 func (x *RunRequest) GetLogPath() string {
 	if x != nil {
 		return x.LogPath
+	}
+	return ""
+}
+
+func (x *RunRequest) GetHostname() string {
+	if x != nil {
+		return x.Hostname
 	}
 	return ""
 }
@@ -8694,7 +8703,8 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x12bytes_deduplicated\x18\x03 \x01(\x03R\x11bytesDeduplicated\x12'\n" +
 	"\x0fmanifest_digest\x18\x04 \x01(\tR\x0emanifestDigest\x12\x1d\n" +
 	"\n" +
-	"image_user\x18\x05 \x01(\tR\timageUser\"\xee\t\n" +
+	"image_user\x18\x05 \x01(\tR\timageUser\"\x8a\n" +
+	"\n" +
 	"\n" +
 	"RunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -8731,7 +8741,8 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\asysctls\x18\x19 \x03(\v2(.pullrun.runtime.RunRequest.SysctlsEntryR\asysctls\x12\x1f\n" +
 	"\vcreate_only\x18\x1a \x01(\bR\n" +
 	"createOnly\x12\x19\n" +
-	"\blog_path\x18\x1b \x01(\tR\alogPath\x1a6\n" +
+	"\blog_path\x18\x1b \x01(\tR\alogPath\x12\x1a\n" +
+	"\bhostname\x18\x1c \x01(\tR\bhostname\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
