@@ -391,6 +391,8 @@ pub struct SnapshotNetwork {
     pub gateway: std::net::Ipv4Addr,
     pub netmask: std::net::Ipv4Addr,
     pub slirp: bool,
+    /// Fork restores isolate the guest on its own slirp netns.
+    pub fork: bool,
 }
 
 /// How much state a snapshot captures.

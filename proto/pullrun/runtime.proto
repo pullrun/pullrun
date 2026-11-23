@@ -1089,6 +1089,8 @@ message RemoveSnapshotResponse {
 
 message RestoreSnapshotRequest {
     string snapshot_id = 1;
+    // Fork: restore into an isolated network namespace with a unique TAP.
+    bool fork = 2;
 }
 
 message RestoreSnapshotResponse {

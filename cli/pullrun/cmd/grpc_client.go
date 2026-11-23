@@ -389,7 +389,13 @@ func (c *GRPCClient) ListSnapshots(ctx context.Context) (*runtimepb.ListSnapshot
 
 // RestoreSnapshot resumes a snapshot into a new workload.
 func (c *GRPCClient) RestoreSnapshot(ctx context.Context, snapshotID string) (*runtimepb.RestoreSnapshotResponse, error) {
-	return c.client.RestoreSnapshot(ctx, &runtimepb.RestoreSnapshotRequest{SnapshotId: snapshotID})
+	return c.RestoreSnapshotWithFork(ctx, snapshotID, false)
+}
+
+// RestoreSnapshotWithFork resumes a snapshot; fork=true isolates the
+// guest on its own slirp network namespace with a unique TAP.
+func (c *GRPCClient) RestoreSnapshotWithFork(ctx context.Context, snapshotID string, fork bool) (*runtimepb.RestoreSnapshotResponse, error) {
+	return c.client.RestoreSnapshot(ctx, &runtimepb.RestoreSnapshotRequest{SnapshotId: snapshotID, Fork: fork})
 }
 
 // RemoveSnapshot deletes a snapshot directory.

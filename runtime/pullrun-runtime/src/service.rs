@@ -5512,7 +5512,9 @@ impl Runtime for RuntimeService {
         request: tonic::Request<RestoreSnapshotRequest>,
     ) -> Result<tonic::Response<RestoreSnapshotResponse>, tonic::Status> {
         use pullrun_vm::snapshot::SnapshotMeta;
-        let snapshot_id = request.into_inner().snapshot_id;
+        let req = request.into_inner();
+        let snapshot_id = req.snapshot_id;
+        let fork = req.fork;
         if snapshot_id.is_empty()
             || !snapshot_id
                 .chars()
@@ -5568,7 +5570,8 @@ impl Runtime for RuntimeService {
                     .netmask
                     .parse()
                     .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
-                slirp: meta.network_mode == "slirp",
+                slirp: meta.network_mode == "slirp" || fork,
+                fork,
             })
         } else {
             None
@@ -5652,7 +5655,11 @@ impl Runtime for RuntimeService {
             } else {
                 Some(meta.bridge_name.clone())
             },
-            network_mode: meta.network_mode.clone(),
+            network_mode: if fork {
+                "slirp".to_string()
+            } else {
+                meta.network_mode.clone()
+            },
             mounts: Vec::new(),
             privileged: false,
             readonly_rootfs: false,
@@ -5903,6 +5910,7 @@ impl Runtime for RuntimeService {
         let started = std::time::Instant::now();
         let restored = self
             .restore_snapshot(tonic::Request::new(RestoreSnapshotRequest {
+                fork: false,
                 snapshot_id: actor.snapshot_id.clone(),
             }))
             .await?
@@ -8829,7 +8837,11 @@ mod tests {
                     cpu_millicores: None,
                     memory_bytes: None,
                     bridge_name: None,
-                    network_mode: meta.network_mode.clone(),
+                    network_mode: if fork {
+                        "slirp".to_string()
+                    } else {
+                        meta.network_mode.clone()
+                    },
                     mounts: vec![],
                     privileged: false,
                     readonly_rootfs: false,

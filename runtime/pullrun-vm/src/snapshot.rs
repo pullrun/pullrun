@@ -175,21 +175,36 @@ impl FirecrackerApi {
         mem_path: &Path,
         resume: bool,
     ) -> Result<(), String> {
-        self.request(
-            "PUT",
-            "/snapshot/load",
-            Some(json!({
-                "snapshot_path": state_path.to_string_lossy(),
-                "mem_backend": {
-                    "backend_path": mem_path.to_string_lossy(),
-                    "backend_type": "File",
-                },
-                "enable_diff_snapshots": false,
-                "resume_vm": resume,
-            })),
-        )
-        .await
-        .map(|_| ())
+        self.load_snapshot_with_tap(state_path, mem_path, resume, None)
+            .await
+    }
+
+    /// Load a snapshot, optionally overriding the host TAP name.
+    pub async fn load_snapshot_with_tap(
+        &self,
+        state_path: &Path,
+        mem_path: &Path,
+        resume: bool,
+        tap_override: Option<&str>,
+    ) -> Result<(), String> {
+        let mut body = json!({
+            "snapshot_path": state_path.to_string_lossy(),
+            "mem_backend": {
+                "backend_path": mem_path.to_string_lossy(),
+                "backend_type": "File",
+            },
+            "enable_diff_snapshots": false,
+            "resume_vm": resume,
+        });
+        if let Some(tap) = tap_override {
+            body["network_overrides"] = json!([{
+                "iface_id": "eth0",
+                "host_dev_name": tap,
+            }]);
+        }
+        self.request("PUT", "/snapshot/load", Some(body))
+            .await
+            .map(|_| ())
     }
 }
 

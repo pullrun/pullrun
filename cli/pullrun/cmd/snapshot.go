@@ -91,6 +91,7 @@ the VM is stopped after the snapshot is written.`,
 		},
 	}
 
+	var fork bool
 	restore := &cobra.Command{
 		Use:   "restore SNAPSHOT_ID",
 		Short: "Resume a snapshot into a new workload",
@@ -101,7 +102,7 @@ the VM is stopped after the snapshot is written.`,
 				return err
 			}
 			defer closeFn()
-			resp, err := client.RestoreSnapshot(context.Background(), args[0])
+			resp, err := client.RestoreSnapshotWithFork(context.Background(), args[0], fork)
 			if err != nil {
 				return err
 			}
@@ -111,6 +112,7 @@ the VM is stopped after the snapshot is written.`,
 	}
 
 	create.Flags().StringVar(&fidelity, "fidelity", "memory", "memory (RAM + disk, stops the VM), rootfs (disk only), or volumes")
+	restore.Flags().BoolVar(&fork, "fork", false, "Isolate the restored guest on its own slirp network namespace (unique TAP)")
 	cmd.AddCommand(create, ls, rm, restore)
 	return cmd
 }

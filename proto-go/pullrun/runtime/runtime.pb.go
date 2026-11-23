@@ -7549,8 +7549,10 @@ func (x *RemoveSnapshotResponse) GetRemoved() bool {
 }
 
 type RestoreSnapshotRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	// Fork: restore into an isolated network namespace with a unique TAP.
+	Fork          bool `protobuf:"varint,2,opt,name=fork,proto3" json:"fork,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7590,6 +7592,13 @@ func (x *RestoreSnapshotRequest) GetSnapshotId() string {
 		return x.SnapshotId
 	}
 	return ""
+}
+
+func (x *RestoreSnapshotRequest) GetFork() bool {
+	if x != nil {
+		return x.Fork
+	}
+	return false
 }
 
 type RestoreSnapshotResponse struct {
@@ -9319,10 +9328,11 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\"2\n" +
 	"\x16RemoveSnapshotResponse\x12\x18\n" +
-	"\aremoved\x18\x01 \x01(\bR\aremoved\"9\n" +
+	"\aremoved\x18\x01 \x01(\bR\aremoved\"M\n" +
 	"\x16RestoreSnapshotRequest\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
-	"snapshotId\"s\n" +
+	"snapshotId\x12\x12\n" +
+	"\x04fork\x18\x02 \x01(\bR\x04fork\"s\n" +
 	"\x17RestoreSnapshotResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x18\n" +
