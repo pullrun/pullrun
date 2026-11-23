@@ -4,9 +4,9 @@
 
 # **Pullrun**
 
-### *The AI agent sandbox runtime — a disposable microVM per task, booted from any OCI image in 200–500 ms depending on backend and warmth.*
+### *The agent sandbox runtime you own: any OCI image, four isolation tiers, ~100 ms resume, MCP-native, air-gap-ready.*
 
-**Give every agent task its own sandbox. Pullrun boots any OCI image as a hardened microVM (Firecracker or Apple Silicon), a Linux container, or a dense sandbox group — measured at ~500 ms Firecracker cold / ~200 ms warm, ~400 ms containers, ~160 ms to an Apple VM exec prompt, and ~185 ms for the 10th concurrent sandbox in a group. One content-addressed image store feeds all of them. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and commit filesystem state directly. The CLI can run without a persistent daemon; the MCP server, sync, and long-lived workloads use the runtime daemon. No overlayfs in the image store. No separate VM images.**
+**Give every agent task its own sandbox — on your hardware. Pullrun boots any OCI image as a hardened microVM (Firecracker or Apple Silicon), a Linux container, or a dense sandbox group from one content-addressed store. Firecracker memory snapshots restore in **63–119 ms** and actor templates resume in **99–110 ms**, so stateful agents skip boot entirely. Native MCP server, so opencode, Claude Code, and Cursor pull images, run tasks, exec, and resume state directly. The CLI can run without a persistent daemon; the MCP server, sync, and long-lived workloads use the runtime daemon. No overlayfs in the image store. No separate VM images.**
 
 **One OCI image. Any execution target — agent sandbox, container, Firecracker microVM, Apple Silicon VM, or Kubernetes workload. CLI + runtime under 25 MB.**
 
@@ -59,16 +59,24 @@ pullrun commit <id> task-run-042:latest
 ```
 
 **Key differentiators:**
+- **State that resumes in ~100 ms** — Firecracker `MEMORY` snapshots restore in 63–119 ms ([docs/SNAPSHOTS.md](docs/SNAPSHOTS.md)); golden-template actors suspend/resume in 99–110 ms ([docs/ACTORS.md](docs/ACTORS.md))
 - **MicroVM isolation per task** — untrusted agent code runs in its own Firecracker kernel, not a shared-host namespace. Containers and VMs boot from the *same* image, no separate build step
-- **~400 ms task boots** — Firecracker cold boot ~500 ms, warm pool ~200 ms, containers ~400 ms, Apple Silicon VM ~160 ms
+- **200–500 ms cold boots, sub-200 ms warm** — Firecracker cold ~500 ms, warm pool ~200 ms, containers ~400 ms, Apple Silicon VM ~160 ms
 - **One image, any number of sandboxes** — the DAG store dedupes by content hash. Per-task VMs get reflink clones that share physical image blocks on APFS/btrfs/XFS; group sandboxes share one read-only base and the guest page cache (measured in [docs/GROUPS.md](docs/GROUPS.md))
-- **State that persists** — `commit` captures a sandbox's filesystem (guest memory is not snapshotted yet); the next run boots from that rootfs
+- **State that persists** — `commit` captures the filesystem; `snapshot` captures Firecracker guest memory + rootfs; actors resume from a golden template
 - **Sandbox groups** — one VM, concurrent sandboxes with private overlays and a shared guest page cache: 10 trivial sandboxes in ~185 ms, image cache warmed once (see [docs/GROUPS.md](docs/GROUPS.md))
 - **Native MCP server** — 15 runtime tools (run, exec, logs, build, push…) + resources; works in stdio (opencode, Claude Code, Cursor) or SSE (remote agents)
 - **P2P image distribution** — one registry pull per fleet, the rest sync peer-to-peer at LAN speed
 - **~14 MB CLI + ~6 MB runtime daemon** (stripped) — no daemon required by default (CLI-only `pullrun run`), optional daemon for background services
 
 **Also included:** Kubernetes CRI shim (beta), Docker Compose support, policy engine (ed25519 image signatures, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
+
+**Current boundaries (honest list):**
+- **Snapshots** are MEMORY/ROOTFS only, plaintext, and have no page dedup, encryption, fork/branch, or GC yet. The measured restores used `--net none`; network re-attach on restore is pending.
+- **Fail-closed egress + credential injection** are enforced for rootful containers only. VMs/rootless are isolated by default but do not have the nftables/audit guarantees yet.
+- **Sandbox groups** are macOS-only today.
+- **No Python/TS SDK yet** — programmatic clients use gRPC or MCP.
+- **Single-node**: the control plane is a stub; no cluster scheduler or multi-tenant quotas.
 
 ```bash
 # Apple Silicon VM (macOS default) — 3 s
@@ -226,7 +234,7 @@ AI agents churn through sandboxes by the thousands. Pullrun is built for that ch
 | Strong isolation | Kernel-per-task microVMs for untrusted code; group sandboxes share a guest kernel and are meant for trusted same-tenant tasks |
 | Cheap per-sandbox storage | Base image stored once; reflink clones share blocks (APFS/btrfs/XFS); group sandboxes share one base + page cache |
 | Low memory | Group sandboxes share the guest page cache (measured: 6 MiB warmed once, zero per extra reader); per-task VMs have independent guest memory |
-| Cross-turn state | `commit` captures filesystem state → next run boots from that rootfs; guest-memory snapshot/restore is on the roadmap |
+| Cross-turn state | `commit` for filesystem state; Firecracker memory snapshots restore in 63–119 ms; actor resume 99–110 ms |
 | Dense fleets | Sandbox groups: one VM hosting concurrent sandboxes (CLI: `pullrun group`) |
 | Agent-native control | Native **MCP** — `run`, `exec`, `logs`, `build`, `push`, `list_images`, `compose_up`… (15 tools) |
 | Guardrails | ed25519 image signatures, SBOM/CVSS gates, seccomp profiles, read-only rootfs, `no_new_privileges` |
@@ -298,7 +306,9 @@ Pullrun also mitigates **shared-kernel cross-container risks** that aren't speci
 
 Pullrun is also **rootless by default** — no `sudo` needed, no daemon listening on a TCP socket, no attack surface from a central dockerd.
 
-### 🔥 The Only Runtime with Containers + VMs from the Same Image
+### 🔥 One Store, Four Isolation Tiers
+
+Kata Containers, Docker Sandboxes, and Apple Containerization also run OCI images inside VMs. Pullrun's narrower claim is **one content-addressed store and one binary** feeding containers, Firecracker, Apple VMs, and sandbox groups — with no separate VM-image build.
 
 | Backend | Isolation | Pullrun | Docker | Podman |
 |---------|-----------|:-------:|:------:|:------:|
