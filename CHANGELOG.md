@@ -19,7 +19,8 @@
 - Full Container suite: 28/31 expected (multi-container 3/3).
 - Image core: 15/15 (digest RepoDigests, reference status, Uid/Username
   from image config).
-- Streaming port-forward uses the portforward.k8s.io handshake.
+- Streaming port-forward uses the portforward.k8s.io handshake; TTY
+  SPDY handshake succeeds but runtime TTY attach still blocks.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
@@ -321,7 +322,8 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
 - Full Container suite: 28/31 expected (multi-container 3/3).
 - Image core: 15/15 (digest RepoDigests, reference status, Uid/Username
   from image config).
-- Streaming port-forward uses the portforward.k8s.io handshake.
+- Streaming port-forward uses the portforward.k8s.io handshake; TTY
+  SPDY handshake succeeds but runtime TTY attach still blocks.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
