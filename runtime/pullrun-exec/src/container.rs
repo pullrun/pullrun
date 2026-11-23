@@ -153,7 +153,7 @@ impl LinuxContainerExecutor {
                     Ok(())
                 });
             }
-            let bind_status = bind.output();
+            let bind_status = bind.status();
             let flag = format!("--make-{mode}");
             let prop_status = std::process::Command::new("nsenter")
                 .args([
@@ -167,8 +167,8 @@ impl LinuxContainerExecutor {
                     &dest,
                 ])
                 .status();
-            match (&bind_status, &prop_status) {
-                (Ok(b), Ok(p)) if b.status.success() && p.status.success() => {
+            match (bind_status, prop_status) {
+                (Ok(b), Ok(p)) if b.success() && p.success() => {
                     info!(id = %id, source = %source, dest = %dest, mode = %mode, "propagated mount")
                 }
                 _ => {
