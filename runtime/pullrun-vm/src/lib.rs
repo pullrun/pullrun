@@ -4,6 +4,7 @@
 #![allow(clippy::doc_lazy_continuation)]
 
 pub mod attach;
+pub mod egress;
 pub mod ext4;
 pub mod network;
 pub mod oci_kernel;
@@ -619,9 +620,9 @@ impl Executor for FirecrackerExecutor {
 
         // `Loopback` is Pullrun's isolated/none mode for VMs: no external
         // network device, no IP, no tap/bridge.
-        if spec.egress_deny {
+        if spec.egress_deny && matches!(spec.network_mode, NetworkMode::Slirp) {
             return Err(ExecError::BackendNotAvailable(
-                "fail-closed egress is not implemented for Firecracker VMs yet".into(),
+                "fail-closed VM egress requires bridge networking, not slirp".into(),
             ));
         }
         let no_network = matches!(spec.network_mode, NetworkMode::Loopback);
@@ -757,6 +758,29 @@ impl Executor for FirecrackerExecutor {
         let sidecar_json = serde_json::to_string_pretty(&sidecar)
             .map_err(|e| ExecError::ExecutionFailed(format!("serialize sidecar: {e}")))?;
         std::fs::write(&sidecar_path, sidecar_json)?;
+
+        if spec.egress_deny && !no_network {
+            let bridge = if vm_net.bridge_name.is_empty() {
+                crate::network::BRIDGE_NAME
+            } else {
+                &vm_net.bridge_name
+            };
+            let nameservers: Vec<std::net::IpAddr> = spec
+                .dns
+                .nameservers
+                .iter()
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            crate::egress::install(
+                &spec.id,
+                guest_ip,
+                bridge,
+                &spec.network_rules,
+                &nameservers,
+                spec.egress_proxy,
+            )
+            .map_err(|e| ExecError::ExecutionFailed(format!("VM egress policy: {e}")))?;
+        }
 
         let handle = ProcessHandle {
             id: spec.id.clone(),
@@ -950,6 +974,9 @@ impl Executor for FirecrackerExecutor {
                 if !sidecar.network_disabled {
                     if let Err(e) = teardown_tap(&sidecar.tap_name, tap_fd) {
                         warn!(tap = %sidecar.tap_name, "tap teardown warning: {e}");
+                    }
+                    if let Err(e) = crate::egress::remove(id) {
+                        warn!(id = %id, "egress teardown warning: {e}");
                     }
                 }
                 // Inbound listeners for this workload id are owned by
