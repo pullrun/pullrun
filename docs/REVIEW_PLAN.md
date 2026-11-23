@@ -72,4 +72,5 @@ No release gate; tracked as program completion.
 
 | Date | Milestone | Evidence |
 |---|---|---|
-| 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcodes `network_mode: isolated`, no NIC setup; docs/SNAPSHOTS.md confirms net-less-only |
+| 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcoded `network_mode: isolated`; docs/SNAPSHOTS.md confirms net-less-only |
+| 2026-11-23 | M1 network (code) | Meta stores TAP/MAC/gateway/netmask; `restore_snapshot_with_network` recreates tap before `load_snapshot`; compiles on Linux. Integration test blocked: Firecracker reports `EBUSY` opening the recreated tap on the KVM host; needs tap lifecycle investigation before claiming acceptance |
