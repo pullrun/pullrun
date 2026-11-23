@@ -73,5 +73,6 @@ No release gate; tracked as program completion.
 | Date | Milestone | Evidence |
 |---|---|---|
 | 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcoded `network_mode: isolated`; docs/SNAPSHOTS.md confirms net-less-only |
+| 2026-11-23 | M1 GC (done) | `snapshot gc --keep N [--dry-run]`: scans `meta.json`, keeps actor/template-referenced and live-restored snapshots, removes older unreferenced dirs. Local test: removed `snap-old`, kept `snap-new` (newest) and `snap-ref` (actor reference) |
 | 2026-11-23 | M1 fork (blocked) | First fork attempt used slirp in a rootful daemon; `slirp4netns --configure` reconfigured the host netns and the KVM host became unreachable (SSH kex reset, ICMP loss). Code changed to an unbridged isolated TAP; **fork verification is blocked until the host is rebooted**, and no fork result is claimed |
 | 2026-11-23 | M1 network (done) | Meta stores TAP/MAC/gateway/netmask; restore recreates the persistent TAP before `load_snapshot`. Verified on KVM: snapshot of `alpine:3.18` with `--net bridge` (10.42.0.4), restore in **130 ms**, host `ping 10.42.0.4` succeeds, tap attached to `pullrun-br0`. Note: inbound proxy rules are not re-registered yet |
