@@ -45,6 +45,8 @@ pub struct LinuxContainerExecutor {
     egress: Mutex<HashMap<String, EgressConfig>>,
     /// CRI log paths per workload.
     log_paths: Mutex<HashMap<String, std::path::PathBuf>>,
+    /// (source, destination, mode) mounts needing propagation.
+    propagations: Mutex<HashMap<String, Vec<(String, String, String)>>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -73,6 +75,7 @@ impl LinuxContainerExecutor {
             overlay_mounts: Mutex::new(HashSet::new()),
             egress: Mutex::new(HashMap::new()),
             log_paths: Mutex::new(HashMap::new()),
+            propagations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -103,6 +106,125 @@ impl LinuxContainerExecutor {
         // the peer name `eth0` would collide with the sandbox's interface.
         matches!(spec.network_mode, crate::types::NetworkMode::Bridge)
     }
+
+    #[cfg(target_os = "linux")]
+    fn apply_mount_propagations(&self, id: &str) {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::process::CommandExt;
+        const OPEN_TREE_CLONE: libc::c_uint = 1;
+        const AT_RECURSIVE: libc::c_uint = 0x8000;
+        const MOVE_MOUNT_F_EMPTY_PATH: libc::c_uint = 0x4;
+        const SYS_OPEN_TREE: libc::c_long = 428;
+        const SYS_MOVE_MOUNT: libc::c_long = 429;
+        const MS_REC: libc::c_ulong = 1 << 14;
+        const MS_SLAVE: libc::c_ulong = 1 << 19;
+        const MS_SHARED: libc::c_ulong = 1 << 20;
+        let props = self
+            .propagations
+            .lock()
+            .expect("propagations lock")
+            .get(id)
+            .cloned()
+            .unwrap_or_default();
+        if props.is_empty() {
+            return;
+        }
+        let out = std::process::Command::new(&self.runc_path)
+            .args(["state", id])
+            .output();
+        let pid = match out {
+            Ok(o) if o.status.success() => serde_json::from_slice::<serde_json::Value>(&o.stdout)
+                .ok()
+                .and_then(|v| v.get("pid").and_then(|p| p.as_u64()))
+                .map(|p| p as u32),
+            _ => None,
+        };
+        let Some(pid) = pid else {
+            warn!(id = %id, "could not resolve container pid for mount propagation");
+            return;
+        };
+        for (source, dest, mode) in props {
+            let c_source = match std::ffi::CString::new(source.clone()) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let c_dest = match std::ffi::CString::new(dest.clone()) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let tree_fd = unsafe {
+                libc::syscall(
+                    SYS_OPEN_TREE,
+                    libc::AT_FDCWD,
+                    c_source.as_ptr(),
+                    OPEN_TREE_CLONE | AT_RECURSIVE,
+                )
+            } as i32;
+            if tree_fd < 0 {
+                warn!(id = %id, source = %source, error = %std::io::Error::last_os_error(), "open_tree failed");
+                continue;
+            }
+            let mnt = match std::fs::File::open(format!("/proc/{pid}/ns/mnt")) {
+                Ok(f) => f,
+                Err(e) => {
+                    warn!(id = %id, error = %e, "open container mnt ns");
+                    unsafe { libc::close(tree_fd) };
+                    continue;
+                }
+            };
+            let mnt_fd = mnt.as_raw_fd();
+            unsafe {
+                libc::fcntl(tree_fd, libc::F_SETFD, 0);
+                libc::fcntl(mnt_fd, libc::F_SETFD, 0);
+            }
+            let flags = if mode == "rslave" {
+                MS_SLAVE | MS_REC
+            } else {
+                MS_SHARED | MS_REC
+            };
+            let mut cmd = std::process::Command::new("/bin/true");
+            unsafe {
+                cmd.pre_exec(move || {
+                    if libc::setns(mnt_fd, libc::CLONE_NEWNS) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    let rc = libc::syscall(
+                        SYS_MOVE_MOUNT,
+                        tree_fd,
+                        b"\0".as_ptr() as *const libc::c_char,
+                        libc::AT_FDCWD,
+                        c_dest.as_ptr(),
+                        MOVE_MOUNT_F_EMPTY_PATH,
+                    );
+                    if rc != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    libc::mount(
+                        std::ptr::null(),
+                        c_dest.as_ptr(),
+                        std::ptr::null(),
+                        flags,
+                        std::ptr::null(),
+                    );
+                    Ok(())
+                });
+            }
+            let status = cmd.status();
+            match status {
+                Ok(s) if s.success() => {
+                    info!(id = %id, source = %source, dest = %dest, mode = %mode, "propagated mount")
+                }
+                Ok(s) => {
+                    warn!(id = %id, source = %source, dest = %dest, mode = %mode, status = ?s, "mount propagation failed")
+                }
+                Err(e) => warn!(id = %id, source = %source, error = %e, "mount propagation failed"),
+            }
+            unsafe { libc::close(tree_fd) };
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn apply_mount_propagations(&self, _id: &str) {}
 
     fn ensure_bridge_exists(bridge_name: &str, subnet: Option<&IpRange>) -> Result<(), ExecError> {
         use std::process::Command;
@@ -507,6 +629,34 @@ impl Executor for LinuxContainerExecutor {
             } else {
                 egress.remove(&spec.id);
             }
+            let props: Vec<(String, String, String)> = spec
+                .mounts
+                .iter()
+                .filter_map(|m| {
+                    if m.options.iter().any(|o| o == "rshared") {
+                        Some((
+                            m.source.clone(),
+                            m.destination.clone(),
+                            "rshared".to_string(),
+                        ))
+                    } else if m.options.iter().any(|o| o == "rslave") {
+                        Some((
+                            m.source.clone(),
+                            m.destination.clone(),
+                            "rslave".to_string(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let mut props_map = self.propagations.lock().expect("propagations lock");
+            if props.is_empty() {
+                props_map.remove(&spec.id);
+            } else {
+                props_map.insert(spec.id.clone(), props);
+            }
+            drop(props_map);
             let mut logs = self.log_paths.lock().expect("log_paths lock poisoned");
             match &spec.log_path {
                 Some(path) => {
@@ -785,6 +935,7 @@ impl Executor for LinuxContainerExecutor {
         .map_err(|e| ExecError::ExecutionFailed(format!("runc spawn failed: {e}")))?;
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        self.apply_mount_propagations(&handle.id);
         let early = child.try_wait().ok().flatten();
         if let Some(status) = early {
             if !status.success() {
