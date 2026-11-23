@@ -70,7 +70,8 @@ No release gate; tracked as program completion.
 
 ## Evidence log
 
-| 2026-11-23 | M2 Python SDK (partial) | `sdk/python`: `RuntimeClient`, `Sandbox` context manager, run/exec/logs/stop/snapshot/restore, generated stubs, example. Mock gRPC test passes. Integration blocked: Python grpc gets `RST_STREAM` from the tonic UDS server while the Go CLI works; needs transport investigation |
+| 2026-11-23 | M2 TypeScript SDK (verified) | `sdk/typescript`: gRPC-js/proto-loader client, Sandbox API, compiles with `tsc`, mock test passes, and `ListWorkloads` succeeds against the real runtime UDS from Node 22 |
+| 2026-11-23 | M2 Python SDK (blocked) | `sdk/python`: `RuntimeClient`, `Sandbox` context manager, run/exec/logs/stop/snapshot/restore, generated stubs, example. Mock gRPC test passes. Integration blocked on **both macOS and Linux**: Python grpc 1.85 gets `RST_STREAM (PROTOCOL_ERROR)` from the tonic UDS server while Go and Node gRPC clients work. Needs a tonic/Python transport fix or a documented Python-on-TCP path |
 
 | Date | Milestone | Evidence |
 |---|---|---|
