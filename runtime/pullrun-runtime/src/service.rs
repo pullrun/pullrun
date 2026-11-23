@@ -390,6 +390,33 @@ impl Executor for ExecutorRouter {
         }
     }
 
+    async fn restore_snapshot_with_network(
+        &self,
+        id: &str,
+        state_path: &std::path::Path,
+        mem_path: &std::path::Path,
+        rootfs_path: &std::path::Path,
+        drive_path: &std::path::Path,
+        network: pullrun_exec::types::SnapshotNetwork,
+    ) -> Result<ProcessHandle, ExecError> {
+        match &self.vm {
+            Some(vm) => {
+                vm.restore_snapshot_with_network(
+                    id,
+                    state_path,
+                    mem_path,
+                    rootfs_path,
+                    drive_path,
+                    network,
+                )
+                .await
+            }
+            None => Err(ExecError::BackendNotAvailable(
+                "VM backend not configured".into(),
+            )),
+        }
+    }
+
     async fn restore_rootfs(
         &self,
         id: &str,
