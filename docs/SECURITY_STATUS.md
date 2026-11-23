@@ -32,6 +32,11 @@ is not proven; "Future" means not implemented.
 | Multi-tenancy | **Single-node only** | no cluster scheduler, quotas, or tenant isolation |
 | Metrics | **Met (basic)** | Prometheus endpoint now includes snapshot/actor latency counters |
 
+## Audit
+
+Proposed third-party audit scope: [`docs/AUDIT_SCOPE.md`](AUDIT_SCOPE.md).
+Open, scoped tasks: [`docs/GOOD_FIRST_ISSUES.md`](GOOD_FIRST_ISSUES.md).
+
 ## North-star metrics
 
 `pullrun-runtime --metrics-addr` exposes:
