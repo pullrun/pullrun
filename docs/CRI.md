@@ -55,6 +55,16 @@ critest -runtime-endpoint unix:///run/pullrun/pullrun-cri.sock \
         -image-endpoint unix:///run/pullrun/pullrun-cri.sock
 ```
 
+The authoritative, automated gate is the conformance subset (50 specs):
+
+```bash
+hack/cri-conformance.sh unix:///run/pullrun/pullrun-cri.sock
+```
+
+The full 142-spec run includes optional benchmark, apparmor, metrics and
+event specs; it needs both the outer harness timeout and
+`-test.timeout` raised (e.g. 50m) and is not the release gate.
+
 Current status on the Linux KVM host:
 
 | Suite | Result |
