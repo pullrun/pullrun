@@ -242,4 +242,13 @@ pub struct SnapshotMeta {
     pub created_at: i64,
     /// Size of the memory file in bytes.
     pub mem_bytes: u64,
+    /// Network mode the snapshot was captured with (`none`, `isolated`, ...).
+    #[serde(default)]
+    pub network_mode: String,
+    /// Guest IP at capture time, if networked.
+    #[serde(default)]
+    pub internal_ip: String,
+    /// Bridge the guest was attached to, if networked.
+    #[serde(default)]
+    pub bridge_name: String,
 }

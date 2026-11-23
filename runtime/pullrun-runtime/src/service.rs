@@ -5351,6 +5351,9 @@ impl Runtime for RuntimeService {
             drive_path: info.drive_path.clone(),
             created_at,
             mem_bytes: info.mem_bytes,
+            network_mode: state.network_mode.clone(),
+            internal_ip: state.internal_ip.clone().unwrap_or_default(),
+            bridge_name: state.bridge_name.clone().unwrap_or_default(),
         };
         std::fs::write(
             dir.join("meta.json"),
