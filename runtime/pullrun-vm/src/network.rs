@@ -356,6 +356,20 @@ pub fn create_tap(tap_name: &str, guest_ip: Ipv4Addr) -> Result<(VmNetwork, File
     create_tap_on_bridge(tap_name, guest_ip, BRIDGE_NAME, NETMASK, GATEWAY_IP)
 }
 
+/// Create a persistent TAP on a dedicated bridge with no host IP.
+/// Used for fork isolation: each fork gets its own L2 segment.
+#[cfg(target_os = "linux")]
+pub fn create_fork_tap(tap_name: &str, bridge_name: &str) -> Result<File, VmNetError> {
+    if !link_exists(bridge_name)? {
+        run_ip(&["link", "add", bridge_name, "type", "bridge"])?;
+    }
+    run_ip(&["link", "set", bridge_name, "up"])?;
+    let tap_fd = create_tap_ioctl(tap_name)?;
+    run_ip(&["link", "set", tap_name, "master", bridge_name])?;
+    run_ip(&["link", "set", tap_name, "up"])?;
+    Ok(tap_fd)
+}
+
 /// Create a persistent TAP with no bridge or host IP (fork isolation).
 #[cfg(target_os = "linux")]
 pub fn create_tap_isolated(tap_name: &str) -> Result<File, VmNetError> {
