@@ -5673,6 +5673,7 @@ impl Runtime for RuntimeService {
         }))
     }
 
+    #[allow(clippy::result_large_err)]
     async fn restore_snapshot(
         &self,
         request: tonic::Request<RestoreSnapshotRequest>,

@@ -106,7 +106,12 @@ pub fn page_hashes(index_path: &Path) -> Result<Vec<Vec<u8>>, String> {
     if hashes.len() != count * HASH_LEN {
         return Err("corrupt page index".into());
     }
-    Ok(hashes.chunks_exact(HASH_LEN).map(|h| h.to_vec()).collect())
+    Ok(hashes
+        .as_chunks::<HASH_LEN>()
+        .0
+        .iter()
+        .map(|h| h.to_vec())
+        .collect())
 }
 
 /// Rebuild a raw guest-memory file from a paged index.
