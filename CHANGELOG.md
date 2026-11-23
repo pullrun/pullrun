@@ -16,8 +16,10 @@
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
   readonly mount specs pass; rshared/rslave still fail).
-- Full Container suite: 28/31 expected (multi-container 3/3; rshared/
-  rslave propagation and image volumes remain).
+- Full Container suite: 28/31 expected (multi-container 3/3).
+- Image core: 15/15 (digest RepoDigests, reference status, Uid/Username
+  from image config).
+- Streaming port-forward uses the portforward.k8s.io handshake.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
@@ -316,8 +318,10 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
   readonly mount specs pass; rshared/rslave still fail).
-- Full Container suite: 28/31 expected (multi-container 3/3; rshared/
-  rslave propagation and image volumes remain).
+- Full Container suite: 28/31 expected (multi-container 3/3).
+- Image core: 15/15 (digest RepoDigests, reference status, Uid/Username
+  from image config).
+- Streaming port-forward uses the portforward.k8s.io handshake.
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
 - Container stats now honor the CRI label selector (`5/5` stats specs).
