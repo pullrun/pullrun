@@ -5830,7 +5830,10 @@ impl Runtime for RuntimeService {
             gateway: None,
             backend: state.backend.clone(),
             bridge_name: state.bridge_name.clone(),
-            network_join: None,
+            network_join: state
+                .network_mode
+                .strip_prefix("container:")
+                .map(|t| t.to_string()),
         };
         self.executor
             .start(&mut handle)
