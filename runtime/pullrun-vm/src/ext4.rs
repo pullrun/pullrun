@@ -108,6 +108,16 @@ pub async fn materialize_ext4_rootfs(
         return Err(Ext4Error::Materialization(format!("{e}")));
     }
 
+    // VM DNS: the runtime serves DNS on the bridge gateway.
+    {
+        let etc = work_dir.path().join("etc");
+        std::fs::create_dir_all(&etc)?;
+        std::fs::write(
+            etc.join("resolv.conf"),
+            format!("nameserver {}\nnameserver 1.1.1.1\n", crate::GATEWAY_IP),
+        )?;
+    }
+
     // Credential-proxy CA: VM rootfs is self-contained, so write the
     // public CA into the image; the env var is not exported to the
     // workload.

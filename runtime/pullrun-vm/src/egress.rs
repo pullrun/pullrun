@@ -187,9 +187,8 @@ pub fn install(
         }
     }
     if let Some(proxy) = proxy {
-        push(
-            "c_fwd",
-            vec![
+        for chain in ["c_fwd", "c_inp"] {
+            let mut rule = vec![
                 "ip".into(),
                 "saddr".into(),
                 guest_ip.to_string(),
@@ -200,8 +199,13 @@ pub fn install(
                 "dport".into(),
                 proxy.port().to_string(),
                 "accept".into(),
-            ],
-        )?;
+            ];
+            if chain == "c_inp" {
+                rule.insert(0, bridge.into());
+                rule.insert(0, "iifname".into());
+            }
+            push(chain, rule)?;
+        }
     }
 
     // Default deny with a rate-limited audit log line per dropped flow.

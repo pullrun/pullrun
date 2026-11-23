@@ -3008,13 +3008,19 @@ impl Runtime for RuntimeService {
             ) {
                 if ca_path.exists() {
                     let proxy_url = format!("http://{addr}");
-                    for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
+                    for key in [
+                        "HTTP_PROXY",
+                        "HTTPS_PROXY",
+                        "ALL_PROXY",
+                        "http_proxy",
+                        "https_proxy",
+                        "all_proxy",
+                    ] {
                         env.insert(key.to_string(), proxy_url.clone());
                     }
-                    env.insert(
-                        "NO_PROXY".to_string(),
-                        "localhost,127.0.0.1,::1".to_string(),
-                    );
+                    for key in ["NO_PROXY", "no_proxy"] {
+                        env.insert(key.to_string(), "localhost,127.0.0.1,::1".to_string());
+                    }
                     for key in [
                         "SSL_CERT_FILE",
                         "REQUESTS_CA_BUNDLE",
