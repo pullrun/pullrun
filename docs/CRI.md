@@ -70,7 +70,9 @@ Current status on the Linux KVM host:
 | Stats | **5/5 pass** |
 | Streaming | **2/5 pass**; host networking now omits the OCI network namespace (fixes hostNetwork pods), TTY forwarding is wired, but the suite still needs re-verification |
 
-A full 142-spec run is not yet green: an earlier run wedged in
+A full 142-spec run is not yet a usable gate: the latest run hit the
+20-minute cap with 72 failures, including optional benchmark/event specs,
+so individual suites above are the authoritative results. An earlier run wedged in
 `StopPodSandbox` before the idempotence fix, and the complete suite has
 not been re-run end to end. Treat container/image/streaming conformance
 as **in progress**, not complete.
