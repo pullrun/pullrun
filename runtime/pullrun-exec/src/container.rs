@@ -560,6 +560,7 @@ impl Executor for LinuxContainerExecutor {
         // Allocate IP for bridge networking before spec.env is consumed
         let mut internal_ip: Option<Ipv4Addr> = None;
         let mut gateway: Option<Ipv4Addr> = None;
+        let mut effective_bridge_name: Option<String> = None;
         if self.should_setup_bridge(&spec) {
             let mut bridge_name = spec
                 .bridge_name
@@ -583,6 +584,7 @@ impl Executor for LinuxContainerExecutor {
                 bridge_name = DEFAULT_BRIDGE_NAME.to_string();
             }
             Self::ensure_bridge_exists(&bridge_name, subnet.as_ref())?;
+            effective_bridge_name = Some(bridge_name.clone());
             if let Some(ref ipam) = self.ipam {
                 let ip = match &subnet {
                     Some(s) => ipam.allocate_in(s),
@@ -636,7 +638,7 @@ impl Executor for LinuxContainerExecutor {
             std::fs::write(&resolv_path, content).ok();
         }
 
-        let bridge_name = spec.bridge_name.clone();
+        let bridge_name = effective_bridge_name.or_else(|| spec.bridge_name.clone());
         let network_join = match &spec.network_mode {
             crate::types::NetworkMode::Container(target) => Some(target.clone()),
             _ => None,
