@@ -204,13 +204,20 @@ pub fn install(
         )?;
     }
 
-    // Default deny: guest-originated forward and host-input traffic.
+    // Default deny with a rate-limited audit log line per dropped flow.
+    let prefix = format!("\"pullrun-audit {id} \"");
     push(
         "c_fwd",
         vec![
             "ip".into(),
             "saddr".into(),
             guest_ip.to_string(),
+            "log".into(),
+            "prefix".into(),
+            prefix.clone(),
+            "limit".into(),
+            "rate".into(),
+            "10/second".into(),
             "drop".into(),
         ],
     )?;
@@ -222,6 +229,12 @@ pub fn install(
             "ip".into(),
             "saddr".into(),
             guest_ip.to_string(),
+            "log".into(),
+            "prefix".into(),
+            prefix,
+            "limit".into(),
+            "rate".into(),
+            "10/second".into(),
             "drop".into(),
         ],
     )?;

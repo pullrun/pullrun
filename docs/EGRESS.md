@@ -105,7 +105,10 @@ with a container that had no `/run/secrets/TEST_SECRET`
 - DNS names are resolved once at start; rotating IPs need a restart.
 - Rootful containers and bridge-networked VMs are enforced; slirp VMs
   and rootless containers reject `--egress-deny`.
-- VM egress has no per-flow audit events or CA rotation yet.
+- VM egress emits a rate-limited kernel audit line per denied flow:
+  `journalctl -k | grep "pullrun-audit <workload-id>"` (SRC/DST/DPT,
+  rate 10/s). There is no structured EventBus audit stream yet.
+- CA rotation: `pullrun network rotate-ca`; sandboxes must restart.
 - No egress audit events yet.
 - Host networking and `--net host` cannot be made fail-closed and are
   rejected when `--egress-deny` is set.

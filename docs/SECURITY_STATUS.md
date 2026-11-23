@@ -27,7 +27,7 @@ is not proven; "Future" means not implemented.
 | No ambient credentials | **Partial** | egress-credential workloads hold no secret; explicit `--secret` mounts still place secrets in the sandbox; snapshots contain guest memory |
 | Snapshot encryption / integrity | **Partial** | AES-256-GCM at rest + SHA-256 per file; key sits in `<store>/snapshots.key` (0600), no KMS/HSM |
 | Workload identity | **Future** | no SPIFFE/JWT issuance |
-| Egress audit events | **Future** | policy is enforced by nftables; no per-flow audit stream |
+| Egress audit events | **Partial** | Firecracker VM denials emit rate-limited kernel log lines (`pullrun-audit <id>`, SRC/DST/DPT); no structured event stream |
 | Snapshot GC / size accounting | **Partial** | manual `snapshot rm`; no automatic retention |
 | Multi-tenancy | **Single-node only** | no cluster scheduler, quotas, or tenant isolation |
 | Metrics | **Met (basic)** | Prometheus endpoint now includes snapshot/actor latency counters |
