@@ -16,7 +16,7 @@
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
   readonly mount specs pass; rshared/rslave still fail).
-- Full Container suite: 26/31 (multi-container network/log, rshared/
+- Full Container suite: 28/31 expected (multi-container 3/3; rshared/
   rslave propagation and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).
@@ -316,7 +316,7 @@ a commit-with-tag deadlock guard that drives the real RPC under a timeout.
   mount propagation maps to rprivate/rslave/rshared and ContainerStatus
   returns mounts. Privileged capabilities use CAP_* names (rprivate and
   readonly mount specs pass; rshared/rslave still fail).
-- Full Container suite: 26/31 (multi-container network/log, rshared/
+- Full Container suite: 28/31 expected (multi-container 3/3; rshared/
   rslave propagation and image volumes remain).
 - Container basic operations: 13/14 (timed-out exec process cleanup
   still fails).

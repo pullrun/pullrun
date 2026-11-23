@@ -35,6 +35,9 @@ sandbox network namespace with `network_mode=container:<sandbox-id>`.
 - Container labels/annotations/metadata attempt preserved.
 - Host networking omits the OCI network namespace (hostNetwork pods
   really share the host netns).
+- StartWorkload preserves the sandbox netns join for create-only
+  containers (multi-container networking works).
+- ContainerStatus exposes LogPath (multi-container logs work).
 - CRI Created state: `CreateContainer` creates without starting
   (`create_only`), `StartContainer` calls the new `StartWorkload` RPC.
 - Container stdout/stderr are written to `Config.LogPath` in CRI log
@@ -58,7 +61,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (including attributes, sysctls, idempotence) | **9/9 pass** |
 | Container (basic operations) | **14/14 pass** |
-| Container (full) | **26/31 pass**. Remaining: multi-container network/log, rshared/rslave mount propagation, image volume |
+| Container (full) | **28/31 expected**: multi-container 3/3 now passes; remaining rshared/rslave mount propagation and image volume |
 | OCI conversion | httpd (300 MB) now pulls + converts in **~25 s** after rebuilding with batch writes | |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
