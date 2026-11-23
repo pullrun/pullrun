@@ -14,6 +14,7 @@ Then:
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Iterable, Iterator, Optional
 
@@ -97,8 +98,9 @@ class Sandbox:
         if self.platform:
             req.platform = self.platform
         pulled = self.stub.PullImage(req)
+        name = self.name or f"sdk-{uuid.uuid4().hex[:12]}"
         run = pb.RunRequest(
-            id=self.name,
+            id=name,
             root_digest=pulled.root_digest,
             backend=self.backend,
             command=self.command,

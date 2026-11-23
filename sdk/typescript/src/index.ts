@@ -5,6 +5,7 @@
  *   pullrun-runtime daemon --socket /tmp/pullrun.sock
  */
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
@@ -90,7 +91,7 @@ export class Sandbox {
       platform: this.opts.platform ?? "",
     });
     const req: Dict = {
-      id: this.opts.name ?? "",
+      id: this.opts.name ?? `sdk-${randomUUID().replaceAll("-", "").slice(0, 12)}`,
       root_digest: pull.root_digest,
       backend: this.opts.backend ?? "container",
       command: this.opts.command ?? [],
