@@ -89,7 +89,10 @@ averaged 1.6 s.
   snapshot is intended to be resumed once (secure usage). Restoring the
   same snapshot multiple times is possible but clones guest uniqueness
   state.
-- **No encryption or dedup.** Snapshot files contain full guest memory
+- **Encrypted, but the key is local.** Snapshot state/memory/rootfs are
+  AES-256-GCM encrypted with `<store>/snapshots.key` (0600). A stolen
+  disk includes the key; external KMS/HSM support is not implemented.
+- **No dedup.** Snapshot files contain full guest memory
   and may contain secrets; protect the store accordingly.
 - **Firecracker-version bound.** State files are tied to the
   Firecracker snapshot format version.
@@ -101,6 +104,6 @@ averaged 1.6 s.
 ## Next
 
 - `ROOTFS`/`VOLUMES` fidelity levels and `commit --memory`.
-- Snapshot encryption, size accounting, and GC.
+- Snapshot size accounting and incremental capture.
 - Restore latency benchmark (target <500 ms).
 - Actor templates built on golden snapshots.

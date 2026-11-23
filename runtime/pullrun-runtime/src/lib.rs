@@ -14,6 +14,7 @@ pub mod builder;
 pub mod events;
 pub mod metrics;
 pub mod service;
+mod snapshot_crypto;
 
 pub use events::{Event, EventBus, EventKind};
 pub use service::{RuntimeCommand, RuntimeService, ServiceConfig};

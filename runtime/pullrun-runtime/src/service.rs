@@ -5411,6 +5411,20 @@ impl Runtime for RuntimeService {
                 pullrun_vm::snapshot::sha256_file(p).unwrap_or_default()
             }
         };
+        let state_sha256 = hash(&info.state_path);
+        let mem_sha256 = hash(&info.mem_path);
+        let rootfs_sha256 = hash(&info.rootfs_path);
+        let snapshot_key = crate::snapshot_crypto::load_or_create_key(&self.config.store_root)
+            .map_err(|e| tonic::Status::internal(format!("snapshot key: {e}")))?;
+        for path in [&info.state_path, &info.mem_path, &info.rootfs_path] {
+            if path.as_os_str().is_empty() || !path.exists() {
+                continue;
+            }
+            if !crate::snapshot_crypto::is_encrypted(path) {
+                crate::snapshot_crypto::encrypt_file(path, &snapshot_key)
+                    .map_err(|e| tonic::Status::internal(format!("encrypt snapshot: {e}")))?;
+            }
+        }
         let meta = SnapshotMeta {
             workload_id: req.workload_id.clone(),
             fidelity: fidelity.as_str().to_string(),
@@ -5423,9 +5437,10 @@ impl Runtime for RuntimeService {
             drive_path: info.drive_path.clone(),
             created_at,
             mem_bytes: info.mem_bytes,
-            state_sha256: hash(&info.state_path),
-            mem_sha256: hash(&info.mem_path),
-            rootfs_sha256: hash(&info.rootfs_path),
+            encrypted: true,
+            state_sha256,
+            mem_sha256,
+            rootfs_sha256,
             network_mode: state.network_mode.clone(),
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
             bridge_name: state.bridge_name.clone().unwrap_or_default(),
@@ -5658,15 +5673,6 @@ impl Runtime for RuntimeService {
                 )));
             }
         }
-        for (label, path, expected) in [
-            ("state", &meta.state_path, &meta.state_sha256),
-            ("memory", &meta.mem_path, &meta.mem_sha256),
-            ("rootfs", &meta.rootfs_path, &meta.rootfs_sha256),
-        ] {
-            pullrun_vm::snapshot::verify_file(path, expected).map_err(|e| {
-                tonic::Status::failed_precondition(format!("snapshot {label}: {e}"))
-            })?;
-        }
         if meta.drive_path.as_os_str().is_empty() {
             return Err(tonic::Status::failed_precondition(
                 "snapshot has no recorded drive path",
@@ -5674,6 +5680,48 @@ impl Runtime for RuntimeService {
         }
 
         let workload_id = new_workload_id();
+        let restore_dir = self
+            .config
+            .snapshots_dir
+            .join(format!(".restore-{workload_id}"));
+        let (state_path, mem_path, rootfs_path) = if meta.encrypted {
+            std::fs::create_dir_all(&restore_dir)
+                .map_err(|e| tonic::Status::internal(format!("restore temp dir: {e}")))?;
+            let key = crate::snapshot_crypto::load_or_create_key(&self.config.store_root)
+                .map_err(|e| tonic::Status::internal(format!("snapshot key: {e}")))?;
+            let mut decrypt =
+                |src: &std::path::Path, name: &str| -> Result<std::path::PathBuf, tonic::Status> {
+                    let dst = restore_dir.join(name);
+                    if src.exists() {
+                        crate::snapshot_crypto::decrypt_file(src, &dst, &key).map_err(|e| {
+                            tonic::Status::failed_precondition(format!("decrypt snapshot: {e}"))
+                        })?;
+                        Ok(dst)
+                    } else {
+                        Ok(src.to_path_buf())
+                    }
+                };
+            (
+                decrypt(&meta.state_path, "state")?,
+                decrypt(&meta.mem_path, "mem")?,
+                decrypt(&meta.rootfs_path, "rootfs.ext4")?,
+            )
+        } else {
+            (
+                meta.state_path.clone(),
+                meta.mem_path.clone(),
+                meta.rootfs_path.clone(),
+            )
+        };
+        for (label, path, expected) in [
+            ("state", &state_path, &meta.state_sha256),
+            ("memory", &mem_path, &meta.mem_sha256),
+            ("rootfs", &rootfs_path, &meta.rootfs_sha256),
+        ] {
+            pullrun_vm::snapshot::verify_file(path, expected).map_err(|e| {
+                tonic::Status::failed_precondition(format!("snapshot {label}: {e}"))
+            })?;
+        }
         let restore_start = std::time::Instant::now();
         let network = if meta.fidelity != "rootfs" && !meta.tap_name.is_empty() {
             let guest_ip = meta.internal_ip.parse().map_err(|_| {
@@ -5707,7 +5755,7 @@ impl Runtime for RuntimeService {
             self.executor
                 .restore_rootfs(
                     &workload_id,
-                    &meta.rootfs_path,
+                    &rootfs_path,
                     &meta.drive_path,
                     &meta.kernel_path,
                     meta.vcpus.max(1),
@@ -5718,9 +5766,9 @@ impl Runtime for RuntimeService {
             self.executor
                 .restore_snapshot_with_network(
                     &workload_id,
-                    &meta.state_path,
-                    &meta.mem_path,
-                    &meta.rootfs_path,
+                    &state_path,
+                    &mem_path,
+                    &rootfs_path,
                     &meta.drive_path,
                     net,
                 )
@@ -5729,14 +5777,17 @@ impl Runtime for RuntimeService {
             self.executor
                 .restore_snapshot(
                     &workload_id,
-                    &meta.state_path,
-                    &meta.mem_path,
-                    &meta.rootfs_path,
+                    &state_path,
+                    &mem_path,
+                    &rootfs_path,
                     &meta.drive_path,
                 )
                 .await
         }
         .map_err(|e| tonic::Status::internal(format!("restore failed: {e}")))?;
+        if meta.encrypted {
+            let _ = std::fs::remove_dir_all(&restore_dir);
+        }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -8959,11 +9010,7 @@ mod tests {
                     cpu_millicores: None,
                     memory_bytes: None,
                     bridge_name: None,
-                    network_mode: if fork {
-                        "slirp".to_string()
-                    } else {
-                        meta.network_mode.clone()
-                    },
+                    network_mode: "isolated".to_string(),
                     mounts: vec![],
                     privileged: false,
                     readonly_rootfs: false,

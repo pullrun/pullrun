@@ -73,6 +73,7 @@ No release gate; tracked as program completion.
 | Date | Milestone | Evidence |
 |---|---|---|
 | 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcoded `network_mode: isolated`; docs/SNAPSHOTS.md confirms net-less-only |
+| 2026-11-23 | M1 encryption (code) | AES-256-GCM snapshot files (`PRSNAP1` format) with `<store>/snapshots.key` 0600; capture hashes plaintext then encrypts; restore decrypts to a temp dir, verifies SHA-256, loads, removes temp. Unit tests: round-trip, tamper, key mode/stability. Firecracker integration still blocked on host |
 | 2026-11-23 | M1 integrity (done) | Snapshot `state`/`mem`/`rootfs` SHA-256 stored in `meta.json`; restore fails closed on mismatch; tamper test passes. Encryption is still pending |
 | 2026-11-23 | M1 GC (done) | `snapshot gc --keep N [--dry-run]`: scans `meta.json`, keeps actor/template-referenced and live-restored snapshots, removes older unreferenced dirs. Local test: removed `snap-old`, kept `snap-new` (newest) and `snap-ref` (actor reference) |
 | 2026-11-23 | M1 fork (blocked) | First fork attempt used slirp in a rootful daemon; `slirp4netns --configure` reconfigured the host netns and the KVM host became unreachable (SSH kex reset, ICMP loss). Code changed to an unbridged isolated TAP; **fork verification is blocked until the host is rebooted**, and no fork result is claimed |

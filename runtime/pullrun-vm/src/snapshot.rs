@@ -257,6 +257,9 @@ pub struct SnapshotMeta {
     pub created_at: i64,
     /// Size of the memory file in bytes.
     pub mem_bytes: u64,
+    /// Files are AES-256-GCM encrypted at rest.
+    #[serde(default)]
+    pub encrypted: bool,
     /// SHA-256 of the Firecracker state file (empty for legacy snapshots).
     #[serde(default)]
     pub state_sha256: String,
