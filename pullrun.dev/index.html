@@ -878,7 +878,7 @@
                 <div class="feature-card">
                     <div class="icon">☸️</div>
                     <h3>Kubernetes CRI</h3>
-                    <p>Drop-in CRI shim with RuntimeClass support (<code>pullrun-container</code> / <code>pullrun-vm</code>). Full exec, attach, port-forward, and events.</p>
+                    <p>CRI shim with RuntimeClass support (<code>pullrun-container</code> / <code>pullrun-vm</code>), exec, attach, port-forward, TTY, and CRI v1 conformance (50/50). Container events are not yet implemented.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">🐳</div>
@@ -1085,7 +1085,7 @@
                 </details>
                 <details class="faq-item">
                     <summary>Is this production-ready?</summary>
-                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 272 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are available but evolving; sandbox groups are macOS-only and concurrent. v0.9.0 adds Firecracker memory snapshots, golden-template actors with suspend/resume, fail-closed egress, and snapshot/actor metrics.</div>
+                    <div class="answer">The container runtime (OCI pull, run, exec, network, secrets) is stable — the core API and data model are well-tested, with 272 tests passing on CI. The Kubernetes CRI shim is in beta. The Firecracker and Apple VM backends are available but evolving; sandbox groups are macOS-only and concurrent. v0.10.1 adds Firecracker memory snapshots, golden-template actors with suspend/resume, fail-closed egress, and snapshot/actor metrics.</div>
                 </details>
                 <details class="faq-item">
                     <summary>Does it require root or a daemon?</summary>
