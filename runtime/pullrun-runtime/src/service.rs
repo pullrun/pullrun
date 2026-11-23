@@ -6912,6 +6912,9 @@ impl Runtime for RuntimeService {
         let _total_bytes = store.total_bytes();
         let (fs_total, fs_used) = fs_usage(&self.config.store_root);
 
+        let pages_dir = self.config.store_root.join("snapshot-pages");
+        let snapshot_pages = count_files(&pages_dir);
+        let snapshot_page_bytes = dir_size(&pages_dir);
         Ok(tonic::Response::new(InfoResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
             uptime_seconds: uptime,
@@ -6920,6 +6923,8 @@ impl Runtime for RuntimeService {
             store_total_bytes: fs_total as u64,
             store_used_bytes: fs_used as u64,
             store_total_nodes: total_nodes,
+            snapshot_pages,
+            snapshot_page_bytes,
             go_version: String::new(),
         }))
     }

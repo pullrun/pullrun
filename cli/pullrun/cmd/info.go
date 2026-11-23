@@ -42,6 +42,9 @@ func NewInfoCommand(opts *RootOptions) *cobra.Command {
 				fmt.Printf("Store used:      %d bytes\n", resp.StoreUsedBytes)
 			}
 			fmt.Printf("Store nodes:     %d\n", resp.StoreTotalNodes)
+			if resp.SnapshotPages > 0 {
+				fmt.Printf("Snapshot pages:  %d (%.1f MiB)\n", resp.SnapshotPages, float64(resp.SnapshotPageBytes)/(1024*1024))
+			}
 			return nil
 		},
 	}

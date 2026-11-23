@@ -819,6 +819,9 @@ message InfoResponse {
     uint64 store_total_nodes = 7;
     // Go runtime version string.
     string go_version = 8;
+    // Content-addressed snapshot page blobs.
+    uint64 snapshot_pages = 9;
+    uint64 snapshot_page_bytes = 10;
 }
 
 // --- Prune ---

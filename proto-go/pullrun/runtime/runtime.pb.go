@@ -4878,9 +4878,12 @@ type InfoResponse struct {
 	// Total nodes in the DAG store.
 	StoreTotalNodes uint64 `protobuf:"varint,7,opt,name=store_total_nodes,json=storeTotalNodes,proto3" json:"store_total_nodes,omitempty"`
 	// Go runtime version string.
-	GoVersion     string `protobuf:"bytes,8,opt,name=go_version,json=goVersion,proto3" json:"go_version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	GoVersion string `protobuf:"bytes,8,opt,name=go_version,json=goVersion,proto3" json:"go_version,omitempty"`
+	// Content-addressed snapshot page blobs.
+	SnapshotPages     uint64 `protobuf:"varint,9,opt,name=snapshot_pages,json=snapshotPages,proto3" json:"snapshot_pages,omitempty"`
+	SnapshotPageBytes uint64 `protobuf:"varint,10,opt,name=snapshot_page_bytes,json=snapshotPageBytes,proto3" json:"snapshot_page_bytes,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *InfoResponse) Reset() {
@@ -4967,6 +4970,20 @@ func (x *InfoResponse) GetGoVersion() string {
 		return x.GoVersion
 	}
 	return ""
+}
+
+func (x *InfoResponse) GetSnapshotPages() uint64 {
+	if x != nil {
+		return x.SnapshotPages
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetSnapshotPageBytes() uint64 {
+	if x != nil {
+		return x.SnapshotPageBytes
+	}
+	return 0
 }
 
 type PruneRequest struct {
@@ -9352,7 +9369,7 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x12attached_workloads\x18\x04 \x01(\x04R\x11attachedWorkloads\"P\n" +
 	"\x14ListNetworksResponse\x128\n" +
 	"\bnetworks\x18\x01 \x03(\v2\x1c.pullrun.runtime.NetworkInfoR\bnetworks\"\r\n" +
-	"\vInfoRequest\"\xc2\x02\n" +
+	"\vInfoRequest\"\x99\x03\n" +
 	"\fInfoResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x04R\ruptimeSeconds\x12%\n" +
@@ -9362,7 +9379,10 @@ const file_pullrun_runtime_proto_rawDesc = "" +
 	"\x10store_used_bytes\x18\x06 \x01(\x04R\x0estoreUsedBytes\x12*\n" +
 	"\x11store_total_nodes\x18\a \x01(\x04R\x0fstoreTotalNodes\x12\x1d\n" +
 	"\n" +
-	"go_version\x18\b \x01(\tR\tgoVersion\"\x0e\n" +
+	"go_version\x18\b \x01(\tR\tgoVersion\x12%\n" +
+	"\x0esnapshot_pages\x18\t \x01(\x04R\rsnapshotPages\x12.\n" +
+	"\x13snapshot_page_bytes\x18\n" +
+	" \x01(\x04R\x11snapshotPageBytes\"\x0e\n" +
 	"\fPruneRequest\"q\n" +
 	"\rPruneResponse\x12'\n" +
 	"\x0fbundles_removed\x18\x01 \x01(\x03R\x0ebundlesRemoved\x12\x1f\n" +
