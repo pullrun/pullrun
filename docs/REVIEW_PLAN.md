@@ -103,3 +103,25 @@ No release gate; tracked as program completion.
 | 2026-11-23 | M1 fork (in progress) | Fork restores load and run (first fork 320 ms), but the restore RPC can hang after `load_snapshot`; logs show a `pullrun-br0` tap instead of the intended `pf-*` fork bridge, so the fork flag/tap override path is not reaching the executor as expected. Two-fork acceptance is **not** met |
 | 2026-11-23 | M1 fork (blocked) | First fork attempt used slirp in a rootful daemon; `slirp4netns --configure` reconfigured the host netns and the KVM host became unreachable (SSH kex reset, ICMP loss). Code changed to an unbridged isolated TAP; **fork verification is blocked until the host is rebooted**, and no fork result is claimed |
 | 2026-11-23 | M1 network (done) | Meta stores TAP/MAC/gateway/netmask; restore recreates the persistent TAP before `load_snapshot`. Verified on KVM: snapshot of `alpine:3.18` with `--net bridge` (10.42.0.4), restore in **130 ms**, host `ping 10.42.0.4` succeeds, tap attached to `pullrun-br0`. Note: inbound proxy rules are not re-registered yet |
+
+## Status at round 34 (2026-11-24)
+
+Done and verified:
+- Snapshot network re-attach (ping), fork (9 concurrent, 142–483 ms),
+  SHA-256 integrity, AES-256-GCM at rest, 64 KiB page dedup (97.6% shared;
+  441 unique pages / 27.6 MiB for 512 MiB), page/snapshot GC.
+- Python SDK (TCP) and TypeScript SDK (UDS); CRI conformance 50/50.
+- Container + bridge-VM fail-closed egress, kernel-log audit, CA rotation,
+  VM proxy env/CA.
+
+Blocked / not done:
+- Fork guest re-seed (IP/MAC/entropy/clock) needs a guest-side agent after
+  memory resume; current Firecracker /init is command-only.
+- Capture-time delta (storage dedup exists; no incremental snapshot API).
+- Guest HTTPS through the credential proxy (TCP-level stall); the proxy is
+  verified host-side.
+- Rootless egress: `nsenter` into the unprivileged netns fails with EPERM;
+  needs a userns-aware design.
+- Linux sandbox groups need a Firecracker host backend (guest supervisor
+  already supports Linux).
+- 500–1,000-actor demo and third-party audit are external/scale work.
