@@ -5404,6 +5404,13 @@ impl Runtime for RuntimeService {
             .as_ref()
             .and_then(|c| std::fs::read(c.vm_root.join(&req.workload_id).join("network.json")).ok())
             .and_then(|b| serde_json::from_slice::<pullrun_vm::VmSidecar>(&b).ok());
+        let hash = |p: &std::path::Path| -> String {
+            if p.as_os_str().is_empty() || !p.exists() {
+                String::new()
+            } else {
+                pullrun_vm::snapshot::sha256_file(p).unwrap_or_default()
+            }
+        };
         let meta = SnapshotMeta {
             workload_id: req.workload_id.clone(),
             fidelity: fidelity.as_str().to_string(),
@@ -5416,6 +5423,9 @@ impl Runtime for RuntimeService {
             drive_path: info.drive_path.clone(),
             created_at,
             mem_bytes: info.mem_bytes,
+            state_sha256: hash(&info.state_path),
+            mem_sha256: hash(&info.mem_path),
+            rootfs_sha256: hash(&info.rootfs_path),
             network_mode: state.network_mode.clone(),
             internal_ip: state.internal_ip.clone().unwrap_or_default(),
             bridge_name: state.bridge_name.clone().unwrap_or_default(),
@@ -5647,6 +5657,15 @@ impl Runtime for RuntimeService {
                     path.display()
                 )));
             }
+        }
+        for (label, path, expected) in [
+            ("state", &meta.state_path, &meta.state_sha256),
+            ("memory", &meta.mem_path, &meta.mem_sha256),
+            ("rootfs", &meta.rootfs_path, &meta.rootfs_sha256),
+        ] {
+            pullrun_vm::snapshot::verify_file(path, expected).map_err(|e| {
+                tonic::Status::failed_precondition(format!("snapshot {label}: {e}"))
+            })?;
         }
         if meta.drive_path.as_os_str().is_empty() {
             return Err(tonic::Status::failed_precondition(

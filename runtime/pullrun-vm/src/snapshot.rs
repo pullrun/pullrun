@@ -257,6 +257,15 @@ pub struct SnapshotMeta {
     pub created_at: i64,
     /// Size of the memory file in bytes.
     pub mem_bytes: u64,
+    /// SHA-256 of the Firecracker state file (empty for legacy snapshots).
+    #[serde(default)]
+    pub state_sha256: String,
+    /// SHA-256 of the guest memory file.
+    #[serde(default)]
+    pub mem_sha256: String,
+    /// SHA-256 of the rootfs snapshot file.
+    #[serde(default)]
+    pub rootfs_sha256: String,
     /// Network mode the snapshot was captured with (`none`, `isolated`, ...).
     #[serde(default)]
     pub network_mode: String,
@@ -278,4 +287,55 @@ pub struct SnapshotMeta {
     /// Guest netmask at capture time.
     #[serde(default)]
     pub netmask: String,
+}
+
+/// SHA-256 of a file, hex encoded.
+pub fn sha256_file(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    Ok(format!("{:x}", h.finalize()))
+}
+
+/// Verify a file against a stored SHA-256. Empty hashes are legacy snapshots.
+pub fn verify_file(path: &Path, expected: &str) -> Result<(), String> {
+    if expected.is_empty() {
+        return Ok(());
+    }
+    let actual = sha256_file(path)?;
+    if actual != expected {
+        return Err(format!(
+            "snapshot integrity check failed for {}: expected {}, got {}",
+            path.display(),
+            expected,
+            actual
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_memory_file_tampering() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mem");
+        std::fs::write(&path, b"snapshot-bytes").unwrap();
+        let digest = sha256_file(&path).unwrap();
+        assert!(verify_file(&path, &digest).is_ok());
+
+        std::fs::write(&path, b"tampered").unwrap();
+        assert!(verify_file(&path, &digest).is_err());
+    }
+
+    #[test]
+    fn empty_hash_is_legacy_compatible() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state");
+        std::fs::write(&path, b"legacy").unwrap();
+        assert!(verify_file(&path, "").is_ok());
+    }
 }
