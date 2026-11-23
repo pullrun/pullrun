@@ -393,6 +393,7 @@ mod tests {
             egress_proxy: None,
             sysctls: Default::default(),
             log_path: None,
+            hostname: None,
         }
     }
 

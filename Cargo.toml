@@ -18,7 +18,6 @@ resolver = "2"
 version = "0.10.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-rust-version = "1.78"
 
 [workspace.dependencies]
 tokio = { version = "1.37", features = ["full", "rt-multi-thread"] }
@@ -35,7 +34,6 @@ async-trait = "0.1"
 rkyv = { version = "0.7", features = ["validation", "strict"] }
 memmap2 = "0.9"
 dashmap = "5.5"
-nix = { version = "0.28", features = ["process", "sched"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 flate2 = "1.0"
 tar = "0.4"
