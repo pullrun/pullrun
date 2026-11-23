@@ -28,8 +28,9 @@ sandbox network namespace with `network_mode=container:<sandbox-id>`.
   every pod container).
 - Idempotent StopPodSandbox/StopContainer for missing workloads.
 - OOM-killed containers report `OOMKilled`.
-- CRI mount propagation maps to rprivate/rslave/rshared; ContainerStatus
-  returns the request mounts. rshared/rslave propagation still fails.
+- CRI mount propagation is applied with open_tree/move_mount into the
+  container mount namespace (rprivate/rslave/rshared). ContainerStatus
+  returns the request mounts.
 - Privileged containers now get the full `CAP_*` capability set instead
   of the invalid literal `ALL`.
 - Container labels/annotations/metadata attempt preserved.
@@ -61,7 +62,7 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (attributes, sysctls, idempotence) | **9/9 pass** |
 | Container basics | **14/14 pass** |
-| Container full | **28/31 pass** (multi-container 3/3); remaining rshared/rslave propagation and image volume |
+| Container full | **30/31 pass** (multi-container 3/3, mount propagation 4/4); only image volume remains |
 | Networking | **4/4 pass** |
 | Conformance subset | **50/50 pass** |
 | Container logs | **2/2 pass** |
@@ -73,8 +74,7 @@ Current status on the Linux KVM host:
 
 A full 142-spec run is not yet a gate: it hits the 20-minute cap and
 includes optional benchmark/event/feature specs. The per-suite results
-above are the authoritative conformance evidence. Remaining CRI gaps:
-`rshared`/`rslave` mount propagation and image volumes.
+above are the authoritative conformance evidence. Remaining CRI gap: Kubernetes image volumes (feature-gated).
 
 ## Known gaps
 

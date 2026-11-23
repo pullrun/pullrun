@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2 — 2026-11-23
+
+- CRI mount propagation fixed via open_tree/move_mount: rshared/rslave
+  now propagate host↔container. Mount suite 4/4.
+- Container full suite 30/31 (only feature-gated image volumes remain).
+- CRI conformance 50/50 unchanged.
+
 ## 0.10.1 — 2026-11-23
 
 - CRI conformance subset **50/50** on Kubernetes 1.37.
