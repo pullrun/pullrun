@@ -70,6 +70,8 @@ No release gate; tracked as program completion.
 
 ## Evidence log
 
+| 2026-11-23 | M2 Python SDK (partial) | `sdk/python`: `RuntimeClient`, `Sandbox` context manager, run/exec/logs/stop/snapshot/restore, generated stubs, example. Mock gRPC test passes. Integration blocked: Python grpc gets `RST_STREAM` from the tonic UDS server while the Go CLI works; needs transport investigation |
+
 | Date | Milestone | Evidence |
 |---|---|---|
 | 2026-11-23 | M1 start | Restore path (`service.rs` ~5460) hardcoded `network_mode: isolated`; docs/SNAPSHOTS.md confirms net-less-only |
