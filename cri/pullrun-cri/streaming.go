@@ -175,6 +175,7 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 
 	upgrader := spdy.NewResponseUpgrader()
 	conn := upgrader.UpgradeResponse(w, r, func(stream httpstream.Stream, _ <-chan struct{}) error {
+		log.Printf("port-forward stream: %v", stream.Headers())
 		streamType := strings.ToLower(stream.Headers().Get("Streamtype"))
 		if streamType == "" {
 			streamType = strings.ToLower(stream.Headers().Get("streamtype"))
@@ -197,6 +198,7 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 			log.Printf("port-forward dial %s: %v", targetAddr, err)
 			return err
 		}
+		log.Printf("port-forward connected %s", targetAddr)
 
 		var wg sync.WaitGroup
 		wg.Add(2)
