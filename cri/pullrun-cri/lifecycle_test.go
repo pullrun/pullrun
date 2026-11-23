@@ -78,7 +78,7 @@ func TestRunRequestForContainer_JoinsSandboxNetns(t *testing.T) {
 			Image:    &runtimeapi.ImageSpec{Image: "alpine:latest"},
 		},
 	}
-	runReq, err := c.runRequestForContainer("deadbeef"+"deadbeef"+"deadbeef", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("deadbeef"+"deadbeef"+"deadbeef", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestRunRequestForContainer_VMBackendUsesBridge(t *testing.T) {
 	req := &runtimeapi.CreateContainerRequest{
 		Config: &runtimeapi.ContainerConfig{Metadata: &runtimeapi.ContainerMetadata{Name: "ctr"}},
 	}
-	runReq, err := c.runRequestForContainer("a1b2c3d4e5f60718293a4b5c", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("a1b2c3d4e5f60718293a4b5c", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestRunRequestForContainer_HostNetwork(t *testing.T) {
 	req := &runtimeapi.CreateContainerRequest{
 		Config: &runtimeapi.ContainerConfig{Metadata: &runtimeapi.ContainerMetadata{Name: "ctr"}},
 	}
-	runReq, err := c.runRequestForContainer("aaaaaaaaaaaaaaaaaaaaaaaa", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("aaaaaaaaaaaaaaaaaaaaaaaa", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestRunRequestForContainer_SecurityContext(t *testing.T) {
 			},
 		},
 	}
-	runReq, err := c.runRequestForContainer("bbbbbbbbbbbbbbbbbbbbbbbb", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("bbbbbbbbbbbbbbbbbbbbbbbb", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestRunRequestForContainer_CommandEnvResources(t *testing.T) {
 			},
 		},
 	}
-	runReq, err := c.runRequestForContainer("cccccccccccccccccccccccc", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("cccccccccccccccccccccccc", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestRunRequestForContainer_Mounts(t *testing.T) {
 			},
 		},
 	}
-	runReq, err := c.runRequestForContainer("dddddddddddddddddddddddd", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("dddddddddddddddddddddddd", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestRunRequestForContainer_PropagatesPodDNS(t *testing.T) {
 	req := &runtimeapi.CreateContainerRequest{
 		Config: &runtimeapi.ContainerConfig{Metadata: &runtimeapi.ContainerMetadata{Name: "ctr-d"}},
 	}
-	runReq, err := c.runRequestForContainer("eeeeeeeeeeeeeeeeeeeeeeee", req, sandbox, "digest")
+	runReq, err := c.runRequestForContainer("eeeeeeeeeeeeeeeeeeeeeeee", req, sandbox, "digest", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
