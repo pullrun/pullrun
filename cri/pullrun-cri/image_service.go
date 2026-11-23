@@ -111,6 +111,10 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 		}
 		repoTags = []string{ref}
 	}
+	specImage := ref
+	if isDigest && !strings.Contains(ref, "@") && len(repoTags) > 0 {
+		specImage = repoTags[0]
+	}
 	uid, username := imageUserFields(resp.ImageUser)
 	return &runtimeapi.ImageStatusResponse{
 		Image: &runtimeapi.Image{
@@ -120,7 +124,7 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 			Size:     uint64(resp.SizeBytes),
 			Uid:      uid,
 			Username: username,
-			Spec:     &runtimeapi.ImageSpec{Image: req.Image.Image},
+			Spec:     &runtimeapi.ImageSpec{Image: specImage},
 		},
 	}, nil
 }
