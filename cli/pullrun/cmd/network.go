@@ -73,6 +73,24 @@ func NewNetworkCommand(opts *RootOptions) *cobra.Command {
 	})
 
 	cmd.AddCommand(&cobra.Command{
+		Use:   "rotate-ca",
+		Short: "Rotate the credential-injection CA (existing sandboxes must restart)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, closeFn, err := ensureGRPCClient(opts)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			resp, err := client.RotateEgressCa(context.Background())
+			if err != nil {
+				return err
+			}
+			fmt.Print(resp.CaPem)
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
 		Use:   "ls",
 		Short: "List networks",
 		Args:  cobra.NoArgs,

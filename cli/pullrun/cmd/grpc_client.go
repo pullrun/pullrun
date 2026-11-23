@@ -398,6 +398,11 @@ func (c *GRPCClient) RestoreSnapshotWithFork(ctx context.Context, snapshotID str
 	return c.client.RestoreSnapshot(ctx, &runtimepb.RestoreSnapshotRequest{SnapshotId: snapshotID, Fork: fork})
 }
 
+// RotateEgressCa replaces the credential-proxy CA and rewrites ca.pem.
+func (c *GRPCClient) RotateEgressCa(ctx context.Context) (*runtimepb.RotateEgressCaResponse, error) {
+	return c.client.RotateEgressCa(ctx, &runtimepb.RotateEgressCaRequest{})
+}
+
 // GcSnapshots deletes unreferenced snapshots, keeping the newest N.
 func (c *GRPCClient) GcSnapshots(ctx context.Context, keepLast uint32, dryRun bool) (*runtimepb.GcSnapshotsResponse, error) {
 	return c.client.GcSnapshots(ctx, &runtimepb.GcSnapshotsRequest{KeepLast: keepLast, DryRun: dryRun})

@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
@@ -35,7 +35,7 @@ pub struct CredentialRule {
 pub type SecretProvider = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 struct HostCertResolver {
-    ca: Arc<Ca>,
+    ca: Arc<RwLock<Arc<Ca>>>,
 }
 
 impl std::fmt::Debug for HostCertResolver {
@@ -47,7 +47,8 @@ impl std::fmt::Debug for HostCertResolver {
 impl ResolvesServerCert for HostCertResolver {
     fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
         let host = hello.server_name()?.to_string();
-        match self.ca.leaf(&host) {
+        let ca = Arc::clone(&*self.ca.read().expect("ca lock poisoned"));
+        match ca.leaf(&host) {
             Ok(c) => Some(c),
             Err(e) => {
                 tracing::warn!(%host, error = %e, "egress proxy: could not mint leaf cert");
@@ -114,15 +115,21 @@ impl Ca {
 /// Credential-injecting proxy.
 #[derive(Clone)]
 pub struct CredentialProxy {
-    ca: Arc<Ca>,
+    ca: Arc<RwLock<Arc<Ca>>>,
     rules: Arc<Vec<CredentialRule>>,
     secrets: SecretProvider,
     server_config: Arc<rustls::ServerConfig>,
 }
 
+impl std::fmt::Debug for CredentialProxy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CredentialProxy")
+    }
+}
+
 impl CredentialProxy {
     pub fn new(rules: Vec<CredentialRule>, secrets: SecretProvider) -> Result<Self, String> {
-        let ca = Arc::new(Ca::generate()?);
+        let ca = Arc::new(RwLock::new(Arc::new(Ca::generate()?)));
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let server_config = rustls::ServerConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
@@ -140,7 +147,16 @@ impl CredentialProxy {
     }
 
     pub fn ca_pem(&self) -> String {
-        self.ca.pem()
+        self.ca.read().expect("ca lock poisoned").pem()
+    }
+
+    /// Replace the runtime CA. Existing sandboxes must be restarted with
+    /// the new CA before their next TLS connection.
+    pub fn rotate_ca(&self) -> Result<String, String> {
+        let new = Arc::new(Ca::generate()?);
+        let pem = new.pem();
+        *self.ca.write().expect("ca lock poisoned") = new;
+        Ok(pem)
     }
 
     fn rule_for(&self, host: &str) -> Option<&CredentialRule> {
@@ -351,4 +367,19 @@ fn is_private_ip(ip: std::net::IpAddr) -> bool {
 /// Bind a credential proxy listener.
 pub async fn bind(addr: SocketAddr) -> std::io::Result<TcpListener> {
     TcpListener::bind(addr).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rotate_replaces_the_runtime_ca() {
+        let provider: SecretProvider = Arc::new(|_| None);
+        let proxy = CredentialProxy::new(Vec::new(), provider).unwrap();
+        let before = proxy.ca_pem();
+        let after = proxy.rotate_ca().unwrap();
+        assert_ne!(before, after);
+        assert_ne!(proxy.ca_pem(), before);
+    }
 }

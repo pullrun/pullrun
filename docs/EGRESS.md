@@ -100,7 +100,8 @@ with a container that had no `/run/secrets/TEST_SECRET`
 - The MITM proxy handles HTTP/1.1 CONNECT requests; HTTP/2-only
   upstreams and non-TLS protocols are not covered.
 - The CA private key lives in the daemon process; the public CA cert is
-  written to `<store>/egress/ca.pem`. There is no CA rotation API yet.
+  written to `<store>/egress/ca.pem`. `pullrun network rotate-ca` rotates
+  it; sandboxes must restart to trust the new CA.
 - DNS names are resolved once at start; rotating IPs need a restart.
 - Rootful containers and bridge-networked VMs are enforced; slirp VMs
   and rootless containers reject `--egress-deny`.

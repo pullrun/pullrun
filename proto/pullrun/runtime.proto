@@ -53,6 +53,7 @@ service Runtime {
     rpc ListSnapshots(ListSnapshotsRequest) returns (ListSnapshotsResponse);
     rpc RemoveSnapshot(RemoveSnapshotRequest) returns (RemoveSnapshotResponse);
     rpc GcSnapshots(GcSnapshotsRequest) returns (GcSnapshotsResponse);
+    rpc RotateEgressCa(RotateEgressCaRequest) returns (RotateEgressCaResponse);
     rpc RestoreSnapshot(RestoreSnapshotRequest) returns (RestoreSnapshotResponse);
 
     // --- Actor templates (golden snapshots) and actors ---
@@ -1195,4 +1196,9 @@ message ImageMount {
     string root_digest = 1;
     string sub_path = 2;
     string destination = 3;
+}
+
+message RotateEgressCaRequest {}
+message RotateEgressCaResponse {
+    string ca_pem = 1;
 }

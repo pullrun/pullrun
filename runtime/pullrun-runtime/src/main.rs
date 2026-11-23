@@ -688,19 +688,22 @@ async fn run_daemon(
         let secret_store = config.secrets_store.clone();
         let provider: pullrun_net::egress_proxy::SecretProvider =
             std::sync::Arc::new(move |name: &str| secret_store.read_secret(name).ok());
-        let proxy =
+        let proxy = std::sync::Arc::new(
             pullrun_net::egress_proxy::CredentialProxy::new(credential_rules.clone(), provider)
-                .map_err(|e| format!("credential proxy: {e}"))?;
+                .map_err(|e| format!("credential proxy: {e}"))?,
+        );
         std::fs::write(&ca_path, proxy.ca_pem())?;
         let listener = tokio::net::TcpListener::bind("0.0.0.0:3128")
             .await
             .map_err(|e| format!("bind credential proxy on :3128: {e}"))?;
-        tokio::spawn(proxy.serve(listener));
+        tokio::spawn(proxy.as_ref().clone().serve(listener));
         let proxy_addr = std::net::SocketAddr::from(([10, 42, 0, 1], 3128));
-        config =
-            config
-                .with_egress_deny(true)
-                .with_egress_proxy(credential_rules, proxy_addr, ca_path);
+        config = config.with_egress_deny(true).with_egress_proxy(
+            credential_rules,
+            proxy_addr,
+            ca_path,
+            proxy,
+        );
         info!("credential-injecting egress proxy listening on 0.0.0.0:3128");
     }
     if let Some(p) = policy {

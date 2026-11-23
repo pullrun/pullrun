@@ -48,6 +48,7 @@ const (
 	Runtime_ListSnapshots_FullMethodName    = "/pullrun.runtime.Runtime/ListSnapshots"
 	Runtime_RemoveSnapshot_FullMethodName   = "/pullrun.runtime.Runtime/RemoveSnapshot"
 	Runtime_GcSnapshots_FullMethodName      = "/pullrun.runtime.Runtime/GcSnapshots"
+	Runtime_RotateEgressCa_FullMethodName   = "/pullrun.runtime.Runtime/RotateEgressCa"
 	Runtime_RestoreSnapshot_FullMethodName  = "/pullrun.runtime.Runtime/RestoreSnapshot"
 	Runtime_CreateTemplate_FullMethodName   = "/pullrun.runtime.Runtime/CreateTemplate"
 	Runtime_ListTemplates_FullMethodName    = "/pullrun.runtime.Runtime/ListTemplates"
@@ -127,6 +128,7 @@ type RuntimeClient interface {
 	ListSnapshots(ctx context.Context, in *ListSnapshotsRequest, opts ...grpc.CallOption) (*ListSnapshotsResponse, error)
 	RemoveSnapshot(ctx context.Context, in *RemoveSnapshotRequest, opts ...grpc.CallOption) (*RemoveSnapshotResponse, error)
 	GcSnapshots(ctx context.Context, in *GcSnapshotsRequest, opts ...grpc.CallOption) (*GcSnapshotsResponse, error)
+	RotateEgressCa(ctx context.Context, in *RotateEgressCaRequest, opts ...grpc.CallOption) (*RotateEgressCaResponse, error)
 	RestoreSnapshot(ctx context.Context, in *RestoreSnapshotRequest, opts ...grpc.CallOption) (*RestoreSnapshotResponse, error)
 	// --- Actor templates (golden snapshots) and actors ---
 	CreateTemplate(ctx context.Context, in *CreateTemplateRequest, opts ...grpc.CallOption) (*CreateTemplateResponse, error)
@@ -499,6 +501,16 @@ func (c *runtimeClient) GcSnapshots(ctx context.Context, in *GcSnapshotsRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GcSnapshotsResponse)
 	err := c.cc.Invoke(ctx, Runtime_GcSnapshots_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *runtimeClient) RotateEgressCa(ctx context.Context, in *RotateEgressCaRequest, opts ...grpc.CallOption) (*RotateEgressCaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateEgressCaResponse)
+	err := c.cc.Invoke(ctx, Runtime_RotateEgressCa_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -900,6 +912,7 @@ type RuntimeServer interface {
 	ListSnapshots(context.Context, *ListSnapshotsRequest) (*ListSnapshotsResponse, error)
 	RemoveSnapshot(context.Context, *RemoveSnapshotRequest) (*RemoveSnapshotResponse, error)
 	GcSnapshots(context.Context, *GcSnapshotsRequest) (*GcSnapshotsResponse, error)
+	RotateEgressCa(context.Context, *RotateEgressCaRequest) (*RotateEgressCaResponse, error)
 	RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error)
 	// --- Actor templates (golden snapshots) and actors ---
 	CreateTemplate(context.Context, *CreateTemplateRequest) (*CreateTemplateResponse, error)
@@ -1065,6 +1078,9 @@ func (UnimplementedRuntimeServer) RemoveSnapshot(context.Context, *RemoveSnapsho
 }
 func (UnimplementedRuntimeServer) GcSnapshots(context.Context, *GcSnapshotsRequest) (*GcSnapshotsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GcSnapshots not implemented")
+}
+func (UnimplementedRuntimeServer) RotateEgressCa(context.Context, *RotateEgressCaRequest) (*RotateEgressCaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateEgressCa not implemented")
 }
 func (UnimplementedRuntimeServer) RestoreSnapshot(context.Context, *RestoreSnapshotRequest) (*RestoreSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestoreSnapshot not implemented")
@@ -1621,6 +1637,24 @@ func _Runtime_GcSnapshots_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RuntimeServer).GcSnapshots(ctx, req.(*GcSnapshotsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Runtime_RotateEgressCa_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateEgressCaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RuntimeServer).RotateEgressCa(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Runtime_RotateEgressCa_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RuntimeServer).RotateEgressCa(ctx, req.(*RotateEgressCaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2313,6 +2347,10 @@ var Runtime_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GcSnapshots",
 			Handler:    _Runtime_GcSnapshots_Handler,
+		},
+		{
+			MethodName: "RotateEgressCa",
+			Handler:    _Runtime_RotateEgressCa_Handler,
 		},
 		{
 			MethodName: "RestoreSnapshot",

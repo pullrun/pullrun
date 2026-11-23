@@ -70,12 +70,12 @@ use crate::proto::{
     RemoveImageRequest, RemoveImageResponse, RemoveNetworkRequest, RemoveNetworkResponse,
     RemoveSecretRequest, RemoveSecretResponse, RemoveSnapshotRequest, RemoveSnapshotResponse,
     RemoveTemplateRequest, RemoveTemplateResponse, RestoreSnapshotRequest, RestoreSnapshotResponse,
-    ResumeActorRequest, ResumeActorResponse, RunComposeRequest, RunComposeResponse,
-    RunGroupSandboxRequest, RunGroupSandboxResponse, RunRequest, RunResponse, SnapshotInfo,
-    StartWorkloadRequest, StartWorkloadResponse, StopRequest, StopResponse, StreamEventsRequest,
-    StreamLogsRequest, SuspendActorRequest, SuspendActorResponse, TemplateInfo,
-    UpdateWorkloadRequest, UpdateWorkloadResponse, WorkloadStats as ProtoWorkloadStats,
-    WorkloadStatus,
+    ResumeActorRequest, ResumeActorResponse, RotateEgressCaRequest, RotateEgressCaResponse,
+    RunComposeRequest, RunComposeResponse, RunGroupSandboxRequest, RunGroupSandboxResponse,
+    RunRequest, RunResponse, SnapshotInfo, StartWorkloadRequest, StartWorkloadResponse,
+    StopRequest, StopResponse, StreamEventsRequest, StreamLogsRequest, SuspendActorRequest,
+    SuspendActorResponse, TemplateInfo, UpdateWorkloadRequest, UpdateWorkloadResponse,
+    WorkloadStats as ProtoWorkloadStats, WorkloadStatus,
 };
 
 use crate::metrics::{
@@ -130,6 +130,8 @@ pub struct ServiceConfig {
     pub egress_proxy_addr: Option<std::net::SocketAddr>,
     /// CA certificate path mounted into sandboxes.
     pub egress_ca_path: Option<PathBuf>,
+    /// Live credential proxy, for CA rotation.
+    pub egress_proxy: Option<Arc<pullrun_net::egress_proxy::CredentialProxy>>,
 }
 
 impl ServiceConfig {
@@ -156,6 +158,7 @@ impl ServiceConfig {
             egress_credentials: Vec::new(),
             egress_proxy_addr: None,
             egress_ca_path: None,
+            egress_proxy: None,
         }
     }
 
@@ -174,10 +177,12 @@ impl ServiceConfig {
         rules: Vec<pullrun_net::egress_proxy::CredentialRule>,
         addr: std::net::SocketAddr,
         ca_path: PathBuf,
+        proxy: Arc<pullrun_net::egress_proxy::CredentialProxy>,
     ) -> Self {
         self.egress_credentials = rules;
         self.egress_proxy_addr = Some(addr);
         self.egress_ca_path = Some(ca_path);
+        self.egress_proxy = Some(proxy);
         self
     }
 
@@ -5573,6 +5578,23 @@ impl Runtime for RuntimeService {
             false
         };
         Ok(tonic::Response::new(RemoveSnapshotResponse { removed }))
+    }
+
+    async fn rotate_egress_ca(
+        &self,
+        _request: tonic::Request<RotateEgressCaRequest>,
+    ) -> Result<tonic::Response<RotateEgressCaResponse>, tonic::Status> {
+        let proxy = self.config.egress_proxy.as_ref().ok_or_else(|| {
+            tonic::Status::failed_precondition("credential proxy is not configured")
+        })?;
+        let pem = proxy
+            .rotate_ca()
+            .map_err(|e| tonic::Status::internal(format!("rotate egress CA: {e}")))?;
+        if let Some(path) = &self.config.egress_ca_path {
+            std::fs::write(path, &pem)
+                .map_err(|e| tonic::Status::internal(format!("write CA file: {e}")))?;
+        }
+        Ok(tonic::Response::new(RotateEgressCaResponse { ca_pem: pem }))
     }
 
     async fn gc_snapshots(
