@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.2 — 2026-11-23
+
+- Snapshot page-sharing metrics: `pages_total` / `pages_new`; two
+  512 MiB snapshots shared 97.6% of pages (8192 total, 194 new).
+- `--parent` snapshot metadata; 9 concurrent forks measured at
+  142–483 ms each.
+- VM rootfs DNS uses 8.8.8.8/1.1.1.1; egress allows them.
+- VM proxy env includes lowercase variants; proxy port allowed on the
+  nft input chain.
+- CRI regression: conformance 50/50 after all changes.
+- Credential proxy verified host-side (`Authorization: Bearer …`);
+  guest HTTPS path still blocked.
+
 ## 0.11.1 — 2026-11-23
 
 - Fail-closed egress for bridge-networked Firecracker VMs.

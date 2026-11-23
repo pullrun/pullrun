@@ -53,7 +53,7 @@ func NewVersionCommand() *cobra.Command {
 		Short: "Print the client version",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("pullrun 0.11.1")
+			fmt.Println("pullrun 0.11.2")
 			return nil
 		},
 	}
