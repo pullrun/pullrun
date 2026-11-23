@@ -29,6 +29,7 @@ const (
 	streamTypeError  = "error"
 
 	streamProtocolV4 = "v4.channel.k8s.io"
+	portForwardProtocol = "portforward.k8s.io"
 )
 
 type execSession struct {
@@ -167,7 +168,7 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 	session := raw.(*portForwardSession)
 	defer s.sessions.Delete(token)
 
-	if _, err := httpstream.Handshake(r, w, []string{streamProtocolV4}); err != nil {
+	if _, err := httpstream.Handshake(r, w, []string{portForwardProtocol}); err != nil {
 		log.Printf("port-forward protocol handshake: %v", err)
 		return
 	}
