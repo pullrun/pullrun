@@ -175,7 +175,14 @@ func (s *streamingServer) servePortForward(w http.ResponseWriter, r *http.Reques
 
 	upgrader := spdy.NewResponseUpgrader()
 	conn := upgrader.UpgradeResponse(w, r, func(stream httpstream.Stream, _ <-chan struct{}) error {
-		log.Printf("port-forward stream headers: %v", stream.Headers())
+		streamType := strings.ToLower(stream.Headers().Get("Streamtype"))
+		if streamType == "" {
+			streamType = strings.ToLower(stream.Headers().Get("streamtype"))
+		}
+		if streamType == "error" {
+			// Control stream: keep it open, do not dial the target.
+			return nil
+		}
 		portStr := stream.Headers().Get("port")
 		if portStr == "" {
 			portStr = fmt.Sprintf("%d", session.port)
