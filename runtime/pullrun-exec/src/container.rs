@@ -25,6 +25,9 @@ use crate::types::{
 const DEFAULT_BRIDGE_NAME: &str = "pullrun-br0";
 const DEFAULT_GATEWAY: Ipv4Addr = Ipv4Addr::new(10, 42, 0, 1);
 
+type MountPropagation = (String, String, String);
+type PropagationMap = HashMap<String, Vec<MountPropagation>>;
+
 pub struct LinuxContainerExecutor {
     store: MmapStore,
     runc_path: PathBuf,
@@ -46,7 +49,7 @@ pub struct LinuxContainerExecutor {
     /// CRI log paths per workload.
     log_paths: Mutex<HashMap<String, std::path::PathBuf>>,
     /// (source, destination, mode) mounts needing propagation.
-    propagations: Mutex<HashMap<String, Vec<(String, String, String)>>>,
+    propagations: Mutex<PropagationMap>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -191,7 +194,7 @@ impl LinuxContainerExecutor {
                     let rc = libc::syscall(
                         SYS_MOVE_MOUNT,
                         tree_fd,
-                        b"\0".as_ptr() as *const libc::c_char,
+                        c"".as_ptr(),
                         libc::AT_FDCWD,
                         c_dest.as_ptr(),
                         MOVE_MOUNT_F_EMPTY_PATH,
@@ -629,7 +632,7 @@ impl Executor for LinuxContainerExecutor {
             } else {
                 egress.remove(&spec.id);
             }
-            let props: Vec<(String, String, String)> = spec
+            let props: Vec<MountPropagation> = spec
                 .mounts
                 .iter()
                 .filter_map(|m| {
