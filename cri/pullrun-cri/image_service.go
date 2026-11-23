@@ -81,13 +81,27 @@ func (c *criServer) ImageStatus(ctx context.Context, req *runtimeapi.ImageStatus
 			}
 		}
 	}
-	repoTags := []string{}
-	if !isDigest {
+	repoTags := []string{ref}
+	if isDigest {
+		// A digest pull is reported by its exact reference. A bare
+		// digest ID additionally reports the tags that point at it.
 		if !strings.Contains(ref, "@") {
-			last := ref[strings.LastIndex(ref, "/")+1:]
-			if !strings.Contains(last, ":") {
-				ref += ":latest"
+			if list, lerr := c.ListImages(ctx, &runtimeapi.ListImagesRequest{}); lerr == nil {
+				repoTags = nil
+				for _, img := range list.Images {
+					if img.Id == resp.RootDigest || img.Id == resp.ManifestDigest {
+						repoTags = append(repoTags, img.RepoTags...)
+					}
+				}
+				if len(repoTags) == 0 {
+					repoTags = []string{ref}
+				}
 			}
+		}
+	} else {
+		last := ref[strings.LastIndex(ref, "/")+1:]
+		if !strings.Contains(last, ":") {
+			ref += ":latest"
 		}
 		repoTags = []string{ref}
 	}
