@@ -642,23 +642,14 @@ Pullrun is open source (Apache-2.0) **and** a business. Enterprise capabilities,
 - **🌐 Air-Gapped Fleet Sync** — P2P image distribution between nodes, kernel-as-image updates, offline registries, DAG garbage collection (`pullrun gc`).
 - **☸ Kubernetes CRI** — CRI shim (beta) with v4 streaming exec/attach and per-pod bridge subnets; run Pods on Firecracker VM backends via RuntimeClass.
 
-Commercial offerings on top of these capabilities, available today:
+Commercial focus (2026 review): **two lanes only**.
 
-- **🧠 Embedded Agent Sandboxes** — for AI agent platforms (Claude Code, opencode, Cursor-style products): license the runtime that boots a per-task microVM sandbox in **~500 ms cold / ~200 ms warm**, controlled over native MCP (15 tools). Fleet economics: one image base plus copy-on-write deltas — reflink clones for per-task VMs, and shared guest page cache for group sandboxes (measured in [docs/GROUPS.md](docs/GROUPS.md)).
-- **🔒 Isolation & Guardrails for agents** — kernel-per-task microVMs for untrusted agent code, deny-by-default image policy, seccomp/read-only rootfs/no-new-privileges, policy decisions streamed as audit events.
-- **☁️ Hosted Sandbox API** (planned) — managed sandbox endpoints: boot, run agent, snapshot state, resume — billed per active sandbox-second.
-- **Enterprise License** — per-cluster licensing for production fleets: Kubernetes CRI runtime, agent sandbox farms at scale, air-gapped registries, kernel-as-image updates. Predictable per-node pricing.
-- **Professional Services** — deployment and tuning on your infrastructure: custom executors/backends, P2P fleet network design, policy & seccomp hardening, Docker/containerd migrations, team training.
-- **OEM & Embed** — per-seat OEM licensing, custom MCP tool surfaces, co-branded runtime, white-glove onboarding for agent platform vendors.
-- **Managed Control Plane** (planned) — hosted SaaS: fleet-wide image sync, policy center, secrets, and observability across hundreds of nodes, billed per active sandbox.
-- **Support & SLAs** — priority engineering support with response SLAs, security fixes, and backports.
+- **OEM / embed** — license the runtime to agent platforms that need per-task
+  microVM isolation, MCP control, and snapshot resume on their own hardware.
+- **Enterprise on-prem / air-gapped** — per-node or per-cluster licensing for
+  sovereign fleets: offline registries, P2P image sync, CRI, policy gates, and
+  support.
 
-Enterprise conversations: open an issue or email the maintainers via the GitHub repo.
-
----
-
-<div align="center">
-
-**Built with Rust 🦀 and Go 🐹**
-
-</div>
+The generic hosted-sandbox API is **deferred**: it competes head-on with
+E2B/Modal/Cloudflare balance sheets and is not part of the current plan.
+See [docs/BUSINESS.md](docs/BUSINESS.md).
