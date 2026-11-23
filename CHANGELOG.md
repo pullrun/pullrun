@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.3 — 2026-11-23
+
+- Kubernetes image volumes: rootfs and subPath mounts, read-only.
+- Container suite 30/30; CRI conformance 50/50.
+- Automated conformance gate: `hack/cri-conformance.sh`.
+
 ## 0.10.2 — 2026-11-23
 
 - CRI mount propagation fixed via open_tree/move_mount: rshared/rslave

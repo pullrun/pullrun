@@ -62,19 +62,19 @@ Current status on the Linux KVM host:
 | Runtime info (version, conditions) | **2/2 pass** |
 | PodSandbox (attributes, sysctls, idempotence) | **9/9 pass** |
 | Container basics | **14/14 pass** |
-| Container full | **30/31 pass** (multi-container 3/3, mount propagation 4/4); only image volume remains |
+| Container full | **30/30 pass** (multi-container 3/3, mount propagation 4/4, image volumes 3/3) |
 | Networking | **4/4 pass** |
 | Conformance subset | **50/50 pass** |
 | Container logs | **2/2 pass** |
 | Container stats | **5/5 pass** |
 | Image core | **15/15 pass** |
 | Streaming | **5/5 pass** |
-| Image volumes | feature-gated, not implemented |
+| Image volumes | **3/3 pass** (rootfs and subPath) |
 | OCI conversion | httpd (300 MB) pulls + converts in **~25 s** |
 
 A full 142-spec run is not yet a gate: it hits the 20-minute cap and
 includes optional benchmark/event/feature specs. The per-suite results
-above are the authoritative conformance evidence. Remaining CRI gap: Kubernetes image volumes (feature-gated).
+above are the authoritative conformance evidence. All CRI suite groups now pass; the 50-spec conformance subset is the release gate.
 
 ## Known gaps
 
