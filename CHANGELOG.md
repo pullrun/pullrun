@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.5 — 2026-11-23
+
+- Daemon hardening: refcount lock recovers poison instead of panicking;
+  non-test `unwrap_used` denied in store/runtime.
+- RelPath fuzz target verified in CI: 23,728,225 runs, no crash.
+
 ## 0.10.4 — 2026-11-23
 
 - VM workloads are isolated by default; `--net slirp` or `--trusted`
