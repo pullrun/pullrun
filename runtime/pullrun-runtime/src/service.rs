@@ -7385,7 +7385,6 @@ fn run_runc_attach_session(
             )
             .spawn()
             .map_err(|e| format!("spawn runc exec -t (host pty): {e}"))?;
-        tracing::info!(workload_id = %workload_id, pid = ?child.id(), "tty runc exec spawned");
 
         // Close our handle to the slave so the PTY is owned by
         // the child process alone.
@@ -7456,10 +7455,7 @@ fn run_runc_attach_session(
                     break;
                 }
                 match child.try_wait() {
-                    Ok(Some(status)) => {
-                        tracing::info!(workload_id = %workload_id, ?status, "tty child exited");
-                        break;
-                    }
+                    Ok(Some(_)) => break,
                     Ok(None) => {
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
@@ -7475,7 +7471,6 @@ fn run_runc_attach_session(
             // stdin thread only unblocks when the client closes its gRPC
             // stream, and the shim only closes it after receiving Exit.
             // Joining first deadlocks every non-interactive attach.
-            tracing::info!(workload_id = %workload_id, exit_code, "tty sending exit");
             let _ = server_out_tx.send(pullrun_vsock::Frame::WorkloadExit {
                 exit_code: Some(exit_code),
                 signal: None,
