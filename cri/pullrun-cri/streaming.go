@@ -430,7 +430,10 @@ func (s *streamingServer) serveAttach(w http.ResponseWriter, r *http.Request) {
 			}()
 
 		case streamTypeResize:
-			defer stream.Close()
+			go func() {
+				_, _ = io.Copy(io.Discard, stream)
+				stream.Close()
+			}()
 		}
 		return nil
 	})
