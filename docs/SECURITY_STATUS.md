@@ -11,6 +11,7 @@ is not proven; "Future" means not implemented.
 | VM isolation (Firecracker) | **Met** | one kernel per VM; boot, command execution, exit codes verified on KVM |
 | VM isolation (Apple Virtualization) | **Met** | per-workload APFS clone, separate VM; macOS verified |
 | Container isolation | **Trusted tier only** | namespaces on the host kernel; do not run untrusted code in containers |
+| Daemon transport | **UDS default; TCP opt-in** | `--socket host:port` serves plaintext TCP without peer-credential checks (SDK workaround); UDS remains recommended |
 | Safe VM default | **Met** | `run --backend vm` starts isolated; `--net slirp`/`--trusted` opt in |
 | Daemon panic surface | **Partial** | non-test `unwrap()` denied in store/runtime; refcount lock recovers poison; no full audit |
 | Fuzzing | **Met (parser)** | `runtime/pullrun-oci/fuzz` RelPath target; 23,728,225 runs in 121 s on Linux CI, no crash |

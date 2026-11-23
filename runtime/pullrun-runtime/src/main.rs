@@ -919,6 +919,25 @@ async fn run_daemon(
         });
     }
 
+    // Explicit TCP mode: `--socket host:port`. This is opt-in, has no
+    // peer-credential check, and is intended for SDKs whose gRPC stack
+    // cannot speak the daemon's Unix-socket transport. UDS remains the
+    // default and is the recommended deployment.
+    if let Ok(addr) = socket.parse::<std::net::SocketAddr>() {
+        tracing::warn!(%addr, "listening on plaintext TCP; UDS is recommended");
+        let svc = RuntimeServer::new(service);
+        let server = Server::builder().add_service(svc).serve(addr);
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+        tokio::select! {
+            r = server => r?,
+            _ = sigterm.recv() => {},
+            _ = sigint.recv() => {},
+        }
+        return Ok(());
+    }
+
     let uds = tokio::net::UnixListener::bind(socket)?;
 
     // The socket lives in a world-writable directory (/tmp by default).
