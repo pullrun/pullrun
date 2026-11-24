@@ -9,7 +9,7 @@ their compute released, and resumed later from memory.
 
 ```bash
 # Start a VM workload (it must stay running).
-pullrun run alpine:3.18 --backend vm --net none \
+pullrun run alpine:3.18 --backend vm --net bridge \
   --cmd /bin/sh --cmd -c --cmd 'while true; do date; sleep 1; done'
 
 # MEMORY fidelity (default): guest RAM + disk; stops the source VM.
@@ -17,22 +17,24 @@ pullrun snapshot create <workload-id>
 # ROOTFS fidelity: disk only; source keeps running, restore cold-boots.
 pullrun snapshot create <workload-id> --fidelity rootfs
 
-# Inspect / remove.
+# Inspect / remove / GC.
 pullrun snapshot ls
 pullrun snapshot rm <snapshot-id>
+pullrun snapshot gc --keep 1
 
-# Resume into a new workload.
+# Resume once, or fork into an isolated network namespace.
 pullrun snapshot restore <snapshot-id>
+pullrun snapshot restore --fork <snapshot-id>
 ```
 
 Snapshots live under `<store>/snapshots/<snapshot-id>/`:
 
 | file | contents |
 |---|---|
-| `state` | Firecracker VM state (devices, vCPUs); MEMORY only |
-| `mem` | guest memory; MEMORY only |
-| `rootfs.ext4` | disk image at snapshot time |
-| `meta.json` | workload id, drive path, sizes, timestamp |
+| `state` | Firecracker VM state (devices, vCPUs), AES-256-GCM; MEMORY only |
+| `mem` | `PRPAGE1` index of 64 KiB page hashes; page blobs live once under `<store>/snapshot-pages/<sha256>` (AES-GCM) |
+| `rootfs.ext4` | disk image at snapshot time, AES-256-GCM |
+| `meta.json` | workload id, drive path, sizes, timestamp, parent, hashes, network intent |
 
 Fidelity levels:
 
@@ -44,16 +46,16 @@ Fidelity levels:
 
 ## Verified behaviour
 
-On the Linux KVM host (Firecracker 1.10.1, x86_64, 512 MiB guest):
+On the Linux KVM host (Firecracker 1.18.0, x86_64, 512 MiB guest):
 
 - A guest running an in-memory counter was snapshotted at `tick 2`
   (memory file 256 MiB in the test; 512 MiB for a 512 MiB VM), the
   original VMM killed, and the snapshot restored into a new process.
   The restored guest continued at `tick 3`.
-- Through the runtime, `snapshot create` produced `state` (27 KB) +
-  `mem` (512 MiB) + `rootfs.ext4` (256 MiB), and `snapshot restore`
-  registered a new running workload whose console continued the counter
-  at `tick 64-66`.
+- Through the runtime, `snapshot create` produced encrypted `state`,
+  a paged `mem` index, and `rootfs.ext4`; `snapshot restore` registered a
+  new running workload. With page dedup, a 512 MiB guest memory snapshot
+  stores 441 unique pages (27.6 MiB).
 - With `--fidelity rootfs`, capture took **20 ms** (disk copy), the
   source VM stayed running, and `snapshot restore` cold-booted a new VM
   in **199 ms** whose guest restarted the counter from `tick 1`.
@@ -63,20 +65,20 @@ On the Linux KVM host (Firecracker 1.10.1, x86_64, 512 MiB guest):
 `hack/snapshot-bench.sh` captures one snapshot, then restores it N times
 and reports the executor-side wall times (`snapshot_ms` / `restore_ms`).
 
-Linux KVM host, Firecracker 1.10.1, 512 MiB guest, 256 MiB rootfs
-(debug runtime, warm page cache):
+Linux KVM host, Firecracker 1.18.0, 512 MiB guest (release runtime;
+page-dedup + encryption enabled):
 
 | metric | measured |
 |---|---|
-| snapshot capture | 3,849 ms |
-| restore, best | **63 ms** |
-| restore, average | **84 ms** |
-| restore, worst | **119 ms** |
+| snapshot capture | 176–394 ms |
+| normal restore | **153 ms** |
+| fork restore (9 concurrent) | **142–483 ms** |
+| page sharing, second snapshot | **97.6%** (8192 logical, 194 new) |
+| stored memory, 512 MiB guest | **441 unique pages / 27.6 MiB** |
 
-All five restores were well under the 500 ms target. The key was copying
-the mostly-sparse ext4 image with `cp --sparse=always` (60 ms vs 190 ms
-for 256 MB); before that, the rootfs rewrite dominated and restores
-averaged 1.6 s.
+The page store collapses zero and duplicate 64 KiB pages; the same
+snapshot can be forked repeatedly. Earlier figures (3.8 s capture,
+63–119 ms restore) predate encryption and page dedup.
 
 ## Limitations
 
@@ -85,25 +87,23 @@ averaged 1.6 s.
 - **Network re-attach works for bridged and slirp restores.** The TAP is
   recreated before `load_snapshot`; inbound proxy rules are not
   re-registered yet.
-- **Single restore.** Creating a snapshot stops the source VM; the
-  snapshot is intended to be resumed once (secure usage). Restoring the
-  same snapshot multiple times is possible but clones guest uniqueness
-  state.
-- **Encrypted, but the key is local.** Snapshot state/memory/rootfs are
-  AES-256-GCM encrypted with `<store>/snapshots.key` (0600). A stolen
-  disk includes the key; external KMS/HSM support is not implemented.
-- **No dedup.** Snapshot files contain full guest memory
-  and may contain secrets; protect the store accordingly.
-- **Firecracker-version bound.** State files are tied to the
-  Firecracker snapshot format version.
+- **Forked guests do not get a new identity.** IP, MAC, entropy, and clock
+  are inherited from the snapshot; each fork gets its own isolated L2
+  bridge/TAP, but guest identity re-seeding is not implemented.
+- **Fork requires Firecracker ≥1.18** for snapshot `network_overrides`.
+  Snapshot state also remains bound to the Firecracker format version.
+- **Encrypted, but the key is local.** AES-256-GCM with
+  `<store>/snapshots.key` (0600); a stolen disk includes the key.
+  External KMS/HSM is not implemented.
+- **Dedup is storage-level.** Pages are content-addressed and shared, but
+  there is no capture-time delta or parent-diff snapshot API.
 - **VOLUMES fidelity is not implemented.** `commit` remains
-  filesystem-only; `snapshot --fidelity volumes` returns a clear error.
+  filesystem-only.
 - **ROOTFS restore is a cold boot.** It does not preserve processes or
   memory; guest startup scripts run again.
-
 ## Next
 
-- `ROOTFS`/`VOLUMES` fidelity levels and `commit --memory`.
-- Snapshot size accounting and incremental capture.
-- Restore latency benchmark (target <500 ms).
+- Guest identity re-seeding on fork (IP/MAC/entropy/clock).
+- Capture-time delta snapshots.
+- VOLUMES fidelity and Apple VM snapshots.
 - Actor templates built on golden snapshots.

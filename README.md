@@ -72,10 +72,10 @@ pullrun commit <id> task-run-042:latest
 **Also included:** Kubernetes CRI shim (beta), Docker Compose support, policy engine (ed25519 image signatures, SBOM, seccomp), P2P sync layer, and AES-256-GCM encrypted secrets — all in the same binary.
 
 **Current boundaries (honest list):**
-- **Snapshots** are MEMORY/ROOTFS only, plaintext, and have no page dedup, encryption, fork/branch, or GC yet. The measured restores used `--net none`; network re-attach on restore is pending.
-- **Fail-closed egress + credential injection** are enforced for rootful containers only. VMs/rootless are isolated by default but do not have the nftables/audit guarantees yet.
+- **Snapshots** are Firecracker MEMORY/ROOTFS. They are AES-256-GCM encrypted at rest with `<store>/snapshots.key` (key sits beside the data, no KMS), deduplicated into 64 KiB content-addressed pages with page/snapshot GC, and support **fork** on Firecracker ≥1.18. Network re-attach is verified for bridge/slirp. Still missing: guest IP/MAC/entropy/clock re-seeding on fork, capture-time deltas, VOLUMES, and Apple VM snapshots.
+- **Fail-closed egress** is verified for rootful containers and bridge-networked VMs, with kernel-log flow audit and CA rotation. Rootless egress is **not** enforced (`nsenter` into the unprivileged netns is denied); VM credential env/CA plumbing is verified but guest HTTPS through the proxy still stalls.
 - **Sandbox groups** are macOS-only today.
-- **No Python/TS SDK yet** — programmatic clients use gRPC or MCP.
+- **SDKs** exist for Python and TypeScript. Python is verified over the opt-in TCP listener; its grpc-core still fails on the daemon’s UDS (`RST_STREAM`). TypeScript is verified over UDS.
 - **Single-node**: the control plane is a stub; no cluster scheduler or multi-tenant quotas.
 
 ```bash

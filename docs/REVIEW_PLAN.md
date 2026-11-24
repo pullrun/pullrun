@@ -15,9 +15,10 @@ evidence here.
 
 ## M1 — Fleet-grade snapshots (the wedge)
 
-Current: MEMORY/ROOTFS, restore 63–119 ms, actors 99–110 ms. Gaps: net-less
-restore, no fork/branch, plaintext, no page dedup, no GC, 3.8 s capture,
-512 MiB per suspended actor.
+Current: MEMORY/ROOTFS, AES-GCM at rest, 64 KiB page dedup + GC,
+network re-attach verified, fork (9 concurrent, 142–483 ms), 97.6% page
+sharing, capture 176–394 ms. Remaining gaps: guest identity re-seed,
+capture-time delta, VOLUMES, Apple snapshots.
 
 | Task | Acceptance |
 |---|---|
